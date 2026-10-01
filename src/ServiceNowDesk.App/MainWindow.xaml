@@ -47,6 +47,7 @@
                     <RadioButton Style="{StaticResource NavButton}" Content="Requests" Tag="&#xE7BF;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Requests}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Request items" Tag="&#xE8FD;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=RequestedItems}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Search" Tag="&#xE721;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Search}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Knowledge" Tag="&#xE82D;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Knowledge}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Order catalog" Tag="&#xE719;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Catalog}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Connection" Tag="&#xE713;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Connection}"/>
                 </StackPanel>
@@ -57,10 +58,15 @@
             <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,12">
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Grid MaxWidth="720" HorizontalAlignment="Left">
+                    <Button Grid.Column="0" Content="Back" Style="{StaticResource SecondaryButton}" Margin="0,0,12,0" MinWidth="72"
+                            VerticalAlignment="Center" Command="{Binding BackCommand}"
+                            Visibility="{Binding ShowBack, Converter={StaticResource BoolVis}}"
+                            AutomationProperties.Name="Back"/>
+                    <Grid Grid.Column="1" MaxWidth="720" HorizontalAlignment="Left">
                         <TextBox x:Name="SearchBox" MinHeight="36" FontSize="14"
                                  Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                  KeyDown="SearchBox_KeyDown"
@@ -69,7 +75,7 @@
                                    Text="{Binding SearchPlaceholder}"
                                    Visibility="{Binding SearchText, Converter={StaticResource EmptyStringVis}}"/>
                     </Grid>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="Working…" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVis}}"/>
                         <TextBlock Text="{Binding ConnectedUser}" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,8,0"/>
                         <TextBlock Text="{Binding InstanceLabel}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
@@ -97,6 +103,9 @@
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Search}">
                     <views:SearchView DataContext="{Binding Search}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Knowledge}">
+                    <views:KnowledgeView DataContext="{Binding Knowledge}"/>
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Catalog}">
                     <views:CatalogView DataContext="{Binding Catalog}"/>

@@ -79,6 +79,23 @@ public sealed record RequestedItemRecord
     public bool Active { get; init; } = true;
 }
 
+public sealed record KnowledgeArticle
+{
+    public string SysId { get; init; } = "";
+    public string Number { get; init; } = "";
+    public string ShortDescription { get; init; } = "";
+    public string Text { get; init; } = "";
+    public string Topic { get; init; } = "";
+    public string WorkflowState { get; init; } = "";
+    public string WorkflowStateLabel { get; init; } = "";
+    public string Category { get; init; } = "";
+    public string KnowledgeBase { get; init; } = "";
+    public ReferenceValue Author { get; init; }
+    public string UpdatedAtDisplay { get; init; } = "";
+    public string UpdatedAtValue { get; init; } = "";
+    public string PublishedDisplay { get; init; } = "";
+}
+
 public sealed record CatalogItemSummary(string SysId, string Name, string ShortDescription);
 
 public sealed record CatalogVariableDefinition(

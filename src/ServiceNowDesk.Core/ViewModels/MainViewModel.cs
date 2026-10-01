@@ -10,10 +10,13 @@ namespace ServiceNowDesk.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly ISettingsStore _store;
+    private readonly Stack<DeskSection> _returnStack = [];
     private IServiceNowClient? _client;
     private CancellationTokenSource? _searchCts;
     private readonly Dictionary<DeskSection, string> _loadedFor = [];
     private bool _openingRecord;
+    private bool _preserveNavigation;
+    private bool _suppressSearchText;
 
     public MainViewModel(ISettingsStore store, IDesktopServices desktop)
     {
@@ -23,9 +26,10 @@ public partial class MainViewModel : ObservableObject
         Requests = new RequestWorkspaceViewModel(desktop);
         RequestedItems = new RequestedItemWorkspaceViewModel(desktop);
         Search = new SearchWorkspaceViewModel();
+        Knowledge = new KnowledgeWorkspaceViewModel();
         Catalog = new CatalogWorkspaceViewModel();
         Requests.RelatedItemRequested += (_, sysId) => _ = OpenRequestedItemAsync(sysId);
-        Search.OpenRequested += (_, hit) => _ = OpenSearchResultAsync(hit);
+        Search.OpenRequested += (_, hit) => SearchOpenTask = OpenSearchResultAsync(hit);
         Catalog.RequestOrdered += (_, result) => _ = OpenOrderedRequestAsync(result);
     }
 
@@ -34,7 +38,9 @@ public partial class MainViewModel : ObservableObject
     public RequestWorkspaceViewModel Requests { get; }
     public RequestedItemWorkspaceViewModel RequestedItems { get; }
     public SearchWorkspaceViewModel Search { get; }
+    public KnowledgeWorkspaceViewModel Knowledge { get; }
     public CatalogWorkspaceViewModel Catalog { get; }
+    public Task SearchOpenTask { get; private set; } = Task.CompletedTask;
     public ObservableCollection<ApiActivity> Activity { get; } = [];
 
     [ObservableProperty] private DeskSection selectedSection = DeskSection.Connection;
@@ -48,6 +54,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool isConnected;
     [ObservableProperty] private bool isSample;
     [ObservableProperty] private bool isBusy;
+    [ObservableProperty] private bool showBack;
 
     public bool ResolvePanelOpen =>
         (SelectedSection == DeskSection.Incidents && Incidents.ShowResolvePanel)
@@ -138,8 +145,31 @@ public partial class MainViewModel : ObservableObject
     {
         if (!IsConnected)
             return;
+        if (SelectedSection == DeskSection.Search)
+            Search.MarkStale();
         _loadedFor.Remove(SelectedSection);
         await EnsureSectionAsync();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanGoBack))]
+    private void Back()
+    {
+        if (!CanGoBack())
+            return;
+
+        _returnStack.Pop();
+        _searchCts?.Cancel();
+        if (!string.Equals(SearchText, Search.Query, StringComparison.Ordinal))
+        {
+            _suppressSearchText = true;
+            SearchText = Search.Query;
+            _suppressSearchText = false;
+        }
+
+        _preserveNavigation = true;
+        SelectedSection = DeskSection.Search;
+        _preserveNavigation = false;
+        UpdateBack();
     }
 
     [RelayCommand]
@@ -194,6 +224,8 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnSearchTextChanged(string value)
     {
+        if (_suppressSearchText)
+            return;
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
         var token = _searchCts.Token;
@@ -202,17 +234,33 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnSelectedSectionChanged(DeskSection value)
     {
+        if (!_preserveNavigation)
+            _returnStack.Clear();
+
         SearchPlaceholder = value switch
         {
             DeskSection.Incidents => "Search incidents",
             DeskSection.Requests => "Search requests",
             DeskSection.RequestedItems => "Search request items",
-            DeskSection.Search => "Search incidents, requests, and items",
+            DeskSection.Search => "Search incidents, requests, items, and knowledge",
+            DeskSection.Knowledge => "Open articles from Search",
             DeskSection.Catalog => "Search the catalog",
             _ => "Search"
         };
-        if (IsConnected && !_openingRecord)
+        UpdateBack();
+        if (IsConnected && !_openingRecord && !_preserveNavigation)
             _ = EnsureSectionAsync();
+    }
+
+    private bool CanGoBack() =>
+        _returnStack.Count > 0
+        && _returnStack.Peek() == DeskSection.Search
+        && SelectedSection is DeskSection.Incidents or DeskSection.Requests or DeskSection.RequestedItems or DeskSection.Knowledge;
+
+    private void UpdateBack()
+    {
+        ShowBack = CanGoBack();
+        BackCommand.NotifyCanExecuteChanged();
     }
 
     private RecordWorkspaceViewModel? ActiveRecord => SelectedSection switch
@@ -225,12 +273,13 @@ public partial class MainViewModel : ObservableObject
 
     private async Task DebouncedSearchAsync(CancellationToken token)
     {
+        var section = SelectedSection;
         try
         {
             await Task.Delay(250, token);
-            if (!IsConnected)
+            if (!IsConnected || SelectedSection != section)
                 return;
-            _loadedFor.Remove(SelectedSection);
+            _loadedFor.Remove(section);
             await EnsureSectionAsync();
         }
         catch (OperationCanceledException)
@@ -255,7 +304,10 @@ public partial class MainViewModel : ObservableObject
                 await LoadRecordSectionAsync(DeskSection.RequestedItems, RequestedItems);
                 break;
             case DeskSection.Search:
-                await Search.RunAsync(_client, SearchText);
+                if (!Search.HasCurrentResultsFor(SearchText))
+                    await Search.RunAsync(_client, SearchText);
+                break;
+            case DeskSection.Knowledge:
                 break;
             case DeskSection.Catalog:
                 await Catalog.RunAsync(_client, SearchText);
@@ -277,14 +329,28 @@ public partial class MainViewModel : ObservableObject
         _loadedFor[section] = SearchText;
     }
 
-    public Task OpenSearchResultAsync(SearchHit hit) => OpenHitAsync(hit);
+    public Task OpenSearchResultAsync(SearchHit hit) => OpenHitAsync(hit, fromSearch: true);
 
-    private async Task OpenHitAsync(SearchHit hit)
+    private async Task OpenHitAsync(SearchHit hit, bool fromSearch)
     {
         try
         {
+            _searchCts?.Cancel();
             _openingRecord = true;
+            _preserveNavigation = true;
+            if (fromSearch)
+            {
+                _returnStack.Clear();
+                _returnStack.Push(DeskSection.Search);
+            }
+            else
+            {
+                _returnStack.Clear();
+            }
+
             SelectedSection = hit.Section;
+            _preserveNavigation = false;
+            UpdateBack();
             await EnsureSectionAsync();
             switch (hit.Section)
             {
@@ -297,7 +363,13 @@ public partial class MainViewModel : ObservableObject
                 case DeskSection.RequestedItems:
                     await RequestedItems.OpenFromSearchAsync(hit.SysId);
                     break;
+                case DeskSection.Knowledge:
+                    await Knowledge.OpenAsync(_client, hit.SysId);
+                    break;
             }
+
+            if (!string.IsNullOrWhiteSpace(hit.Number))
+                StatusMessage = "Opened " + hit.Number + ".";
         }
         catch (Exception ex)
         {
@@ -306,6 +378,8 @@ public partial class MainViewModel : ObservableObject
         finally
         {
             _openingRecord = false;
+            _preserveNavigation = false;
+            UpdateBack();
         }
     }
 
@@ -322,7 +396,7 @@ public partial class MainViewModel : ObservableObject
             Meta = "",
             When = "",
             SortKey = ""
-        });
+        }, fromSearch: false);
 
     private async Task OpenOrderedRequestAsync(CatalogOrderResult result)
     {
@@ -344,7 +418,7 @@ public partial class MainViewModel : ObservableObject
             Meta = "",
             When = "",
             SortKey = ""
-        });
+        }, fromSearch: false);
         StatusMessage = "Opened " + result.RequestNumber + ".";
     }
 
@@ -354,6 +428,10 @@ public partial class MainViewModel : ObservableObject
         Requests.Detach();
         RequestedItems.Detach();
         Catalog.Attach(null);
+        Search.Reset();
+        Knowledge.Clear();
+        _returnStack.Clear();
+        UpdateBack();
         _client?.Dispose();
         _client = client;
         if (client is null)

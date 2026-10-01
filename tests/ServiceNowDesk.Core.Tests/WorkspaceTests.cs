@@ -164,6 +164,108 @@ public class WorkspaceTests
     }
 
     [Fact]
+    public async Task UnifiedSearchFindsKnowledgeByTextAndByNumber()
+    {
+        using var client = new SampleServiceNowClient();
+        var search = new SearchWorkspaceViewModel();
+        await search.RunAsync(client, "zephyrmail");
+        var article = Assert.Single(search.Results);
+        Assert.Equal("KB0001001", article.Number);
+        Assert.Equal(DeskSection.Knowledge, article.Section);
+        Assert.Equal("zephyrmail", search.Query);
+
+        await search.RunAsync(client, "KB0001002");
+        var byNumber = Assert.Single(search.Results);
+        Assert.Equal("KB0001002", byNumber.Number);
+        Assert.Equal(DeskSection.Knowledge, byNumber.Section);
+        Assert.Equal("Replace a toner cartridge", byNumber.Title);
+    }
+
+    [Fact]
+    public async Task DoubleClickOpensARequestForUpdateAndBackKeepsTheResults()
+    {
+        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices());
+        main.Connection.UseSampleData = true;
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.False(main.ShowBack);
+
+        main.SelectedSection = DeskSection.Search;
+        await FlushAsync();
+        main.SearchText = "REQ0010001";
+        await WaitUntilAsync(() => main.Search.Results.Any(hit => hit.Number == "REQ0010001"));
+
+        var hit = Assert.Single(main.Search.Results);
+        Assert.Equal(DeskSection.Requests, hit.Section);
+        Assert.Equal("REQ0010001", main.Search.Query);
+        main.Search.Selected = hit;
+        main.Search.OpenSelectedCommand.Execute(null);
+        await main.SearchOpenTask;
+
+        Assert.Equal(DeskSection.Requests, main.SelectedSection);
+        Assert.True(main.ShowBack);
+        Assert.True(main.Requests.HasEditor);
+        Assert.Equal("REQ0010001", main.Requests.Number);
+        Assert.Same(hit, main.Search.Results.Single());
+
+        main.Requests.SpecialInstructions = "Leave at reception.";
+        Assert.True(main.Requests.IsDirty);
+        await main.Requests.SaveCommand.ExecuteAsync(null);
+        Assert.False(main.Requests.IsDirty);
+        Assert.Contains("Saved", main.Requests.EditorMessage);
+
+        main.SearchText = "printer";
+        await Task.Delay(400);
+        Assert.Same(hit, main.Search.Results.Single());
+        Assert.Equal("REQ0010001", main.Search.Query);
+
+        main.BackCommand.Execute(null);
+        Assert.Equal(DeskSection.Search, main.SelectedSection);
+        Assert.False(main.ShowBack);
+        Assert.Equal("REQ0010001", main.SearchText);
+        Assert.Same(hit, main.Search.Results.Single());
+        Assert.Equal(hit, main.Search.Selected);
+
+        main.Search.OpenSelectedCommand.Execute(null);
+        await main.SearchOpenTask;
+        Assert.Equal("Leave at reception.", main.Requests.SpecialInstructions);
+        Assert.True(main.Requests.HasEditor);
+    }
+
+    [Fact]
+    public async Task DoubleClickOpensAKnowledgeArticleAndBackKeepsTheResults()
+    {
+        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices());
+        main.Connection.UseSampleData = true;
+        await main.ConnectCommand.ExecuteAsync(null);
+        main.SelectedSection = DeskSection.Search;
+        await FlushAsync();
+        main.SearchText = "zephyrmail";
+        await WaitUntilAsync(() => main.Search.Results.Any(hit => hit.Number == "KB0001001"));
+
+        var hit = Assert.Single(main.Search.Results);
+        main.Search.Selected = hit;
+        main.Search.OpenSelectedCommand.Execute(null);
+        await main.SearchOpenTask;
+
+        Assert.Equal(DeskSection.Knowledge, main.SelectedSection);
+        Assert.True(main.ShowBack);
+        Assert.Equal("KB0001001", main.Knowledge.Number);
+        Assert.Contains("zephyrmail", main.Knowledge.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Close Outlook", main.Knowledge.Body);
+        Assert.DoesNotContain("alert", main.Knowledge.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<", main.Knowledge.Body);
+        Assert.Same(hit, main.Search.Results.Single());
+
+        main.BackCommand.Execute(null);
+        Assert.Equal(DeskSection.Search, main.SelectedSection);
+        Assert.False(main.ShowBack);
+        Assert.Equal("zephyrmail", main.SearchText);
+        Assert.Equal("zephyrmail", main.Search.Query);
+        Assert.Same(hit, main.Search.Results.Single());
+        Assert.Equal(hit, main.Search.Selected);
+    }
+
+    [Fact]
     public async Task CatalogOrderCreatesARequestForTheCaller()
     {
         using var client = new SampleServiceNowClient();
@@ -267,5 +369,11 @@ public class WorkspaceTests
     private static async Task FlushAsync()
     {
         await Task.Delay(50);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> ready)
+    {
+        for (var attempt = 0; attempt < 40 && !ready(); attempt++)
+            await Task.Delay(50);
     }
 }

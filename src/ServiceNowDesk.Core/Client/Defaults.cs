@@ -185,4 +185,7 @@ public static class StateTone
         "4" or "7" => "closed",
         _ => "open"
     };
+
+    public static string ForKnowledge(string? state) =>
+        string.Equals(state, "published", StringComparison.OrdinalIgnoreCase) ? "resolved" : "open";
 }

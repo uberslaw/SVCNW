@@ -109,6 +109,30 @@ public static class RecordMapper
         };
     }
 
+    public static KnowledgeArticle Knowledge(JsonElement record)
+    {
+        var state = SnowField.Read(record, "workflow_state");
+        var updated = SnowField.Read(record, "sys_updated_on");
+        var category = SnowField.Read(record, "kb_category");
+        var knowledgeBase = SnowField.Read(record, "kb_knowledge_base");
+        return new KnowledgeArticle
+        {
+            SysId = SnowField.Read(record, "sys_id").Value,
+            Number = SnowField.Read(record, "number").Display,
+            ShortDescription = SnowField.Read(record, "short_description").Display,
+            Text = ArticleBody(record),
+            Topic = LabelOrValue(SnowField.Read(record, "topic")),
+            WorkflowState = state.Value,
+            WorkflowStateLabel = LabelOrValue(state),
+            Category = LabelOrValue(category),
+            KnowledgeBase = LabelOrValue(knowledgeBase),
+            Author = Reference(record, "author"),
+            UpdatedAtDisplay = updated.Display,
+            UpdatedAtValue = updated.Value,
+            PublishedDisplay = SnowField.Read(record, "published").Display
+        };
+    }
+
     public static JournalEntry Journal(JsonElement record)
     {
         var element = SnowField.Read(record, "element");
@@ -136,6 +160,14 @@ public static class RecordMapper
 
     public static string LabelOrValue(SnowField field) =>
         string.IsNullOrWhiteSpace(field.Display) ? field.Value : field.Display;
+
+    private static string ArticleBody(JsonElement record)
+    {
+        var text = SnowField.Read(record, "text");
+        if (!string.IsNullOrWhiteSpace(text.Display))
+            return text.Display;
+        return text.Value;
+    }
 }
 
 public static class ChangeJson

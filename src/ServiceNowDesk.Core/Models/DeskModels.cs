@@ -34,6 +34,7 @@ public enum DeskSection
     Requests,
     RequestedItems,
     Search,
+    Knowledge,
     Catalog,
     Connection
 }
