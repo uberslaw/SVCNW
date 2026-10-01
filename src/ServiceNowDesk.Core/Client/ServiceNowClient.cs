@@ -17,15 +17,24 @@ public sealed class ServiceNowClient : IServiceNowClient
     private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,opened_at,sys_updated_on,active,priority,close_notes";
 
     private readonly HttpClient _http;
+    private readonly ServiceNowAuthMode _authMode;
+    private readonly IFormCatalogStore? _catalog;
+    private readonly FormCatalogSnapshot _snapshot = new();
     private readonly List<ApiActivity> _activity = [];
     private readonly object _activityGate = new();
+    private readonly object _cacheGate = new();
     private readonly Dictionary<string, IReadOnlyList<Choice>> _choices = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IReadOnlyList<CatalogVariableDefinition>> _catalogForms = new(StringComparer.OrdinalIgnoreCase);
     private string[]? _groupIds;
 
-    private ServiceNowClient(HttpClient http, Uri instanceUri)
+    private ServiceNowClient(HttpClient http, ServiceNowSession session, IFormCatalogStore? formCatalog)
     {
         _http = http;
-        InstanceUri = instanceUri;
+        _authMode = session.AuthMode;
+        _catalog = formCatalog;
+        InstanceUri = session.InstanceUri;
+        if (formCatalog is not null)
+            ApplyCatalog(formCatalog.Load(session.InstanceUri));
     }
 
     public Uri? InstanceUri { get; }
@@ -39,12 +48,34 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
-    public static ServiceNowClient Create(ServiceNowSession session, HttpMessageHandler? handler = null)
+    public bool HasCachedChoices
+    {
+        get
+        {
+            lock (_cacheGate)
+                return _snapshot.Choices.Any(list => list.Choices is { Count: > 0 });
+        }
+    }
+
+    public bool FormCatalogIsStale
+    {
+        get
+        {
+            lock (_cacheGate)
+                return FormCatalogPolicy.IsStale(_snapshot.CapturedAt, DateTimeOffset.UtcNow);
+        }
+    }
+
+    public static ServiceNowClient Create(ServiceNowSession session, HttpMessageHandler? handler = null, IFormCatalogStore? formCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(session);
+        var inner = handler ?? new HttpClientHandler();
+        if (session.AuthMode == ServiceNowAuthMode.BrowserSession && inner is HttpClientHandler httpHandler)
+            httpHandler.UseCookies = false;
+
         var auth = new ServiceNowAuthHandler(session)
         {
-            InnerHandler = handler ?? new HttpClientHandler()
+            InnerHandler = inner
         };
         var http = new HttpClient(auth)
         {
@@ -53,7 +84,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         };
         http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
         http.DefaultRequestHeaders.UserAgent.ParseAdd("ServiceNowDesk/1.0");
-        return new ServiceNowClient(http, session.InstanceUri);
+        return new ServiceNowClient(http, session, formCatalog);
     }
 
     public void Dispose() => _http.Dispose();
@@ -225,28 +256,88 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     public async Task<IReadOnlyList<Choice>> GetChoicesAsync(string table, string element, string? dependentValue, CancellationToken cancellationToken)
     {
-        var key = table + "|" + element + "|" + (dependentValue ?? "");
-        lock (_choices)
+        var key = ChoiceKey(table, element, dependentValue);
+        lock (_cacheGate)
         {
             if (_choices.TryGetValue(key, out var cached))
                 return cached;
         }
 
-        var filter = "name=" + EncodedQuery.Sanitize(table) + "^element=" + EncodedQuery.Sanitize(element) + "^inactive=false";
-        if (!string.IsNullOrWhiteSpace(dependentValue))
-            filter += "^dependent_value=" + EncodedQuery.Sanitize(dependentValue);
-
-        var choices = await FetchChoicesAsync(filter + "^language=en^ORDERBYsequence", cancellationToken).ConfigureAwait(false);
-        if (choices.Count == 0)
-            choices = await FetchChoicesAsync(filter + "^ORDERBYsequence", cancellationToken).ConfigureAwait(false);
-
-        if (choices.Count > 0)
-        {
-            lock (_choices)
-                _choices[key] = choices;
-        }
-
+        var choices = await FetchChoiceListAsync(table, element, dependentValue, cancellationToken).ConfigureAwait(false);
+        RememberChoices(table, element, dependentValue, choices, persist: true);
         return choices;
+    }
+
+    public async Task RefreshFormCatalogAsync(CancellationToken cancellationToken)
+    {
+        ServiceNowException? last = null;
+        var saved = 0;
+        try
+        {
+            foreach (var field in FormCatalogFields.Independent)
+            {
+                try
+                {
+                    var choices = await FetchChoiceListAsync(field.Table, field.Element, null, cancellationToken).ConfigureAwait(false);
+                    if (RememberChoices(field.Table, field.Element, null, choices, persist: false))
+                        saved++;
+                }
+                catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
+                {
+                    last = ex;
+                }
+            }
+
+            IReadOnlyList<Choice> categories;
+            lock (_cacheGate)
+                categories = _choices.TryGetValue(ChoiceKey("incident", "category", null), out var cached) ? cached : [];
+
+            var dependents = 0;
+            foreach (var category in categories)
+            {
+                if (string.IsNullOrWhiteSpace(category.Value) || dependents >= FormCatalogPolicy.MaxDependentCategories)
+                    continue;
+                dependents++;
+                try
+                {
+                    var choices = await FetchChoiceListAsync("incident", "subcategory", category.Value, cancellationToken).ConfigureAwait(false);
+                    if (RememberChoices("incident", "subcategory", category.Value, choices, persist: false))
+                        saved++;
+                }
+                catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
+                {
+                    last = ex;
+                }
+            }
+
+            string[] itemIds;
+            lock (_cacheGate)
+                itemIds = _catalogForms.Keys.Take(FormCatalogPolicy.MaxCatalogItems).ToArray();
+
+            foreach (var itemId in itemIds)
+            {
+                try
+                {
+                    var variables = await FetchCatalogVariablesAsync(itemId, cancellationToken).ConfigureAwait(false);
+                    if (RememberCatalog(itemId, variables, persist: false))
+                        saved++;
+                }
+                catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
+                {
+                    last = ex;
+                }
+            }
+
+            if (saved == 0 && last is not null)
+                throw last;
+
+            lock (_cacheGate)
+                _snapshot.CapturedAt = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            PersistCatalog();
+        }
     }
 
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken)
@@ -302,6 +393,19 @@ public sealed class ServiceNowClient : IServiceNowClient
     public async Task<IReadOnlyList<CatalogVariableDefinition>> GetCatalogVariablesAsync(string itemSysId, CancellationToken cancellationToken)
     {
         var id = EncodedQuery.SafeToken(itemSysId, "catalog item id");
+        lock (_cacheGate)
+        {
+            if (_catalogForms.TryGetValue(id, out var cached))
+                return cached;
+        }
+
+        var definitions = await FetchCatalogVariablesAsync(id, cancellationToken).ConfigureAwait(false);
+        RememberCatalog(id, definitions, persist: true);
+        return definitions;
+    }
+
+    private async Task<IReadOnlyList<CatalogVariableDefinition>> FetchCatalogVariablesAsync(string id, CancellationToken cancellationToken)
+    {
         var result = await SendAsync(HttpMethod.Get, "api/sn_sc/servicecatalog/items/" + Uri.EscapeDataString(id), null, cancellationToken).ConfigureAwait(false);
         using (result)
         {
@@ -482,7 +586,7 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     private async Task<IReadOnlyList<Choice>> FetchChoicesAsync(string query, CancellationToken cancellationToken)
     {
-        var result = await GetListAsync("sys_choice", "value,label,sequence", query, 100, 0, cancellationToken).ConfigureAwait(false);
+        var result = await GetListAsync("sys_choice", "value,label,sequence", query, 200, 0, cancellationToken).ConfigureAwait(false);
         using (result)
         {
             var choices = new List<Choice>();
@@ -566,7 +670,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             Record(method.Method, relativeUrl, (int)response.StatusCode, watch.ElapsedMilliseconds);
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
-                throw ServiceNowException.FromResponse((int)response.StatusCode, body);
+                throw DescribeFailure((int)response.StatusCode, body);
 
             if (string.IsNullOrWhiteSpace(body))
                 return new ApiPayload(JsonDocument.Parse("""{"result":{}}"""), ReadTotal(response));
@@ -599,6 +703,156 @@ public sealed class ServiceNowClient : IServiceNowClient
             }
         }
     }
+
+    private ServiceNowException DescribeFailure(int statusCode, string body)
+    {
+        var error = ServiceNowException.FromResponse(statusCode, body);
+        if (_authMode == ServiceNowAuthMode.Basic
+            && statusCode == 401
+            && error.Message.Contains("Auth information", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ServiceNowException(
+                401,
+                "ServiceNow refused the user name and password. This instance expects company single sign-on. Choose Browser sign-in (SSO).",
+                error.Detail);
+        }
+
+        if (_authMode == ServiceNowAuthMode.BrowserSession && statusCode is 401 or 403)
+        {
+            return new ServiceNowException(
+                statusCode,
+                "The browser sign-in expired or was rejected. Open Connection and sign in with the browser again.",
+                error.Detail);
+        }
+
+        return error;
+    }
+
+    private async Task<IReadOnlyList<Choice>> FetchChoiceListAsync(string table, string element, string? dependentValue, CancellationToken cancellationToken)
+    {
+        var filter = "name=" + EncodedQuery.Sanitize(table) + "^element=" + EncodedQuery.Sanitize(element) + "^inactive=false";
+        if (!string.IsNullOrWhiteSpace(dependentValue))
+            filter += "^dependent_value=" + EncodedQuery.Sanitize(dependentValue);
+
+        var choices = await FetchChoicesAsync(filter + "^language=en^ORDERBYsequence", cancellationToken).ConfigureAwait(false);
+        if (choices.Count == 0)
+            choices = await FetchChoicesAsync(filter + "^ORDERBYsequence", cancellationToken).ConfigureAwait(false);
+        return choices;
+    }
+
+    private void ApplyCatalog(FormCatalogSnapshot? snapshot)
+    {
+        if (snapshot is null)
+            return;
+
+        lock (_cacheGate)
+        {
+            _snapshot.CapturedAt = snapshot.CapturedAt;
+            _snapshot.Choices = snapshot.Choices ?? [];
+            _snapshot.CatalogItems = snapshot.CatalogItems ?? [];
+            foreach (var list in _snapshot.Choices)
+            {
+                if (list.Choices is not { Count: > 0 } || string.IsNullOrWhiteSpace(list.Table) || string.IsNullOrWhiteSpace(list.Element))
+                    continue;
+                _choices[ChoiceKey(list.Table, list.Element, list.DependentValue)] = list.Choices;
+            }
+
+            foreach (var item in _snapshot.CatalogItems)
+            {
+                if (string.IsNullOrWhiteSpace(item.SysId) || item.Variables is not { Count: > 0 })
+                    continue;
+                _catalogForms[item.SysId] = item.Variables;
+            }
+        }
+    }
+
+    private bool RememberChoices(string table, string element, string? dependentValue, IReadOnlyList<Choice> choices, bool persist)
+    {
+        if (choices.Count == 0)
+            return false;
+
+        var dependent = dependentValue ?? "";
+        lock (_cacheGate)
+        {
+            _choices[ChoiceKey(table, element, dependent)] = choices;
+            var list = _snapshot.Choices.FirstOrDefault(item =>
+                item.Table.Equals(table, StringComparison.OrdinalIgnoreCase)
+                && item.Element.Equals(element, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.DependentValue ?? "", dependent, StringComparison.Ordinal));
+            if (list is null)
+            {
+                list = new CachedChoiceList { Table = table, Element = element, DependentValue = dependent };
+                _snapshot.Choices.Add(list);
+            }
+
+            list.Choices = choices.ToList();
+        }
+
+        if (persist)
+            PersistCatalog();
+        return true;
+    }
+
+    private bool RememberCatalog(string itemSysId, IReadOnlyList<CatalogVariableDefinition> variables, bool persist)
+    {
+        if (variables.Count == 0)
+            return false;
+
+        lock (_cacheGate)
+        {
+            _catalogForms[itemSysId] = variables;
+            var item = _snapshot.CatalogItems.FirstOrDefault(entry => entry.SysId.Equals(itemSysId, StringComparison.OrdinalIgnoreCase));
+            if (item is null)
+            {
+                item = new CachedCatalogForm { SysId = itemSysId };
+                _snapshot.CatalogItems.Add(item);
+            }
+
+            item.CapturedAt = DateTimeOffset.UtcNow;
+            item.Variables = variables.ToList();
+        }
+
+        if (persist)
+            PersistCatalog();
+        return true;
+    }
+
+    private void PersistCatalog()
+    {
+        if (_catalog is null || InstanceUri is null)
+            return;
+
+        FormCatalogSnapshot copy;
+        lock (_cacheGate)
+        {
+            copy = new FormCatalogSnapshot
+            {
+                CapturedAt = _snapshot.CapturedAt,
+                Choices = _snapshot.Choices.Select(list => new CachedChoiceList
+                {
+                    Table = list.Table,
+                    Element = list.Element,
+                    DependentValue = list.DependentValue,
+                    Choices = list.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToList()
+                }).ToList(),
+                CatalogItems = _snapshot.CatalogItems.Select(item => new CachedCatalogForm
+                {
+                    SysId = item.SysId,
+                    CapturedAt = item.CapturedAt,
+                    Variables = item.Variables.Select(variable => new CatalogVariableDefinition(
+                        variable.Name,
+                        variable.Label,
+                        variable.Mandatory,
+                        variable.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToArray())).ToList()
+                }).ToList()
+            };
+        }
+
+        _catalog.Save(InstanceUri, copy);
+    }
+
+    private static string ChoiceKey(string table, string element, string? dependentValue) =>
+        table + "|" + element + "|" + (dependentValue ?? "");
 
     private static string ItemUrl(string table, string sysId, string fields)
     {
@@ -738,6 +992,16 @@ internal sealed class ServiceNowAuthHandler : DelegatingHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        if (_session.AuthMode == ServiceNowAuthMode.BrowserSession)
+        {
+            request.Headers.Authorization = null;
+            request.Headers.Remove("Cookie");
+            request.Headers.TryAddWithoutValidation("Cookie", _session.SessionCookie);
+            request.Headers.Remove("X-UserToken");
+            request.Headers.TryAddWithoutValidation("X-UserToken", _session.UserToken);
+            return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
         if (_session.AuthMode == ServiceNowAuthMode.Basic)
         {
             var raw = Encoding.UTF8.GetBytes(_session.Username + ":" + _session.Password);

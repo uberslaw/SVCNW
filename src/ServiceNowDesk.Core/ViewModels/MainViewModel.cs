@@ -10,14 +10,18 @@ namespace ServiceNowDesk.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly ISettingsStore _store;
+    private readonly IBrowserSignIn? _browserSignIn;
+    private readonly IFormCatalogStore? _formCatalog;
     private IServiceNowClient? _client;
     private CancellationTokenSource? _searchCts;
     private readonly Dictionary<DeskSection, string> _loadedFor = [];
     private bool _openingRecord;
 
-    public MainViewModel(ISettingsStore store, IDesktopServices desktop)
+    public MainViewModel(ISettingsStore store, IDesktopServices desktop, IBrowserSignIn? browserSignIn = null, IFormCatalogStore? formCatalog = null)
     {
         _store = store;
+        _browserSignIn = browserSignIn;
+        _formCatalog = formCatalog;
         Connection = new ConnectionViewModel();
         Incidents = new IncidentWorkspaceViewModel(desktop);
         Requests = new RequestWorkspaceViewModel(desktop);
@@ -71,6 +75,7 @@ public partial class MainViewModel : ObservableObject
             IsBusy = true;
             ErrorMessage = "";
             var settings = Connection.BuildSettings();
+            ServiceNowClient? live = null;
             if (settings.UseSampleData)
             {
                 created = new SampleServiceNowClient();
@@ -78,7 +83,8 @@ public partial class MainViewModel : ObservableObject
             else
             {
                 var session = ServiceNowSession.FromSettings(settings);
-                created = ServiceNowClient.Create(session);
+                live = ServiceNowClient.Create(session, formCatalog: _formCatalog);
+                created = live;
             }
 
             var user = await created.GetCurrentUserAsync(CancellationToken.None);
@@ -93,6 +99,8 @@ public partial class MainViewModel : ObservableObject
             StatusMessage = settings.UseSampleData
                 ? "Practice data loaded. Nothing is sent to ServiceNow."
                 : "Connected as " + user.Name + ".";
+            if (live is not null)
+                await RefreshFormsIfNeededAsync(live, user.Name);
             _loadedFor.Clear();
             if (SelectedSection == DeskSection.Connection)
                 SelectedSection = DeskSection.Incidents;
@@ -104,6 +112,46 @@ public partial class MainViewModel : ObservableObject
             created?.Dispose();
             ErrorMessage = WorkspaceMessages.Describe(ex);
             StatusMessage = "Not connected.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SignInWithBrowserAsync()
+    {
+        if (_browserSignIn is null)
+        {
+            ErrorMessage = "Browser sign-in is not available.";
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            ErrorMessage = "";
+            Connection.UseSampleData = false;
+            Connection.AuthMode = ServiceNowAuthMode.BrowserSession;
+            var uri = ServiceNowSession.NormalizeInstance(Connection.InstanceUrl);
+            var result = await _browserSignIn.SignInAsync(uri, CancellationToken.None);
+            Connection.SessionCookie = result.CookieHeader;
+            Connection.UserToken = result.UserToken;
+            Connection.SessionCapturedAt = DateTimeOffset.Now;
+            _store.Save(Connection.BuildSettings());
+            await ConnectAsync();
+        }
+        catch (BrowserSignInCanceledException)
+        {
+            if (!IsConnected)
+                StatusMessage = "Not connected.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+            if (!IsConnected)
+                StatusMessage = "Not connected.";
         }
         finally
         {
@@ -346,6 +394,45 @@ public partial class MainViewModel : ObservableObject
             SortKey = ""
         });
         StatusMessage = "Opened " + result.RequestNumber + ".";
+    }
+
+    private async Task RefreshFormsIfNeededAsync(ServiceNowClient client, string userName)
+    {
+        if (_formCatalog is null || !client.FormCatalogIsStale)
+            return;
+
+        if (!client.HasCachedChoices)
+        {
+            StatusMessage = "Connected as " + userName + ". Downloading form lists.";
+            try
+            {
+                await client.RefreshFormCatalogAsync(CancellationToken.None);
+                StatusMessage = "Connected as " + userName + ".";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Connected as " + userName + ".";
+                ErrorMessage = "Form lists could not be downloaded. " + WorkspaceMessages.Describe(ex);
+            }
+
+            return;
+        }
+
+        _ = RefreshFormCatalogQuietlyAsync(client);
+    }
+
+    private async Task RefreshFormCatalogQuietlyAsync(ServiceNowClient client)
+    {
+        try
+        {
+            await client.RefreshFormCatalogAsync(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            if (!ReferenceEquals(_client, client))
+                return;
+            StatusMessage = "Connected as " + ConnectedUser + ". Saved form lists are still in use.";
+        }
     }
 
     private void ReplaceClient(IServiceNowClient? client)

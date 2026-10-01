@@ -32,12 +32,15 @@ Type a person's name in Caller, Requested for, Assigned to, or Assignment group.
 1. Open **Connection**.
 2. Enter the instance URL, for example `https://company.service-now.com`.
 3. Choose a sign-in method.
-   - **Username and password** is the fastest way to start. Sign in as the agent. "My open" and "My groups" then mean that person.
+   - **Browser sign-in (SSO)** when the company page uses single sign-on. Click **Sign in with browser**, finish the company sign-in, and the window closes once ServiceNow accepts the session. The app then calls the same APIs with that session. This needs the [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/), which current Windows 10 and 11 installs already include.
+   - **Username and password** when the instance accepts it. Sign in as the agent. "My open" and "My groups" then mean that person. If ServiceNow answers that auth information is required, the instance expects single sign-on: use browser sign-in instead.
    - **OAuth password grant** uses an OAuth client plus the agent's user name and password.
    - **OAuth client credentials** uses the integration user configured on the OAuth app. "My open" is that integration user, not the person at the keyboard.
-4. Click **Connect**.
+4. Click **Connect**. A saved browser session can connect again until ServiceNow expires it. When it expires, sign in with the browser again.
 
-The password and client secret are stored with Windows DPAPI for the current Windows user, under `%AppData%\ServiceNowDesk\settings.json`. They are not written in plain text.
+The password, client secret, and browser session are stored with Windows DPAPI for the current Windows user, under `%AppData%\ServiceNowDesk\settings.json`. They are not written in plain text.
+
+Dropdowns for incidents, requests, and request items, plus catalog questions you have opened, are saved on this PC and refreshed about once a day. The forms read that saved copy, so they open without waiting on the website. Ticket lists, saves, notes, and new catalog orders still go to ServiceNow. The saved lists live in `%AppData%\ServiceNowDesk\form-catalog.<instance>.json`.
 
 ### OAuth app
 

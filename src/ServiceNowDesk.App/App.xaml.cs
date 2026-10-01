@@ -1,4 +1,5 @@
 using System.Windows;
+using ServiceNowDesk.Client;
 using ServiceNowDesk.Services;
 using ServiceNowDesk.ViewModels;
 
@@ -27,7 +28,7 @@ public partial class App : Application
             }
         };
 
-        var main = new MainViewModel(new DpapiSettingsStore(), new WindowsDesktopServices());
+        var main = new MainViewModel(new DpapiSettingsStore(), new WindowsDesktopServices(), new WebViewBrowserSignIn(), FileFormCatalogStore.InApplicationData());
         var window = new MainWindow { DataContext = main };
         MainWindow = window;
         window.Show();

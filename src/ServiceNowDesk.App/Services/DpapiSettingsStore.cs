@@ -35,6 +35,9 @@ public sealed class DpapiSettingsStore : ISettingsStore
                 Password = Unprotect(stored.ProtectedPassword),
                 ClientId = stored.ClientId ?? "",
                 ClientSecret = Unprotect(stored.ProtectedClientSecret),
+                SessionCookie = Unprotect(stored.ProtectedSessionCookie),
+                UserToken = Unprotect(stored.ProtectedUserToken),
+                SessionCapturedAt = stored.SessionCapturedAt,
                 UseSampleData = stored.UseSampleData
             };
         }
@@ -55,6 +58,9 @@ public sealed class DpapiSettingsStore : ISettingsStore
             ProtectedPassword = Protect(settings.Password),
             ClientId = settings.ClientId,
             ProtectedClientSecret = Protect(settings.ClientSecret),
+            ProtectedSessionCookie = Protect(settings.SessionCookie),
+            ProtectedUserToken = Protect(settings.UserToken),
+            SessionCapturedAt = settings.SessionCapturedAt,
             UseSampleData = settings.UseSampleData
         };
         File.WriteAllText(FilePath, JsonSerializer.Serialize(stored, JsonOptions));
@@ -84,6 +90,9 @@ public sealed class DpapiSettingsStore : ISettingsStore
         public string? ProtectedPassword { get; set; }
         public string? ClientId { get; set; }
         public string? ProtectedClientSecret { get; set; }
+        public string? ProtectedSessionCookie { get; set; }
+        public string? ProtectedUserToken { get; set; }
+        public DateTimeOffset? SessionCapturedAt { get; set; }
         public bool UseSampleData { get; set; }
     }
 }

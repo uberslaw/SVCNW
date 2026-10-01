@@ -14,6 +14,21 @@ public interface ISettingsStore
     void Save(DeskSettings settings);
 }
 
+public sealed record BrowserSignInResult(string CookieHeader, string UserToken);
+
+public interface IBrowserSignIn
+{
+    Task<BrowserSignInResult> SignInAsync(Uri instanceUri, CancellationToken cancellationToken);
+}
+
+public sealed class BrowserSignInCanceledException : InvalidOperationException
+{
+    public BrowserSignInCanceledException()
+        : base("Browser sign-in was canceled.")
+    {
+    }
+}
+
 public sealed class RecordingDesktopServices : IDesktopServices
 {
     public List<string> OpenedUrls { get; } = [];

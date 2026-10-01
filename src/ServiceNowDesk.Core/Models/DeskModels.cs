@@ -19,7 +19,8 @@ public enum ServiceNowAuthMode
 {
     Basic,
     OAuthPassword,
-    OAuthClientCredentials
+    OAuthClientCredentials,
+    BrowserSession
 }
 
 public enum JournalKind
@@ -78,6 +79,9 @@ public sealed class DeskSettings
     public string Password { get; set; } = "";
     public string ClientId { get; set; } = "";
     public string ClientSecret { get; set; } = "";
+    public string SessionCookie { get; set; } = "";
+    public string UserToken { get; set; } = "";
+    public DateTimeOffset? SessionCapturedAt { get; set; }
     public bool UseSampleData { get; set; }
 }
 
@@ -89,7 +93,9 @@ public sealed class ServiceNowSession
         string username,
         string password,
         string clientId,
-        string clientSecret)
+        string clientSecret,
+        string sessionCookie,
+        string userToken)
     {
         InstanceUri = instanceUri;
         AuthMode = authMode;
@@ -97,6 +103,8 @@ public sealed class ServiceNowSession
         Password = password;
         ClientId = clientId;
         ClientSecret = clientSecret;
+        SessionCookie = sessionCookie;
+        UserToken = userToken;
     }
 
     public Uri InstanceUri { get; }
@@ -105,6 +113,8 @@ public sealed class ServiceNowSession
     public string Password { get; }
     public string ClientId { get; }
     public string ClientSecret { get; }
+    public string SessionCookie { get; }
+    public string UserToken { get; }
 
     public static Uri NormalizeInstance(string? input)
     {
@@ -132,6 +142,8 @@ public sealed class ServiceNowSession
         var password = settings.Password ?? "";
         var clientId = settings.ClientId?.Trim() ?? "";
         var clientSecret = settings.ClientSecret ?? "";
+        var sessionCookie = settings.SessionCookie ?? "";
+        var userToken = settings.UserToken ?? "";
 
         switch (settings.AuthMode)
         {
@@ -147,10 +159,14 @@ public sealed class ServiceNowSession
                 if (clientId.Length == 0 || clientSecret.Length == 0)
                     throw new ArgumentException("OAuth client credentials need a client ID and client secret.");
                 break;
+            case ServiceNowAuthMode.BrowserSession:
+                if (sessionCookie.Length == 0 || userToken.Length == 0)
+                    throw new ArgumentException("Sign in with the browser first. This instance uses company single sign-on, so a user name and password are not enough.");
+                break;
             default:
                 throw new ArgumentException("Choose a sign-in method.");
         }
 
-        return new ServiceNowSession(uri, settings.AuthMode, username, password, clientId, clientSecret);
+        return new ServiceNowSession(uri, settings.AuthMode, username, password, clientId, clientSecret, sessionCookie, userToken);
     }
 }

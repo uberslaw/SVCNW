@@ -11,7 +11,8 @@ public partial class ConnectionViewModel : ObservableObject
     [
         new(ServiceNowAuthMode.Basic, "Username and password"),
         new(ServiceNowAuthMode.OAuthPassword, "OAuth password grant"),
-        new(ServiceNowAuthMode.OAuthClientCredentials, "OAuth client credentials")
+        new(ServiceNowAuthMode.OAuthClientCredentials, "OAuth client credentials"),
+        new(ServiceNowAuthMode.BrowserSession, "Browser sign-in (SSO)")
     ];
 
     [ObservableProperty] private string instanceUrl = "";
@@ -20,12 +21,19 @@ public partial class ConnectionViewModel : ObservableObject
     [ObservableProperty] private string password = "";
     [ObservableProperty] private string clientId = "";
     [ObservableProperty] private string clientSecret = "";
+    [ObservableProperty] private string sessionCookie = "";
+    [ObservableProperty] private string userToken = "";
+    [ObservableProperty] private DateTimeOffset? sessionCapturedAt;
     [ObservableProperty] private bool useSampleData;
     [ObservableProperty] private bool showOAuth;
     [ObservableProperty] private bool showUserPassword = true;
+    [ObservableProperty] private bool showBrowserSignIn;
+    [ObservableProperty] private string browserSessionStatus = "No browser sign-in yet.";
 
     partial void OnAuthModeChanged(ServiceNowAuthMode value) => SyncFlags();
     partial void OnUseSampleDataChanged(bool value) => SyncFlags();
+    partial void OnSessionCookieChanged(string value) => UpdateBrowserStatus();
+    partial void OnSessionCapturedAtChanged(DateTimeOffset? value) => UpdateBrowserStatus();
 
     public DeskSettings BuildSettings() => new()
     {
@@ -35,6 +43,9 @@ public partial class ConnectionViewModel : ObservableObject
         Password = Password,
         ClientId = ClientId.Trim(),
         ClientSecret = ClientSecret,
+        SessionCookie = SessionCookie,
+        UserToken = UserToken,
+        SessionCapturedAt = SessionCapturedAt,
         UseSampleData = UseSampleData
     };
 
@@ -47,13 +58,25 @@ public partial class ConnectionViewModel : ObservableObject
         Password = settings.Password ?? "";
         ClientId = settings.ClientId ?? "";
         ClientSecret = settings.ClientSecret ?? "";
+        SessionCookie = settings.SessionCookie ?? "";
+        UserToken = settings.UserToken ?? "";
+        SessionCapturedAt = settings.SessionCapturedAt;
         UseSampleData = settings.UseSampleData;
         SyncFlags();
     }
 
     private void SyncFlags()
     {
-        ShowOAuth = !UseSampleData && AuthMode != ServiceNowAuthMode.Basic;
-        ShowUserPassword = !UseSampleData && AuthMode != ServiceNowAuthMode.OAuthClientCredentials;
+        ShowOAuth = !UseSampleData && AuthMode is ServiceNowAuthMode.OAuthPassword or ServiceNowAuthMode.OAuthClientCredentials;
+        ShowUserPassword = !UseSampleData && AuthMode is ServiceNowAuthMode.Basic or ServiceNowAuthMode.OAuthPassword;
+        ShowBrowserSignIn = !UseSampleData && AuthMode == ServiceNowAuthMode.BrowserSession;
+        UpdateBrowserStatus();
+    }
+
+    private void UpdateBrowserStatus()
+    {
+        BrowserSessionStatus = SessionCapturedAt is DateTimeOffset captured && !string.IsNullOrWhiteSpace(SessionCookie)
+            ? "Browser sign-in saved " + captured.ToLocalTime().ToString("g") + ". Connect uses that session until it expires."
+            : "No browser sign-in yet.";
     }
 }

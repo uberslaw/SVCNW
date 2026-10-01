@@ -6,7 +6,7 @@
         <StackPanel MaxWidth="720" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Connection" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,16"
-                       Text="Sign in as the agent who will work the tickets. My open and my groups then match that person. Practice data lets the team learn the layout before credentials are ready."/>
+                       Text="Sign in as the agent who will work the tickets. My open and my groups then match that person. If the company uses single sign-on, choose Browser sign-in. Practice data lets the team learn the layout before credentials are ready."/>
 
             <CheckBox Content="Use practice data instead of a live instance" IsChecked="{Binding Connection.UseSampleData}" Margin="0,0,0,14"/>
 
@@ -33,13 +33,20 @@
                            Text="Create this under System OAuth, Application Registry, as an OAuth API endpoint for external clients. Password grant keeps the signed-in person as the agent. Client credentials uses the OAuth application user."/>
             </StackPanel>
 
+            <StackPanel Visibility="{Binding Connection.ShowBrowserSignIn, Converter={StaticResource BoolVis}}">
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"
+                           Text="Sign in through the company page, the same way you open ServiceNow in a browser. The app keeps that session for tickets. Dropdowns and catalog questions are saved on this PC and refreshed about once a day, so the forms open without waiting on the website."/>
+                <Button Content="Sign in with browser" Style="{StaticResource PrimaryButton}" Command="{Binding SignInWithBrowserCommand}" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                <TextBlock Text="{Binding Connection.BrowserSessionStatus}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"/>
+            </StackPanel>
+
             <StackPanel Orientation="Horizontal" Margin="0,6,0,16">
                 <Button Content="Connect" Style="{StaticResource PrimaryButton}" Command="{Binding ConnectCommand}" Margin="0,0,8,0"/>
                 <Button Content="Open practice data" Style="{StaticResource SecondaryButton}" Command="{Binding PracticeCommand}" Margin="0,0,8,0"/>
                 <Button Content="Disconnect" Style="{StaticResource SecondaryButton}" Command="{Binding DisconnectCommand}"/>
             </StackPanel>
 
-            <TextBlock Text="The password and client secret are stored with Windows DPAPI for this Windows user only. They are not written in plain text." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,16"/>
+            <TextBlock Text="The password, client secret, and browser session are stored with Windows DPAPI for this Windows user only. They are not written in plain text." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,16"/>
 
             <TextBlock Text="Recent API calls" FontWeight="SemiBold" Margin="0,0,0,8"/>
             <ListBox ItemsSource="{Binding Activity}" MaxHeight="240" Style="{StaticResource DeskList}" ItemContainerStyle="{StaticResource DeskListItem}">
