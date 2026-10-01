@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Input;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.ViewModels;
+using ServiceNowDesk.Views;
 
 namespace ServiceNowDesk;
 
@@ -92,5 +93,18 @@ public partial class MainWindow : Window
     {
         main.SelectedSection = section;
         e.Handled = true;
+    }
+
+    private void Documentation_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (Window window in OwnedWindows)
+        {
+            if (window is not HelpWindow help)
+                continue;
+            help.Activate();
+            return;
+        }
+
+        new HelpWindow { Owner = this }.Show();
     }
 }
