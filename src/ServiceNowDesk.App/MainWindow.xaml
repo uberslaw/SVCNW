@@ -1,0 +1,92 @@
+<Window x:Class="ServiceNowDesk.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:ServiceNowDesk.Views"
+        Title="{Binding WindowTitle}"
+        Height="920"
+        Width="1440"
+        MinHeight="720"
+        MinWidth="1100"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource AppBrush}"
+        FontFamily="Segoe UI"
+        FontSize="13"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="228"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.RowSpan="2" Background="{StaticResource NavBrush}">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="20,18,16,12">
+                    <TextBlock Text="ServiceNow" Foreground="{StaticResource NavMutedBrush}" FontSize="12"/>
+                    <TextBlock Text="Desk" Foreground="White" FontSize="26" FontWeight="SemiBold"/>
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Bottom" Margin="20,8,16,16" Foreground="{StaticResource NavMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                           Text="Ctrl+K search&#10;Ctrl+N new&#10;Ctrl+S save&#10;Ctrl+Enter post note&#10;Ctrl+Shift+R resolve&#10;F5 refresh"/>
+                <StackPanel Margin="0,8,0,0">
+                    <RadioButton Style="{StaticResource NavButton}" Content="Incidents" Tag="&#xE7BA;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Incidents}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Requests" Tag="&#xE7BF;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Requests}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Request items" Tag="&#xE8FD;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=RequestedItems}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Search" Tag="&#xE721;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Search}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Order catalog" Tag="&#xE719;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Catalog}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Connection" Tag="&#xE713;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Connection}"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <DockPanel Grid.Column="1">
+            <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid MaxWidth="720" HorizontalAlignment="Left">
+                        <TextBox x:Name="SearchBox" MinHeight="36" FontSize="14"
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 KeyDown="SearchBox_KeyDown"
+                                 AutomationProperties.Name="Search"/>
+                        <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="#90A0A6"
+                                   Text="{Binding SearchPlaceholder}"
+                                   Visibility="{Binding SearchText, Converter={StaticResource EmptyStringVis}}"/>
+                    </Grid>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Working…" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVis}}"/>
+                        <TextBlock Text="{Binding ConnectedUser}" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,8,0"/>
+                        <TextBlock Text="{Binding InstanceLabel}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border DockPanel.Dock="Top" Background="{StaticResource ErrorSoftBrush}" Padding="16,8" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Dismiss" Style="{StaticResource QuietButton}" Command="{Binding DismissMainErrorCommand}"/>
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                </DockPanel>
+            </Border>
+
+            <Grid>
+                <views:IncidentView DataContext="{Binding Incidents}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Incidents}"/>
+                <views:RequestView DataContext="{Binding Requests}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Requests}"/>
+                <views:RequestedItemView DataContext="{Binding RequestedItems}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=RequestedItems}"/>
+                <views:SearchView DataContext="{Binding Search}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Search}"/>
+                <views:CatalogView DataContext="{Binding Catalog}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Catalog}"/>
+                <views:ConnectionView DataContext="{Binding}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Connection}"/>
+            </Grid>
+        </DockPanel>
+
+        <Border Grid.Column="1" Grid.Row="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
+            <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource MutedBrush}"/>
+        </Border>
+    </Grid>
+</Window>

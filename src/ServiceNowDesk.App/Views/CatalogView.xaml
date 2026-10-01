@@ -1,0 +1,50 @@
+<UserControl x:Class="ServiceNowDesk.Views.CatalogView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:ServiceNowDesk.Controls">
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="360"/>
+            <ColumnDefinition Width="16"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="Catalog items" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <TextBlock DockPanel.Dock="Bottom" Text="{Binding Message}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"/>
+            <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}" Style="{StaticResource DeskList}" ItemContainerStyle="{StaticResource DeskListItem}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding ShortDescription}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}"/>
+                <TextBlock Text="{Binding SelectedItem.Name}" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <TextBlock Text="{Binding SelectedItem.ShortDescription}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"/>
+                <TextBlock Text="Order for" Style="{StaticResource FieldLabel}"/>
+                <controls:ReferenceEditor DataContext="{Binding RequestedFor}" Margin="0,0,0,10"/>
+                <TextBlock Text="Quantity" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+                <TextBlock Text="Variables" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <ItemsControl ItemsSource="{Binding Variables}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock Text="{Binding DisplayLabel}" Style="{StaticResource FieldLabel}"/>
+                                <ComboBox ItemsSource="{Binding Choices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Value}" Visibility="{Binding HasChoices, Converter={StaticResource BoolVis}}"/>
+                                <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding HasChoices, Converter={StaticResource InverseBoolVis}}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Order item" Style="{StaticResource PrimaryButton}" Command="{Binding OrderCommand}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

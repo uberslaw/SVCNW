@@ -1,0 +1,149 @@
+<UserControl x:Class="ServiceNowDesk.Views.RequestView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:ServiceNowDesk.Controls">
+    <Grid Margin="16,12,16,12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="400"/>
+            <ColumnDefinition Width="16"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <DockPanel Grid.Column="0">
+            <controls:PresetBar DockPanel.Dock="Top"/>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding TotalCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"/>
+            <TextBlock DockPanel.Dock="Bottom" Text="Use Order catalog when the request should follow the catalog workflow." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"/>
+            <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" ItemTemplate="{StaticResource TicketRowTemplate}" ItemContainerStyle="{StaticResource DeskListItem}" Style="{StaticResource DeskList}"/>
+        </DockPanel>
+
+        <Grid Grid.Column="2">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}">
+                <TextBlock Text="Select a request, or press Ctrl+N to log one." FontSize="16" HorizontalAlignment="Center"/>
+                <TextBlock Text="Items on that request are listed in the request, and each one opens in Request items." Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
+            </StackPanel>
+
+            <DockPanel Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
+                <StackPanel DockPanel.Dock="Top">
+                    <Border Style="{StaticResource Banner}" Background="{StaticResource ErrorSoftBrush}" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="Dismiss" Style="{StaticResource QuietButton}" Command="{Binding DismissErrorCommand}"/>
+                            <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
+                        </DockPanel>
+                    </Border>
+                    <Border Style="{StaticResource Banner}" Background="{StaticResource WarningSoftBrush}" Visibility="{Binding ShowUnsavedBanner, Converter={StaticResource BoolVis}}">
+                        <TextBlock Text="Unsaved changes. Save or discard before opening another request." TextWrapping="Wrap"/>
+                    </Border>
+                </StackPanel>
+
+                <Border DockPanel.Dock="Bottom" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,8,0,0">
+                    <StackPanel>
+                        <Border Style="{StaticResource Banner}" Background="{StaticResource AccentSoftBrush}" Visibility="{Binding ShowResolvePanel, Converter={StaticResource BoolVis}}">
+                            <StackPanel>
+                                <TextBlock Text="Close request" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <TextBlock Text="ServiceNow may keep this open until every item is closed." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"/>
+                                <ComboBox ItemsSource="{Binding ResolveChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ResolveCode}" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding ResolveNotes, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Confirm close" Style="{StaticResource PrimaryButton}" Command="{Binding ConfirmResolveCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="Cancel" Style="{StaticResource SecondaryButton}" Command="{Binding CancelResolveCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="{Binding EditorMessage}" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,8" Visibility="{Binding EditorMessage, Converter={StaticResource StringVis}}"/>
+                        <WrapPanel>
+                            <Button Content="Save" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Margin="0,0,8,8"/>
+                            <Button Content="Discard" Style="{StaticResource SecondaryButton}" Command="{Binding DiscardCommand}" Margin="0,0,8,8"/>
+                            <Button Content="Close request" Style="{StaticResource SecondaryButton}" Command="{Binding BeginResolveCommand}" Margin="0,0,8,8"/>
+                            <Button Content="New" Style="{StaticResource SecondaryButton}" Command="{Binding NewRecordCommand}" Margin="0,0,8,8"/>
+                            <Button Content="Copy number" Style="{StaticResource SecondaryButton}" Command="{Binding CopyNumberCommand}" Margin="0,0,8,8"/>
+                            <Button Content="Open in browser" Style="{StaticResource SecondaryButton}" Command="{Binding OpenInBrowserCommand}" Margin="0,0,8,8"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,12">
+                            <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                            <TextBlock Text="{Binding StateLabel}" Margin="12,6,0,0"/>
+                            <TextBlock Text="{Binding StageLabel}" Margin="12,6,0,0" Foreground="{StaticResource MutedBrush}"/>
+                            <TextBlock Text="{Binding OpenedAt, StringFormat=Opened {0}}" HorizontalAlignment="Right" Foreground="{StaticResource MutedBrush}"/>
+                        </DockPanel>
+                        <TextBlock Text="Short description" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Requested for" Style="{StaticResource FieldLabel}"/>
+                                <controls:ReferenceEditor DataContext="{Binding RequestedFor}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Request state" Style="{StaticResource FieldLabel}"/>
+                                <ComboBox ItemsSource="{Binding StateChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding RequestState}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="4">
+                                <TextBlock Text="Priority" Style="{StaticResource FieldLabel}"/>
+                                <ComboBox ItemsSource="{Binding PriorityChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Priority}"/>
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="Due date" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding DueDate, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10" ToolTip="Use the date format your instance expects, for example 2026-10-08 17:00:00"/>
+                        <TextBlock Text="Special instructions" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding SpecialInstructions, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" Margin="0,0,0,10"/>
+                        <TextBlock Text="Description" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" Margin="0,0,0,12"/>
+                        <TextBlock Text="{Binding ApprovalLabel, StringFormat=Approval: {0}}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10" Visibility="{Binding ApprovalLabel, Converter={StaticResource StringVis}}"/>
+
+                        <TextBlock Text="Items on this request" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <ListBox ItemsSource="{Binding RelatedItems}" MaxHeight="160" Style="{StaticResource DeskList}" ItemContainerStyle="{StaticResource DeskListItem}" Margin="0,0,0,12">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Content="Open" Style="{StaticResource QuietButton}"
+                                                Command="{Binding DataContext.OpenRelatedCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding SysId}"/>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                                            <TextBlock Text="{Binding Title}"/>
+                                            <TextBlock Text="{Binding StateLabel}" Foreground="{StaticResource MutedBrush}" FontSize="11"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <RadioButton Content="Work note" GroupName="RequestJournal" Margin="0,0,16,0" IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=WorkNotes}"/>
+                            <RadioButton Content="Customer comment" GroupName="RequestJournal" Foreground="{StaticResource CustomerBrush}" IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=Comments}"/>
+                        </StackPanel>
+                        <TextBlock Text="Visible to the requester." Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding JournalIsCustomerVisible, Converter={StaticResource BoolVis}}"/>
+                        <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"/>
+                        <Button Content="Post note" Style="{StaticResource SecondaryButton}" Command="{Binding PostJournalCommand}" HorizontalAlignment="Left" Margin="0,0,0,8"/>
+                        <ListBox ItemsSource="{Binding Journal}" MaxHeight="180" Style="{StaticResource DeskList}" ItemContainerStyle="{StaticResource DeskListItem}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock>
+                                            <Run Text="{Binding KindLabel}" FontWeight="SemiBold"/>
+                                            <Run Text=" · "/>
+                                            <Run Text="{Binding Author}"/>
+                                            <Run Text=" · "/>
+                                            <Run Text="{Binding CreatedDisplay}"/>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Grid>
+    </Grid>
+</UserControl>

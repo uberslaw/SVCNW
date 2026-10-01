@@ -1,0 +1,48 @@
+<UserControl x:Class="ServiceNowDesk.Views.SearchView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+            <CheckBox Content="Incidents" IsChecked="{Binding IncludeIncidents}" Margin="0,0,16,0" Checked="FilterChanged" Unchecked="FilterChanged"/>
+            <CheckBox Content="Requests" IsChecked="{Binding IncludeRequests}" Margin="0,0,16,0" Checked="FilterChanged" Unchecked="FilterChanged"/>
+            <CheckBox Content="Request items" IsChecked="{Binding IncludeItems}" Margin="0,0,16,0" Checked="FilterChanged" Unchecked="FilterChanged"/>
+            <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+            <TextBlock Text="  Loading…" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}"/>
+        <TextBlock DockPanel.Dock="Bottom" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="Enter opens the highlighted row. Search includes closed records, so old tickets stay findable."/>
+        <ListBox x:Name="Results"
+                 ItemsSource="{Binding Results}"
+                 SelectedItem="{Binding Selected}"
+                 Style="{StaticResource DeskList}"
+                 ItemContainerStyle="{StaticResource DeskListItem}">
+            <ListBox.InputBindings>
+                <KeyBinding Key="Enter" Command="{Binding OpenSelectedCommand}"/>
+                <MouseBinding MouseAction="LeftDoubleClick" Command="{Binding OpenSelectedCommand}"/>
+            </ListBox.InputBindings>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="160"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="{Binding TableLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Margin="8,0">
+                            <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Meta}" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" HorizontalAlignment="Right">
+                            <TextBlock Text="{Binding StateLabel}" HorizontalAlignment="Right"/>
+                            <TextBlock Text="{Binding When}" FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right"/>
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</UserControl>

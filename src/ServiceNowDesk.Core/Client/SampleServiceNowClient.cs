@@ -1,0 +1,903 @@
+using ServiceNowDesk.Models;
+using ServiceNowDesk.Query;
+
+namespace ServiceNowDesk.Client;
+
+public sealed class SampleServiceNowClient : IServiceNowClient
+{
+    private static readonly CurrentUser Me = new("sample-user", "Alex Rivera", "alex.rivera", "alex.rivera@example.com");
+    private static readonly ReferenceValue Alex = new("sample-user", "Alex Rivera");
+    private static readonly ReferenceValue Jordan = new("user-jordan", "Jordan Lee");
+    private static readonly ReferenceValue Sam = new("user-sam", "Sam Patel");
+    private static readonly ReferenceValue ClientServices = new("group-cs", "Client Services");
+    private static readonly ReferenceValue Network = new("group-net", "Network");
+
+    private readonly List<IncidentRecord> _incidents = [];
+    private readonly List<RequestRecord> _requests = [];
+    private readonly List<RequestedItemRecord> _items = [];
+    private readonly Dictionary<string, List<JournalEntry>> _journal = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<ApiActivity> _activity = [];
+    private int _sequence = 1000;
+
+    public SampleServiceNowClient()
+    {
+        Seed();
+    }
+
+    public Uri? InstanceUri => null;
+
+    public IReadOnlyList<ApiActivity> RecentActivity => _activity.ToArray();
+
+    public void Dispose()
+    {
+    }
+
+    public Task<CurrentUser> GetCurrentUserAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(Me);
+
+    public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken)
+    {
+        var matches = _incidents.Where(record => Passes(
+            query,
+            record.AssignedTo.SysId,
+            record.AssignmentGroup.SysId,
+            "",
+            "",
+            record.Active,
+            record.Number,
+            Texts(record.ShortDescription, record.Description, record.CloseNotes, record.Number, JournalText(record.SysId))));
+        return Task.FromResult(Page(matches, query));
+    }
+
+    public Task<IncidentRecord> GetIncidentAsync(string sysId, CancellationToken cancellationToken) =>
+        Task.FromResult(Find(_incidents, sysId, "incident"));
+
+    public Task<IncidentRecord> CreateIncidentAsync(IncidentChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (string.IsNullOrWhiteSpace(changes.ShortDescription))
+            throw new ArgumentException("Enter a short description.");
+
+        var now = Stamp();
+        var record = new IncidentRecord
+        {
+            SysId = NextId("inc"),
+            Number = NextNumber("INC"),
+            ShortDescription = changes.ShortDescription.Trim(),
+            Description = changes.Description?.Trim() ?? "",
+            State = string.IsNullOrWhiteSpace(changes.State) ? "1" : changes.State,
+            StateLabel = Label(DefaultChoices.IncidentStates, changes.State, "New"),
+            Priority = changes.Priority ?? "",
+            PriorityLabel = Label(DefaultChoices.Priorities, changes.Priority, ""),
+            Impact = string.IsNullOrWhiteSpace(changes.Impact) ? "3" : changes.Impact,
+            ImpactLabel = Label(DefaultChoices.Impacts, changes.Impact, "3 - Low"),
+            Urgency = string.IsNullOrWhiteSpace(changes.Urgency) ? "3" : changes.Urgency,
+            UrgencyLabel = Label(DefaultChoices.Urgencies, changes.Urgency, "3 - Low"),
+            Category = changes.Category ?? "",
+            CategoryLabel = Label(DefaultChoices.Categories, changes.Category, changes.Category ?? ""),
+            Subcategory = changes.Subcategory ?? "",
+            ContactType = string.IsNullOrWhiteSpace(changes.ContactType) ? "phone" : changes.ContactType,
+            ContactTypeLabel = Label(DefaultChoices.ContactTypes, changes.ContactType, "Phone"),
+            Caller = UserRef(changes.CallerId),
+            AssignedTo = UserRef(changes.AssignedToId),
+            AssignmentGroup = GroupRef(changes.AssignmentGroupId),
+            OpenedAtDisplay = now,
+            UpdatedAtDisplay = now,
+            UpdatedAtValue = now,
+            Active = true
+        };
+        _incidents.Insert(0, record);
+        Record("POST", "api/now/table/incident");
+        return Task.FromResult(record);
+    }
+
+    public Task<IncidentRecord> UpdateIncidentAsync(string sysId, IncidentChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (!changes.HasChanges)
+            throw new InvalidOperationException("There is nothing to update.");
+
+        var current = Find(_incidents, sysId, "incident");
+        var updated = current with
+        {
+            ShortDescription = changes.ShortDescription?.Trim() ?? current.ShortDescription,
+            Description = changes.Description ?? current.Description,
+            State = changes.State ?? current.State,
+            StateLabel = changes.State is null ? current.StateLabel : Label(DefaultChoices.IncidentStates, changes.State, changes.State),
+            Impact = changes.Impact ?? current.Impact,
+            ImpactLabel = changes.Impact is null ? current.ImpactLabel : Label(DefaultChoices.Impacts, changes.Impact, changes.Impact),
+            Urgency = changes.Urgency ?? current.Urgency,
+            UrgencyLabel = changes.Urgency is null ? current.UrgencyLabel : Label(DefaultChoices.Urgencies, changes.Urgency, changes.Urgency),
+            Priority = changes.Priority ?? current.Priority,
+            PriorityLabel = changes.Priority is null ? current.PriorityLabel : Label(DefaultChoices.Priorities, changes.Priority, changes.Priority),
+            Category = changes.Category ?? current.Category,
+            CategoryLabel = changes.Category is null ? current.CategoryLabel : Label(DefaultChoices.Categories, changes.Category, changes.Category),
+            Subcategory = changes.Subcategory ?? current.Subcategory,
+            ContactType = changes.ContactType ?? current.ContactType,
+            ContactTypeLabel = changes.ContactType is null ? current.ContactTypeLabel : Label(DefaultChoices.ContactTypes, changes.ContactType, changes.ContactType),
+            CloseCode = changes.CloseCode ?? current.CloseCode,
+            CloseCodeLabel = changes.CloseCode ?? current.CloseCodeLabel,
+            CloseNotes = changes.CloseNotes ?? current.CloseNotes,
+            HoldReason = changes.HoldReason ?? current.HoldReason,
+            HoldReasonLabel = changes.HoldReason is null ? current.HoldReasonLabel : Label(DefaultChoices.HoldReasons, changes.HoldReason, changes.HoldReason),
+            Caller = changes.CallerId is null ? current.Caller : UserRef(changes.CallerId),
+            AssignedTo = changes.ClearAssignedTo ? ReferenceValue.Empty : changes.AssignedToId is null ? current.AssignedTo : UserRef(changes.AssignedToId),
+            AssignmentGroup = changes.ClearAssignmentGroup ? ReferenceValue.Empty : changes.AssignmentGroupId is null ? current.AssignmentGroup : GroupRef(changes.AssignmentGroupId),
+            Active = (changes.State ?? current.State) is "6" or "7" or "8" ? false : current.Active,
+            UpdatedAtDisplay = Stamp(),
+            UpdatedAtValue = Stamp()
+        };
+        Replace(_incidents, updated);
+        Record("PATCH", "api/now/table/incident");
+        return Task.FromResult(updated);
+    }
+
+    public async Task<IncidentRecord> ResolveIncidentAsync(string sysId, string closeCode, string closeNotes, string resolvedState, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(closeCode))
+            throw new ArgumentException("Choose a close code.");
+        if (string.IsNullOrWhiteSpace(closeNotes))
+            throw new ArgumentException("Enter close notes before resolving.");
+
+        var state = string.IsNullOrWhiteSpace(resolvedState) ? "6" : resolvedState;
+        var updated = await UpdateIncidentAsync(sysId, new IncidentChanges
+        {
+            State = state,
+            CloseCode = closeCode.Trim(),
+            CloseNotes = closeNotes.Trim()
+        }, cancellationToken).ConfigureAwait(false);
+        await AddJournalAsync("incident", sysId, JournalKind.WorkNotes, closeNotes, cancellationToken).ConfigureAwait(false);
+        return updated with { Active = false, State = state, StateLabel = Label(DefaultChoices.IncidentStates, state, "Resolved") };
+    }
+
+    public Task<PagedResult<RequestRecord>> SearchRequestsAsync(TicketQuery query, CancellationToken cancellationToken)
+    {
+        var matches = _requests.Where(record => Passes(
+            query,
+            "",
+            "",
+            record.RequestedFor.SysId,
+            record.OpenedBy.SysId,
+            record.Active,
+            record.Number,
+            Texts(record.ShortDescription, record.Description, record.SpecialInstructions, record.Number, JournalText(record.SysId))));
+        return Task.FromResult(Page(matches, query));
+    }
+
+    public Task<RequestRecord> GetRequestAsync(string sysId, CancellationToken cancellationToken) =>
+        Task.FromResult(Find(_requests, sysId, "request"));
+
+    public Task<RequestRecord> CreateRequestAsync(RequestChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (string.IsNullOrWhiteSpace(changes.ShortDescription))
+            throw new ArgumentException("Enter a short description.");
+
+        var now = Stamp();
+        var record = new RequestRecord
+        {
+            SysId = NextId("req"),
+            Number = NextNumber("REQ"),
+            ShortDescription = changes.ShortDescription.Trim(),
+            Description = changes.Description?.Trim() ?? "",
+            SpecialInstructions = changes.SpecialInstructions?.Trim() ?? "",
+            RequestState = string.IsNullOrWhiteSpace(changes.RequestState) ? "requested" : changes.RequestState,
+            RequestStateLabel = Label(DefaultChoices.RequestStates, changes.RequestState, "Requested"),
+            Priority = changes.Priority ?? "4",
+            PriorityLabel = Label(DefaultChoices.Priorities, changes.Priority ?? "4", "4 - Low"),
+            RequestedFor = UserRef(changes.RequestedForId),
+            OpenedBy = Alex,
+            DueDate = changes.DueDate ?? "",
+            OpenedAtDisplay = now,
+            UpdatedAtDisplay = now,
+            UpdatedAtValue = now,
+            Active = true,
+            StageLabel = "Requested"
+        };
+        _requests.Insert(0, record);
+        Record("POST", "api/now/table/sc_request");
+        return Task.FromResult(record);
+    }
+
+    public Task<RequestRecord> UpdateRequestAsync(string sysId, RequestChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (!changes.HasChanges)
+            throw new InvalidOperationException("There is nothing to update.");
+
+        var current = Find(_requests, sysId, "request");
+        var state = changes.RequestState ?? current.RequestState;
+        var updated = current with
+        {
+            ShortDescription = changes.ShortDescription?.Trim() ?? current.ShortDescription,
+            Description = changes.Description ?? current.Description,
+            SpecialInstructions = changes.SpecialInstructions ?? current.SpecialInstructions,
+            RequestedFor = changes.RequestedForId is null ? current.RequestedFor : UserRef(changes.RequestedForId),
+            RequestState = state,
+            RequestStateLabel = changes.RequestState is null ? current.RequestStateLabel : Label(DefaultChoices.RequestStates, state, state),
+            Priority = changes.Priority ?? current.Priority,
+            PriorityLabel = changes.Priority is null ? current.PriorityLabel : Label(DefaultChoices.Priorities, changes.Priority, changes.Priority),
+            DueDate = changes.DueDate ?? current.DueDate,
+            Active = state.StartsWith("closed", StringComparison.OrdinalIgnoreCase) ? false : current.Active,
+            UpdatedAtDisplay = Stamp(),
+            UpdatedAtValue = Stamp()
+        };
+        Replace(_requests, updated);
+        Record("PATCH", "api/now/table/sc_request");
+        return Task.FromResult(updated);
+    }
+
+    public async Task<RequestRecord> ResolveRequestAsync(string sysId, string requestState, string notes, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(requestState))
+            throw new ArgumentException("Choose how to close the request.");
+        if (string.IsNullOrWhiteSpace(notes))
+            throw new ArgumentException("Enter notes before closing the request.");
+
+        var updated = await UpdateRequestAsync(sysId, new RequestChanges { RequestState = requestState.Trim() }, cancellationToken).ConfigureAwait(false);
+        await AddJournalAsync("sc_request", sysId, JournalKind.WorkNotes, notes, cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
+    public Task<PagedResult<RequestedItemRecord>> SearchRequestedItemsAsync(TicketQuery query, CancellationToken cancellationToken)
+    {
+        var matches = _items.Where(record =>
+            (string.IsNullOrWhiteSpace(query.ParentRequestId) || record.Request.SysId == query.ParentRequestId)
+            && Passes(
+                query,
+                record.AssignedTo.SysId,
+                record.AssignmentGroup.SysId,
+                "",
+                "",
+                record.Active,
+                record.Number,
+                Texts(record.ShortDescription, record.Description, record.CloseNotes, record.Number, record.CatalogItem.Display, JournalText(record.SysId))));
+        return Task.FromResult(Page(matches, query));
+    }
+
+    public Task<RequestedItemRecord> GetRequestedItemAsync(string sysId, CancellationToken cancellationToken) =>
+        Task.FromResult(Find(_items, sysId, "requested item"));
+
+    public Task<RequestedItemRecord> UpdateRequestedItemAsync(string sysId, RequestedItemChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (!changes.HasChanges)
+            throw new InvalidOperationException("There is nothing to update.");
+
+        var current = Find(_items, sysId, "requested item");
+        var state = changes.State ?? current.State;
+        var updated = current with
+        {
+            ShortDescription = changes.ShortDescription?.Trim() ?? current.ShortDescription,
+            Description = changes.Description ?? current.Description,
+            State = state,
+            StateLabel = changes.State is null ? current.StateLabel : Label(DefaultChoices.ItemStates, state, state),
+            Priority = changes.Priority ?? current.Priority,
+            PriorityLabel = changes.Priority is null ? current.PriorityLabel : Label(DefaultChoices.Priorities, changes.Priority, changes.Priority),
+            AssignedTo = changes.ClearAssignedTo ? ReferenceValue.Empty : changes.AssignedToId is null ? current.AssignedTo : UserRef(changes.AssignedToId),
+            AssignmentGroup = changes.ClearAssignmentGroup ? ReferenceValue.Empty : changes.AssignmentGroupId is null ? current.AssignmentGroup : GroupRef(changes.AssignmentGroupId),
+            CloseNotes = changes.CloseNotes ?? current.CloseNotes,
+            Active = state is "3" or "4" or "7" ? false : current.Active,
+            UpdatedAtDisplay = Stamp(),
+            UpdatedAtValue = Stamp()
+        };
+        Replace(_items, updated);
+        Record("PATCH", "api/now/table/sc_req_item");
+        return Task.FromResult(updated);
+    }
+
+    public async Task<RequestedItemRecord> ResolveRequestedItemAsync(string sysId, string state, string closeNotes, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(state))
+            throw new ArgumentException("Choose how to close the requested item.");
+        if (string.IsNullOrWhiteSpace(closeNotes))
+            throw new ArgumentException("Enter close notes before closing the requested item.");
+
+        var updated = await UpdateRequestedItemAsync(sysId, new RequestedItemChanges
+        {
+            State = state.Trim(),
+            CloseNotes = closeNotes.Trim()
+        }, cancellationToken).ConfigureAwait(false);
+        await AddJournalAsync("sc_req_item", sysId, JournalKind.WorkNotes, closeNotes, cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
+    public Task AddJournalAsync(string table, string sysId, JournalKind kind, string text, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            throw new ArgumentException("Enter a note before posting.");
+
+        FindAny(sysId);
+        var entry = new JournalEntry(NextId("journal"), kind == JournalKind.Comments ? "comments" : "work_notes", kind == JournalKind.Comments ? "Customer comment" : "Work note", text.Trim(), Me.UserName, Stamp());
+        if (!_journal.TryGetValue(sysId, out var list))
+        {
+            list = [];
+            _journal[sysId] = list;
+        }
+
+        list.Insert(0, entry);
+        Record("PATCH", "api/now/table/" + table);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<JournalEntry>> GetJournalAsync(string sysId, CancellationToken cancellationToken)
+    {
+        Record("GET", "api/now/table/sys_journal_field");
+        return Task.FromResult<IReadOnlyList<JournalEntry>>(_journal.TryGetValue(sysId, out var list) ? list.ToArray() : []);
+    }
+
+    public Task<IReadOnlyList<Choice>> GetChoicesAsync(string table, string element, string? dependentValue, CancellationToken cancellationToken)
+    {
+        if (table == "incident" && element == "subcategory")
+        {
+            IReadOnlyList<Choice> choices = dependentValue switch
+            {
+                "software" => [new("email", "Email"), new("os", "Operating System")],
+                "hardware" => [new("printer", "Printer"), new("laptop", "Laptop")],
+                "network" => [new("vpn", "VPN"), new("wifi", "Wi-Fi")],
+                _ => []
+            };
+            return Task.FromResult(choices);
+        }
+
+        return Task.FromResult(DefaultChoices.For(table, element));
+    }
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
+        Task.FromResult(SearchPeople(text, Users));
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> SearchGroupsAsync(string text, CancellationToken cancellationToken) =>
+        Task.FromResult(SearchPeople(text, Groups));
+
+    public Task<IReadOnlyList<CatalogItemSummary>> SearchCatalogItemsAsync(string text, CancellationToken cancellationToken)
+    {
+        var term = (text ?? "").Trim();
+        IReadOnlyList<CatalogItemSummary> items = term.Length < 2
+            ? []
+            : Catalog.Where(item => item.Name.Contains(term, StringComparison.OrdinalIgnoreCase) || item.ShortDescription.Contains(term, StringComparison.OrdinalIgnoreCase)).ToArray();
+        Record("GET", "api/sn_sc/servicecatalog/items");
+        return Task.FromResult(items);
+    }
+
+    public Task<IReadOnlyList<CatalogVariableDefinition>> GetCatalogVariablesAsync(string itemSysId, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<CatalogVariableDefinition> variables = itemSysId switch
+        {
+            "cat-laptop" =>
+            [
+                new("department", "Department", true, []),
+                new("preferred_os", "Preferred operating system", true, [new("win11", "Windows 11"), new("macos", "macOS")])
+            ],
+            "cat-monitor" => [new("location", "Desk location", true, [])],
+            _ => []
+        };
+        return Task.FromResult(variables);
+    }
+
+    public Task<CatalogOrderResult> OrderCatalogItemAsync(string itemSysId, int quantity, string? requestedForSysId, IReadOnlyDictionary<string, string> variables, CancellationToken cancellationToken)
+    {
+        var item = Catalog.FirstOrDefault(candidate => candidate.SysId == itemSysId)
+            ?? throw new ServiceNowException(404, "ServiceNow could not find that catalog item.", null);
+        var request = new RequestRecord
+        {
+            SysId = NextId("req"),
+            Number = NextNumber("REQ"),
+            ShortDescription = item.Name,
+            Description = item.ShortDescription,
+            RequestState = "requested",
+            RequestStateLabel = "Requested",
+            RequestedFor = UserRef(requestedForSysId),
+            OpenedBy = Alex,
+            Priority = "4",
+            PriorityLabel = "4 - Low",
+            OpenedAtDisplay = Stamp(),
+            UpdatedAtDisplay = Stamp(),
+            UpdatedAtValue = Stamp(),
+            Active = true,
+            StageLabel = "Requested"
+        };
+        _requests.Insert(0, request);
+        _items.Insert(0, new RequestedItemRecord
+        {
+            SysId = NextId("ritm"),
+            Number = NextNumber("RITM"),
+            ShortDescription = item.Name,
+            Description = item.ShortDescription,
+            State = "1",
+            StateLabel = "Open",
+            Request = new ReferenceValue(request.SysId, request.Number),
+            CatalogItem = new ReferenceValue(item.SysId, item.Name),
+            Quantity = Math.Clamp(quantity, 1, 50).ToString(),
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = Stamp(),
+            UpdatedAtDisplay = Stamp(),
+            UpdatedAtValue = Stamp(),
+            Active = true,
+            StageLabel = "Waiting for approval"
+        });
+        Record("POST", "api/sn_sc/servicecatalog/items/" + itemSysId + "/order_now");
+        return Task.FromResult(new CatalogOrderResult(request.SysId, request.Number));
+    }
+
+    private void Seed()
+    {
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-printer",
+            Number = "INC0010001",
+            ShortDescription = "Printer jam on floor 3",
+            Description = "The HP printer by finance is jammed and the queue is stuck.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            Subcategory = "printer",
+            SubcategoryLabel = "Printer",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = Alex,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-09-28 09:15",
+            UpdatedAtDisplay = "2026-09-28 10:40",
+            UpdatedAtValue = "2026-09-28 10:40:00",
+            Active = true
+        }, new JournalEntry("journal-printer", "work_notes", "Work note", "Replaced the tray and asked finance to reprint.", "alex.rivera", "2026-09-28 10:40"));
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-vpn",
+            Number = "INC0010002",
+            ShortDescription = "VPN drops every few minutes",
+            Description = "Remote staff lose the VPN tunnel every few minutes after the morning change.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "2",
+            PriorityLabel = "2 - High",
+            Impact = "2",
+            ImpactLabel = "2 - Medium",
+            Urgency = "1",
+            UrgencyLabel = "1 - High",
+            Category = "network",
+            CategoryLabel = "Network",
+            Subcategory = "vpn",
+            SubcategoryLabel = "VPN",
+            ContactType = "email",
+            ContactTypeLabel = "Email",
+            Caller = Sam,
+            AssignedTo = Alex,
+            AssignmentGroup = Network,
+            OpenedAtDisplay = "2026-09-29 08:05",
+            UpdatedAtDisplay = "2026-09-29 08:05",
+            UpdatedAtValue = "2026-09-29 08:05:00",
+            Active = true
+        });
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-password",
+            Number = "INC0010003",
+            ShortDescription = "Password reset for finance",
+            Description = "Caller is locked out and cannot reach payroll.",
+            State = "6",
+            StateLabel = "Resolved",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "software",
+            CategoryLabel = "Software",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            CloseCode = "Solved (Permanently)",
+            CloseCodeLabel = "Solved (Permanently)",
+            CloseNotes = "Reset and unlocked the account.",
+            Caller = Jordan,
+            AssignedTo = Alex,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-09-20 11:12",
+            UpdatedAtDisplay = "2026-09-20 11:20",
+            UpdatedAtValue = "2026-09-20 11:20:00",
+            Active = false
+        });
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-email",
+            Number = "INC0010004",
+            ShortDescription = "Mailbox full for the front desk",
+            Description = "The shared front desk mailbox is rejecting new mail.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "4",
+            PriorityLabel = "4 - Low",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "software",
+            CategoryLabel = "Software",
+            Subcategory = "email",
+            ContactType = "walk-in",
+            ContactTypeLabel = "Walk-in",
+            Caller = Jordan,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-09-27 15:45",
+            UpdatedAtDisplay = "2026-09-27 15:45",
+            UpdatedAtValue = "2026-09-27 15:45:00",
+            Active = true
+        });
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-badge",
+            Number = "INC0010005",
+            ShortDescription = "Badge reader offline at the lab door",
+            Description = "Staff cannot badge into the lab. The reader shows a red light.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "2",
+            PriorityLabel = "2 - High",
+            Impact = "2",
+            ImpactLabel = "2 - Medium",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Sam,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-09-26 07:55",
+            UpdatedAtDisplay = "2026-09-26 09:10",
+            UpdatedAtValue = "2026-09-26 09:10:00",
+            Active = true
+        });
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-bluescreen",
+            Number = "INC0010006",
+            ShortDescription = "Laptop blue screen after update",
+            Description = "Analyst laptop restarts to a blue screen after yesterday's update.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "2",
+            PriorityLabel = "2 - High",
+            Impact = "2",
+            ImpactLabel = "2 - Medium",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            Subcategory = "laptop",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Sam,
+            AssignedTo = Alex,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-09-25 13:00",
+            UpdatedAtDisplay = "2026-09-25 16:22",
+            UpdatedAtValue = "2026-09-25 16:22:00",
+            Active = true
+        }, new JournalEntry("journal-blue", "work_notes", "Work note", "Memory dump shows bugcheck 0x50 after the graphics driver update.", "alex.rivera", "2026-09-25 16:22"));
+
+        var laptop = new RequestRecord
+        {
+            SysId = "req-laptop",
+            Number = "REQ0010001",
+            ShortDescription = "New laptop for analyst",
+            Description = "Replacement laptop for the finance analyst.",
+            RequestState = "in_process",
+            RequestStateLabel = "In Process",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            SpecialInstructions = "Needs a dock and the finance software image.",
+            RequestedFor = Jordan,
+            OpenedBy = Alex,
+            OpenedAtDisplay = "2026-09-24 09:00",
+            UpdatedAtDisplay = "2026-09-28 09:00",
+            UpdatedAtValue = "2026-09-28 09:00:00",
+            Active = true,
+            StageLabel = "Fulfillment",
+            ApprovalLabel = "Approved"
+        };
+        var access = new RequestRecord
+        {
+            SysId = "req-access",
+            Number = "REQ0010002",
+            ShortDescription = "Badge access to the lab",
+            Description = "Grant lab door access for the new technician.",
+            RequestState = "requested",
+            RequestStateLabel = "Requested",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            RequestedFor = Sam,
+            OpenedBy = Alex,
+            OpenedAtDisplay = "2026-09-29 07:40",
+            UpdatedAtDisplay = "2026-09-29 07:40",
+            UpdatedAtValue = "2026-09-29 07:40:00",
+            Active = true,
+            StageLabel = "Requested",
+            ApprovalLabel = "Requested"
+        };
+        var monitorRequest = new RequestRecord
+        {
+            SysId = "req-monitor",
+            Number = "REQ0010003",
+            ShortDescription = "Monitor replacement",
+            Description = "The desk monitor flickers and needs a replacement.",
+            RequestState = "closed_complete",
+            RequestStateLabel = "Closed Complete",
+            Priority = "4",
+            PriorityLabel = "4 - Low",
+            RequestedFor = Jordan,
+            OpenedBy = Alex,
+            OpenedAtDisplay = "2026-09-12 10:00",
+            UpdatedAtDisplay = "2026-09-14 15:00",
+            UpdatedAtValue = "2026-09-14 15:00:00",
+            Active = false,
+            StageLabel = "Completed",
+            ApprovalLabel = "Approved"
+        };
+        _requests.AddRange([laptop, access, monitorRequest]);
+
+        _items.AddRange(
+        [
+            new RequestedItemRecord
+            {
+                SysId = "ritm-laptop",
+                Number = "RITM0010001",
+                ShortDescription = "Standard laptop",
+                Description = "Standard laptop for the finance analyst.",
+                State = "2",
+                StateLabel = "Work in Progress",
+                Priority = "3",
+                PriorityLabel = "3 - Moderate",
+                StageLabel = "Fulfillment",
+                Quantity = "1",
+                Request = new ReferenceValue(laptop.SysId, laptop.Number),
+                CatalogItem = new ReferenceValue("cat-laptop", "Standard laptop"),
+                AssignedTo = Alex,
+                AssignmentGroup = ClientServices,
+                OpenedAtDisplay = "2026-09-24 09:00",
+                UpdatedAtDisplay = "2026-09-28 09:00",
+                UpdatedAtValue = "2026-09-28 09:00:00",
+                Active = true
+            },
+            new RequestedItemRecord
+            {
+                SysId = "ritm-dock",
+                Number = "RITM0010002",
+                ShortDescription = "USB-C dock",
+                Description = "Dock for the new laptop.",
+                State = "1",
+                StateLabel = "Open",
+                Priority = "4",
+                PriorityLabel = "4 - Low",
+                StageLabel = "Waiting for approval",
+                Quantity = "1",
+                Request = new ReferenceValue(laptop.SysId, laptop.Number),
+                CatalogItem = new ReferenceValue("cat-dock", "USB-C dock"),
+                AssignmentGroup = ClientServices,
+                OpenedAtDisplay = "2026-09-24 09:01",
+                UpdatedAtDisplay = "2026-09-24 09:01",
+                UpdatedAtValue = "2026-09-24 09:01:00",
+                Active = true
+            },
+            new RequestedItemRecord
+            {
+                SysId = "ritm-badge",
+                Number = "RITM0010003",
+                ShortDescription = "Lab badge access",
+                Description = "Add the lab door to the technician badge.",
+                State = "2",
+                StateLabel = "Work in Progress",
+                Priority = "3",
+                PriorityLabel = "3 - Moderate",
+                Request = new ReferenceValue(access.SysId, access.Number),
+                CatalogItem = new ReferenceValue("cat-badge", "Badge access"),
+                AssignedTo = Jordan,
+                AssignmentGroup = ClientServices,
+                OpenedAtDisplay = "2026-09-29 07:40",
+                UpdatedAtDisplay = "2026-09-29 07:40",
+                UpdatedAtValue = "2026-09-29 07:40:00",
+                Active = true,
+                Quantity = "1"
+            },
+            new RequestedItemRecord
+            {
+                SysId = "ritm-monitor",
+                Number = "RITM0010004",
+                ShortDescription = "27 inch monitor",
+                Description = "Replacement 27 inch monitor.",
+                State = "3",
+                StateLabel = "Closed Complete",
+                CloseNotes = "Delivered to the desk.",
+                Request = new ReferenceValue(monitorRequest.SysId, monitorRequest.Number),
+                CatalogItem = new ReferenceValue("cat-monitor", "27 inch monitor"),
+                AssignedTo = Alex,
+                AssignmentGroup = ClientServices,
+                OpenedAtDisplay = "2026-09-12 10:00",
+                UpdatedAtDisplay = "2026-09-14 15:00",
+                UpdatedAtValue = "2026-09-14 15:00:00",
+                Active = false,
+                Quantity = "1"
+            }
+        ]);
+    }
+
+    private void AddIncident(IncidentRecord record, params JournalEntry[] notes)
+    {
+        _incidents.Add(record);
+        if (notes.Length > 0)
+            _journal[record.SysId] = notes.ToList();
+    }
+
+    private static readonly ReferenceSuggestion[] Users =
+    [
+        new("sample-user", "Alex Rivera", "alex.rivera · alex.rivera@example.com"),
+        new("user-jordan", "Jordan Lee", "jordan.lee · jordan.lee@example.com"),
+        new("user-sam", "Sam Patel", "sam.patel · sam.patel@example.com")
+    ];
+
+    private static readonly ReferenceSuggestion[] Groups =
+    [
+        new("group-cs", "Client Services", "Service desk"),
+        new("group-net", "Network", "Network operations")
+    ];
+
+    private static readonly CatalogItemSummary[] Catalog =
+    [
+        new("cat-laptop", "Standard laptop", "Windows or macOS laptop with a dock"),
+        new("cat-monitor", "27 inch monitor", "Desk monitor for an existing computer")
+    ];
+
+    private bool Passes(TicketQuery query, string assignedTo, string groupId, string requestedFor, string openedBy, bool active, string number, IEnumerable<string> haystack)
+    {
+        if (query.Activity == ActivityFilter.Open && !active)
+            return false;
+        if (query.Activity == ActivityFilter.Closed && active)
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(query.AssignmentClause))
+        {
+            if (query.AssignmentClause.Contains("requested_for", StringComparison.Ordinal) && requestedFor != Me.SysId)
+                return false;
+            if (query.AssignmentClause.Contains("opened_by", StringComparison.Ordinal) && openedBy != Me.SysId)
+                return false;
+        }
+        else
+        {
+            switch (query.Assignment)
+            {
+                case AssignmentScope.Mine when assignedTo != Me.SysId:
+                    return false;
+                case AssignmentScope.Unassigned when assignedTo.Length != 0:
+                    return false;
+                case AssignmentScope.MyGroups when groupId != ClientServices.SysId:
+                    return false;
+            }
+        }
+
+        return PassesText(query.Text, number, haystack);
+    }
+
+    private static bool PassesText(string? text, string number, IEnumerable<string> haystack)
+    {
+        var clause = EncodedQuery.TextSearch(text);
+        if (clause.Length == 0)
+            return true;
+        if (clause.StartsWith("number=", StringComparison.Ordinal))
+            return number.Equals(clause["number=".Length..], StringComparison.OrdinalIgnoreCase);
+        if (clause.StartsWith("numberSTARTSWITH", StringComparison.Ordinal))
+            return number.StartsWith(clause["numberSTARTSWITH".Length..], StringComparison.OrdinalIgnoreCase);
+        if (clause.StartsWith("numberLIKE", StringComparison.Ordinal))
+            return number.Contains(clause["numberLIKE".Length..], StringComparison.OrdinalIgnoreCase);
+
+        const string marker = "123TEXTQUERY321=";
+        var needle = clause.StartsWith(marker, StringComparison.Ordinal) ? clause[marker.Length..] : clause;
+        return string.Join('\n', haystack).Contains(needle, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string JournalText(string sysId) =>
+        _journal.TryGetValue(sysId, out var notes) ? string.Join('\n', notes.Select(note => note.Text)) : "";
+
+    private static IEnumerable<string> Texts(params string[] values) => values;
+
+    private PagedResult<T> Page<T>(IEnumerable<T> matches, TicketQuery query) where T : class
+    {
+        var ordered = matches.OrderByDescending(UpdatedValue).ToArray();
+        var limit = Math.Clamp(query.Limit, 1, 100);
+        Record("GET", "api/now/table");
+        return new PagedResult<T>(ordered.Take(limit).ToArray(), ordered.Length);
+    }
+
+    private string UpdatedValue<T>(T record) => record switch
+    {
+        IncidentRecord incident => incident.UpdatedAtValue,
+        RequestRecord request => request.UpdatedAtValue,
+        RequestedItemRecord item => item.UpdatedAtValue,
+        _ => ""
+    };
+
+    private static T Find<T>(List<T> source, string sysId, string label) where T : class
+    {
+        var found = source.FirstOrDefault(record => SysIdOf(record).Equals(sysId, StringComparison.OrdinalIgnoreCase));
+        return found ?? throw new ServiceNowException(404, $"ServiceNow could not find that {label}.", null);
+    }
+
+    private void FindAny(string sysId)
+    {
+        if (_incidents.Any(record => record.SysId == sysId) || _requests.Any(record => record.SysId == sysId) || _items.Any(record => record.SysId == sysId))
+            return;
+        throw new ServiceNowException(404, "ServiceNow could not find that record.", null);
+    }
+
+    private static string SysIdOf<T>(T record) => record switch
+    {
+        IncidentRecord incident => incident.SysId,
+        RequestRecord request => request.SysId,
+        RequestedItemRecord item => item.SysId,
+        _ => ""
+    };
+
+    private static void Replace<T>(List<T> source, T updated) where T : class
+    {
+        var index = source.FindIndex(record => SysIdOf(record) == SysIdOf(updated));
+        if (index >= 0)
+            source[index] = updated;
+    }
+
+    private static string Label(IReadOnlyList<Choice> choices, string? value, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return fallback;
+        return choices.FirstOrDefault(choice => choice.Value == value)?.Label ?? fallback;
+    }
+
+    private static ReferenceValue UserRef(string? sysId) => sysId switch
+    {
+        "sample-user" => Alex,
+        "user-jordan" => Jordan,
+        "user-sam" => Sam,
+        null or "" => ReferenceValue.Empty,
+        _ => new ReferenceValue(sysId, sysId)
+    };
+
+    private static ReferenceValue GroupRef(string? sysId) => sysId switch
+    {
+        "group-cs" => ClientServices,
+        "group-net" => Network,
+        null or "" => ReferenceValue.Empty,
+        _ => new ReferenceValue(sysId, sysId)
+    };
+
+    private static IReadOnlyList<ReferenceSuggestion> SearchPeople(string text, IReadOnlyList<ReferenceSuggestion> source)
+    {
+        var term = (text ?? "").Trim();
+        if (term.Length < 2)
+            return [];
+        return source.Where(person =>
+            person.Display.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || person.Detail.Contains(term, StringComparison.OrdinalIgnoreCase)).ToArray();
+    }
+
+    private string NextId(string prefix) => prefix + "-" + (++_sequence);
+
+    private string NextNumber(string prefix) => prefix + "001" + (++_sequence).ToString("0000");
+
+    private static string Stamp() => DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+
+    private void Record(string method, string path) =>
+        _activity.Insert(0, new ApiActivity(DateTimeOffset.Now, method, path, 200, 1));
+}

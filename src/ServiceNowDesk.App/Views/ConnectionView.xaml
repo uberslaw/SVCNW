@@ -1,0 +1,64 @@
+<UserControl x:Class="ServiceNowDesk.Views.ConnectionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Loaded="OnLoaded">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="720" HorizontalAlignment="Left" Margin="8">
+            <TextBlock Text="Connection" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,16"
+                       Text="Sign in as the agent who will work the tickets. My open and my groups then match that person. Practice data lets the team learn the layout before credentials are ready."/>
+
+            <CheckBox Content="Use practice data instead of a live instance" IsChecked="{Binding Connection.UseSampleData}" Margin="0,0,0,14"/>
+
+            <TextBlock Text="Instance URL" Style="{StaticResource FieldLabel}"/>
+            <TextBox Text="{Binding Connection.InstanceUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"
+                     ToolTip="https://company.service-now.com"/>
+
+            <TextBlock Text="Sign-in method" Style="{StaticResource FieldLabel}"/>
+            <ComboBox ItemsSource="{Binding Connection.AuthChoices}" DisplayMemberPath="Label" SelectedValuePath="Mode" SelectedValue="{Binding Connection.AuthMode}" Margin="0,0,0,10"/>
+
+            <StackPanel Visibility="{Binding Connection.ShowUserPassword, Converter={StaticResource BoolVis}}">
+                <TextBlock Text="User name" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Connection.Username, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                <TextBlock Text="Password" Style="{StaticResource FieldLabel}"/>
+                <PasswordBox x:Name="PasswordInput" Margin="0,0,0,10" PasswordChanged="PasswordInput_PasswordChanged"/>
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding Connection.ShowOAuth, Converter={StaticResource BoolVis}}">
+                <TextBlock Text="OAuth client ID" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Connection.ClientId, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                <TextBlock Text="OAuth client secret" Style="{StaticResource FieldLabel}"/>
+                <PasswordBox x:Name="SecretInput" Margin="0,0,0,10" PasswordChanged="SecretInput_PasswordChanged"/>
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"
+                           Text="Create this under System OAuth, Application Registry, as an OAuth API endpoint for external clients. Password grant keeps the signed-in person as the agent. Client credentials uses the OAuth application user."/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,16">
+                <Button Content="Connect" Style="{StaticResource PrimaryButton}" Command="{Binding ConnectCommand}" Margin="0,0,8,0"/>
+                <Button Content="Open practice data" Style="{StaticResource SecondaryButton}" Command="{Binding PracticeCommand}" Margin="0,0,8,0"/>
+                <Button Content="Disconnect" Style="{StaticResource SecondaryButton}" Command="{Binding DisconnectCommand}"/>
+            </StackPanel>
+
+            <TextBlock Text="The password and client secret are stored with Windows DPAPI for this Windows user only. They are not written in plain text." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,16"/>
+
+            <TextBlock Text="Recent API calls" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <ListBox ItemsSource="{Binding Activity}" MaxHeight="240" Style="{StaticResource DeskList}" ItemContainerStyle="{StaticResource DeskListItem}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock>
+                            <Run Text="{Binding Time, StringFormat={}{0:HH:mm:ss}}"/>
+                            <Run Text="  "/>
+                            <Run Text="{Binding Method}" FontWeight="SemiBold"/>
+                            <Run Text="  "/>
+                            <Run Text="{Binding Path}"/>
+                            <Run Text="  "/>
+                            <Run Text="{Binding StatusCode}"/>
+                            <Run Text="  "/>
+                            <Run Text="{Binding ElapsedMilliseconds, StringFormat={}{0} ms}"/>
+                        </TextBlock>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
