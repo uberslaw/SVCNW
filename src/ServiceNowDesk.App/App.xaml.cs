@@ -6,13 +6,25 @@ namespace ServiceNowDesk;
 
 public partial class App : Application
 {
+    private int _reportingException;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         DispatcherUnhandledException += (_, args) =>
         {
-            MessageBox.Show(args.Exception.Message, "ServiceNow Desk");
             args.Handled = true;
+            if (Interlocked.Exchange(ref _reportingException, 1) == 1)
+                return;
+
+            try
+            {
+                MessageBox.Show(args.Exception.Message, "ServiceNow Desk");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _reportingException, 0);
+            }
         };
 
         var main = new MainViewModel(new DpapiSettingsStore(), new WindowsDesktopServices());

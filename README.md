@@ -71,7 +71,7 @@ Closing a request can be rejected by ServiceNow when request items are still ope
 
 ## Run it
 
-This is a Windows WPF app for 64-bit Windows 10 or 11. It needs the [.NET 8 desktop runtime](https://dotnet.microsoft.com/download/dotnet/8.0).
+This is a Windows WPF app for 64-bit Windows 10 or 11. It needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), which includes the desktop runtime.
 
 From a Windows machine, in this folder:
 
@@ -93,4 +93,4 @@ That writes `dist\ServiceNowDesk\ServiceNowDesk.exe`.
 dotnet test ServiceNowDesk.sln -c Release
 ```
 
-The ServiceNow client, query builder, and ticket workspaces are covered by unit tests, including a practice-data round trip for create, update, resolve, search, and catalog order. The WPF project targets `net8.0-windows`.
+The ServiceNow client, query builder, and ticket workspaces are covered by unit tests, including a practice-data round trip for create, update, resolve, search, and catalog order. The WPF project targets `net10.0-windows`.

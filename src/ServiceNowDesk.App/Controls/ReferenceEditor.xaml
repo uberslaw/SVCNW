@@ -12,7 +12,7 @@
                Placement="Bottom"
                StaysOpen="True"
                AllowsTransparency="True"
-               IsOpen="{Binding HasSuggestions}">
+               IsOpen="{Binding HasSuggestions, Mode=OneWay}">
             <Border x:Name="SuggestionBorder"
                     Background="{StaticResource CardBrush}"
                     BorderBrush="{StaticResource LineBrush}"
