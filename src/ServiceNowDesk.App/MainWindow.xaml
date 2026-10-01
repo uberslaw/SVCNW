@@ -76,12 +76,25 @@
             </Border>
 
             <Grid>
-                <views:IncidentView DataContext="{Binding Incidents}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Incidents}"/>
-                <views:RequestView DataContext="{Binding Requests}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Requests}"/>
-                <views:RequestedItemView DataContext="{Binding RequestedItems}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=RequestedItems}"/>
-                <views:SearchView DataContext="{Binding Search}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Search}"/>
-                <views:CatalogView DataContext="{Binding Catalog}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Catalog}"/>
-                <views:ConnectionView DataContext="{Binding}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Connection}"/>
+                <!-- Visibility stays on the wrapper. A DataContext on the same element would resolve SelectedSection against the page, and every page would stay visible. -->
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Incidents}">
+                    <views:IncidentView DataContext="{Binding Incidents}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Requests}">
+                    <views:RequestView DataContext="{Binding Requests}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=RequestedItems}">
+                    <views:RequestedItemView DataContext="{Binding RequestedItems}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Search}">
+                    <views:SearchView DataContext="{Binding Search}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Catalog}">
+                    <views:CatalogView DataContext="{Binding Catalog}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Connection}">
+                    <views:ConnectionView DataContext="{Binding}"/>
+                </Grid>
             </Grid>
         </DockPanel>
 
