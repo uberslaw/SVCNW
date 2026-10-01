@@ -15,6 +15,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     private const string IncidentFields = "sys_id,number,short_description,description,state,priority,impact,urgency,category,subcategory,contact_type,caller_id,assigned_to,assignment_group,opened_at,sys_updated_on,active,close_code,close_notes,hold_reason";
     private const string RequestFields = "sys_id,number,short_description,description,request_state,requested_for,opened_by,opened_at,due_date,priority,special_instructions,approval,stage,active,sys_updated_on";
     private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,opened_at,sys_updated_on,active,priority,close_notes";
+    private const string KnowledgeFields = "sys_id,number,short_description,text,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
 
     private readonly HttpClient _http;
     private readonly ServiceNowAuthMode _authMode;
@@ -221,6 +222,12 @@ public sealed class ServiceNowClient : IServiceNowClient
         });
         return WriteAsync(HttpMethod.Patch, "sc_req_item", sysId, json, ItemFields, RecordMapper.RequestedItem, cancellationToken);
     }
+
+    public Task<PagedResult<KnowledgeArticle>> SearchKnowledgeAsync(TicketQuery query, CancellationToken cancellationToken) =>
+        SearchAsync("kb_knowledge", KnowledgeFields, query, RecordMapper.Knowledge, cancellationToken);
+
+    public Task<KnowledgeArticle> GetKnowledgeAsync(string sysId, CancellationToken cancellationToken) =>
+        GetOneAsync("kb_knowledge", sysId, KnowledgeFields, RecordMapper.Knowledge, cancellationToken);
 
     public async Task AddJournalAsync(string table, string sysId, JournalKind kind, string text, CancellationToken cancellationToken)
     {

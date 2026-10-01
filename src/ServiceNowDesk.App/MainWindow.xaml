@@ -21,11 +21,20 @@
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.RowSpan="2" Background="{StaticResource NavBrush}">
+        <Border Grid.ColumnSpan="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+            <Menu Background="Transparent" Foreground="{StaticResource TextBrush}">
+                <MenuItem Header="Help" Padding="12,6">
+                    <MenuItem Header="Documentation" Padding="12,8" Click="Documentation_Click"/>
+                </MenuItem>
+            </Menu>
+        </Border>
+
+        <Border Grid.Row="1" Grid.RowSpan="2" Background="{StaticResource NavBrush}">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="20,18,16,12">
                     <TextBlock Text="ServiceNow" Foreground="{StaticResource NavMutedBrush}" FontSize="12"/>
@@ -38,20 +47,26 @@
                     <RadioButton Style="{StaticResource NavButton}" Content="Requests" Tag="&#xE7BF;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Requests}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Request items" Tag="&#xE8FD;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=RequestedItems}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Search" Tag="&#xE721;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Search}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Knowledge" Tag="&#xE82D;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Knowledge}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Order catalog" Tag="&#xE719;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Catalog}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Connection" Tag="&#xE713;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Connection}"/>
                 </StackPanel>
             </DockPanel>
         </Border>
 
-        <DockPanel Grid.Column="1">
+        <DockPanel Grid.Row="1" Grid.Column="1">
             <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,12">
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Grid MaxWidth="720" HorizontalAlignment="Left">
+                    <Button Grid.Column="0" Content="Back" Style="{StaticResource SecondaryButton}" Margin="0,0,12,0" MinWidth="72"
+                            VerticalAlignment="Center" Command="{Binding BackCommand}"
+                            Visibility="{Binding ShowBack, Converter={StaticResource BoolVis}}"
+                            AutomationProperties.Name="Back"/>
+                    <Grid Grid.Column="1" MaxWidth="720" HorizontalAlignment="Left">
                         <TextBox x:Name="SearchBox" MinHeight="36" FontSize="14"
                                  Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                  KeyDown="SearchBox_KeyDown"
@@ -60,7 +75,7 @@
                                    Text="{Binding SearchPlaceholder}"
                                    Visibility="{Binding SearchText, Converter={StaticResource EmptyStringVis}}"/>
                     </Grid>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="Working…" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVis}}"/>
                         <TextBlock Text="{Binding ConnectedUser}" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,8,0"/>
                         <TextBlock Text="{Binding InstanceLabel}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
@@ -76,16 +91,32 @@
             </Border>
 
             <Grid>
-                <views:IncidentView DataContext="{Binding Incidents}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Incidents}"/>
-                <views:RequestView DataContext="{Binding Requests}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Requests}"/>
-                <views:RequestedItemView DataContext="{Binding RequestedItems}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=RequestedItems}"/>
-                <views:SearchView DataContext="{Binding Search}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Search}"/>
-                <views:CatalogView DataContext="{Binding Catalog}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Catalog}"/>
-                <views:ConnectionView DataContext="{Binding}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Connection}"/>
+                <!-- Visibility stays on the wrapper. A DataContext on the same element would resolve SelectedSection against the page, and every page would stay visible. -->
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Incidents}">
+                    <views:IncidentView DataContext="{Binding Incidents}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Requests}">
+                    <views:RequestView DataContext="{Binding Requests}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=RequestedItems}">
+                    <views:RequestedItemView DataContext="{Binding RequestedItems}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Search}">
+                    <views:SearchView DataContext="{Binding Search}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Knowledge}">
+                    <views:KnowledgeView DataContext="{Binding Knowledge}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Catalog}">
+                    <views:CatalogView DataContext="{Binding Catalog}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Connection}">
+                    <views:ConnectionView DataContext="{Binding}"/>
+                </Grid>
             </Grid>
         </DockPanel>
 
-        <Border Grid.Column="1" Grid.Row="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
+        <Border Grid.Column="1" Grid.Row="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
             <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource MutedBrush}"/>
         </Border>
     </Grid>

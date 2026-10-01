@@ -8,7 +8,8 @@ A Windows desktop app for client services teams who need to create, update, reso
 - Requests (`sc_request`): create a direct request, update it, and close it.
 - Request items (`sc_req_item`): update, assign, and close the items agents actually fulfill. Open them from the request they belong to.
 - Catalog orders: search the service catalog, fill variables, and order an item for a caller. This is the path that runs the normal catalog workflow.
-- Search: one box searches the current list. The Search page looks across incidents, requests, and items at once, including closed records.
+- Search: one box searches the current list. The Search page looks across incidents, requests, items, and knowledge at once, including closed records. Open a hit to read it, then use Back to return to the results.
+- Knowledge: articles opened from Search.
 
 Practice data is built in, so the team can learn the layout before an instance is connected. Nothing in practice mode is sent to ServiceNow.
 
@@ -17,6 +18,7 @@ Practice data is built in, so the team can learn the layout before an instance i
 | Shortcut | Action |
 | --- | --- |
 | Ctrl+1 … Ctrl+6 | Incidents, Requests, Request items, Search, Order catalog, Connection |
+| Ctrl+7 | Knowledge |
 | Ctrl+K or Ctrl+F | Focus search |
 | Ctrl+N | New incident or request |
 | Ctrl+S | Save |

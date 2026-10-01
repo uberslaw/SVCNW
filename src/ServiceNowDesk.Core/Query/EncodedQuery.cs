@@ -54,6 +54,8 @@ public static partial class EncodedQuery
             return DeskSection.Incidents;
         if (term.StartsWith("REQ", StringComparison.Ordinal))
             return DeskSection.Requests;
+        if (term.StartsWith("KB", StringComparison.Ordinal))
+            return DeskSection.Knowledge;
         return null;
     }
 
@@ -100,10 +102,10 @@ public static partial class EncodedQuery
         return builder.ToString().Trim();
     }
 
-    [GeneratedRegex(@"^(INC|RITM|SCTASK|TASK|REQ|CHG|PRB)\d{4,}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(INC|RITM|SCTASK|TASK|REQ|CHG|PRB|KB)\d{4,}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FullNumberPattern();
 
-    [GeneratedRegex(@"^(INC|RITM|SCTASK|TASK|REQ|CHG|PRB)\d*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(INC|RITM|SCTASK|TASK|REQ|CHG|PRB|KB)\d*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PartialNumberPattern();
 
     [GeneratedRegex(@"^\d{4,}$", RegexOptions.CultureInvariant)]

@@ -55,6 +55,37 @@ public class RecordMapperTests
     }
 
     [Fact]
+    public void KnowledgeArticleReadsHtmlFromDisplayValue()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "sys_id": {"value":"kb-zephyr","display_value":"kb-zephyr"},
+              "number": {"value":"KB0001001","display_value":"KB0001001"},
+              "short_description": {"value":"Blank folders","display_value":"Blank folders"},
+              "text": {"value":"<p>plain</p>","display_value":"<p>Use <b>zephyrmail</b></p><script>alert(1)</script>"},
+              "topic": "Email",
+              "workflow_state": {"value":"published","display_value":"Published"},
+              "kb_category": {"value":"cat","display_value":"Email"},
+              "kb_knowledge_base": {"value":"base","display_value":"IT"},
+              "author": {"value":"sample-user","display_value":"Alex Rivera"},
+              "sys_updated_on": {"value":"2026-09-18 14:22:00","display_value":"2026-09-18 14:22:00"},
+              "published": {"value":"2026-09-18","display_value":"2026-09-18"}
+            }
+            """);
+
+        var article = RecordMapper.Knowledge(document.RootElement);
+        Assert.Equal("KB0001001", article.Number);
+        Assert.Contains("<b>zephyrmail</b>", article.Text);
+        Assert.Equal("published", article.WorkflowState);
+        Assert.Equal("Published", article.WorkflowStateLabel);
+        Assert.Equal("Email", article.Category);
+        Assert.Equal("IT", article.KnowledgeBase);
+        Assert.Equal("Alex Rivera", article.Author.Display);
+        Assert.Equal("sample-user", article.Author.SysId);
+        Assert.Equal("2026-09-18 14:22:00", article.UpdatedAtValue);
+    }
+
+    [Fact]
     public void ChangeJsonOmitsUnsetFieldsAndClearsReferences()
     {
         var json = ChangeJson.FromIncident(new IncidentChanges

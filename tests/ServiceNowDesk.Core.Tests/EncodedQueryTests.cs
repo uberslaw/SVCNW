@@ -37,6 +37,25 @@ public class EncodedQueryTests
     }
 
     [Fact]
+    public void KnowledgeNumberIsAnExactMatchAndCannotInjectClauses()
+    {
+        Assert.Equal("number=KB0001234", EncodedQuery.TextSearch("KB0001234"));
+        Assert.Equal("number=KB0001234", EncodedQuery.TextSearch("kb0001234"));
+        Assert.Equal(DeskSection.Knowledge, EncodedQuery.SectionForNumber("KB0001234"));
+        Assert.True(EncodedQuery.IsNumberQuery("KB0001234"));
+
+        var injected = EncodedQuery.TextSearch("KB0001234^workflow_state=published");
+        Assert.DoesNotContain("^", injected);
+        Assert.Equal("123TEXTQUERY321=KB0001234 workflow_state=published", injected);
+        Assert.Equal(
+            "123TEXTQUERY321=KB0001234 workflow_state=published^ORDERBYDESCsys_updated_on",
+            EncodedQuery.Build(injected, null, null, null));
+        Assert.Equal(
+            "number=KB0001234^ORDERBYDESCsys_updated_on",
+            EncodedQuery.Build(EncodedQuery.TextSearch("KB0001234"), null, null, null));
+    }
+
+    [Fact]
     public void BuildCombinesFiltersAndOrdersByRecentUpdates()
     {
         var query = EncodedQuery.Build(

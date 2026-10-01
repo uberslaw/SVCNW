@@ -15,6 +15,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private readonly List<IncidentRecord> _incidents = [];
     private readonly List<RequestRecord> _requests = [];
     private readonly List<RequestedItemRecord> _items = [];
+    private readonly List<KnowledgeArticle> _articles = [];
     private readonly Dictionary<string, List<JournalEntry>> _journal = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ApiActivity> _activity = [];
     private int _sequence = 1000;
@@ -419,6 +420,23 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         return Task.FromResult(new CatalogOrderResult(request.SysId, request.Number));
     }
 
+    public Task<PagedResult<KnowledgeArticle>> SearchKnowledgeAsync(TicketQuery query, CancellationToken cancellationToken)
+    {
+        var matches = _articles.Where(article => Passes(
+            query,
+            "",
+            "",
+            "",
+            "",
+            article.WorkflowState.Length == 0 || article.WorkflowState.Equals("published", StringComparison.OrdinalIgnoreCase),
+            article.Number,
+            Texts(article.ShortDescription, article.Text, article.Topic, article.Category, article.KnowledgeBase, article.Number)));
+        return Task.FromResult(Page(matches, query));
+    }
+
+    public Task<KnowledgeArticle> GetKnowledgeAsync(string sysId, CancellationToken cancellationToken) =>
+        Task.FromResult(Find(_articles, sysId, "knowledge article"));
+
     private void Seed()
     {
         AddIncident(new IncidentRecord
@@ -734,6 +752,58 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 Quantity = "1"
             }
         ]);
+
+        _articles.AddRange(
+        [
+            new KnowledgeArticle
+            {
+                SysId = "kb-zephyr",
+                Number = "KB0001001",
+                ShortDescription = "Outlook shows a blank folder list",
+                Text = "<p>Use <strong>zephyrmail</strong> when Outlook shows a blank folder list.</p><script>alert('xss')</script><style>body{color:red}</style><p>Close Outlook, then start it again.</p>",
+                Topic = "Email",
+                WorkflowState = "published",
+                WorkflowStateLabel = "Published",
+                Category = "Email",
+                KnowledgeBase = "IT",
+                Author = Alex,
+                UpdatedAtDisplay = "2026-09-18 14:22",
+                UpdatedAtValue = "2026-09-18 14:22:00",
+                PublishedDisplay = "2026-09-18"
+            },
+            new KnowledgeArticle
+            {
+                SysId = "kb-toner",
+                Number = "KB0001002",
+                ShortDescription = "Replace a toner cartridge",
+                Text = "<p>Open the front door, remove the old cartridge, and seat the new one until it clicks.</p><p>Print a test page before closing the ticket.</p>",
+                Topic = "Hardware",
+                WorkflowState = "published",
+                WorkflowStateLabel = "Published",
+                Category = "Printers",
+                KnowledgeBase = "IT",
+                Author = Jordan,
+                UpdatedAtDisplay = "2026-08-02 09:00",
+                UpdatedAtValue = "2026-08-02 09:00:00",
+                PublishedDisplay = "2026-08-02"
+            },
+            new KnowledgeArticle
+            {
+                SysId = "kb-vpn",
+                Number = "KB0001003",
+                ShortDescription = "VPN client keeps disconnecting",
+                Text = "<p>Reinstall the VPN client and uncheck split tunneling.</p><ul><li>Save the profile first</li><li>Restart the laptop</li></ul>",
+                Topic = "Network",
+                WorkflowState = "published",
+                WorkflowStateLabel = "Published",
+                Category = "Network",
+                KnowledgeBase = "IT",
+                Author = Sam,
+                UpdatedAtDisplay = "2026-09-01 11:30",
+                UpdatedAtValue = "2026-09-01 11:30:00",
+                PublishedDisplay = "2026-09-01"
+            }
+        ]);
     }
 
     private void AddIncident(IncidentRecord record, params JournalEntry[] notes)
@@ -827,6 +897,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         IncidentRecord incident => incident.UpdatedAtValue,
         RequestRecord request => request.UpdatedAtValue,
         RequestedItemRecord item => item.UpdatedAtValue,
+        KnowledgeArticle article => article.UpdatedAtValue,
         _ => ""
     };
 
@@ -848,6 +919,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         IncidentRecord incident => incident.SysId,
         RequestRecord request => request.SysId,
         RequestedItemRecord item => item.SysId,
+        KnowledgeArticle article => article.SysId,
         _ => ""
     };
 

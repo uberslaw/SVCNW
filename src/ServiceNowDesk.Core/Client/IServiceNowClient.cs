@@ -26,6 +26,9 @@ public interface IServiceNowClient : IDisposable
     Task<RequestedItemRecord> UpdateRequestedItemAsync(string sysId, RequestedItemChanges changes, CancellationToken cancellationToken);
     Task<RequestedItemRecord> ResolveRequestedItemAsync(string sysId, string state, string closeNotes, CancellationToken cancellationToken);
 
+    Task<PagedResult<KnowledgeArticle>> SearchKnowledgeAsync(TicketQuery query, CancellationToken cancellationToken);
+    Task<KnowledgeArticle> GetKnowledgeAsync(string sysId, CancellationToken cancellationToken);
+
     Task AddJournalAsync(string table, string sysId, JournalKind kind, string text, CancellationToken cancellationToken);
     Task<IReadOnlyList<JournalEntry>> GetJournalAsync(string sysId, CancellationToken cancellationToken);
 

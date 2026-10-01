@@ -138,6 +138,45 @@ public class ServiceNowClientTests
     }
 
     [Fact]
+    public async Task KnowledgeSearchUsesTheTableApi()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""
+            {"result":[{
+              "sys_id":"kb-zephyr",
+              "number":"KB0001001",
+              "short_description":"Blank folders",
+              "text":"<p>zephyrmail</p>",
+              "topic":"Email",
+              "workflow_state":"published",
+              "kb_category":"Email",
+              "kb_knowledge_base":"IT",
+              "author":"sample-user",
+              "sys_updated_on":"2026-09-18 14:22:00",
+              "published":"2026-09-18"
+            }]}
+            """, total: 1));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var page = await client.SearchKnowledgeAsync(new TicketQuery
+        {
+            Text = "kb0001234",
+            Activity = ActivityFilter.Any,
+            Assignment = AssignmentScope.Any
+        }, CancellationToken.None);
+
+        Assert.Equal("KB0001001", page.Items[0].Number);
+        Assert.Contains("zephyrmail", page.Items[0].Text);
+        var call = handler.Calls.Single();
+        Assert.Contains("/api/now/table/kb_knowledge", call.PathAndQuery);
+        Assert.Contains("sysparm_display_value=all", call.PathAndQuery);
+        var query = QueryOf(call.PathAndQuery);
+        Assert.Contains("number=KB0001234", query);
+        Assert.DoesNotContain("^workflow_state", query);
+        Assert.Equal("GET", client.RecentActivity[0].Method);
+        Assert.Contains("kb_knowledge", client.RecentActivity[0].Path);
+        Assert.DoesNotContain("secret", client.RecentActivity[0].Path);
+    }
+
+    [Fact]
     public async Task CatalogOrderPostsQuantityRequestedForAndVariables()
     {
         var handler = new StubHandler((_, _) => Api.Json("""{"result":{"request_id":"req-9","request_number":"REQ0090001"}}"""));
