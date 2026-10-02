@@ -147,6 +147,38 @@ public class BrowserSessionTests
     }
 
     [Fact]
+    public async Task SavedAssignmentDirectoryLoadsWithoutCallingServiceNow()
+    {
+        var folder = NewFolder();
+        var store = new FileFormCatalogStore(folder);
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.Contains("sys_user_group", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":"group-cs","name":"Client Services"}]}""");
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+            {
+                return Api.Json("""
+                    {"result":[{"group":{"value":"group-cs","display_value":"Client Services"},"user":{"value":"user-alex","display_value":"Alex Rivera"}}]}
+                    """);
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using (var client = ServiceNowClient.Create(Api.BasicSession(), handler, store))
+            await client.RefreshFormCatalogAsync(CancellationToken.None);
+
+        var offline = new StubHandler((_, _) => throw new InvalidOperationException("The saved assignment lists should not call ServiceNow."));
+        using var again = ServiceNowClient.Create(Api.BasicSession(), offline, store);
+        var groups = await again.ListAssignmentGroupsAsync(CancellationToken.None);
+        var members = await again.ListGroupMembersAsync("group-cs", CancellationToken.None);
+
+        Assert.Contains(groups, group => group.Value == "group-cs" && group.Label == "Client Services");
+        Assert.Equal("Alex Rivera", Assert.Single(members).Label);
+        Assert.Empty(offline.Calls);
+    }
+
+    [Fact]
     public void CorruptCatalogFileIsIgnored()
     {
         var folder = NewFolder();

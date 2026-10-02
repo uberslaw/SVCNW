@@ -15,17 +15,13 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         : base(desktop, "incident", "incident", true, PresetCatalog.Incidents)
     {
         Caller = new ReferenceFieldModel(SearchUsersAsync);
-        Assignee = new ReferenceFieldModel(SearchUsersAsync);
-        Group = new ReferenceFieldModel(SearchGroupsAsync);
         Caller.Changed += (_, _) => Touch();
-        Assignee.Changed += (_, _) => Touch();
-        Group.Changed += (_, _) => Touch();
+        Assignment.Changed += (_, _) => Touch();
         ResolveChoiceLabel = "Close code";
     }
 
     public ReferenceFieldModel Caller { get; }
-    public ReferenceFieldModel Assignee { get; }
-    public ReferenceFieldModel Group { get; }
+    public AssignmentFields Assignment { get; } = new();
     public ObservableCollection<Choice> StateChoices { get; } = [];
     public ObservableCollection<Choice> ImpactChoices { get; } = [];
     public ObservableCollection<Choice> UrgencyChoices { get; } = [];
@@ -60,6 +56,8 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         await FillChoicesAsync(ContactChoices, "incident", "contact_type", DefaultChoices.ContactTypes);
         await FillChoicesAsync(HoldReasonChoices, "incident", "hold_reason", DefaultChoices.HoldReasons, includeBlank: true, blankLabel: "None");
         await FillChoicesAsync(ResolveChoices, "incident", "close_code", DefaultChoices.CloseCodes);
+        Assignment.Use(Client);
+        await Assignment.LoadGroupsAsync();
     }
 
     protected override async Task<PagedResult<TicketRow>> FetchPageAsync(TicketQuery query, CancellationToken cancellationToken)
@@ -72,6 +70,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     {
         var record = await Client!.GetIncidentAsync(sysId, cancellationToken);
         Apply(record);
+        await Assignment.ShowAsync(record.AssignmentGroup.SysId, record.AssignmentGroup.Display, record.AssignedTo.SysId, record.AssignedTo.Display);
         UpsertRow(TicketRow.FromIncident(record));
         await LoadSubcategoriesAsync(record.Category, record.Subcategory, record.SubcategoryLabel);
     }
@@ -95,8 +94,8 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             || ContactType != record.ContactType
             || HoldReason != record.HoldReason
             || Caller.SysId != record.Caller.SysId
-            || Assignee.SysId != record.AssignedTo.SysId
-            || Group.SysId != record.AssignmentGroup.SysId;
+            || Assignment.MemberId != record.AssignedTo.SysId
+            || Assignment.GroupId != record.AssignmentGroup.SysId;
     }
 
     protected override void OnStartNew()
@@ -113,8 +112,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         ContactType = "phone";
         HoldReason = "";
         Caller.Clear();
-        Assignee.Clear();
-        Group.Clear();
+        Assignment.ClearSelection();
         SubcategoryChoices.Clear();
     }
 
@@ -123,7 +121,10 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         if (_loaded is null)
             OnStartNew();
         else
+        {
             Apply(_loaded);
+            _ = Assignment.ShowAsync(_loaded.AssignmentGroup.SysId, _loaded.AssignmentGroup.Display, _loaded.AssignedTo.SysId, _loaded.AssignedTo.Display);
+        }
     }
 
     protected override bool TryValidate(out string message)
@@ -140,9 +141,9 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             return false;
         }
 
-        if (!ReferenceIsChosen(Caller) || !ReferenceIsChosen(Assignee) || !ReferenceIsChosen(Group))
+        if (!ReferenceIsChosen(Caller))
         {
-            message = "Choose a name from the list, or clear the field.";
+            message = "Choose the caller from the list, or clear the field.";
             return false;
         }
 
@@ -157,8 +158,8 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             ShortDescription = ShortDescription.Trim(),
             Description = Description.Trim(),
             CallerId = Caller.SysId,
-            AssignedToId = FieldDiff.NullIfEmpty(Assignee.SysId),
-            AssignmentGroupId = FieldDiff.NullIfEmpty(Group.SysId),
+            AssignedToId = FieldDiff.NullIfEmpty(Assignment.MemberId),
+            AssignmentGroupId = FieldDiff.NullIfEmpty(Assignment.GroupId),
             State = State,
             Impact = Impact,
             Urgency = Urgency,
@@ -197,8 +198,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         _choicesReady = false;
         _loaded = null;
         Caller.Clear();
-        Assignee.Clear();
-        Group.Clear();
+        Assignment.Clear();
         StateChoices.Clear();
         ImpactChoices.Clear();
         UrgencyChoices.Clear();
@@ -270,8 +270,6 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         ContactType = string.IsNullOrEmpty(record.ContactType) ? "phone" : record.ContactType;
         HoldReason = record.HoldReason;
         Caller.Set(record.Caller.SysId, record.Caller.Display);
-        Assignee.Set(record.AssignedTo.SysId, record.AssignedTo.Display);
-        Group.Set(record.AssignmentGroup.SysId, record.AssignmentGroup.Display);
         HasEditor = true;
     }
 
@@ -291,10 +289,10 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             ContactType = FieldDiff.Changed(ContactType, record.ContactType),
             HoldReason = FieldDiff.Changed(HoldReason, record.HoldReason),
             CallerId = Caller.SysId != record.Caller.SysId ? Caller.SysId : null,
-            AssignedToId = Assignee.SysId.Length > 0 && Assignee.SysId != record.AssignedTo.SysId ? Assignee.SysId : null,
-            ClearAssignedTo = Assignee.SysId.Length == 0 && !record.AssignedTo.IsEmpty,
-            AssignmentGroupId = Group.SysId.Length > 0 && Group.SysId != record.AssignmentGroup.SysId ? Group.SysId : null,
-            ClearAssignmentGroup = Group.SysId.Length == 0 && !record.AssignmentGroup.IsEmpty
+            AssignedToId = Assignment.MemberId.Length > 0 && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
+            ClearAssignedTo = Assignment.MemberId.Length == 0 && !record.AssignedTo.IsEmpty,
+            AssignmentGroupId = Assignment.GroupId.Length > 0 && Assignment.GroupId != record.AssignmentGroup.SysId ? Assignment.GroupId : null,
+            ClearAssignmentGroup = Assignment.GroupId.Length == 0 && !record.AssignmentGroup.IsEmpty
         };
     }
 
@@ -302,16 +300,12 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         !string.IsNullOrWhiteSpace(ShortDescription)
         || !string.IsNullOrWhiteSpace(Description)
         || Caller.SysId.Length > 0
-        || Assignee.SysId.Length > 0
-        || Group.SysId.Length > 0
+        || Assignment.MemberId.Length > 0
+        || Assignment.GroupId.Length > 0
         || !string.IsNullOrWhiteSpace(JournalText);
 
     private Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
-        Client is null ? Empty() : Client.SearchUsersAsync(text, cancellationToken);
-
-    private Task<IReadOnlyList<ReferenceSuggestion>> SearchGroupsAsync(string text, CancellationToken cancellationToken) =>
-        Client is null ? Empty() : Client.SearchGroupsAsync(text, cancellationToken);
-
-    private static Task<IReadOnlyList<ReferenceSuggestion>> Empty() =>
-        Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
+        Client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : Client.SearchUsersAsync(text, cancellationToken);
 }

@@ -11,6 +11,7 @@
 
         <DockPanel Grid.Column="0">
             <controls:PresetBar DockPanel.Dock="Top"/>
+            <Button DockPanel.Dock="Top" Content="Create new" Style="{StaticResource PrimaryButton}" Command="{Binding NewRecordCommand}" HorizontalAlignment="Left" Margin="0,0,0,8"/>
             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
                 <TextBlock Text="{Binding TotalCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}"/>
                 <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
@@ -25,8 +26,9 @@
 
         <Grid Grid.Column="2">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}">
-                <TextBlock Text="Select an incident, or press Ctrl+N to log a new one." FontSize="16" HorizontalAlignment="Center"/>
+                <TextBlock Text="Select an incident, or create a new one." FontSize="16" HorizontalAlignment="Center"/>
                 <TextBlock Text="The list stays here while you work. Search from the box above." Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+                <Button Content="Create new" Style="{StaticResource PrimaryButton}" Command="{Binding NewRecordCommand}" HorizontalAlignment="Center" Margin="0,16,0,0"/>
             </StackPanel>
 
             <DockPanel Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
@@ -62,7 +64,7 @@
                             <Button Content="Save" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Margin="0,0,8,8"/>
                             <Button Content="Discard" Style="{StaticResource SecondaryButton}" Command="{Binding DiscardCommand}" Margin="0,0,8,8"/>
                             <Button Content="Resolve" Style="{StaticResource SecondaryButton}" Command="{Binding BeginResolveCommand}" Margin="0,0,8,8"/>
-                            <Button Content="New" Style="{StaticResource SecondaryButton}" Command="{Binding NewRecordCommand}" Margin="0,0,8,8"/>
+                            <Button Content="Create new" Style="{StaticResource SecondaryButton}" Command="{Binding NewRecordCommand}" Margin="0,0,8,8"/>
                             <Button Content="Copy number" Style="{StaticResource SecondaryButton}" Command="{Binding CopyNumberCommand}" Margin="0,0,8,8"/>
                             <Button Content="Open in browser" Style="{StaticResource SecondaryButton}" Command="{Binding OpenInBrowserCommand}" Margin="0,0,8,8"/>
                         </WrapPanel>
@@ -72,7 +74,10 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <DockPanel Margin="0,0,0,12">
-                            <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                                <Button Content="Copy" Style="{StaticResource QuietButton}" Command="{Binding CopyNumberCommand}" Margin="4,0,0,0" VerticalAlignment="Center" ToolTip="Copy the incident number"/>
+                            </StackPanel>
                             <TextBlock Text="{Binding StateLabel}" Margin="12,6,0,0" VerticalAlignment="Center"/>
                             <TextBlock Text="{Binding PriorityLabel}" Margin="12,6,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
                             <TextBlock Text="{Binding OpenedAt, StringFormat=Opened {0}}" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
@@ -95,11 +100,12 @@
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="Assignment group" Style="{StaticResource FieldLabel}"/>
-                                <controls:ReferenceEditor DataContext="{Binding Group}"/>
+                                <ComboBox ItemsSource="{Binding Assignment.Groups}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.GroupId}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="4">
                                 <TextBlock Text="Assigned to" Style="{StaticResource FieldLabel}"/>
-                                <controls:ReferenceEditor DataContext="{Binding Assignee}"/>
+                                <ComboBox ItemsSource="{Binding Assignment.Members}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.MemberId}"/>
+                                <TextBlock Text="{Binding Assignment.MemberHint}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding Assignment.MemberHint, Converter={StaticResource StringVis}}"/>
                             </StackPanel>
                         </Grid>
 

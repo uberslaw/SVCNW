@@ -350,6 +350,20 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchGroupsAsync(string text, CancellationToken cancellationToken) =>
         Task.FromResult(SearchPeople(text, Groups));
 
+    public Task<IReadOnlyList<Choice>> ListAssignmentGroupsAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Choice>>(Groups.Select(group => new Choice(group.SysId, group.Display)).ToArray());
+
+    public Task<IReadOnlyList<Choice>> ListGroupMembersAsync(string groupSysId, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<Choice> members = groupSysId switch
+        {
+            "group-cs" => [new("sample-user", "Alex Rivera"), new("user-jordan", "Jordan Lee")],
+            "group-net" => [new("user-sam", "Sam Patel")],
+            _ => []
+        };
+        return Task.FromResult(members);
+    }
+
     public Task<IReadOnlyList<CatalogItemSummary>> SearchCatalogItemsAsync(string text, CancellationToken cancellationToken)
     {
         var term = (text ?? "").Trim();

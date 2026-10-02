@@ -136,8 +136,17 @@ public class WorkspaceTests
         await items.EnsureChoicesAsync();
         await items.RefreshAsync();
         await items.OpenFromSearchAsync("ritm-dock");
+        await items.Assignment.WhenReady;
 
-        items.Assignee.Set("sample-user", "Alex Rivera");
+        Assert.Equal("group-cs", items.Assignment.GroupId);
+        Assert.Contains(items.Assignment.Members, member => member.Value == "sample-user");
+        Assert.DoesNotContain(items.Assignment.Members, member => member.Value == "user-sam");
+        items.Assignment.GroupId = "group-net";
+        await items.Assignment.WhenReady;
+        Assert.Equal("", items.Assignment.MemberId);
+        Assert.Contains(items.Assignment.Members, member => member.Value == "user-sam");
+
+        items.Assignment.MemberId = "user-sam";
         await items.SaveCommand.ExecuteAsync(null);
         items.ResolveCode = "3";
         items.ResolveNotes = "Dock imaged and delivered.";
@@ -145,7 +154,8 @@ public class WorkspaceTests
 
         var closed = await client.GetRequestedItemAsync("ritm-dock", CancellationToken.None);
         Assert.Equal("3", closed.State);
-        Assert.Equal("sample-user", closed.AssignedTo.SysId);
+        Assert.Equal("group-net", closed.AssignmentGroup.SysId);
+        Assert.Equal("user-sam", closed.AssignedTo.SysId);
         Assert.False(items.AllowCreate);
     }
 

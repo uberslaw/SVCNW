@@ -64,7 +64,10 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <DockPanel Margin="0,0,0,12">
-                            <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                                <Button Content="Copy" Style="{StaticResource QuietButton}" Command="{Binding CopyNumberCommand}" Margin="4,0,0,0" VerticalAlignment="Center" ToolTip="Copy the request number"/>
+                            </StackPanel>
                             <TextBlock Text="{Binding StateLabel}" Margin="12,6,0,0"/>
                             <TextBlock Text="{Binding StageLabel}" Margin="12,6,0,0" Foreground="{StaticResource MutedBrush}"/>
                             <TextBlock Text="{Binding OpenedAt, StringFormat=Opened {0}}" HorizontalAlignment="Right" Foreground="{StaticResource MutedBrush}"/>

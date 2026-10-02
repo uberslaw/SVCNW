@@ -56,7 +56,10 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <DockPanel Margin="0,0,0,12">
-                            <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                                <Button Content="Copy" Style="{StaticResource QuietButton}" Command="{Binding CopyNumberCommand}" Margin="4,0,0,0" VerticalAlignment="Center" ToolTip="Copy the request item number"/>
+                            </StackPanel>
                             <TextBlock Text="{Binding StateLabel}" Margin="12,6,0,0"/>
                             <TextBlock Text="{Binding RequestNumber, StringFormat=Request {0}}" Margin="12,6,0,0" Foreground="{StaticResource MutedBrush}"/>
                         </DockPanel>
@@ -73,11 +76,12 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock Text="Assignment group" Style="{StaticResource FieldLabel}"/>
-                                <controls:ReferenceEditor DataContext="{Binding Group}"/>
+                                <ComboBox ItemsSource="{Binding Assignment.Groups}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.GroupId}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="Assigned to" Style="{StaticResource FieldLabel}"/>
-                                <controls:ReferenceEditor DataContext="{Binding Assignee}"/>
+                                <ComboBox ItemsSource="{Binding Assignment.Members}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.MemberId}"/>
+                                <TextBlock Text="{Binding Assignment.MemberHint}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding Assignment.MemberHint, Converter={StaticResource StringVis}}"/>
                             </StackPanel>
                         </Grid>
                         <Grid Margin="0,0,0,10">

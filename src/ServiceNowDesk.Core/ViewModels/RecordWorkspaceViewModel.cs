@@ -174,10 +174,10 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanCreate))]
     private void NewRecord()
     {
-        if (!AllowCreate || Client is null)
+        if (!CanCreate())
             return;
         if (IsDirty)
         {
@@ -596,6 +596,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             return;
         IsDirty = ComputeDirty();
     }
+
+    private bool CanCreate() => AllowCreate && IsReady && Client is not null;
 
     private bool CanSave() => IsReady && !IsEditorBusy && IsDirty;
 

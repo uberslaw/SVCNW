@@ -4,7 +4,7 @@ A Windows desktop app for client services teams who need to create, update, reso
 
 ## What you can do
 
-- Incidents: create, update, assign, add work notes or customer comments, and resolve with a close code and close notes.
+- Incidents: create, update, assign, add work notes or customer comments, and resolve with a close code and close notes. **Create new** is on the incident list. **Copy** sits next to the incident, request, and request item number. Assignment group and assigned to are dropdowns; the people list is the members of the selected group.
 - Requests (`sc_request`): create a direct request, update it, and close it.
 - Request items (`sc_req_item`): update, assign, and close the items agents actually fulfill. Open them from the request they belong to.
 - Catalog orders: search the service catalog, fill variables, and order an item for a caller. This is the path that runs the normal catalog workflow.

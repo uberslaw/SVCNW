@@ -14,15 +14,11 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     public RequestedItemWorkspaceViewModel(IDesktopServices desktop)
         : base(desktop, "sc_req_item", "request item", false, PresetCatalog.RequestedItems)
     {
-        Assignee = new ReferenceFieldModel(SearchUsersAsync);
-        Group = new ReferenceFieldModel(SearchGroupsAsync);
-        Assignee.Changed += (_, _) => Touch();
-        Group.Changed += (_, _) => Touch();
+        Assignment.Changed += (_, _) => Touch();
         ResolveChoiceLabel = "Outcome";
     }
 
-    public ReferenceFieldModel Assignee { get; }
-    public ReferenceFieldModel Group { get; }
+    public AssignmentFields Assignment { get; } = new();
     public ObservableCollection<Choice> StateChoices { get; } = [];
     public ObservableCollection<Choice> PriorityChoices { get; } = [];
 
@@ -44,6 +40,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         ResolveChoices.Clear();
         foreach (var choice in DefaultChoices.ItemOutcomes)
             ResolveChoices.Add(choice);
+        Assignment.Use(Client);
+        await Assignment.LoadGroupsAsync();
     }
 
     protected override async Task<PagedResult<TicketRow>> FetchPageAsync(TicketQuery query, CancellationToken cancellationToken)
@@ -56,6 +54,7 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     {
         var record = await Client!.GetRequestedItemAsync(sysId, cancellationToken);
         Apply(record);
+        await Assignment.ShowAsync(record.AssignmentGroup.SysId, record.AssignmentGroup.Display, record.AssignedTo.SysId, record.AssignedTo.Display);
         UpsertRow(TicketRow.FromItem(record));
     }
 
@@ -72,8 +71,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             || State != record.State
             || Priority != record.Priority
             || CloseNotes != record.CloseNotes
-            || Assignee.SysId != record.AssignedTo.SysId
-            || Group.SysId != record.AssignmentGroup.SysId;
+            || Assignment.MemberId != record.AssignedTo.SysId
+            || Assignment.GroupId != record.AssignmentGroup.SysId;
     }
 
     protected override void OnStartNew()
@@ -82,8 +81,10 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
 
     protected override void Restore()
     {
-        if (_loaded is not null)
-            Apply(_loaded);
+        if (_loaded is null)
+            return;
+        Apply(_loaded);
+        _ = Assignment.ShowAsync(_loaded.AssignmentGroup.SysId, _loaded.AssignmentGroup.Display, _loaded.AssignedTo.SysId, _loaded.AssignedTo.Display);
     }
 
     protected override bool TryValidate(out string message)
@@ -91,12 +92,6 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         if (string.IsNullOrWhiteSpace(ShortDescription))
         {
             message = "Enter a short description.";
-            return false;
-        }
-
-        if (!ReferenceIsChosen(Assignee) || !ReferenceIsChosen(Group))
-        {
-            message = "Choose a name from the list, or clear the field.";
             return false;
         }
 
@@ -117,10 +112,10 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             State = FieldDiff.Changed(State, record.State),
             Priority = FieldDiff.Changed(Priority, record.Priority),
             CloseNotes = FieldDiff.Changed(CloseNotes, record.CloseNotes),
-            AssignedToId = Assignee.SysId.Length > 0 && Assignee.SysId != record.AssignedTo.SysId ? Assignee.SysId : null,
-            ClearAssignedTo = Assignee.SysId.Length == 0 && !record.AssignedTo.IsEmpty,
-            AssignmentGroupId = Group.SysId.Length > 0 && Group.SysId != record.AssignmentGroup.SysId ? Group.SysId : null,
-            ClearAssignmentGroup = Group.SysId.Length == 0 && !record.AssignmentGroup.IsEmpty
+            AssignedToId = Assignment.MemberId.Length > 0 && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
+            ClearAssignedTo = Assignment.MemberId.Length == 0 && !record.AssignedTo.IsEmpty,
+            AssignmentGroupId = Assignment.GroupId.Length > 0 && Assignment.GroupId != record.AssignmentGroup.SysId ? Assignment.GroupId : null,
+            ClearAssignmentGroup = Assignment.GroupId.Length == 0 && !record.AssignmentGroup.IsEmpty
         };
         if (!changes.HasChanges || string.IsNullOrEmpty(EditorSysId))
             return;
@@ -141,8 +136,7 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     {
         _choicesReady = false;
         _loaded = null;
-        Assignee.Clear();
-        Group.Clear();
+        Assignment.Clear();
         StateChoices.Clear();
         PriorityChoices.Clear();
         ResolveChoices.Clear();
@@ -183,14 +177,6 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         Quantity = record.Quantity;
         RequestNumber = record.Request.Display;
         CatalogItem = record.CatalogItem.Display;
-        Assignee.Set(record.AssignedTo.SysId, record.AssignedTo.Display);
-        Group.Set(record.AssignmentGroup.SysId, record.AssignmentGroup.Display);
         HasEditor = true;
     }
-
-    private Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
-        Client is null ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]) : Client.SearchUsersAsync(text, cancellationToken);
-
-    private Task<IReadOnlyList<ReferenceSuggestion>> SearchGroupsAsync(string text, CancellationToken cancellationToken) =>
-        Client is null ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]) : Client.SearchGroupsAsync(text, cancellationToken);
 }

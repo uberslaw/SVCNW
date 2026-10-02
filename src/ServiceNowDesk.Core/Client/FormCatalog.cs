@@ -8,6 +8,8 @@ public static class FormCatalogPolicy
     public static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
     public const int MaxDependentCategories = 80;
     public const int MaxCatalogItems = 30;
+    public const int MaxAssignmentGroups = 500;
+    public const int MaxGroupMembers = 8000;
 
     public static bool IsStale(DateTimeOffset capturedAt, DateTimeOffset now) =>
         capturedAt == default || now - capturedAt >= MaxAge;
@@ -47,11 +49,27 @@ public sealed class CachedCatalogForm
     public List<CatalogVariableDefinition> Variables { get; set; } = [];
 }
 
+public sealed class CachedAssignmentGroup
+{
+    public string SysId { get; set; } = "";
+    public string Name { get; set; } = "";
+}
+
+public sealed class CachedGroupMember
+{
+    public string GroupSysId { get; set; } = "";
+    public string UserSysId { get; set; } = "";
+    public string Name { get; set; } = "";
+}
+
 public sealed class FormCatalogSnapshot
 {
     public DateTimeOffset CapturedAt { get; set; }
+    public bool DirectoryComplete { get; set; }
     public List<CachedChoiceList> Choices { get; set; } = [];
     public List<CachedCatalogForm> CatalogItems { get; set; } = [];
+    public List<CachedAssignmentGroup> Groups { get; set; } = [];
+    public List<CachedGroupMember> Members { get; set; } = [];
 }
 
 public interface IFormCatalogStore
