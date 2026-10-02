@@ -5,22 +5,33 @@ using ServiceNowDesk.Models;
 
 namespace ServiceNowDesk.ViewModels;
 
-public sealed partial class AssignmentFields : ObservableObject
+public sealed class AssignmentFields : ObservableObject
 {
     private IServiceNowClient? _client;
     private bool _applying;
     private int _version;
     private int _groupVersion;
+    private string _groupId = "";
+    private string _memberId = "";
 
     public ObservableCollection<Choice> Groups { get; } = [];
     public ObservableCollection<Choice> Members { get; } = [new Choice("", "Unassigned")];
 
-    [ObservableProperty] private string groupId = "";
-    [ObservableProperty] private string memberId = "";
+    public string GroupId
+    {
+        get => _groupId;
+        set => Assign(ref _groupId, value, nameof(GroupId), GroupChanged);
+    }
+
+    public string MemberId
+    {
+        get => _memberId;
+        set => Assign(ref _memberId, value, nameof(MemberId), MemberChanged);
+    }
 
     public Task WhenReady { get; private set; } = Task.CompletedTask;
 
-    public string MemberHint => GroupId.Length == 0
+    public string MemberHint => string.IsNullOrEmpty(GroupId)
         ? "Choose a group to list its members."
         : Members.Count <= 1 ? "No members are saved for this group yet." : "";
 
@@ -57,16 +68,16 @@ public sealed partial class AssignmentFields : ObservableObject
             Groups.Add(new Choice("", "Unassigned"));
             foreach (var group in groups.OrderBy(choice => choice.Label, StringComparer.OrdinalIgnoreCase))
             {
-                if (group.Value.Length == 0 || Groups.Any(choice => choice.Value == group.Value))
+                if (string.IsNullOrEmpty(group.Value) || Groups.Any(choice => choice.Value == group.Value))
                     continue;
                 Groups.Add(group);
             }
 
             Ensure(Groups, selected, selectedLabel);
-            if (!string.Equals(GroupId, selected, StringComparison.Ordinal))
-                GroupId = selected;
-            if (!string.Equals(MemberId, selectedMember, StringComparison.Ordinal))
-                MemberId = selectedMember;
+            GroupId = selected;
+            MemberId = selectedMember;
+            OnPropertyChanged(nameof(GroupId));
+            OnPropertyChanged(nameof(MemberId));
         }
         finally
         {
@@ -95,13 +106,22 @@ public sealed partial class AssignmentFields : ObservableObject
 
     public void ClearSelection()
     {
+        _version++;
         _applying = true;
-        GroupId = "";
-        MemberId = "";
-        Members.Clear();
-        Members.Add(new Choice("", "Unassigned"));
-        _applying = false;
-        OnPropertyChanged(nameof(MemberHint));
+        try
+        {
+            GroupId = "";
+            KeepBlankMember();
+            MemberId = "";
+            // Push the blank value again after the row is in the list. A combo writes null when its selection is missing.
+            OnPropertyChanged(nameof(GroupId));
+            OnPropertyChanged(nameof(MemberId));
+        }
+        finally
+        {
+            _applying = false;
+            OnPropertyChanged(nameof(MemberHint));
+        }
     }
 
     public void Clear()
@@ -111,7 +131,7 @@ public sealed partial class AssignmentFields : ObservableObject
         Groups.Add(new Choice("", "Unassigned"));
     }
 
-    partial void OnGroupIdChanged(string value)
+    private void GroupChanged(string value)
     {
         OnPropertyChanged(nameof(MemberHint));
         if (_applying)
@@ -120,11 +140,33 @@ public sealed partial class AssignmentFields : ObservableObject
         _ = LoadMembersAsync(value, "", "", keepMissing: false);
     }
 
-    partial void OnMemberIdChanged(string value)
+    private void MemberChanged(string _)
     {
         if (_applying)
             return;
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Assign(ref string field, string? value, string propertyName, Action<string> changed)
+    {
+        var next = value ?? "";
+        if (string.Equals(field, next, StringComparison.Ordinal))
+            return;
+        field = next;
+        changed(next);
+        OnPropertyChanged(propertyName);
+    }
+
+    private void KeepBlankMember()
+    {
+        for (var index = Members.Count - 1; index >= 0; index--)
+        {
+            if (!string.IsNullOrEmpty(Members[index].Value))
+                Members.RemoveAt(index);
+        }
+
+        if (!Members.Any(choice => string.IsNullOrEmpty(choice.Value)))
+            Members.Insert(0, new Choice("", "Unassigned"));
     }
 
     private Task LoadMembersAsync(string groupId, string memberId, string memberLabel, bool keepMissing)
@@ -160,7 +202,7 @@ public sealed partial class AssignmentFields : ObservableObject
             Members.Add(new Choice("", "Unassigned"));
             foreach (var member in members)
             {
-                if (member.Value.Length == 0 || Members.Any(choice => choice.Value == member.Value))
+                if (string.IsNullOrEmpty(member.Value) || Members.Any(choice => choice.Value == member.Value))
                     continue;
                 Members.Add(member);
             }
@@ -175,6 +217,7 @@ public sealed partial class AssignmentFields : ObservableObject
             }
 
             MemberId = keep;
+            OnPropertyChanged(nameof(MemberId));
             OnPropertyChanged(nameof(MemberHint));
         }
         finally

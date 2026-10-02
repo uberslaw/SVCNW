@@ -425,14 +425,18 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             choices = fallback;
         }
 
-        if (choices.Count == 0)
+        if (choices is null || choices.Count == 0)
             choices = fallback;
 
         target.Clear();
         if (includeBlank)
             target.Add(new Choice("", blankLabel));
         foreach (var choice in choices)
+        {
+            if (choice?.Value is null)
+                continue;
             target.Add(choice);
+        }
     }
 
     protected static void EnsureChoice(ObservableCollection<Choice> target, string value, string label)

@@ -89,6 +89,59 @@ public class WorkspaceTests
         Assert.Equal("INC0010001", desktop.CopiedText.Single());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateNewOpensWhenAnIncidentIsOpenAndChoiceListsMayBeEmpty(bool listsLoaded)
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.Attach(client);
+        if (listsLoaded)
+            await workspace.EnsureChoicesAsync();
+        await workspace.OpenFromSearchAsync("inc-printer");
+        Assert.Equal("INC0010001", workspace.Number);
+        Assert.False(workspace.IsNew);
+        if (!listsLoaded)
+        {
+            Assert.Empty(workspace.ImpactChoices);
+            Assert.Empty(workspace.PriorityChoices);
+            Assert.Empty(workspace.ContactChoices);
+            Assert.DoesNotContain(workspace.Assignment.Groups, group => string.IsNullOrEmpty(group.Value));
+        }
+
+        // WPF combos write null when SelectedValue is not in ItemsSource. Clearing the
+        // member list, or pointing at a group list that has not loaded the blank row, does that.
+        MimicComboClearingMissingValue(workspace.Assignment);
+
+        workspace.NewRecordCommand.Execute(null);
+
+        Assert.True(workspace.IsNew);
+        Assert.True(workspace.HasEditor);
+        Assert.False(workspace.IsDirty);
+        Assert.Equal("", workspace.Number);
+        Assert.Equal("New", workspace.StateLabel);
+        Assert.Equal("1", workspace.State);
+        Assert.Equal("3", workspace.Impact);
+        Assert.Equal("3", workspace.Urgency);
+        Assert.Equal("", workspace.Priority);
+        Assert.Equal("", workspace.Category);
+        Assert.Equal("", workspace.Subcategory);
+        Assert.Contains(workspace.SubcategoryChoices, choice => choice.Value == "" && choice.Label == "None");
+        Assert.Equal("phone", workspace.ContactType);
+        Assert.Equal("", workspace.Caller.SysId);
+        Assert.Equal("", workspace.Caller.Text);
+        Assert.Equal("", workspace.Assignment.GroupId);
+        Assert.Equal("", workspace.Assignment.MemberId);
+        Assert.Contains(workspace.Assignment.Members, member => member.Value == "" && member.Label == "Unassigned");
+        Assert.Equal("Choose a group to list its members.", workspace.Assignment.MemberHint);
+
+        workspace.ShortDescription = "Replacement headset";
+        Assert.True(workspace.IsNew);
+        Assert.True(workspace.IsDirty);
+        Assert.Equal("", workspace.Number);
+    }
+
     [Fact]
     public async Task DiscardRestoresTheLoadedIncident()
     {
@@ -365,6 +418,24 @@ public class WorkspaceTests
 
         field.Text = "Jordan Leigh";
         Assert.Equal("", field.SysId);
+    }
+
+    private static void MimicComboClearingMissingValue(AssignmentFields fields)
+    {
+        fields.PropertyChanged += (_, args) => ClearSelectionWhenMissing(fields, args.PropertyName);
+        fields.Groups.CollectionChanged += (_, _) => ClearSelectionWhenMissing(fields, nameof(AssignmentFields.GroupId));
+        fields.Members.CollectionChanged += (_, _) => ClearSelectionWhenMissing(fields, nameof(AssignmentFields.MemberId));
+    }
+
+    private static void ClearSelectionWhenMissing(AssignmentFields fields, string? propertyName)
+    {
+        if (propertyName == nameof(AssignmentFields.GroupId)
+            && fields.Groups.All(choice => choice.Value != fields.GroupId))
+            fields.GroupId = null!;
+
+        if (propertyName == nameof(AssignmentFields.MemberId)
+            && fields.Members.All(choice => choice.Value != fields.MemberId))
+            fields.MemberId = null!;
     }
 
     private static async Task<IncidentWorkspaceViewModel> OpenIncidentsAsync(IServiceNowClient client, IDesktopServices? desktop = null)

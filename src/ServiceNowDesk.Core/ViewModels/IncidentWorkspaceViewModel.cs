@@ -118,12 +118,13 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         Urgency = "3";
         Priority = "";
         Category = "";
-        Subcategory = "";
         ContactType = "phone";
         HoldReason = "";
         Caller.Clear();
         Assignment.ClearSelection();
         SubcategoryChoices.Clear();
+        SubcategoryChoices.Add(new Choice("", "None"));
+        Subcategory = "";
     }
 
     protected override void Restore()
@@ -145,7 +146,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             return false;
         }
 
-        if (IsNew && Caller.SysId.Length == 0)
+        if (IsNew && string.IsNullOrEmpty(Caller.SysId))
         {
             message = "Choose the caller from the list.";
             return false;
@@ -299,10 +300,10 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             ContactType = FieldDiff.Changed(ContactType, record.ContactType),
             HoldReason = FieldDiff.Changed(HoldReason, record.HoldReason),
             CallerId = Caller.SysId != record.Caller.SysId ? Caller.SysId : null,
-            AssignedToId = Assignment.MemberId.Length > 0 && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
-            ClearAssignedTo = Assignment.MemberId.Length == 0 && !record.AssignedTo.IsEmpty,
-            AssignmentGroupId = Assignment.GroupId.Length > 0 && Assignment.GroupId != record.AssignmentGroup.SysId ? Assignment.GroupId : null,
-            ClearAssignmentGroup = Assignment.GroupId.Length == 0 && !record.AssignmentGroup.IsEmpty
+            AssignedToId = !string.IsNullOrEmpty(Assignment.MemberId) && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
+            ClearAssignedTo = string.IsNullOrEmpty(Assignment.MemberId) && !record.AssignedTo.IsEmpty,
+            AssignmentGroupId = !string.IsNullOrEmpty(Assignment.GroupId) && Assignment.GroupId != record.AssignmentGroup.SysId ? Assignment.GroupId : null,
+            ClearAssignmentGroup = string.IsNullOrEmpty(Assignment.GroupId) && !record.AssignmentGroup.IsEmpty
         };
     }
 
@@ -410,13 +411,13 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
 
     private IncidentTemplate CaptureTemplate()
     {
-        var groupLabel = Assignment.GroupId.Length == 0
+        var groupLabel = string.IsNullOrEmpty(Assignment.GroupId)
             ? ""
             : Assignment.Groups.FirstOrDefault(choice => choice.Value == Assignment.GroupId)?.Label ?? "";
-        var memberLabel = Assignment.MemberId.Length == 0
+        var memberLabel = string.IsNullOrEmpty(Assignment.MemberId)
             ? ""
             : Assignment.Members.FirstOrDefault(choice => choice.Value == Assignment.MemberId)?.Label ?? "";
-        var subcategoryLabel = Subcategory.Length == 0
+        var subcategoryLabel = string.IsNullOrEmpty(Subcategory)
             ? ""
             : SubcategoryChoices.FirstOrDefault(choice => choice.Value == Subcategory)?.Label ?? SubcategoryLabel;
         return new IncidentTemplate
@@ -437,16 +438,16 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             AssignedToId = Assignment.MemberId,
             AssignedToDisplay = memberLabel,
             CallerId = Caller.SysId,
-            CallerDisplay = Caller.SysId.Length == 0 ? "" : Caller.Text
+            CallerDisplay = string.IsNullOrEmpty(Caller.SysId) ? "" : Caller.Text
         };
     }
 
     private bool HasNewInput() =>
         !string.IsNullOrWhiteSpace(ShortDescription)
         || !string.IsNullOrWhiteSpace(Description)
-        || Caller.SysId.Length > 0
-        || Assignment.MemberId.Length > 0
-        || Assignment.GroupId.Length > 0
+        || !string.IsNullOrEmpty(Caller.SysId)
+        || !string.IsNullOrEmpty(Assignment.MemberId)
+        || !string.IsNullOrEmpty(Assignment.GroupId)
         || !string.IsNullOrWhiteSpace(JournalText)
         || State != "1"
         || Impact != "3"
