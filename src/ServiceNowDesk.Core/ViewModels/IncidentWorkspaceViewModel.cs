@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Services;
@@ -8,20 +9,29 @@ namespace ServiceNowDesk.ViewModels;
 
 public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
 {
+    private readonly IIncidentTemplateStore _templates;
     private IncidentRecord? _loaded;
     private bool _choicesReady;
 
-    public IncidentWorkspaceViewModel(IDesktopServices desktop)
+    public IncidentWorkspaceViewModel(IDesktopServices desktop, IIncidentTemplateStore? templates = null)
         : base(desktop, "incident", "incident", true, PresetCatalog.Incidents)
     {
+        _templates = templates ?? new MemoryIncidentTemplateStore();
         Caller = new ReferenceFieldModel(SearchUsersAsync);
         Caller.Changed += (_, _) => Touch();
         Assignment.Changed += (_, _) => Touch();
+        Templates.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTemplates));
+        ReloadTemplates();
         ResolveChoiceLabel = "Close code";
     }
 
     public ReferenceFieldModel Caller { get; }
     public AssignmentFields Assignment { get; } = new();
+    public ObservableCollection<IncidentTemplate> Templates { get; } = [];
+    public bool HasTemplates => Templates.Count > 0;
+
+    [ObservableProperty] private string templateName = "";
+    [ObservableProperty] private string templateMessage = "";
     public ObservableCollection<Choice> StateChoices { get; } = [];
     public ObservableCollection<Choice> ImpactChoices { get; } = [];
     public ObservableCollection<Choice> UrgencyChoices { get; } = [];
@@ -296,13 +306,156 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         };
     }
 
+    [RelayCommand]
+    private async Task ApplyTemplateAsync(IncidentTemplate? template)
+    {
+        if (template is null || !AllowCreate || !IsReady || Client is null)
+            return;
+        if (IsDirty)
+        {
+            ShowUnsavedBanner = true;
+            EditorMessage = "Save or discard unsaved changes first.";
+            return;
+        }
+
+        BeginNew();
+        Applying = true;
+        try
+        {
+            ShortDescription = template.ShortDescription ?? "";
+            Description = template.Description ?? "";
+            State = string.IsNullOrEmpty(template.State) ? "1" : template.State;
+            Impact = string.IsNullOrEmpty(template.Impact) ? "3" : template.Impact;
+            Urgency = string.IsNullOrEmpty(template.Urgency) ? "3" : template.Urgency;
+            Priority = template.Priority ?? "";
+            Category = template.Category ?? "";
+            ContactType = string.IsNullOrEmpty(template.ContactType) ? "phone" : template.ContactType;
+            HoldReason = template.HoldReason ?? "";
+            Caller.Set(template.CallerId, template.CallerDisplay);
+            await Assignment.ShowAsync(
+                template.AssignmentGroupId,
+                template.AssignmentGroupDisplay,
+                template.AssignedToId,
+                template.AssignedToDisplay);
+            await LoadSubcategoriesAsync(template.Category ?? "", template.Subcategory ?? "", template.SubcategoryLabel ?? "");
+            SubcategoryLabel = template.SubcategoryLabel ?? "";
+            EditorMessage = "New incident from " + template.Name + ". Nothing is sent until you save.";
+            TemplateMessage = "";
+        }
+        finally
+        {
+            Applying = false;
+            Touch();
+        }
+    }
+
+    [RelayCommand]
+    private void SaveTemplate()
+    {
+        var name = TemplateName.Trim();
+        if (name.Length == 0)
+        {
+            TemplateMessage = "Enter a template name.";
+            return;
+        }
+
+        if (!HasEditor)
+        {
+            TemplateMessage = "Open or start an incident before saving a template.";
+            return;
+        }
+
+        try
+        {
+            var replaced = _templates.List().Any(template => template.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            var template = CaptureTemplate();
+            template.Name = name;
+            _templates.Save(template);
+            ReloadTemplates();
+            TemplateName = "";
+            TemplateMessage = replaced
+                ? "Replaced template " + name + "."
+                : "Saved template " + name + ".";
+        }
+        catch (Exception ex)
+        {
+            TemplateMessage = WorkspaceMessages.Describe(ex);
+        }
+    }
+
+    [RelayCommand]
+    private void DeleteTemplate(IncidentTemplate? template)
+    {
+        if (template is null || string.IsNullOrWhiteSpace(template.Name))
+            return;
+
+        try
+        {
+            _templates.Delete(template.Name);
+            ReloadTemplates();
+            TemplateMessage = "Deleted template " + template.Name + ".";
+        }
+        catch (Exception ex)
+        {
+            TemplateMessage = WorkspaceMessages.Describe(ex);
+        }
+    }
+
+    private void ReloadTemplates()
+    {
+        Templates.Clear();
+        foreach (var template in _templates.List())
+            Templates.Add(template);
+    }
+
+    private IncidentTemplate CaptureTemplate()
+    {
+        var groupLabel = Assignment.GroupId.Length == 0
+            ? ""
+            : Assignment.Groups.FirstOrDefault(choice => choice.Value == Assignment.GroupId)?.Label ?? "";
+        var memberLabel = Assignment.MemberId.Length == 0
+            ? ""
+            : Assignment.Members.FirstOrDefault(choice => choice.Value == Assignment.MemberId)?.Label ?? "";
+        var subcategoryLabel = Subcategory.Length == 0
+            ? ""
+            : SubcategoryChoices.FirstOrDefault(choice => choice.Value == Subcategory)?.Label ?? SubcategoryLabel;
+        return new IncidentTemplate
+        {
+            ShortDescription = ShortDescription ?? "",
+            Description = Description ?? "",
+            State = State ?? "",
+            Impact = Impact ?? "",
+            Urgency = Urgency ?? "",
+            Priority = Priority ?? "",
+            Category = Category ?? "",
+            Subcategory = Subcategory ?? "",
+            SubcategoryLabel = subcategoryLabel,
+            ContactType = ContactType ?? "",
+            HoldReason = HoldReason ?? "",
+            AssignmentGroupId = Assignment.GroupId,
+            AssignmentGroupDisplay = groupLabel,
+            AssignedToId = Assignment.MemberId,
+            AssignedToDisplay = memberLabel,
+            CallerId = Caller.SysId,
+            CallerDisplay = Caller.SysId.Length == 0 ? "" : Caller.Text
+        };
+    }
+
     private bool HasNewInput() =>
         !string.IsNullOrWhiteSpace(ShortDescription)
         || !string.IsNullOrWhiteSpace(Description)
         || Caller.SysId.Length > 0
         || Assignment.MemberId.Length > 0
         || Assignment.GroupId.Length > 0
-        || !string.IsNullOrWhiteSpace(JournalText);
+        || !string.IsNullOrWhiteSpace(JournalText)
+        || State != "1"
+        || Impact != "3"
+        || Urgency != "3"
+        || !string.IsNullOrEmpty(Priority)
+        || !string.IsNullOrEmpty(Category)
+        || !string.IsNullOrEmpty(Subcategory)
+        || ContactType != "phone"
+        || !string.IsNullOrEmpty(HoldReason);
 
     private Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
         Client is null

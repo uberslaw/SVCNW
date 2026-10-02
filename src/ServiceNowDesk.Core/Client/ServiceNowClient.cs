@@ -28,8 +28,10 @@ public sealed class ServiceNowClient : IServiceNowClient
     private readonly Dictionary<string, IReadOnlyList<CatalogVariableDefinition>> _catalogForms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Choice>> _membersByGroup = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _groupsWithMemberList = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _persistGate = new();
     private List<Choice> _groups = [];
     private string[]? _groupIds;
+    private Task? _directoryRefresh;
 
     private ServiceNowClient(HttpClient http, ServiceNowSession session, IFormCatalogStore? formCatalog)
     {
@@ -67,6 +69,18 @@ public sealed class ServiceNowClient : IServiceNowClient
         {
             lock (_cacheGate)
                 return FormCatalogPolicy.IsStale(_snapshot.CapturedAt, DateTimeOffset.UtcNow);
+        }
+    }
+
+    public bool AssignmentDirectoryIsStale
+    {
+        get
+        {
+            lock (_cacheGate)
+            {
+                return !_snapshot.DirectoryComplete
+                    || FormCatalogPolicy.IsStale(_snapshot.DirectoryCapturedAt, DateTimeOffset.UtcNow);
+            }
         }
     }
 
@@ -280,71 +294,22 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     public async Task RefreshFormCatalogAsync(CancellationToken cancellationToken)
     {
-        ServiceNowException? last = null;
         var saved = 0;
+        ServiceNowException? last = null;
         try
         {
-            foreach (var field in FormCatalogFields.Independent)
-            {
-                try
-                {
-                    var choices = await FetchChoiceListAsync(field.Table, field.Element, null, cancellationToken).ConfigureAwait(false);
-                    if (RememberChoices(field.Table, field.Element, null, choices, persist: false))
-                        saved++;
-                }
-                catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
-                {
-                    last = ex;
-                }
-            }
-
-            IReadOnlyList<Choice> categories;
-            lock (_cacheGate)
-                categories = _choices.TryGetValue(ChoiceKey("incident", "category", null), out var cached) ? cached : [];
-
-            var dependents = 0;
-            foreach (var category in categories)
-            {
-                if (string.IsNullOrWhiteSpace(category.Value) || dependents >= FormCatalogPolicy.MaxDependentCategories)
-                    continue;
-                dependents++;
-                try
-                {
-                    var choices = await FetchChoiceListAsync("incident", "subcategory", category.Value, cancellationToken).ConfigureAwait(false);
-                    if (RememberChoices("incident", "subcategory", category.Value, choices, persist: false))
-                        saved++;
-                }
-                catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
-                {
-                    last = ex;
-                }
-            }
-
-            string[] itemIds;
-            lock (_cacheGate)
-                itemIds = _catalogForms.Keys.Take(FormCatalogPolicy.MaxCatalogItems).ToArray();
-
-            foreach (var itemId in itemIds)
-            {
-                try
-                {
-                    var variables = await FetchCatalogVariablesAsync(itemId, cancellationToken).ConfigureAwait(false);
-                    if (RememberCatalog(itemId, variables, persist: false))
-                        saved++;
-                }
-                catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
-                {
-                    last = ex;
-                }
-            }
-
+            (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var groups = await FetchGroupsAsync(cancellationToken).ConfigureAwait(false);
-                var members = await FetchMembersAsync("user.active=true^group.active=true", FormCatalogPolicy.MaxGroupMembers, cancellationToken).ConfigureAwait(false);
-                ReplaceDirectory(groups, members);
-                if (groups.Count > 0)
-                    saved++;
+                if (AssignmentDirectoryIsStale)
+                {
+                    await RefreshAssignmentDirectoryAsync(cancellationToken).ConfigureAwait(false);
+                    lock (_cacheGate)
+                    {
+                        if (_groups.Count > 0)
+                            saved++;
+                    }
+                }
             }
             catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
             {
@@ -363,6 +328,46 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
+    public async Task RefreshChoiceCatalogAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken).ConfigureAwait(false);
+            if (saved == 0 && last is not null)
+                throw last;
+
+            lock (_cacheGate)
+                _snapshot.CapturedAt = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            PersistCatalog();
+        }
+    }
+
+    public Task RefreshAssignmentDirectoryAsync(CancellationToken cancellationToken)
+    {
+        lock (_cacheGate)
+        {
+            if (_directoryRefresh is { IsCompleted: false })
+                return _directoryRefresh;
+
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _directoryRefresh = completion.Task;
+            _ = FinishAssignmentDirectoryAsync(completion, cancellationToken);
+            return completion.Task;
+        }
+    }
+
+    public async Task<bool> RefreshAssignmentDirectoryIfStaleAsync(CancellationToken cancellationToken)
+    {
+        if (!AssignmentDirectoryIsStale)
+            return false;
+
+        await RefreshAssignmentDirectoryAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken)
     {
         var term = EncodedQuery.Sanitize(text);
@@ -377,7 +382,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     {
         lock (_cacheGate)
         {
-            if (_groups.Count > 0)
+            if (_groups.Count > 0 || _directoryRefresh is { IsCompleted: false })
                 return _groups.ToArray();
         }
 
@@ -810,6 +815,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         lock (_cacheGate)
         {
             _snapshot.CapturedAt = snapshot.CapturedAt;
+            _snapshot.DirectoryCapturedAt = snapshot.DirectoryCapturedAt;
             _snapshot.Choices = snapshot.Choices ?? [];
             _snapshot.CatalogItems = snapshot.CatalogItems ?? [];
             _snapshot.DirectoryComplete = snapshot.DirectoryComplete;
@@ -917,41 +923,127 @@ public sealed class ServiceNowClient : IServiceNowClient
         if (_catalog is null || InstanceUri is null)
             return;
 
-        FormCatalogSnapshot copy;
-        lock (_cacheGate)
+        lock (_persistGate)
         {
-            copy = new FormCatalogSnapshot
+            FormCatalogSnapshot copy;
+            lock (_cacheGate)
             {
-                CapturedAt = _snapshot.CapturedAt,
-                Choices = _snapshot.Choices.Select(list => new CachedChoiceList
+                copy = new FormCatalogSnapshot
                 {
-                    Table = list.Table,
-                    Element = list.Element,
-                    DependentValue = list.DependentValue,
-                    Choices = list.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToList()
-                }).ToList(),
-                CatalogItems = _snapshot.CatalogItems.Select(item => new CachedCatalogForm
-                {
-                    SysId = item.SysId,
-                    CapturedAt = item.CapturedAt,
-                    Variables = item.Variables.Select(variable => new CatalogVariableDefinition(
-                        variable.Name,
-                        variable.Label,
-                        variable.Mandatory,
-                        variable.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToArray())).ToList()
-                }).ToList(),
-                DirectoryComplete = _snapshot.DirectoryComplete,
-                Groups = _snapshot.Groups.Select(group => new CachedAssignmentGroup { SysId = group.SysId, Name = group.Name }).ToList(),
-                Members = _snapshot.Members.Select(member => new CachedGroupMember
-                {
-                    GroupSysId = member.GroupSysId,
-                    UserSysId = member.UserSysId,
-                    Name = member.Name
-                }).ToList()
-            };
+                    CapturedAt = _snapshot.CapturedAt,
+                    DirectoryCapturedAt = _snapshot.DirectoryCapturedAt,
+                    Choices = _snapshot.Choices.Select(list => new CachedChoiceList
+                    {
+                        Table = list.Table,
+                        Element = list.Element,
+                        DependentValue = list.DependentValue,
+                        Choices = list.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToList()
+                    }).ToList(),
+                    CatalogItems = _snapshot.CatalogItems.Select(item => new CachedCatalogForm
+                    {
+                        SysId = item.SysId,
+                        CapturedAt = item.CapturedAt,
+                        Variables = item.Variables.Select(variable => new CatalogVariableDefinition(
+                            variable.Name,
+                            variable.Label,
+                            variable.Mandatory,
+                            variable.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToArray())).ToList()
+                    }).ToList(),
+                    DirectoryComplete = _snapshot.DirectoryComplete,
+                    Groups = _snapshot.Groups.Select(group => new CachedAssignmentGroup { SysId = group.SysId, Name = group.Name }).ToList(),
+                    Members = _snapshot.Members.Select(member => new CachedGroupMember
+                    {
+                        GroupSysId = member.GroupSysId,
+                        UserSysId = member.UserSysId,
+                        Name = member.Name
+                    }).ToList()
+                };
+            }
+
+            _catalog.Save(InstanceUri, copy);
+        }
+    }
+
+    private async Task<(int Saved, ServiceNowException? Error)> DownloadChoiceCatalogAsync(CancellationToken cancellationToken)
+    {
+        ServiceNowException? last = null;
+        var saved = 0;
+        foreach (var field in FormCatalogFields.Independent)
+        {
+            try
+            {
+                var choices = await FetchChoiceListAsync(field.Table, field.Element, null, cancellationToken).ConfigureAwait(false);
+                if (RememberChoices(field.Table, field.Element, null, choices, persist: false))
+                    saved++;
+            }
+            catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
+            {
+                last = ex;
+            }
         }
 
-        _catalog.Save(InstanceUri, copy);
+        IReadOnlyList<Choice> categories;
+        lock (_cacheGate)
+            categories = _choices.TryGetValue(ChoiceKey("incident", "category", null), out var cached) ? cached : [];
+
+        var dependents = 0;
+        foreach (var category in categories)
+        {
+            if (string.IsNullOrWhiteSpace(category.Value) || dependents >= FormCatalogPolicy.MaxDependentCategories)
+                continue;
+            dependents++;
+            try
+            {
+                var choices = await FetchChoiceListAsync("incident", "subcategory", category.Value, cancellationToken).ConfigureAwait(false);
+                if (RememberChoices("incident", "subcategory", category.Value, choices, persist: false))
+                    saved++;
+            }
+            catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
+            {
+                last = ex;
+            }
+        }
+
+        string[] itemIds;
+        lock (_cacheGate)
+            itemIds = _catalogForms.Keys.Take(FormCatalogPolicy.MaxCatalogItems).ToArray();
+
+        foreach (var itemId in itemIds)
+        {
+            try
+            {
+                var variables = await FetchCatalogVariablesAsync(itemId, cancellationToken).ConfigureAwait(false);
+                if (RememberCatalog(itemId, variables, persist: false))
+                    saved++;
+            }
+            catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
+            {
+                last = ex;
+            }
+        }
+
+        return (saved, last);
+    }
+
+    private async Task FinishAssignmentDirectoryAsync(TaskCompletionSource completion, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await RefreshAssignmentDirectoryCoreAsync(cancellationToken).ConfigureAwait(false);
+            completion.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            completion.TrySetException(ex);
+        }
+    }
+
+    private async Task RefreshAssignmentDirectoryCoreAsync(CancellationToken cancellationToken)
+    {
+        var groups = await FetchGroupsAsync(cancellationToken).ConfigureAwait(false);
+        var members = await FetchMembersAsync("user.active=true^group.active=true", FormCatalogPolicy.MaxGroupMembers, cancellationToken).ConfigureAwait(false);
+        ReplaceDirectory(groups, members);
+        PersistCatalog();
     }
 
     private async Task<List<Choice>> FetchGroupsAsync(CancellationToken cancellationToken)
@@ -1052,6 +1144,7 @@ public sealed class ServiceNowClient : IServiceNowClient
                 list.Sort((left, right) => string.Compare(left.Label, right.Label, StringComparison.OrdinalIgnoreCase));
 
             _snapshot.DirectoryComplete = true;
+            _snapshot.DirectoryCapturedAt = DateTimeOffset.UtcNow;
             _snapshot.Groups = _groups.Select(group => new CachedAssignmentGroup { SysId = group.Value, Name = group.Label }).ToList();
             _snapshot.Members = [];
             foreach (var pair in _membersByGroup)

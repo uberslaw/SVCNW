@@ -28,7 +28,12 @@ public partial class App : Application
             }
         };
 
-        var main = new MainViewModel(new DpapiSettingsStore(), new WindowsDesktopServices(), new WebViewBrowserSignIn(), FileFormCatalogStore.InApplicationData());
+        var main = new MainViewModel(
+            new DpapiSettingsStore(),
+            new WindowsDesktopServices(),
+            new WebViewBrowserSignIn(),
+            FileFormCatalogStore.InApplicationData(),
+            FileIncidentTemplateStore.InApplicationData());
         var window = new MainWindow { DataContext = main };
         MainWindow = window;
         window.Show();

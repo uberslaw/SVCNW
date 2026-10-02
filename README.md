@@ -4,7 +4,7 @@ A Windows desktop app for client services teams who need to create, update, reso
 
 ## What you can do
 
-- Incidents: create, update, assign, add work notes or customer comments, and resolve with a close code and close notes. **Create new** is on the incident list. **Copy** sits next to the incident, request, and request item number. Assignment group and assigned to are dropdowns; the people list is the members of the selected group.
+- Incidents: create, update, assign, add work notes or customer comments, and resolve with a close code and close notes. **Create new** is on the incident list. **Copy** sits next to the incident, request, and request item number. Assignment group and assigned to are dropdowns; the people list is the members of the selected group. **Templates** on the incident list save the current incident on this PC. One click starts a new incident with those fields filled in. Nothing is sent until you click Save.
 - Requests (`sc_request`): create a direct request, update it, and close it.
 - Request items (`sc_req_item`): update, assign, and close the items agents actually fulfill. Open them from the request they belong to.
 - Catalog orders: search the service catalog, fill variables, and order an item for a caller. This is the path that runs the normal catalog workflow.
@@ -43,6 +43,10 @@ Type a person's name in Caller, Requested for, Assigned to, or Assignment group.
 The password, client secret, and browser session are stored with Windows DPAPI for the current Windows user, under `%AppData%\ServiceNowDesk\settings.json`. They are not written in plain text.
 
 Dropdowns for incidents, requests, and request items, plus catalog questions you have opened, are saved on this PC and refreshed about once a day. The forms read that saved copy, so they open without waiting on the website. Ticket lists, saves, notes, and new catalog orders still go to ServiceNow. The saved lists live in `%AppData%\ServiceNowDesk\form-catalog.<instance>.json`.
+
+Assignment groups and their members download in the background when you connect, if this PC has no saved directory yet or that directory is older than a day. The incident list and Create new stay available while that download runs, and the group dropdown fills in when it finishes. A failed refresh leaves the saved lists in place.
+
+Incident templates are stored in `%AppData%\ServiceNowDesk\incident-templates.json`. They are local to this PC, including practice mode, and they are not secrets. Saving a template does not create an incident in ServiceNow.
 
 ### OAuth app
 

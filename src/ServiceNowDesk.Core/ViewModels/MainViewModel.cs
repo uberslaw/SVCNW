@@ -12,6 +12,7 @@ public partial class MainViewModel : ObservableObject
     private readonly ISettingsStore _store;
     private readonly IBrowserSignIn? _browserSignIn;
     private readonly IFormCatalogStore? _formCatalog;
+    private readonly Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? _clientFactory;
     private readonly Stack<DeskSection> _returnStack = [];
     private IServiceNowClient? _client;
     private CancellationTokenSource? _searchCts;
@@ -20,13 +21,22 @@ public partial class MainViewModel : ObservableObject
     private bool _preserveNavigation;
     private bool _suppressSearchText;
 
-    public MainViewModel(ISettingsStore store, IDesktopServices desktop, IBrowserSignIn? browserSignIn = null, IFormCatalogStore? formCatalog = null)
+    public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
+
+    public MainViewModel(
+        ISettingsStore store,
+        IDesktopServices desktop,
+        IBrowserSignIn? browserSignIn = null,
+        IFormCatalogStore? formCatalog = null,
+        IIncidentTemplateStore? templates = null,
+        Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? clientFactory = null)
     {
         _store = store;
         _browserSignIn = browserSignIn;
         _formCatalog = formCatalog;
+        _clientFactory = clientFactory;
         Connection = new ConnectionViewModel();
-        Incidents = new IncidentWorkspaceViewModel(desktop);
+        Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore());
         Requests = new RequestWorkspaceViewModel(desktop);
         RequestedItems = new RequestedItemWorkspaceViewModel(desktop);
         Search = new SearchWorkspaceViewModel();
@@ -90,7 +100,9 @@ public partial class MainViewModel : ObservableObject
             else
             {
                 var session = ServiceNowSession.FromSettings(settings);
-                live = ServiceNowClient.Create(session, formCatalog: _formCatalog);
+                live = _clientFactory is null
+                    ? ServiceNowClient.Create(session, formCatalog: _formCatalog)
+                    : _clientFactory(session, _formCatalog);
                 created = live;
             }
 
@@ -472,6 +484,7 @@ public partial class MainViewModel : ObservableObject
 
     private async Task RefreshFormsIfNeededAsync(ServiceNowClient client, string userName)
     {
+        QueueAssignmentDirectoryRefresh(client);
         if (_formCatalog is null || !client.FormCatalogIsStale)
             return;
 
@@ -480,7 +493,7 @@ public partial class MainViewModel : ObservableObject
             StatusMessage = "Connected as " + userName + ". Downloading form lists.";
             try
             {
-                await client.RefreshFormCatalogAsync(CancellationToken.None);
+                await client.RefreshChoiceCatalogAsync(CancellationToken.None);
                 StatusMessage = "Connected as " + userName + ".";
             }
             catch (Exception ex)
@@ -495,11 +508,37 @@ public partial class MainViewModel : ObservableObject
         _ = RefreshFormCatalogQuietlyAsync(client);
     }
 
+    private void QueueAssignmentDirectoryRefresh(ServiceNowClient client)
+    {
+        if (_formCatalog is null || !client.AssignmentDirectoryIsStale)
+            return;
+
+        AssignmentDirectoryRefresh = RefreshAssignmentDirectoryQuietlyAsync(client);
+    }
+
+    private async Task RefreshAssignmentDirectoryQuietlyAsync(ServiceNowClient client)
+    {
+        try
+        {
+            await client.RefreshAssignmentDirectoryAsync(CancellationToken.None);
+            if (!ReferenceEquals(_client, client))
+                return;
+            await Incidents.Assignment.LoadGroupsAsync();
+            await RequestedItems.Assignment.LoadGroupsAsync();
+        }
+        catch (Exception)
+        {
+            if (!ReferenceEquals(_client, client))
+                return;
+            StatusMessage = "Connected as " + ConnectedUser + ". Saved assignment lists are still in use.";
+        }
+    }
+
     private async Task RefreshFormCatalogQuietlyAsync(ServiceNowClient client)
     {
         try
         {
-            await client.RefreshFormCatalogAsync(CancellationToken.None);
+            await client.RefreshChoiceCatalogAsync(CancellationToken.None);
         }
         catch (Exception)
         {

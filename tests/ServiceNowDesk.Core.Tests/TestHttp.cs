@@ -10,6 +10,7 @@ internal sealed record CapturedCall(string Method, string PathAndQuery, string B
 internal sealed class StubHandler : HttpMessageHandler
 {
     private readonly Func<HttpRequestMessage, string, HttpResponseMessage> _respond;
+    private readonly object _gate = new();
 
     public StubHandler(Func<HttpRequestMessage, string, HttpResponseMessage> respond) => _respond = respond;
 
@@ -18,12 +19,16 @@ internal sealed class StubHandler : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
-        Calls.Add(new CapturedCall(
-            request.Method.Method,
-            request.RequestUri?.PathAndQuery ?? "",
-            body,
-            request.Headers.Authorization?.Scheme,
-            request.Headers.Authorization?.Parameter));
+        lock (_gate)
+        {
+            Calls.Add(new CapturedCall(
+                request.Method.Method,
+                request.RequestUri?.PathAndQuery ?? "",
+                body,
+                request.Headers.Authorization?.Scheme,
+                request.Headers.Authorization?.Parameter));
+        }
+
         return _respond(request, body);
     }
 }

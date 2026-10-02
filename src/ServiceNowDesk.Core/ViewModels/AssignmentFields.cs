@@ -10,6 +10,7 @@ public sealed partial class AssignmentFields : ObservableObject
     private IServiceNowClient? _client;
     private bool _applying;
     private int _version;
+    private int _groupVersion;
 
     public ObservableCollection<Choice> Groups { get; } = [];
     public ObservableCollection<Choice> Members { get; } = [new Choice("", "Unassigned")];
@@ -32,6 +33,7 @@ public sealed partial class AssignmentFields : ObservableObject
         if (_client is null)
             return;
 
+        var version = ++_groupVersion;
         IReadOnlyList<Choice> groups;
         try
         {
@@ -42,18 +44,35 @@ public sealed partial class AssignmentFields : ObservableObject
             groups = [];
         }
 
-        var selected = GroupId;
-        var selectedLabel = Groups.FirstOrDefault(choice => choice.Value == selected)?.Label ?? selected;
-        Groups.Clear();
-        Groups.Add(new Choice("", "Unassigned"));
-        foreach (var group in groups.OrderBy(choice => choice.Label, StringComparer.OrdinalIgnoreCase))
-        {
-            if (group.Value.Length == 0 || Groups.Any(choice => choice.Value == group.Value))
-                continue;
-            Groups.Add(group);
-        }
+        if (version != _groupVersion)
+            return;
 
-        Ensure(Groups, selected, selectedLabel);
+        var selected = GroupId;
+        var selectedMember = MemberId;
+        var selectedLabel = Groups.FirstOrDefault(choice => choice.Value == selected)?.Label ?? selected;
+        _applying = true;
+        try
+        {
+            Groups.Clear();
+            Groups.Add(new Choice("", "Unassigned"));
+            foreach (var group in groups.OrderBy(choice => choice.Label, StringComparer.OrdinalIgnoreCase))
+            {
+                if (group.Value.Length == 0 || Groups.Any(choice => choice.Value == group.Value))
+                    continue;
+                Groups.Add(group);
+            }
+
+            Ensure(Groups, selected, selectedLabel);
+            if (!string.Equals(GroupId, selected, StringComparison.Ordinal))
+                GroupId = selected;
+            if (!string.Equals(MemberId, selectedMember, StringComparison.Ordinal))
+                MemberId = selectedMember;
+        }
+        finally
+        {
+            _applying = false;
+            OnPropertyChanged(nameof(MemberHint));
+        }
     }
 
     public async Task ShowAsync(string? groupId, string? groupLabel, string? memberId, string? memberLabel)
