@@ -29,6 +29,12 @@ public interface IServiceNowClient : IDisposable
     Task<RequestedItemRecord> UpdateRequestedItemAsync(string sysId, RequestedItemChanges changes, CancellationToken cancellationToken);
     Task<RequestedItemRecord> ResolveRequestedItemAsync(string sysId, string state, string closeNotes, CancellationToken cancellationToken);
 
+    Task<PagedResult<InteractionRecord>> SearchInteractionsAsync(TicketQuery query, CancellationToken cancellationToken);
+    Task<InteractionRecord> GetInteractionAsync(string sysId, CancellationToken cancellationToken);
+    Task<InteractionRecord> CreateInteractionAsync(InteractionChanges changes, CancellationToken cancellationToken);
+    Task<InteractionRecord> UpdateInteractionAsync(string sysId, InteractionChanges changes, CancellationToken cancellationToken);
+    Task<InteractionConversion> ConvertInteractionToIncidentAsync(string interactionSysId, CancellationToken cancellationToken);
+
     Task<PagedResult<KnowledgeArticle>> SearchKnowledgeAsync(TicketQuery query, CancellationToken cancellationToken);
     Task<KnowledgeArticle> GetKnowledgeAsync(string sysId, CancellationToken cancellationToken);
 

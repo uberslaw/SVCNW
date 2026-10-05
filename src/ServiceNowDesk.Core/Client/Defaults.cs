@@ -105,6 +105,32 @@ public static class DefaultChoices
         new("7", "Closed Skipped")
     ];
 
+    public const string WalkUpType = "walkup";
+
+    public static IReadOnlyList<Choice> InteractionStates { get; } =
+    [
+        new("new", "New"),
+        new("work_in_progress", "Work in Progress"),
+        new("on_hold", "On Hold"),
+        new("wrap_up", "Wrap Up"),
+        new("closed_complete", "Closed Complete"),
+        new("closed_abandoned", "Closed Abandoned")
+    ];
+
+    public static IReadOnlyList<Choice> InteractionTypes { get; } =
+    [
+        new(WalkUpType, "Walk-up"),
+        new("phone", "Phone"),
+        new("chat", "Chat"),
+        new("messaging", "Messaging")
+    ];
+
+    public static IReadOnlyList<Choice> InteractionOutcomes { get; } =
+    [
+        new("closed_complete", "Closed Complete"),
+        new("closed_abandoned", "Closed Abandoned")
+    ];
+
     public static IReadOnlyList<Choice> For(string table, string element) => (table, element) switch
     {
         ("incident", "state") => IncidentStates,
@@ -119,6 +145,8 @@ public static class DefaultChoices
         ("sc_request", "priority") => Priorities,
         ("sc_req_item", "state") => ItemStates,
         ("sc_req_item", "priority") => Priorities,
+        ("interaction", "state") => InteractionStates,
+        ("interaction", "type") => InteractionTypes,
         _ => []
     };
 }
@@ -145,6 +173,8 @@ public static class PresetCatalog
     ];
 
     public static IReadOnlyList<PresetOption> RequestedItems { get; } = Incidents;
+
+    public static IReadOnlyList<PresetOption> WalkUps { get; } = Incidents;
 }
 
 public static class ServiceNowLinks
@@ -188,4 +218,15 @@ public static class StateTone
 
     public static string ForKnowledge(string? state) =>
         string.Equals(state, "published", StringComparison.OrdinalIgnoreCase) ? "resolved" : "open";
+
+    public static string ForInteraction(string? state) => state switch
+    {
+        "new" => "new",
+        "work_in_progress" => "progress",
+        "on_hold" => "hold",
+        "wrap_up" => "progress",
+        "closed_complete" => "resolved",
+        "closed_abandoned" => "closed",
+        _ => "open"
+    };
 }

@@ -46,6 +46,8 @@ public partial class MainViewModel : ObservableObject
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore());
         Requests = new RequestWorkspaceViewModel(desktop);
         RequestedItems = new RequestedItemWorkspaceViewModel(desktop);
+        WalkUps = new InteractionWorkspaceViewModel(desktop);
+        WalkUps.IncidentRequested += (_, conversion) => ConvertOpenTask = OpenConvertedIncidentAsync(conversion);
         Search = new SearchWorkspaceViewModel();
         Knowledge = new KnowledgeWorkspaceViewModel();
         Catalog = new CatalogWorkspaceViewModel();
@@ -67,6 +69,8 @@ public partial class MainViewModel : ObservableObject
     public IncidentWorkspaceViewModel Incidents { get; }
     public RequestWorkspaceViewModel Requests { get; }
     public RequestedItemWorkspaceViewModel RequestedItems { get; }
+    public InteractionWorkspaceViewModel WalkUps { get; }
+    public Task ConvertOpenTask { get; private set; } = Task.CompletedTask;
     public SearchWorkspaceViewModel Search { get; }
     public KnowledgeWorkspaceViewModel Knowledge { get; }
     public CatalogWorkspaceViewModel Catalog { get; }
@@ -90,7 +94,8 @@ public partial class MainViewModel : ObservableObject
     public bool ResolvePanelOpen =>
         (SelectedSection == DeskSection.Incidents && Incidents.ShowResolvePanel)
         || (SelectedSection == DeskSection.Requests && Requests.ShowResolvePanel)
-        || (SelectedSection == DeskSection.RequestedItems && RequestedItems.ShowResolvePanel);
+        || (SelectedSection == DeskSection.RequestedItems && RequestedItems.ShowResolvePanel)
+        || (SelectedSection == DeskSection.WalkUps && WalkUps.ShowResolvePanel);
 
     public async Task InitializeAsync()
     {
@@ -323,7 +328,8 @@ public partial class MainViewModel : ObservableObject
             DeskSection.Incidents => "Search incidents",
             DeskSection.Requests => "Search requests",
             DeskSection.RequestedItems => "Search request items",
-            DeskSection.Search => "Search incidents, requests, items, and knowledge",
+            DeskSection.WalkUps => "Search walk-up interactions",
+            DeskSection.Search => "Search incidents, requests, items, walk-ups, and knowledge",
             DeskSection.Knowledge => "Open articles from Search",
             DeskSection.Catalog => "Search the catalog",
             DeskSection.Notifications => "Notifications",
@@ -337,7 +343,7 @@ public partial class MainViewModel : ObservableObject
     private bool CanGoBack() =>
         _returnStack.Count > 0
         && _returnStack.Peek() == DeskSection.Search
-        && SelectedSection is DeskSection.Incidents or DeskSection.Requests or DeskSection.RequestedItems or DeskSection.Knowledge;
+        && SelectedSection is DeskSection.Incidents or DeskSection.Requests or DeskSection.RequestedItems or DeskSection.WalkUps or DeskSection.Knowledge;
 
     private void UpdateBack()
     {
@@ -350,6 +356,7 @@ public partial class MainViewModel : ObservableObject
         DeskSection.Incidents => Incidents,
         DeskSection.Requests => Requests,
         DeskSection.RequestedItems => RequestedItems,
+        DeskSection.WalkUps => WalkUps,
         _ => null
     };
 
@@ -384,6 +391,9 @@ public partial class MainViewModel : ObservableObject
                 break;
             case DeskSection.RequestedItems:
                 await LoadRecordSectionAsync(DeskSection.RequestedItems, RequestedItems);
+                break;
+            case DeskSection.WalkUps:
+                await LoadRecordSectionAsync(DeskSection.WalkUps, WalkUps);
                 break;
             case DeskSection.Search:
                 if (!Search.HasCurrentResultsFor(SearchText))
@@ -472,6 +482,9 @@ public partial class MainViewModel : ObservableObject
                 case DeskSection.RequestedItems:
                     await RequestedItems.OpenFromSearchAsync(hit.SysId);
                     break;
+                case DeskSection.WalkUps:
+                    await WalkUps.OpenFromSearchAsync(hit.SysId);
+                    break;
                 case DeskSection.Knowledge:
                     await Knowledge.OpenAsync(_client, hit.SysId);
                     break;
@@ -531,6 +544,30 @@ public partial class MainViewModel : ObservableObject
         StatusMessage = "Opened " + result.RequestNumber + ".";
     }
 
+    private async Task OpenConvertedIncidentAsync(InteractionConversion conversion)
+    {
+        if (!string.IsNullOrWhiteSpace(conversion.LinkError))
+            ErrorMessage = conversion.LinkError;
+
+        await OpenHitAsync(new SearchHit
+        {
+            Section = DeskSection.Incidents,
+            TableLabel = "Incident",
+            SysId = conversion.Incident.SysId,
+            Number = conversion.Incident.Number,
+            Title = conversion.Incident.ShortDescription,
+            StateLabel = conversion.Incident.StateLabel,
+            Tone = StateTone.ForIncident(conversion.Incident.State),
+            Meta = "",
+            When = "",
+            SortKey = ""
+        }, fromSearch: false);
+
+        StatusMessage = conversion.Created
+            ? "Created " + conversion.Incident.Number + " from the walk-up."
+            : "Opened " + conversion.Incident.Number + ", already linked to this walk-up.";
+    }
+
     private async Task RefreshFormsIfNeededAsync(ServiceNowClient client, string userName)
     {
         QueueAssignmentDirectoryRefresh(client);
@@ -574,6 +611,7 @@ public partial class MainViewModel : ObservableObject
                 return;
             await Incidents.Assignment.LoadGroupsAsync();
             await RequestedItems.Assignment.LoadGroupsAsync();
+            await WalkUps.Assignment.LoadGroupsAsync();
         }
         catch (Exception)
         {
@@ -605,6 +643,7 @@ public partial class MainViewModel : ObservableObject
         Incidents.Detach();
         Requests.Detach();
         RequestedItems.Detach();
+        WalkUps.Detach();
         Catalog.Attach(null);
         Search.Reset();
         Knowledge.Clear();
@@ -618,6 +657,7 @@ public partial class MainViewModel : ObservableObject
         Incidents.Attach(client);
         Requests.Attach(client);
         RequestedItems.Attach(client);
+        WalkUps.Attach(client);
         Catalog.Attach(client);
     }
 

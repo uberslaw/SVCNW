@@ -21,6 +21,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     private const string AlertRequestFields = "sys_id,number,short_description,request_state,assigned_to,assignment_group,sys_updated_on,active";
     private const string AlertItemFields = "sys_id,number,short_description,state,assigned_to,assignment_group,sys_updated_on,active";
     private const int AlertLimit = 100;
+    private const string InteractionFields = "sys_id,number,short_description,description,state,type,opened_for,assigned_to,assignment_group,opened_at,sys_updated_on,active";
 
     private readonly HttpClient _http;
     private readonly ServiceNowAuthMode _authMode;
@@ -306,6 +307,69 @@ public sealed class ServiceNowClient : IServiceNowClient
             ["work_notes"] = closeNotes.Trim()
         });
         return WriteAsync(HttpMethod.Patch, "sc_req_item", sysId, json, ItemFields, RecordMapper.RequestedItem, cancellationToken);
+    }
+
+    public Task<PagedResult<InteractionRecord>> SearchInteractionsAsync(TicketQuery query, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var clause = string.IsNullOrWhiteSpace(query.ExtraClause)
+            ? "type=" + DefaultChoices.WalkUpType
+            : query.ExtraClause + "^type=" + DefaultChoices.WalkUpType;
+        return SearchAsync("interaction", InteractionFields, query with { ExtraClause = clause }, RecordMapper.Interaction, cancellationToken);
+    }
+
+    public Task<InteractionRecord> GetInteractionAsync(string sysId, CancellationToken cancellationToken) =>
+        GetOneAsync("interaction", sysId, InteractionFields, RecordMapper.Interaction, cancellationToken);
+
+    public Task<InteractionRecord> CreateInteractionAsync(InteractionChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (string.IsNullOrWhiteSpace(changes.ShortDescription))
+            throw new ArgumentException("Enter a short description.");
+        return WriteAsync(HttpMethod.Post, "interaction", null, ChangeJson.FromInteraction(changes, creating: true), InteractionFields, RecordMapper.Interaction, cancellationToken);
+    }
+
+    public Task<InteractionRecord> UpdateInteractionAsync(string sysId, InteractionChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (!changes.HasChanges)
+            throw new InvalidOperationException("There is nothing to update.");
+        return WriteAsync(HttpMethod.Patch, "interaction", sysId, ChangeJson.FromInteraction(changes, creating: false), InteractionFields, RecordMapper.Interaction, cancellationToken);
+    }
+
+    public async Task<InteractionConversion> ConvertInteractionToIncidentAsync(string interactionSysId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(interactionSysId))
+            throw new ArgumentException("Save the walk-up before creating an incident.");
+
+        var id = EncodedQuery.SafeToken(interactionSysId, "interaction id");
+        var interaction = await GetInteractionAsync(id, cancellationToken).ConfigureAwait(false);
+        string? existingId = null;
+        try
+        {
+            existingId = await FindRelatedIncidentIdAsync(id, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException)
+        {
+            existingId = null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(existingId))
+        {
+            var existing = await GetIncidentAsync(existingId, cancellationToken).ConfigureAwait(false);
+            return new InteractionConversion(existing, false, null);
+        }
+
+        var incident = await CreateIncidentAsync(IncidentFromInteraction(interaction), cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await LinkIncidentAsync(id, incident.SysId, cancellationToken).ConfigureAwait(false);
+            return new InteractionConversion(incident, true, null);
+        }
+        catch (ServiceNowException ex)
+        {
+            return new InteractionConversion(incident, true, ex.Message);
+        }
     }
 
     public Task<PagedResult<KnowledgeArticle>> SearchKnowledgeAsync(TicketQuery query, CancellationToken cancellationToken) =>
@@ -656,6 +720,8 @@ public sealed class ServiceNowClient : IServiceNowClient
         var extra = string.IsNullOrWhiteSpace(query.ParentRequestId)
             ? ""
             : "request=" + EncodedQuery.SafeToken(query.ParentRequestId, "request id");
+        if (!string.IsNullOrWhiteSpace(query.ExtraClause))
+            extra = extra.Length == 0 ? query.ExtraClause : extra + "^" + query.ExtraClause;
         return EncodedQuery.Build(
             EncodedQuery.TextSearch(query.Text),
             assignment,
@@ -764,6 +830,50 @@ public sealed class ServiceNowClient : IServiceNowClient
 
             return suggestions;
         }
+    }
+
+    private static IncidentChanges IncidentFromInteraction(InteractionRecord interaction) => new()
+    {
+        ShortDescription = interaction.ShortDescription,
+        Description = string.IsNullOrWhiteSpace(interaction.Description) ? null : interaction.Description,
+        CallerId = string.IsNullOrWhiteSpace(interaction.OpenedFor.SysId) ? null : interaction.OpenedFor.SysId,
+        AssignedToId = string.IsNullOrWhiteSpace(interaction.AssignedTo.SysId) ? null : interaction.AssignedTo.SysId,
+        AssignmentGroupId = string.IsNullOrWhiteSpace(interaction.AssignmentGroup.SysId) ? null : interaction.AssignmentGroup.SysId
+    };
+
+    private async Task<string?> FindRelatedIncidentIdAsync(string interactionSysId, CancellationToken cancellationToken)
+    {
+        var query = "interaction=" + interactionSysId + "^document_table=incident";
+        var result = await GetListAsync(
+            "interaction_related_record",
+            "sys_id,document_id,document_table,interaction",
+            query,
+            1,
+            0,
+            cancellationToken).ConfigureAwait(false);
+        using (result)
+        {
+            foreach (var row in RequireArray(result.Document).EnumerateArray())
+            {
+                var documentId = SnowField.Read(row, "document_id").Value;
+                if (documentId.Length > 0)
+                    return documentId;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task LinkIncidentAsync(string interactionSysId, string incidentSysId, CancellationToken cancellationToken)
+    {
+        var json = ChangeJson.Serialize(new Dictionary<string, string?>
+        {
+            ["interaction"] = interactionSysId,
+            ["document_table"] = "incident",
+            ["document_id"] = incidentSysId
+        });
+        var result = await SendAsync(HttpMethod.Post, "api/now/table/interaction_related_record", json, cancellationToken).ConfigureAwait(false);
+        result.Dispose();
     }
 
     private async Task<ApiPayload> GetListAsync(string table, string fields, string query, int limit, int offset, CancellationToken cancellationToken)

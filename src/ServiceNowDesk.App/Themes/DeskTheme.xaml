@@ -7,6 +7,7 @@
     <conv:StringVisibilityConverter x:Key="StringVis"/>
     <conv:StringVisibilityConverter x:Key="EmptyStringVis" WhenEmpty="True"/>
     <conv:SectionVisibilityConverter x:Key="SectionVis"/>
+    <conv:InverseBoolConverter x:Key="InverseBool"/>
     <conv:EnumEqualsConverter x:Key="EnumEq"/>
     <conv:EqualsMultiConverter x:Key="EqualsMulti"/>
     <conv:AlertKindBrushConverter x:Key="AlertBrush"/>

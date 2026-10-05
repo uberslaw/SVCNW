@@ -18,6 +18,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private readonly List<RequestRecord> _requests = [];
     private readonly List<RequestedItemRecord> _items = [];
     private readonly List<KnowledgeArticle> _articles = [];
+    private readonly List<InteractionRecord> _interactions = [];
+    private readonly Dictionary<string, string> _relatedIncidents = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<JournalEntry>> _journal = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ApiActivity> _activity = [];
     private int _sequence = 1000;
@@ -523,6 +525,114 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     public Task<KnowledgeArticle> GetKnowledgeAsync(string sysId, CancellationToken cancellationToken) =>
         Task.FromResult(Find(_articles, sysId, "knowledge article"));
 
+    public Task<PagedResult<InteractionRecord>> SearchInteractionsAsync(TicketQuery query, CancellationToken cancellationToken)
+    {
+        var matches = _interactions.Where(record =>
+            string.Equals(record.Type, DefaultChoices.WalkUpType, StringComparison.OrdinalIgnoreCase)
+            && Passes(
+                query,
+                record.AssignedTo.SysId,
+                record.AssignmentGroup.SysId,
+                "",
+                "",
+                record.Active,
+                record.Number,
+                Texts(record.ShortDescription, record.Description, record.Number, record.OpenedFor.Display, JournalText(record.SysId))));
+        return Task.FromResult(Page(matches, query));
+    }
+
+    public Task<InteractionRecord> GetInteractionAsync(string sysId, CancellationToken cancellationToken) =>
+        Task.FromResult(Find(_interactions, sysId, "interaction"));
+
+    public Task<InteractionRecord> CreateInteractionAsync(InteractionChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (string.IsNullOrWhiteSpace(changes.ShortDescription))
+            throw new ArgumentException("Enter a short description.");
+
+        var now = Stamp();
+        var state = string.IsNullOrWhiteSpace(changes.State) ? "new" : changes.State;
+        var record = new InteractionRecord
+        {
+            SysId = NextId("ims"),
+            Number = NextNumber("IMS"),
+            ShortDescription = changes.ShortDescription.Trim(),
+            Description = changes.Description?.Trim() ?? "",
+            State = state,
+            StateLabel = Label(DefaultChoices.InteractionStates, state, state),
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = UserRef(changes.OpenedForId),
+            AssignedTo = UserRef(changes.AssignedToId),
+            AssignmentGroup = GroupRef(changes.AssignmentGroupId),
+            OpenedAtDisplay = now,
+            UpdatedAtDisplay = now,
+            UpdatedAtValue = now,
+            Active = !IsClosedInteraction(state)
+        };
+        _interactions.Insert(0, record);
+        Record("POST", "api/now/table/interaction");
+        return Task.FromResult(record);
+    }
+
+    public Task<InteractionRecord> UpdateInteractionAsync(string sysId, InteractionChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (!changes.HasChanges)
+            throw new InvalidOperationException("There is nothing to update.");
+
+        var current = Find(_interactions, sysId, "interaction");
+        var state = changes.State ?? current.State;
+        var type = changes.Type ?? current.Type;
+        var updated = current with
+        {
+            ShortDescription = changes.ShortDescription?.Trim() ?? current.ShortDescription,
+            Description = changes.Description ?? current.Description,
+            State = state,
+            StateLabel = changes.State is null ? current.StateLabel : Label(DefaultChoices.InteractionStates, state, state),
+            Type = type,
+            TypeLabel = changes.Type is null ? current.TypeLabel : Label(DefaultChoices.InteractionTypes, type, type),
+            OpenedFor = changes.OpenedForId is null ? current.OpenedFor : UserRef(changes.OpenedForId),
+            AssignedTo = changes.ClearAssignedTo ? ReferenceValue.Empty : changes.AssignedToId is null ? current.AssignedTo : UserRef(changes.AssignedToId),
+            AssignmentGroup = changes.ClearAssignmentGroup ? ReferenceValue.Empty : changes.AssignmentGroupId is null ? current.AssignmentGroup : GroupRef(changes.AssignmentGroupId),
+            Active = changes.State is null ? current.Active : !IsClosedInteraction(state),
+            UpdatedAtDisplay = Stamp(),
+            UpdatedAtValue = Stamp()
+        };
+        Replace(_interactions, updated);
+        Record("PATCH", "api/now/table/interaction");
+        return Task.FromResult(updated);
+    }
+
+    public async Task<InteractionConversion> ConvertInteractionToIncidentAsync(string interactionSysId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(interactionSysId))
+            throw new ArgumentException("Save the walk-up before creating an incident.");
+
+        var interaction = Find(_interactions, interactionSysId, "interaction");
+        if (_relatedIncidents.TryGetValue(interaction.SysId, out var existingId))
+        {
+            Record("GET", "api/now/table/interaction_related_record");
+            var existing = await GetIncidentAsync(existingId, cancellationToken).ConfigureAwait(false);
+            return new InteractionConversion(existing, false, null);
+        }
+
+        var incident = await CreateIncidentAsync(new IncidentChanges
+        {
+            ShortDescription = interaction.ShortDescription,
+            Description = string.IsNullOrWhiteSpace(interaction.Description) ? null : interaction.Description,
+            CallerId = string.IsNullOrWhiteSpace(interaction.OpenedFor.SysId) ? null : interaction.OpenedFor.SysId,
+            AssignedToId = string.IsNullOrWhiteSpace(interaction.AssignedTo.SysId) ? null : interaction.AssignedTo.SysId,
+            AssignmentGroupId = string.IsNullOrWhiteSpace(interaction.AssignmentGroup.SysId) ? null : interaction.AssignmentGroup.SysId
+        }, cancellationToken).ConfigureAwait(false);
+        _relatedIncidents[interaction.SysId] = incident.SysId;
+        Record("POST", "api/now/table/interaction_related_record");
+        return new InteractionConversion(incident, true, null);
+    }
+
+    private static bool IsClosedInteraction(string state) =>
+        state is "closed_complete" or "closed_abandoned";
+
     private void Seed()
     {
         AddIncident(new IncidentRecord
@@ -979,6 +1089,51 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 PublishedDisplay = "2026-09-01"
             }
         ]);
+
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-password",
+            Number = "IMS0010001",
+            ShortDescription = "Password reset at the front desk",
+            Description = "Sam walked up and is locked out of payroll.",
+            State = "new",
+            StateLabel = "New",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Sam,
+            AssignedTo = Alex,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-10-01 09:10",
+            UpdatedAtDisplay = "2026-10-01 09:12",
+            UpdatedAtValue = "2026-10-01 09:12:00",
+            Active = true
+        }, new JournalEntry("journal-walkup", "work_notes", "Work note", "Checked the badge photo against the payroll roster.", "alex.rivera", "2026-10-01 09:12"));
+
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-badge",
+            Number = "IMS0010002",
+            ShortDescription = "Badge will not print",
+            Description = "The front desk printer feeds a blank card.",
+            State = "work_in_progress",
+            StateLabel = "Work in Progress",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Jordan,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-10-02 11:20",
+            UpdatedAtDisplay = "2026-10-02 11:25",
+            UpdatedAtValue = "2026-10-02 11:25:00",
+            Active = true
+        });
+    }
+
+    private void AddInteraction(InteractionRecord record, params JournalEntry[] notes)
+    {
+        _interactions.Add(record);
+        if (notes.Length > 0)
+            _journal[record.SysId] = notes.ToList();
     }
 
     private void AddIncident(IncidentRecord record, params JournalEntry[] notes)
@@ -1074,6 +1229,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         RequestRecord request => request.UpdatedAtValue,
         RequestedItemRecord item => item.UpdatedAtValue,
         KnowledgeArticle article => article.UpdatedAtValue,
+        InteractionRecord interaction => interaction.UpdatedAtValue,
         _ => ""
     };
 
@@ -1085,7 +1241,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     private void FindAny(string sysId)
     {
-        if (_incidents.Any(record => record.SysId == sysId) || _requests.Any(record => record.SysId == sysId) || _items.Any(record => record.SysId == sysId))
+        if (_incidents.Any(record => record.SysId == sysId)
+            || _requests.Any(record => record.SysId == sysId)
+            || _items.Any(record => record.SysId == sysId)
+            || _interactions.Any(record => record.SysId == sysId))
             return;
         throw new ServiceNowException(404, "ServiceNow could not find that record.", null);
     }
@@ -1096,6 +1255,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         RequestRecord request => request.SysId,
         RequestedItemRecord item => item.SysId,
         KnowledgeArticle article => article.SysId,
+        InteractionRecord interaction => interaction.SysId,
         _ => ""
     };
 

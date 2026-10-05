@@ -50,6 +50,8 @@ public static partial class EncodedQuery
         var term = Sanitize(text).ToUpperInvariant();
         if (term.StartsWith("RITM", StringComparison.Ordinal) || term.StartsWith("SCTASK", StringComparison.Ordinal))
             return DeskSection.RequestedItems;
+        if (term.StartsWith("IMS", StringComparison.Ordinal) && (term.Length == 3 || char.IsDigit(term[3])))
+            return DeskSection.WalkUps;
         if (term.StartsWith("INC", StringComparison.Ordinal))
             return DeskSection.Incidents;
         if (term.StartsWith("REQ", StringComparison.Ordinal))
@@ -102,10 +104,10 @@ public static partial class EncodedQuery
         return builder.ToString().Trim();
     }
 
-    [GeneratedRegex(@"^(INC|RITM|SCTASK|TASK|REQ|CHG|PRB|KB)\d{4,}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(INC|RITM|SCTASK|TASK|REQ|CHG|PRB|KB|IMS)\d{4,}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FullNumberPattern();
 
-    [GeneratedRegex(@"^(INC|RITM|SCTASK|TASK|REQ|CHG|PRB|KB)\d*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(INC|RITM|SCTASK|TASK|REQ|CHG|PRB|KB|IMS)\d*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PartialNumberPattern();
 
     [GeneratedRegex(@"^\d{4,}$", RegexOptions.CultureInvariant)]

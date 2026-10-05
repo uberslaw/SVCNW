@@ -16,6 +16,9 @@ public class EncodedQueryTests
     {
         Assert.Equal("number=INC0010002", EncodedQuery.TextSearch("inc0010002"));
         Assert.Equal("number=RITM0010001", EncodedQuery.TextSearch("RITM0010001"));
+        Assert.Equal("number=IMS0010001", EncodedQuery.TextSearch("ims0010001"));
+        Assert.Equal(DeskSection.WalkUps, EncodedQuery.SectionForNumber("IMS0010001"));
+        Assert.Null(EncodedQuery.SectionForNumber("IMPORTANT"));
         Assert.Equal(DeskSection.RequestedItems, EncodedQuery.SectionForNumber("RITM0010001"));
         Assert.Equal(DeskSection.Requests, EncodedQuery.SectionForNumber("REQ0010001"));
         Assert.Equal(DeskSection.Incidents, EncodedQuery.SectionForNumber("INC0010002"));

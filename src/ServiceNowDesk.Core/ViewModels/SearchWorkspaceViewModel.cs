@@ -17,8 +17,9 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool includeRequests = true;
     [ObservableProperty] private bool includeItems = true;
     [ObservableProperty] private bool includeKnowledge = true;
+    [ObservableProperty] private bool includeWalkUps = true;
     [ObservableProperty] private bool isLoading;
-    [ObservableProperty] private string summary = "Search incidents, requests, items, and knowledge articles.";
+    [ObservableProperty] private string summary = "Search incidents, requests, items, walk-ups, and knowledge articles.";
     [ObservableProperty] private string errorMessage = "";
 
     public ObservableCollection<SearchHit> Results { get; } = [];
@@ -39,7 +40,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         Query = "";
         Results.Clear();
         Selected = null;
-        Summary = "Search incidents, requests, items, and knowledge articles.";
+        Summary = "Search incidents, requests, items, walk-ups, and knowledge articles.";
         ErrorMessage = "";
         IsLoading = false;
     }
@@ -61,12 +62,12 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             Query = trimmed;
             Results.Clear();
             Selected = null;
-            Summary = "Type at least 2 characters. Numbers such as INC0010001 or KB0001001 can be shorter.";
+            Summary = "Type at least 2 characters. Numbers such as INC0010001, IMS0010001, or KB0001001 can be shorter.";
             _resultsCurrent = true;
             return;
         }
 
-        if (!IncludeIncidents && !IncludeRequests && !IncludeItems && !IncludeKnowledge)
+        if (!IncludeIncidents && !IncludeRequests && !IncludeItems && !IncludeKnowledge && !IncludeWalkUps)
         {
             if (version != _runVersion)
                 return;
@@ -103,8 +104,11 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             var articles = (kind is null or DeskSection.Knowledge) && IncludeKnowledge
                 ? client.SearchKnowledgeAsync(query, CancellationToken.None)
                 : Task.FromResult(new PagedResult<KnowledgeArticle>([], 0));
+            var walkUps = (kind is null or DeskSection.WalkUps) && IncludeWalkUps
+                ? client.SearchInteractionsAsync(query, CancellationToken.None)
+                : Task.FromResult(new PagedResult<InteractionRecord>([], 0));
 
-            await Task.WhenAll(incidents, requests, items, articles);
+            await Task.WhenAll(incidents, requests, items, articles, walkUps);
             if (version != _runVersion)
                 return;
 
@@ -145,6 +149,19 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 StateLabel = record.StateLabel,
                 Tone = StateTone.ForItem(record.State),
                 Meta = record.CatalogItem.Display,
+                When = record.UpdatedAtDisplay,
+                SortKey = record.UpdatedAtValue
+            }));
+            hits.AddRange(walkUps.Result.Items.Select(record => new SearchHit
+            {
+                Section = DeskSection.WalkUps,
+                TableLabel = "Walk-up",
+                SysId = record.SysId,
+                Number = record.Number,
+                Title = record.ShortDescription,
+                StateLabel = record.StateLabel,
+                Tone = StateTone.ForInteraction(record.State),
+                Meta = record.OpenedFor.Display,
                 When = record.UpdatedAtDisplay,
                 SortKey = record.UpdatedAtValue
             }));

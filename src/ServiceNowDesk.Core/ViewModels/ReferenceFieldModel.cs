@@ -149,6 +149,17 @@ public sealed class TicketRow
         Badge = BadgeFor(record.Priority)
     };
 
+    public static TicketRow FromInteraction(InteractionRecord record) => new()
+    {
+        SysId = record.SysId,
+        Number = record.Number,
+        Title = record.ShortDescription,
+        StateLabel = record.StateLabel,
+        Tone = Client.StateTone.ForInteraction(record.State),
+        Meta = Join(record.OpenedFor.Display, record.AssignmentGroup.Display),
+        When = record.UpdatedAtDisplay
+    };
+
     public static TicketRow FromItem(RequestedItemRecord record) => new()
     {
         SysId = record.SysId,

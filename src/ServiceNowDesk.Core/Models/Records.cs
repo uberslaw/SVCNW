@@ -82,6 +82,27 @@ public sealed record RequestedItemRecord
     public bool Active { get; init; } = true;
 }
 
+public sealed record InteractionRecord
+{
+    public string SysId { get; init; } = "";
+    public string Number { get; init; } = "";
+    public string ShortDescription { get; init; } = "";
+    public string Description { get; init; } = "";
+    public string State { get; init; } = "";
+    public string StateLabel { get; init; } = "";
+    public string Type { get; init; } = "";
+    public string TypeLabel { get; init; } = "";
+    public ReferenceValue OpenedFor { get; init; }
+    public ReferenceValue AssignedTo { get; init; }
+    public ReferenceValue AssignmentGroup { get; init; }
+    public string OpenedAtDisplay { get; init; } = "";
+    public string UpdatedAtDisplay { get; init; } = "";
+    public string UpdatedAtValue { get; init; } = "";
+    public bool Active { get; init; } = true;
+}
+
+public sealed record InteractionConversion(IncidentRecord Incident, bool Created, string? LinkError);
+
 public sealed record KnowledgeArticle
 {
     public string SysId { get; init; } = "";
@@ -147,6 +168,30 @@ public sealed class IncidentChanges
         || CloseCode is not null
         || CloseNotes is not null
         || HoldReason is not null;
+}
+
+public sealed class InteractionChanges
+{
+    public string? ShortDescription { get; init; }
+    public string? Description { get; init; }
+    public string? OpenedForId { get; init; }
+    public string? AssignedToId { get; init; }
+    public bool ClearAssignedTo { get; init; }
+    public string? AssignmentGroupId { get; init; }
+    public bool ClearAssignmentGroup { get; init; }
+    public string? State { get; init; }
+    public string? Type { get; init; }
+
+    public bool HasChanges =>
+        ShortDescription is not null
+        || Description is not null
+        || OpenedForId is not null
+        || AssignedToId is not null
+        || ClearAssignedTo
+        || AssignmentGroupId is not null
+        || ClearAssignmentGroup
+        || State is not null
+        || Type is not null;
 }
 
 public sealed class RequestChanges
