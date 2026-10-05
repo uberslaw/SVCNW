@@ -34,6 +34,7 @@ public enum DeskSection
     Incidents,
     Requests,
     RequestedItems,
+    WalkUps,
     Search,
     Knowledge,
     Catalog,
@@ -51,6 +52,7 @@ public sealed record TicketQuery
     public ActivityFilter Activity { get; init; } = ActivityFilter.Open;
     public string? AssignmentClause { get; init; }
     public string? ParentRequestId { get; init; }
+    public string? ExtraClause { get; init; }
     public int Limit { get; init; } = 50;
     public int Offset { get; init; }
 }

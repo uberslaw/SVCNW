@@ -109,6 +109,31 @@ public static class RecordMapper
         };
     }
 
+    public static InteractionRecord Interaction(JsonElement record)
+    {
+        var state = SnowField.Read(record, "state");
+        var type = SnowField.Read(record, "type");
+        var updated = SnowField.Read(record, "sys_updated_on");
+        return new InteractionRecord
+        {
+            SysId = SnowField.Read(record, "sys_id").Value,
+            Number = SnowField.Read(record, "number").Display,
+            ShortDescription = SnowField.Read(record, "short_description").Display,
+            Description = SnowField.Read(record, "description").Display,
+            State = state.Value,
+            StateLabel = LabelOrValue(state),
+            Type = type.Value,
+            TypeLabel = LabelOrValue(type),
+            OpenedFor = Reference(record, "opened_for"),
+            AssignedTo = Reference(record, "assigned_to"),
+            AssignmentGroup = Reference(record, "assignment_group"),
+            OpenedAtDisplay = SnowField.Read(record, "opened_at").Display,
+            UpdatedAtDisplay = updated.Display,
+            UpdatedAtValue = updated.Value,
+            Active = SnowField.IsTrue(SnowField.Read(record, "active"))
+        };
+    }
+
     public static KnowledgeArticle Knowledge(JsonElement record)
     {
         var state = SnowField.Read(record, "workflow_state");
@@ -208,6 +233,21 @@ public static class ChangeJson
             ["close_code"] = changes.CloseCode,
             ["close_notes"] = changes.CloseNotes,
             ["hold_reason"] = changes.HoldReason
+        });
+    }
+
+    public static string FromInteraction(InteractionChanges changes, bool creating)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        return Serialize(new Dictionary<string, string?>
+        {
+            ["short_description"] = changes.ShortDescription,
+            ["description"] = changes.Description,
+            ["opened_for"] = changes.OpenedForId,
+            ["assigned_to"] = changes.ClearAssignedTo ? "" : changes.AssignedToId,
+            ["assignment_group"] = changes.ClearAssignmentGroup ? "" : changes.AssignmentGroupId,
+            ["state"] = changes.State,
+            ["type"] = creating ? "walkup" : changes.Type
         });
     }
 

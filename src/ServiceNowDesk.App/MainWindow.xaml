@@ -46,6 +46,7 @@
                     <RadioButton Style="{StaticResource NavButton}" Content="Incidents" Tag="&#xE7BA;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Incidents}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Requests" Tag="&#xE7BF;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Requests}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Request items" Tag="&#xE8FD;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=RequestedItems}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Walk-up" Tag="&#xE716;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=WalkUps}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Search" Tag="&#xE721;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Search}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Knowledge" Tag="&#xE82D;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Knowledge}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Order catalog" Tag="&#xE719;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Catalog}"/>
@@ -100,6 +101,9 @@
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=RequestedItems}">
                     <views:RequestedItemView DataContext="{Binding RequestedItems}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=WalkUps}">
+                    <views:InteractionView DataContext="{Binding WalkUps}"/>
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Search}">
                     <views:SearchView DataContext="{Binding Search}"/>

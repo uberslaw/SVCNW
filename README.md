@@ -4,7 +4,8 @@ A Windows desktop app for client services teams who need to create, update, reso
 
 ## What you can do
 
-- Incidents: create, update, assign, add work notes or customer comments, and resolve with a close code and close notes. **Create new** is on the incident list. **Copy** sits next to the incident, request, and request item number. Assignment group and assigned to are dropdowns; the people list is the members of the selected group. **Templates** on the incident list save the current incident on this PC. One click starts a new incident with those fields filled in. Nothing is sent until you click Save.
+- Incidents: create, update, assign, add work notes or customer comments, and resolve with a close code and close notes. **Create new** is on the incident list. **Copy** sits next to the incident, request, request item, and walk-up number. Assignment group and assigned to are dropdowns; the people list is the members of the selected group. **Templates** on the incident list save the current incident on this PC. One click starts a new incident with those fields filled in. Nothing is sent until you click Save.
+- Walk-up interactions (`interaction`, number prefix IMS): log a person who walked up, then turn that interaction into an incident. The list defaults to the same filters as incidents (my open, my groups, unassigned, all open, closed). New records are saved with type `walkup`. **Create incident** on a saved interaction copies the opened-for person, short description, description, assignment group, and assigned to onto a new incident, links the two records, and opens the incident so you can finish it. Save the walk-up first. A second click opens the incident already linked to that IMS record instead of creating another one.
 - Requests (`sc_request`): create a direct request, update it, and close it.
 - Request items (`sc_req_item`): update, assign, and close the items agents actually fulfill. Open them from the request they belong to.
 - Catalog orders: search the service catalog, fill variables, and order an item for a caller. This is the path that runs the normal catalog workflow.
@@ -19,6 +20,7 @@ Practice data is built in, so the team can learn the layout before an instance i
 | --- | --- |
 | Ctrl+1 … Ctrl+6 | Incidents, Requests, Request items, Search, Order catalog, Connection |
 | Ctrl+7 | Knowledge |
+| Ctrl+8 | Walk-up |
 | Ctrl+K or Ctrl+F | Focus search |
 | Ctrl+N | New incident or request |
 | Ctrl+S | Save |
@@ -56,7 +58,8 @@ In ServiceNow: **System OAuth > Application Registry > New > Create an OAuth API
 
 The signed-in user needs the same rights they already use in the web UI, typically `itil`, plus permission to:
 
-- read and write `incident`, `sc_request`, and `sc_req_item`
+- read and write `incident`, `sc_request`, `sc_req_item`, and `interaction`
+- create `interaction_related_record` rows when converting a walk-up to an incident
 - read `sys_user`, `sys_user_group`, `sys_choice`, and `sys_journal_field`
 - order from the service catalog if you use **Order catalog**
 
@@ -69,7 +72,9 @@ The app uses the Table API:
 - `GET/POST/PATCH /api/now/table/incident`
 - `GET/POST/PATCH /api/now/table/sc_request`
 - `GET/PATCH /api/now/table/sc_req_item`
-- journal notes are `work_notes` or `comments` on that record
+- `GET/POST/PATCH /api/now/table/interaction` for walk-up IMS records (`type=walkup`)
+- `GET/POST /api/now/table/interaction_related_record` to link an interaction to the incident created from it (`interaction`, `document_table=incident`, `document_id`)
+- journal notes are `work_notes` or `comments` on that record, including walk-up interactions
 - choices, users, and groups come from the matching tables
 
 Catalog ordering uses `POST /api/sn_sc/servicecatalog/items/{sys_id}/order_now`.
@@ -77,6 +82,18 @@ Catalog ordering uses `POST /api/sn_sc/servicecatalog/items/{sys_id}/order_now`.
 Search text is sent with ServiceNow's text index operator (`123TEXTQUERY321`). Ticket numbers such as `INC0012345` are looked up directly. A caret in the search box cannot add extra query clauses.
 
 Closing a request can be rejected by ServiceNow when request items are still open. Close the items first, or read the error in the banner. Picking Resolved on an incident opens the close-code panel instead of saving a resolved state with no notes.
+
+## Walk-up interactions
+
+Walk-up work is an interaction, not an incident. ServiceNow stores it on `interaction` and numbers it IMS. This desk only lists records whose type is `walkup` (the walk-up channel). Opened for is the person at the desk. State and type choices come from `sys_choice` when the instance has them, with the usual walk-up values as a fallback (`new`, `work_in_progress`, `on_hold`, `wrap_up`, `closed_complete`, `closed_abandoned`). Work notes and customer comments use the same journal fields as incidents (`sys_journal_field`).
+
+**Create incident** does three Table API steps:
+
+1. Look up `interaction_related_record` where `interaction` is this record and `document_table` is `incident`. If a row exists, the app opens that incident and does not create another.
+2. Otherwise `POST /api/now/table/incident` with the interaction's opened-for person as the caller, plus short description, description, assignment group, and assigned to.
+3. `POST /api/now/table/interaction_related_record` with `interaction`, `document_table=incident`, and `document_id` set to the new incident. The new incident then opens in the incident editor.
+
+If the instance rejects `interaction_related_record`, the incident is still created and the red banner shows the ServiceNow error. Practice data includes two sample walk-ups, and **Create incident** there makes a local incident and remembers the link.
 
 ## Run it
 

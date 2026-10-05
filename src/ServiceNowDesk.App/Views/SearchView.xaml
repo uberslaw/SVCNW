@@ -6,6 +6,7 @@
             <CheckBox Content="Incidents" IsChecked="{Binding IncludeIncidents}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <CheckBox Content="Requests" IsChecked="{Binding IncludeRequests}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <CheckBox Content="Request items" IsChecked="{Binding IncludeItems}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
+            <CheckBox Content="Walk-up" IsChecked="{Binding IncludeWalkUps}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <CheckBox Content="Knowledge" IsChecked="{Binding IncludeKnowledge}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,12,6"/>
             <TextBlock Text="Loading…" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>

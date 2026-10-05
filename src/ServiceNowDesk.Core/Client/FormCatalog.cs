@@ -30,7 +30,9 @@ public static class FormCatalogFields
         ("sc_request", "request_state"),
         ("sc_request", "priority"),
         ("sc_req_item", "state"),
-        ("sc_req_item", "priority")
+        ("sc_req_item", "priority"),
+        ("interaction", "state"),
+        ("interaction", "type")
     ];
 }
 
