@@ -90,6 +90,8 @@ public sealed class DeskSettings
     public string SessionCookie { get; set; } = "";
     public string UserToken { get; set; } = "";
     public DateTimeOffset? SessionCapturedAt { get; set; }
+    public DateTimeOffset? SignedInAt { get; set; }
+    public DateTimeOffset? SessionExpiresAt { get; set; }
     public bool UseSampleData { get; set; }
     public string JiggleFrequency { get; set; } = "00:01:00";
     public int JiggleDurationSeconds { get; set; } = 2;

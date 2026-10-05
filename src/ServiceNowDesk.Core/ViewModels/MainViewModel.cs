@@ -27,6 +27,7 @@ public partial class MainViewModel : ObservableObject
     private CancellationTokenSource? _alertCts;
     private int _alertGeneration;
     private string _signedInUserId = "";
+    private int _sessionEpoch;
 
     public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
     public StartupDownloadModel Startup { get; } = new();
@@ -104,7 +105,13 @@ public partial class MainViewModel : ObservableObject
         var settings = _store.Load();
         Connection.Load(settings);
         Notifications.Load(Connection.Notifications);
-        if (settings.UseSampleData || !string.IsNullOrWhiteSpace(settings.InstanceUrl))
+        if (BrowserSignInClock.IsSavedSessionExpired(settings, DateTimeOffset.UtcNow))
+        {
+            AbandonExpiredBrowserSession();
+            return;
+        }
+
+        if (ShouldAutoConnect(settings))
             await ConnectAsync();
     }
 
@@ -112,10 +119,12 @@ public partial class MainViewModel : ObservableObject
     private async Task ConnectAsync()
     {
         IServiceNowClient? created = null;
+        var epoch = _sessionEpoch;
         try
         {
             IsBusy = true;
             ErrorMessage = "";
+            epoch = ++_sessionEpoch;
             var settings = Connection.BuildSettings();
             ServiceNowClient? live = null;
             if (settings.UseSampleData)
@@ -128,12 +137,17 @@ public partial class MainViewModel : ObservableObject
                 live = _clientFactory is null
                     ? ServiceNowClient.Create(session, formCatalog: _formCatalog)
                     : _clientFactory(session, _formCatalog);
+                WatchBrowserSession(live);
                 created = live;
             }
 
             var user = await created.GetCurrentUserAsync(CancellationToken.None);
             ReplaceClient(created);
             created = null;
+            BrowserSignInClock.Preserve(settings);
+            Connection.SignedInAt = settings.SignedInAt;
+            Connection.SessionCapturedAt = settings.SessionCapturedAt;
+            Connection.SessionExpiresAt = settings.SessionExpiresAt;
             _store.Save(settings);
             ConnectedUser = user.Name;
             IsSample = settings.UseSampleData;
@@ -166,6 +180,14 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             created?.Dispose();
+            if (_sessionEpoch != epoch)
+                return;
+            if (BrowserSignInClock.IsRejection(ex))
+            {
+                AbandonExpiredBrowserSession();
+                return;
+            }
+
             ErrorMessage = WorkspaceMessages.Describe(ex);
             StatusMessage = "Not connected.";
         }
@@ -194,7 +216,10 @@ public partial class MainViewModel : ObservableObject
             var result = await _browserSignIn.SignInAsync(uri, CancellationToken.None);
             Connection.SessionCookie = result.CookieHeader;
             Connection.UserToken = result.UserToken;
-            Connection.SessionCapturedAt = DateTimeOffset.Now;
+            var clock = BrowserSignInClock.FromSignIn(DateTimeOffset.UtcNow, result.ExpiresInSeconds, result.ExpiresAt);
+            Connection.SignedInAt = clock.SignedInAtUtc;
+            Connection.SessionCapturedAt = clock.SignedInAtUtc;
+            Connection.SessionExpiresAt = clock.ExpiresAtUtc;
             _store.Save(Connection.BuildSettings());
             await ConnectAsync();
         }
@@ -225,17 +250,9 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void Disconnect()
     {
-        _signedInUserId = "";
-        ReplaceClient(null);
-        IsConnected = false;
-        IsSample = false;
-        ConnectedUser = "";
-        InstanceLabel = "";
-        WindowTitle = "ServiceNow Desk";
-        StatusMessage = "Disconnected.";
-        SelectedSection = DeskSection.Connection;
-        Activity.Clear();
-        _loadedFor.Clear();
+        _sessionEpoch++;
+        ClearSavedBrowserSignIn();
+        DropConnection("Disconnected.");
     }
 
     [RelayCommand]
@@ -761,6 +778,72 @@ public partial class MainViewModel : ObservableObject
     private sealed class InlineProgress(Action<DownloadTick> report) : IProgress<DownloadTick>
     {
         public void Report(DownloadTick value) => report(value);
+    }
+
+    private static bool ShouldAutoConnect(DeskSettings settings)
+    {
+        if (settings.UseSampleData)
+            return true;
+        if (string.IsNullOrWhiteSpace(settings.InstanceUrl))
+            return false;
+        if (settings.AuthMode != ServiceNowAuthMode.BrowserSession)
+            return true;
+
+        return !string.IsNullOrWhiteSpace(settings.SessionCookie)
+            && !string.IsNullOrWhiteSpace(settings.UserToken);
+    }
+
+    private void WatchBrowserSession(ServiceNowClient live)
+    {
+        var epoch = _sessionEpoch;
+        live.BrowserSessionRejected += (_, _) => PostToUi(() =>
+        {
+            if (epoch != _sessionEpoch)
+                return;
+            AbandonExpiredBrowserSession();
+        });
+    }
+
+    private void AbandonExpiredBrowserSession()
+    {
+        _sessionEpoch++;
+        ClearSavedBrowserSignIn();
+        DropConnection(BrowserSignInClock.ExpiredStatus);
+    }
+
+    private void ClearSavedBrowserSignIn()
+    {
+        var hasBrowserSecret = !string.IsNullOrWhiteSpace(Connection.SessionCookie)
+            || !string.IsNullOrWhiteSpace(Connection.UserToken)
+            || Connection.SignedInAt is not null
+            || Connection.SessionCapturedAt is not null
+            || Connection.SessionExpiresAt is not null;
+        if (!hasBrowserSecret)
+            return;
+
+        Connection.SessionCookie = "";
+        Connection.UserToken = "";
+        Connection.SignedInAt = null;
+        Connection.SessionCapturedAt = null;
+        Connection.SessionExpiresAt = null;
+        _store.Save(Connection.BuildSettings());
+    }
+
+    private void DropConnection(string status)
+    {
+        _signedInUserId = "";
+        ReplaceClient(null);
+        IsConnected = false;
+        IsSample = false;
+        ConnectedUser = "";
+        InstanceLabel = "";
+        WindowTitle = "ServiceNow Desk";
+        ErrorMessage = "";
+        StatusMessage = status;
+        SelectedSection = DeskSection.Connection;
+        Activity.Clear();
+        _loadedFor.Clear();
+        ConnectCommand.NotifyCanExecuteChanged();
     }
 
     private void ReplaceClient(IServiceNowClient? client)

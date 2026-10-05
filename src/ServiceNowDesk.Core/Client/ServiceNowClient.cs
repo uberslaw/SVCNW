@@ -51,6 +51,8 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     public Uri? InstanceUri { get; }
 
+    public event EventHandler? BrowserSessionRejected;
+
     public IReadOnlyList<ApiActivity> RecentActivity
     {
         get
@@ -985,7 +987,7 @@ public sealed class ServiceNowClient : IServiceNowClient
                     && status.ValueKind == JsonValueKind.String
                     && string.Equals(status.GetString(), "failure", StringComparison.OrdinalIgnoreCase))
                 {
-                    var error = ServiceNowException.FromResponse((int)response.StatusCode, body);
+                    var error = DescribeFailure((int)response.StatusCode, body);
                     document.Dispose();
                     throw error;
                 }
@@ -1012,8 +1014,9 @@ public sealed class ServiceNowClient : IServiceNowClient
                 error.Detail);
         }
 
-        if (_authMode == ServiceNowAuthMode.BrowserSession && statusCode is 401 or 403)
+        if (IsRejectedBrowserSession(statusCode, body, error))
         {
+            BrowserSessionRejected?.Invoke(this, EventArgs.Empty);
             return new ServiceNowException(
                 statusCode,
                 "The browser sign-in expired or was rejected. Open Connection and sign in with the browser again.",
@@ -1022,6 +1025,18 @@ public sealed class ServiceNowClient : IServiceNowClient
 
         return error;
     }
+
+    private bool IsRejectedBrowserSession(int statusCode, string body, ServiceNowException error)
+    {
+        if (_authMode != ServiceNowAuthMode.BrowserSession)
+            return false;
+        if (statusCode is 401 or 403)
+            return true;
+        return ContainsInvalidGrant(body) || ContainsInvalidGrant(error.Message) || ContainsInvalidGrant(error.Detail);
+    }
+
+    private static bool ContainsInvalidGrant(string? text) =>
+        text?.Contains("invalid_grant", StringComparison.OrdinalIgnoreCase) == true;
 
     private async Task<IReadOnlyList<Choice>> FetchChoiceListAsync(string table, string element, string? dependentValue, CancellationToken cancellationToken)
     {

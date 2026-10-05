@@ -62,7 +62,7 @@
                         <TextBlock Style="{StaticResource HelpBody}"
                                    Text="Username and password will fail on these instances. The banner says ServiceNow requires auth information. That is the single sign-on check, not a wrong password."/>
                         <TextBlock Style="{StaticResource HelpBody}" Margin="0"
-                                   Text="The browser session is stored with Windows DPAPI for the current Windows user. Connect reuses it until ServiceNow expires it, then sign in with the browser again. This window needs the Microsoft Edge WebView2 runtime, which current Windows 10 and 11 installs already include."/>
+                                   Text="The browser session is stored with Windows DPAPI for the current Windows user. It stays signed in for 24 hours from that sign-in, or less when the token expires sooner. When it expires, the app clears it and returns to Connection so you can sign in with the browser again. This window needs the Microsoft Edge WebView2 runtime, which current Windows 10 and 11 installs already include."/>
                     </StackPanel>
                 </Border>
 

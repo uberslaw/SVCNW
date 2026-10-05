@@ -25,6 +25,8 @@ public partial class ConnectionViewModel : ObservableObject
     [ObservableProperty] private string sessionCookie = "";
     [ObservableProperty] private string userToken = "";
     [ObservableProperty] private DateTimeOffset? sessionCapturedAt;
+    [ObservableProperty] private DateTimeOffset? signedInAt;
+    [ObservableProperty] private DateTimeOffset? sessionExpiresAt;
     [ObservableProperty] private bool useSampleData;
     [ObservableProperty] private bool showOAuth;
     [ObservableProperty] private bool showUserPassword = true;
@@ -51,6 +53,8 @@ public partial class ConnectionViewModel : ObservableObject
             SessionCookie = SessionCookie,
             UserToken = UserToken,
             SessionCapturedAt = SessionCapturedAt,
+            SignedInAt = SignedInAt,
+            SessionExpiresAt = SessionExpiresAt,
             UseSampleData = UseSampleData
         };
         Notifications.ApplyTo(settings);
@@ -75,6 +79,8 @@ public partial class ConnectionViewModel : ObservableObject
         SessionCookie = settings.SessionCookie ?? "";
         UserToken = settings.UserToken ?? "";
         SessionCapturedAt = settings.SessionCapturedAt;
+        SignedInAt = settings.SignedInAt;
+        SessionExpiresAt = settings.SessionExpiresAt;
         UseSampleData = settings.UseSampleData;
         Notifications = NotificationPreferences.From(settings);
         SyncFlags();
