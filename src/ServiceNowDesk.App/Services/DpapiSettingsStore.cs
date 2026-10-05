@@ -38,7 +38,16 @@ public sealed class DpapiSettingsStore : ISettingsStore
                 SessionCookie = Unprotect(stored.ProtectedSessionCookie),
                 UserToken = Unprotect(stored.ProtectedUserToken),
                 SessionCapturedAt = stored.SessionCapturedAt,
-                UseSampleData = stored.UseSampleData
+                UseSampleData = stored.UseSampleData,
+                JiggleFrequency = string.IsNullOrWhiteSpace(stored.JiggleFrequency) ? "00:01:00" : stored.JiggleFrequency,
+                JiggleDurationSeconds = stored.JiggleDurationSeconds ?? 2,
+                MaximizeWhenJiggling = stored.MaximizeWhenJiggling ?? true,
+                PlaySoundWhenJiggling = stored.PlaySoundWhenJiggling ?? false,
+                PlaySoundOnAlertMetric = stored.PlaySoundOnAlertMetric ?? true,
+                AlertSoundPath = stored.AlertSoundPath ?? "",
+                WatchedGroupName = stored.WatchedGroupName,
+                OfficeLocations = stored.OfficeLocations,
+                NotificationPollSeconds = stored.NotificationPollSeconds ?? 60
             };
         }
         catch
@@ -61,7 +70,16 @@ public sealed class DpapiSettingsStore : ISettingsStore
             ProtectedSessionCookie = Protect(settings.SessionCookie),
             ProtectedUserToken = Protect(settings.UserToken),
             SessionCapturedAt = settings.SessionCapturedAt,
-            UseSampleData = settings.UseSampleData
+            UseSampleData = settings.UseSampleData,
+            JiggleFrequency = settings.JiggleFrequency,
+            JiggleDurationSeconds = settings.JiggleDurationSeconds,
+            MaximizeWhenJiggling = settings.MaximizeWhenJiggling,
+            PlaySoundWhenJiggling = settings.PlaySoundWhenJiggling,
+            PlaySoundOnAlertMetric = settings.PlaySoundOnAlertMetric,
+            AlertSoundPath = settings.AlertSoundPath,
+            WatchedGroupName = settings.WatchedGroupName,
+            OfficeLocations = settings.OfficeLocations is null ? null : [.. settings.OfficeLocations],
+            NotificationPollSeconds = settings.NotificationPollSeconds
         };
         File.WriteAllText(FilePath, JsonSerializer.Serialize(stored, JsonOptions));
     }
@@ -94,5 +112,14 @@ public sealed class DpapiSettingsStore : ISettingsStore
         public string? ProtectedUserToken { get; set; }
         public DateTimeOffset? SessionCapturedAt { get; set; }
         public bool UseSampleData { get; set; }
+        public string? JiggleFrequency { get; set; }
+        public int? JiggleDurationSeconds { get; set; }
+        public bool? MaximizeWhenJiggling { get; set; }
+        public bool? PlaySoundWhenJiggling { get; set; }
+        public bool? PlaySoundOnAlertMetric { get; set; }
+        public string? AlertSoundPath { get; set; }
+        public string? WatchedGroupName { get; set; }
+        public List<string>? OfficeLocations { get; set; }
+        public int? NotificationPollSeconds { get; set; }
     }
 }

@@ -41,13 +41,14 @@
                     <TextBlock Text="Desk" Foreground="White" FontSize="26" FontWeight="SemiBold"/>
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Bottom" Margin="20,8,16,16" Foreground="{StaticResource NavMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                           Text="Ctrl+K search&#10;Ctrl+N new&#10;Ctrl+S save&#10;Ctrl+Enter post note&#10;Ctrl+Shift+R resolve&#10;F5 refresh"/>
+                           Text="Ctrl+K search&#10;Ctrl+N new&#10;Ctrl+S save&#10;Ctrl+Enter post note&#10;Ctrl+Shift+R resolve&#10;Ctrl+8 notifications&#10;F5 refresh"/>
                 <StackPanel Margin="0,8,0,0">
                     <RadioButton Style="{StaticResource NavButton}" Content="Incidents" Tag="&#xE7BA;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Incidents}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Requests" Tag="&#xE7BF;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Requests}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Request items" Tag="&#xE8FD;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=RequestedItems}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Search" Tag="&#xE721;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Search}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Knowledge" Tag="&#xE82D;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Knowledge}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Notifications" Tag="&#xEA8F;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Notifications}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Order catalog" Tag="&#xE719;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Catalog}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Connection" Tag="&#xE713;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Connection}"/>
                 </StackPanel>
@@ -106,6 +107,9 @@
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Knowledge}">
                     <views:KnowledgeView DataContext="{Binding Knowledge}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Notifications}">
+                    <views:NotificationsView DataContext="{Binding Notifications}"/>
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Catalog}">
                     <views:CatalogView DataContext="{Binding Catalog}"/>

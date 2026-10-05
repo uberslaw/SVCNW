@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
 
 namespace ServiceNowDesk.ViewModels;
@@ -30,24 +31,37 @@ public partial class ConnectionViewModel : ObservableObject
     [ObservableProperty] private bool showBrowserSignIn;
     [ObservableProperty] private string browserSessionStatus = "No browser sign-in yet.";
 
+    public NotificationPreferences Notifications { get; private set; } = NotificationPreferences.From(new DeskSettings());
+
     partial void OnAuthModeChanged(ServiceNowAuthMode value) => SyncFlags();
     partial void OnUseSampleDataChanged(bool value) => SyncFlags();
     partial void OnSessionCookieChanged(string value) => UpdateBrowserStatus();
     partial void OnSessionCapturedAtChanged(DateTimeOffset? value) => UpdateBrowserStatus();
 
-    public DeskSettings BuildSettings() => new()
+    public DeskSettings BuildSettings()
     {
-        InstanceUrl = InstanceUrl.Trim(),
-        AuthMode = AuthMode,
-        Username = Username.Trim(),
-        Password = Password,
-        ClientId = ClientId.Trim(),
-        ClientSecret = ClientSecret,
-        SessionCookie = SessionCookie,
-        UserToken = UserToken,
-        SessionCapturedAt = SessionCapturedAt,
-        UseSampleData = UseSampleData
-    };
+        var settings = new DeskSettings
+        {
+            InstanceUrl = InstanceUrl.Trim(),
+            AuthMode = AuthMode,
+            Username = Username.Trim(),
+            Password = Password,
+            ClientId = ClientId.Trim(),
+            ClientSecret = ClientSecret,
+            SessionCookie = SessionCookie,
+            UserToken = UserToken,
+            SessionCapturedAt = SessionCapturedAt,
+            UseSampleData = UseSampleData
+        };
+        Notifications.ApplyTo(settings);
+        return settings;
+    }
+
+    public void RememberNotifications(NotificationPreferences preferences)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        Notifications = preferences.Copy();
+    }
 
     public void Load(DeskSettings settings)
     {
@@ -62,6 +76,7 @@ public partial class ConnectionViewModel : ObservableObject
         UserToken = settings.UserToken ?? "";
         SessionCapturedAt = settings.SessionCapturedAt;
         UseSampleData = settings.UseSampleData;
+        Notifications = NotificationPreferences.From(settings);
         SyncFlags();
     }
 

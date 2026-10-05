@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
+using ServiceNowDesk.Alerts;
 
 namespace ServiceNowDesk.Converters;
 
@@ -57,6 +59,24 @@ public sealed class EnumEqualsConverter : IValueConverter
             return Enum.Parse(targetType, name);
         return Binding.DoNothing;
     }
+}
+
+public sealed class AlertKindBrushConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var amber = value is AlertKind.WatchedGroup;
+        var key = amber ? "AmberBrush" : "AccentBrush";
+        if (Application.Current?.TryFindResource(key) is Brush brush)
+            return brush;
+
+        return amber
+            ? new SolidColorBrush(Color.FromRgb(0xC4, 0x7E, 0x09))
+            : new SolidColorBrush(Color.FromRgb(0x0F, 0x6E, 0x6B));
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
 }
 
 public sealed class EqualsMultiConverter : IMultiValueConverter

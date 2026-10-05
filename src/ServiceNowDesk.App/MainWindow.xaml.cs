@@ -8,9 +8,19 @@ namespace ServiceNowDesk;
 
 public partial class MainWindow : Window
 {
+    private readonly AlertWidgetWindow _alerts = new();
+
     public MainWindow()
     {
         InitializeComponent();
+        _alerts.Opened += (_, _) => OpenFromAlerts();
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is MainViewModel main)
+                _alerts.Attach(main.Notifications);
+        };
+        StateChanged += (_, _) => _alerts.SetMainMinimized(WindowState == WindowState.Minimized);
+        Closed += (_, _) => _alerts.Shutdown();
         Loaded += async (_, _) =>
         {
             if (DataContext is MainViewModel main)
@@ -59,6 +69,8 @@ public partial class MainWindow : Window
             Navigate(main, DeskSection.Catalog, e);
         else if (ctrl && e.Key is Key.D6 or Key.NumPad6)
             Navigate(main, DeskSection.Connection, e);
+        else if (ctrl && e.Key is Key.D8 or Key.NumPad8)
+            Navigate(main, DeskSection.Notifications, e);
         else if (ctrl && e.Key == Key.N)
         {
             main.NewActiveCommand.Execute(null);
@@ -95,6 +107,18 @@ public partial class MainWindow : Window
     {
         main.SelectedSection = section;
         e.Handled = true;
+    }
+
+    private void OpenFromAlerts()
+    {
+        if (DataContext is MainViewModel main)
+            main.AcknowledgeNotifications();
+
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        Activate();
+        if (DataContext is MainViewModel model)
+            model.SelectedSection = DeskSection.Notifications;
     }
 
     private void Documentation_Click(object sender, RoutedEventArgs e)

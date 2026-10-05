@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Services;
@@ -20,6 +21,12 @@ public partial class MainViewModel : ObservableObject
     private bool _openingRecord;
     private bool _preserveNavigation;
     private bool _suppressSearchText;
+    private readonly AlertWatchState _watch = new();
+    private readonly SemaphoreSlim _alertGate = new(1, 1);
+    private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
+    private CancellationTokenSource? _alertCts;
+    private int _alertGeneration;
+    private string _signedInUserId = "";
 
     public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
 
@@ -42,9 +49,18 @@ public partial class MainViewModel : ObservableObject
         Search = new SearchWorkspaceViewModel();
         Knowledge = new KnowledgeWorkspaceViewModel();
         Catalog = new CatalogWorkspaceViewModel();
+        Notifications = new NotificationWorkspaceViewModel();
         Requests.RelatedItemRequested += (_, sysId) => _ = OpenRequestedItemAsync(sysId);
         Search.OpenRequested += (_, hit) => SearchOpenTask = OpenSearchResultAsync(hit);
         Catalog.RequestOrdered += (_, result) => _ = OpenOrderedRequestAsync(result);
+        Notifications.OpenRequested += (_, row) => _ = OpenNotificationAsync(row);
+        Notifications.SettingsChanged += (_, _) =>
+        {
+            Connection.RememberNotifications(Notifications.Committed);
+            _store.Save(Connection.BuildSettings());
+            if (IsConnected)
+                StartAlertLoop();
+        };
     }
 
     public ConnectionViewModel Connection { get; }
@@ -54,6 +70,7 @@ public partial class MainViewModel : ObservableObject
     public SearchWorkspaceViewModel Search { get; }
     public KnowledgeWorkspaceViewModel Knowledge { get; }
     public CatalogWorkspaceViewModel Catalog { get; }
+    public NotificationWorkspaceViewModel Notifications { get; }
     public Task SearchOpenTask { get; private set; } = Task.CompletedTask;
     public ObservableCollection<ApiActivity> Activity { get; } = [];
 
@@ -79,6 +96,7 @@ public partial class MainViewModel : ObservableObject
     {
         var settings = _store.Load();
         Connection.Load(settings);
+        Notifications.Load(Connection.Notifications);
         if (settings.UseSampleData || !string.IsNullOrWhiteSpace(settings.InstanceUrl))
             await ConnectAsync();
     }
@@ -115,9 +133,11 @@ public partial class MainViewModel : ObservableObject
             InstanceLabel = settings.UseSampleData ? "Practice data" : ServiceNowSession.NormalizeInstance(settings.InstanceUrl).GetLeftPart(UriPartial.Authority);
             WindowTitle = "ServiceNow Desk — " + InstanceLabel;
             IsConnected = true;
+            _signedInUserId = user.SysId;
             StatusMessage = settings.UseSampleData
                 ? "Practice data loaded. Nothing is sent to ServiceNow."
                 : "Connected as " + user.Name + ".";
+            StartAlertLoop();
             if (live is not null)
                 await RefreshFormsIfNeededAsync(live, user.Name);
             _loadedFor.Clear();
@@ -188,6 +208,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void Disconnect()
     {
+        _signedInUserId = "";
         ReplaceClient(null);
         IsConnected = false;
         IsSample = false;
@@ -305,6 +326,7 @@ public partial class MainViewModel : ObservableObject
             DeskSection.Search => "Search incidents, requests, items, and knowledge",
             DeskSection.Knowledge => "Open articles from Search",
             DeskSection.Catalog => "Search the catalog",
+            DeskSection.Notifications => "Notifications",
             _ => "Search"
         };
         UpdateBack();
@@ -372,10 +394,37 @@ public partial class MainViewModel : ObservableObject
             case DeskSection.Catalog:
                 await Catalog.RunAsync(_client, SearchText);
                 break;
+            case DeskSection.Notifications:
+                RefreshAlerts();
+                break;
             case DeskSection.Connection:
                 RefreshActivity();
                 break;
         }
+    }
+
+    public void AcknowledgeNotifications()
+    {
+        _watch.Acknowledge();
+        Notifications.RefreshAcknowledgement(_watch);
+    }
+
+    public Task OpenNotificationAsync(AlertRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return OpenHitAsync(new SearchHit
+        {
+            Section = row.Section,
+            TableLabel = row.TableLabel,
+            SysId = row.SysId,
+            Number = row.Number,
+            Title = row.Title,
+            StateLabel = row.State,
+            Tone = "open",
+            Meta = row.Detail,
+            When = row.Updated,
+            SortKey = row.Updated
+        }, fromSearch: false);
     }
 
     private async Task LoadRecordSectionAsync(DeskSection section, RecordWorkspaceViewModel workspace)
@@ -550,6 +599,9 @@ public partial class MainViewModel : ObservableObject
 
     private void ReplaceClient(IServiceNowClient? client)
     {
+        CancelAlertLoop();
+        _watch.Reset();
+        Notifications.Clear();
         Incidents.Detach();
         Requests.Detach();
         RequestedItems.Detach();
@@ -567,6 +619,120 @@ public partial class MainViewModel : ObservableObject
         Requests.Attach(client);
         RequestedItems.Attach(client);
         Catalog.Attach(client);
+    }
+
+    private void StartAlertLoop()
+    {
+        CancelAlertLoop();
+        if (_client is null || string.IsNullOrWhiteSpace(_signedInUserId))
+            return;
+
+        var cts = new CancellationTokenSource();
+        _alertCts = cts;
+        var generation = _alertGeneration;
+        var client = _client;
+        var token = cts.Token;
+        _ = Task.Run(() => AlertLoopAsync(client, generation, token));
+    }
+
+    private void CancelAlertLoop()
+    {
+        _alertGeneration++;
+        var cts = _alertCts;
+        _alertCts = null;
+        if (cts is null)
+            return;
+        cts.Cancel();
+        cts.Dispose();
+    }
+
+    private void RefreshAlerts()
+    {
+        if (_client is null || _alertCts is not { IsCancellationRequested: false } cts)
+            return;
+        var client = _client;
+        var generation = _alertGeneration;
+        CancellationToken token;
+        try
+        {
+            token = cts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        _ = Task.Run(() => PollAlertsOnceAsync(client, generation, token));
+    }
+
+    private async Task AlertLoopAsync(IServiceNowClient client, int generation, CancellationToken token)
+    {
+        while (!token.IsCancellationRequested && generation == _alertGeneration)
+        {
+            await PollAlertsOnceAsync(client, generation, token).ConfigureAwait(false);
+            if (token.IsCancellationRequested || generation != _alertGeneration)
+                return;
+
+            try
+            {
+                var seconds = Math.Max(NotificationPreferences.MinimumPollSeconds, Notifications.Committed.PollSeconds);
+                await Task.Delay(TimeSpan.FromSeconds(seconds), token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private async Task PollAlertsOnceAsync(IServiceNowClient client, int generation, CancellationToken token)
+    {
+        try
+        {
+            await _alertGate.WaitAsync(token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (generation != _alertGeneration || !ReferenceEquals(client, _client))
+                return;
+
+            var snapshot = await client.GetOpenAlertsAsync(Notifications.Committed.ToSearch(_signedInUserId), token).ConfigureAwait(false);
+            PostToUi(() =>
+            {
+                if (generation != _alertGeneration || !ReferenceEquals(client, _client))
+                    return;
+                Notifications.Apply(snapshot, _watch);
+            });
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+        }
+        catch (Exception ex)
+        {
+            PostToUi(() =>
+            {
+                if (generation != _alertGeneration || !ReferenceEquals(client, _client))
+                    return;
+                Notifications.NotePollError(WorkspaceMessages.Describe(ex));
+            });
+        }
+        finally
+        {
+            _alertGate.Release();
+        }
+    }
+
+    private void PostToUi(Action action)
+    {
+        if (_ui is null || ReferenceEquals(SynchronizationContext.Current, _ui))
+            action();
+        else
+            _ui.Post(_ => action(), null);
     }
 
     private void RefreshActivity()

@@ -1,3 +1,4 @@
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
 
 namespace ServiceNowDesk.Client;
@@ -8,6 +9,8 @@ public interface IServiceNowClient : IDisposable
     IReadOnlyList<ApiActivity> RecentActivity { get; }
 
     Task<CurrentUser> GetCurrentUserAsync(CancellationToken cancellationToken);
+
+    Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken);
 
     Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken);
     Task<IncidentRecord> GetIncidentAsync(string sysId, CancellationToken cancellationToken);

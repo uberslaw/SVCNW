@@ -9,6 +9,7 @@
     <conv:SectionVisibilityConverter x:Key="SectionVis"/>
     <conv:EnumEqualsConverter x:Key="EnumEq"/>
     <conv:EqualsMultiConverter x:Key="EqualsMulti"/>
+    <conv:AlertKindBrushConverter x:Key="AlertBrush"/>
 
     <Color x:Key="NavColor">#1B2B2E</Color>
     <Color x:Key="NavMutedColor">#B7C7C6</Color>
@@ -23,6 +24,7 @@
     <Color x:Key="ErrorSoftColor">#FDECEC</Color>
     <Color x:Key="WarningSoftColor">#FFF6E8</Color>
     <Color x:Key="CustomerColor">#8A4B08</Color>
+    <Color x:Key="AmberColor">#C47E09</Color>
 
     <SolidColorBrush x:Key="NavBrush" Color="{StaticResource NavColor}"/>
     <SolidColorBrush x:Key="NavMutedBrush" Color="{StaticResource NavMutedColor}"/>
@@ -37,6 +39,7 @@
     <SolidColorBrush x:Key="ErrorSoftBrush" Color="{StaticResource ErrorSoftColor}"/>
     <SolidColorBrush x:Key="WarningSoftBrush" Color="{StaticResource WarningSoftColor}"/>
     <SolidColorBrush x:Key="CustomerBrush" Color="{StaticResource CustomerColor}"/>
+    <SolidColorBrush x:Key="AmberBrush" Color="{StaticResource AmberColor}"/>
     <SolidColorBrush x:Key="WhiteBrush" Color="#FFFFFF"/>
 
     <Style TargetType="TextBlock">

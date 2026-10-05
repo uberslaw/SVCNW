@@ -37,7 +37,8 @@ public enum DeskSection
     Search,
     Knowledge,
     Catalog,
-    Connection
+    Connection,
+    Notifications
 }
 
 public sealed record Choice(string Value, string Label);
@@ -84,6 +85,22 @@ public sealed class DeskSettings
     public string UserToken { get; set; } = "";
     public DateTimeOffset? SessionCapturedAt { get; set; }
     public bool UseSampleData { get; set; }
+    public string JiggleFrequency { get; set; } = "00:01:00";
+    public int JiggleDurationSeconds { get; set; } = 2;
+    public bool MaximizeWhenJiggling { get; set; } = true;
+    public bool PlaySoundWhenJiggling { get; set; }
+    public bool PlaySoundOnAlertMetric { get; set; } = true;
+    public string AlertSoundPath { get; set; } = "";
+    public string? WatchedGroupName { get; set; } = "Aus DT - Client Services";
+    public List<string>? OfficeLocations { get; set; } =
+    [
+        "Brisbane",
+        "Maroochydore",
+        "Gold Coast",
+        "Townsville",
+        "Cairns"
+    ];
+    public int NotificationPollSeconds { get; set; } = 60;
 }
 
 public sealed class ServiceNowSession

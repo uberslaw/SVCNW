@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Mapping;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
@@ -16,6 +17,10 @@ public sealed class ServiceNowClient : IServiceNowClient
     private const string RequestFields = "sys_id,number,short_description,description,request_state,requested_for,opened_by,opened_at,due_date,priority,special_instructions,approval,stage,active,sys_updated_on";
     private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,opened_at,sys_updated_on,active,priority,close_notes";
     private const string KnowledgeFields = "sys_id,number,short_description,text,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
+    private const string AlertIncidentFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
+    private const string AlertRequestFields = "sys_id,number,short_description,request_state,assigned_to,assignment_group,sys_updated_on,active";
+    private const string AlertItemFields = "sys_id,number,short_description,state,assigned_to,assignment_group,sys_updated_on,active";
+    private const int AlertLimit = 100;
 
     private readonly HttpClient _http;
     private readonly ServiceNowAuthMode _authMode;
@@ -131,6 +136,69 @@ public sealed class ServiceNowClient : IServiceNowClient
                 userName,
                 SnowField.Read(row, "email").Display);
         }
+    }
+
+    public async Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(search);
+        var assignedQuery = AlertQueryBuilder.AssignedToMe(search.UserSysId);
+        var incidents = await QueryAlertsAsync("incident", AlertIncidentFields, assignedQuery, AlertKind.AssignedToMe, DeskSection.Incidents, includeLocation: true, cancellationToken).ConfigureAwait(false);
+        var requests = await QueryAlertsAsync("sc_request", AlertRequestFields, assignedQuery, AlertKind.AssignedToMe, DeskSection.Requests, includeLocation: false, cancellationToken).ConfigureAwait(false);
+        var items = await QueryAlertsAsync("sc_req_item", AlertItemFields, assignedQuery, AlertKind.AssignedToMe, DeskSection.RequestedItems, includeLocation: false, cancellationToken).ConfigureAwait(false);
+
+        var groupQuery = AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations);
+        var group = groupQuery is null
+            ? AlertBucket.Empty
+            : await QueryAlertsAsync("incident", AlertIncidentFields, groupQuery, AlertKind.WatchedGroup, DeskSection.Incidents, includeLocation: true, cancellationToken).ConfigureAwait(false);
+
+        var assignedRows = incidents.Rows.Concat(requests.Rows).Concat(items.Rows).ToArray();
+        var assignedTotal = incidents.TotalCount + requests.TotalCount + items.TotalCount;
+        return new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
+        {
+            [AlertKind.AssignedToMe] = new(assignedRows, assignedTotal),
+            [AlertKind.WatchedGroup] = group
+        });
+    }
+
+    private async Task<AlertBucket> QueryAlertsAsync(
+        string table,
+        string fields,
+        string query,
+        AlertKind kind,
+        DeskSection section,
+        bool includeLocation,
+        CancellationToken cancellationToken)
+    {
+        var result = await GetListAsync(table, fields, query, AlertLimit, 0, cancellationToken).ConfigureAwait(false);
+        using (result)
+        {
+            var rows = RequireArray(result.Document)
+                .EnumerateArray()
+                .Select(row => MapAlert(row, kind, section, includeLocation))
+                .ToArray();
+            var total = result.TotalCount ?? rows.Length;
+            return new AlertBucket(rows, total);
+        }
+    }
+
+    private static AlertRecord MapAlert(JsonElement row, AlertKind kind, DeskSection section, bool includeLocation)
+    {
+        var state = section == DeskSection.Requests
+            ? SnowField.Read(row, "request_state")
+            : SnowField.Read(row, "state");
+        var updated = SnowField.Read(row, "sys_updated_on");
+        var stateText = state.Display.Length > 0 ? state.Display : state.Value;
+        var updatedText = updated.Display.Length > 0 ? updated.Display : updated.Value;
+        return new AlertRecord(
+            kind,
+            section,
+            SnowField.Read(row, "sys_id").Value,
+            SnowField.Read(row, "number").Display,
+            SnowField.Read(row, "short_description").Display,
+            stateText,
+            SnowField.Read(row, "assignment_group").Display,
+            includeLocation ? SnowField.Read(row, "location").Display : "",
+            updatedText);
     }
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken) =>

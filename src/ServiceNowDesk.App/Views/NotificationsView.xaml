@@ -1,0 +1,94 @@
+<UserControl x:Class="ServiceNowDesk.Views.NotificationsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel MaxWidth="880" HorizontalAlignment="Left" Margin="8">
+            <TextBlock Text="Notifications" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                       Text="While the desk is minimized, a circle for each alert sits at the top of the screen. The number is how many open records match right now. Click a circle to open this page."/>
+            <TextBlock Text="{Binding LastChecked}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
+            <TextBlock Text="{Binding PollError}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
+                       Visibility="{Binding PollError, Converter={StaticResource StringVis}}"/>
+
+            <ItemsControl ItemsSource="{Binding Sections}" Margin="0,0,0,16">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,0,0,16">
+                            <TextBlock Text="{Binding Heading}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <TextBlock Text="No open records." Foreground="{StaticResource MutedBrush}"
+                                       Visibility="{Binding IsEmpty, Converter={StaticResource BoolVis}}"/>
+                            <ListBox ItemsSource="{Binding Rows}"
+                                     SelectedItem="{Binding Selected}"
+                                     Style="{StaticResource DeskList}"
+                                     ItemContainerStyle="{StaticResource DeskListItem}"
+                                     MaxHeight="240"
+                                     MouseDoubleClick="Rows_MouseDoubleClick"
+                                     PreviewKeyDown="Rows_PreviewKeyDown"
+                                     Visibility="{Binding IsEmpty, Converter={StaticResource InverseBoolVis}}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="150"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding TableLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                                                <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Margin="8,0">
+                                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Text="{Binding Updated}" FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Text="Double-click a row, or press Enter, to open it." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,18"/>
+
+            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+                <StackPanel>
+                    <TextBlock Text="Notification settings" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
+
+                    <TextBlock Text="Jiggle frequency (HH:MM:SS)" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding FrequencyText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Jiggle duration (seconds)" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding DurationText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+
+                    <CheckBox Content="Maximize when jiggling" IsChecked="{Binding MaximizeWhenJiggling}" Margin="0,0,0,8"/>
+                    <CheckBox Content="Play sound when jiggling" IsChecked="{Binding PlaySoundWhenJiggling}" Margin="0,0,0,8"/>
+                    <CheckBox Content="Play sound on alert metric" IsChecked="{Binding PlaySoundOnAlertMetric}" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Sound (.wav)" Style="{StaticResource FieldLabel}"/>
+                    <DockPanel Margin="0,0,0,10" LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="Browse…" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="BrowseSound_Click"/>
+                        <TextBox Text="{Binding SoundPath, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="True" ToolTip="Leave this empty to use the Windows exclamation sound."/>
+                    </DockPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                               Text="Play sound when jiggling uses the repeating timer. Play sound on alert metric plays as soon as a number increases, even when the timer sound is off. Both use this file, or the Windows exclamation sound when no file is chosen."/>
+
+                    <TextBlock Text="Watched group name" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding GroupNameText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Office locations (one city per line)" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding LocationsText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="110" TextWrapping="Wrap" VerticalContentAlignment="Top" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Check ServiceNow every (seconds)" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding PollSecondsText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+
+                    <Button Content="Save notification settings" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Command="{Binding SaveSettingsCommand}"/>
+                    <TextBlock Text="{Binding SettingsMessage}" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="{StaticResource MutedBrush}"
+                               Visibility="{Binding SettingsMessage, Converter={StaticResource StringVis}}"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

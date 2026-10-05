@@ -1,3 +1,4 @@
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
 
@@ -10,6 +11,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private static readonly ReferenceValue Jordan = new("user-jordan", "Jordan Lee");
     private static readonly ReferenceValue Sam = new("user-sam", "Sam Patel");
     private static readonly ReferenceValue ClientServices = new("group-cs", "Client Services");
+    private static readonly ReferenceValue AusClientServices = new("group-aus", "Aus DT - Client Services");
     private static readonly ReferenceValue Network = new("group-net", "Network");
 
     private readonly List<IncidentRecord> _incidents = [];
@@ -35,6 +37,75 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     public Task<CurrentUser> GetCurrentUserAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Me);
+
+    public Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(search);
+        cancellationToken.ThrowIfCancellationRequested();
+        var userId = EncodedQuery.SafeToken(search.UserSysId, "user id");
+        var assigned = new List<AlertRecord>();
+        assigned.AddRange(_incidents.Where(record => record.Active && record.AssignedTo.SysId == userId).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
+        assigned.AddRange(_requests.Where(record => record.Active && record.AssignedTo.SysId == userId).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
+        assigned.AddRange(_items.Where(record => record.Active && record.AssignedTo.SysId == userId).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
+
+        var group = new List<AlertRecord>();
+        if (AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations) is not null)
+        {
+            var name = EncodedQuery.Sanitize(search.GroupName);
+            var cities = search.Locations
+                .Select(EncodedQuery.Sanitize)
+                .Where(city => city.Length > 0)
+                .ToArray();
+            group.AddRange(_incidents.Where(record =>
+                record.Active
+                && string.Equals(record.AssignmentGroup.Display, name, StringComparison.OrdinalIgnoreCase)
+                && cities.Any(city => string.Equals(record.Location, city, StringComparison.OrdinalIgnoreCase)))
+                .Select(record => ToAlert(record, AlertKind.WatchedGroup)));
+            Record("GET", "api/now/table/incident");
+        }
+
+        Record("GET", "api/now/table/incident");
+        Record("GET", "api/now/table/sc_request");
+        Record("GET", "api/now/table/sc_req_item");
+        return Task.FromResult(new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
+        {
+            [AlertKind.AssignedToMe] = new(assigned, assigned.Count),
+            [AlertKind.WatchedGroup] = new(group, group.Count)
+        }));
+    }
+
+    private static AlertRecord ToAlert(IncidentRecord record, AlertKind kind) => new(
+        kind,
+        DeskSection.Incidents,
+        record.SysId,
+        record.Number,
+        record.ShortDescription,
+        record.StateLabel,
+        record.AssignmentGroup.Display,
+        record.Location,
+        record.UpdatedAtDisplay);
+
+    private static AlertRecord ToAlert(RequestRecord record, AlertKind kind) => new(
+        kind,
+        DeskSection.Requests,
+        record.SysId,
+        record.Number,
+        record.ShortDescription,
+        record.RequestStateLabel,
+        record.AssignmentGroup.Display,
+        "",
+        record.UpdatedAtDisplay);
+
+    private static AlertRecord ToAlert(RequestedItemRecord record, AlertKind kind) => new(
+        kind,
+        DeskSection.RequestedItems,
+        record.SysId,
+        record.Number,
+        record.ShortDescription,
+        record.StateLabel,
+        record.AssignmentGroup.Display,
+        "",
+        record.UpdatedAtDisplay);
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken)
     {
@@ -358,6 +429,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         IReadOnlyList<Choice> members = groupSysId switch
         {
             "group-cs" => [new("sample-user", "Alex Rivera"), new("user-jordan", "Jordan Lee")],
+            "group-aus" => [new("user-jordan", "Jordan Lee"), new("user-sam", "Sam Patel")],
             "group-net" => [new("user-sam", "Sam Patel")],
             _ => []
         };
@@ -623,6 +695,93 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Active = true
         }, new JournalEntry("journal-blue", "work_notes", "Work note", "Memory dump shows bugcheck 0x50 after the graphics driver update.", "alex.rivera", "2026-09-25 16:22"));
 
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-brisbane",
+            Number = "INC0010007",
+            ShortDescription = "Desktop will not boot in Brisbane",
+            Description = "The reception desktop in the Brisbane office stays on the manufacturer logo.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = Jordan,
+            AssignmentGroup = AusClientServices,
+            Location = "Brisbane",
+            OpenedAtDisplay = "2026-09-30 08:20",
+            UpdatedAtDisplay = "2026-09-30 08:20",
+            UpdatedAtValue = "2026-09-30 08:20:00",
+            Active = true
+        });
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-sydney",
+            Number = "INC0010008",
+            ShortDescription = "Monitor flicker in Sydney",
+            Description = "A desk monitor in the Sydney office flickers after lunch.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "4",
+            PriorityLabel = "4 - Low",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "email",
+            ContactTypeLabel = "Email",
+            Caller = Sam,
+            AssignedTo = Sam,
+            AssignmentGroup = AusClientServices,
+            Location = "Sydney",
+            OpenedAtDisplay = "2026-09-30 11:05",
+            UpdatedAtDisplay = "2026-09-30 11:05",
+            UpdatedAtValue = "2026-09-30 11:05:00",
+            Active = true
+        });
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-brisbane-closed",
+            Number = "INC0010009",
+            ShortDescription = "Closed Brisbane printer jam",
+            Description = "This Brisbane printer jam is already resolved.",
+            State = "6",
+            StateLabel = "Resolved",
+            Priority = "4",
+            PriorityLabel = "4 - Low",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = Jordan,
+            AssignmentGroup = AusClientServices,
+            Location = "Brisbane",
+            CloseCode = "Solved (Permanently)",
+            CloseCodeLabel = "Solved (Permanently)",
+            CloseNotes = "Cleared the jam.",
+            OpenedAtDisplay = "2026-09-18 09:00",
+            UpdatedAtDisplay = "2026-09-18 09:30",
+            UpdatedAtValue = "2026-09-18 09:30:00",
+            Active = false
+        });
+
         var laptop = new RequestRecord
         {
             SysId = "req-laptop",
@@ -636,6 +795,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             SpecialInstructions = "Needs a dock and the finance software image.",
             RequestedFor = Jordan,
             OpenedBy = Alex,
+            AssignedTo = Alex,
+            AssignmentGroup = ClientServices,
             OpenedAtDisplay = "2026-09-24 09:00",
             UpdatedAtDisplay = "2026-09-28 09:00",
             UpdatedAtValue = "2026-09-28 09:00:00",
@@ -837,6 +998,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private static readonly ReferenceSuggestion[] Groups =
     [
         new("group-cs", "Client Services", "Service desk"),
+        new("group-aus", "Aus DT - Client Services", "Queensland client services"),
         new("group-net", "Network", "Network operations")
     ];
 
@@ -963,6 +1125,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private static ReferenceValue GroupRef(string? sysId) => sysId switch
     {
         "group-cs" => ClientServices,
+        "group-aus" => AusClientServices,
         "group-net" => Network,
         null or "" => ReferenceValue.Empty,
         _ => new ReferenceValue(sysId, sysId)

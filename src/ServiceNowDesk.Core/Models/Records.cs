@@ -28,6 +28,7 @@ public sealed record IncidentRecord
     public ReferenceValue Caller { get; init; }
     public ReferenceValue AssignedTo { get; init; }
     public ReferenceValue AssignmentGroup { get; init; }
+    public string Location { get; init; } = "";
     public string OpenedAtDisplay { get; init; } = "";
     public string UpdatedAtDisplay { get; init; } = "";
     public string UpdatedAtValue { get; init; } = "";
@@ -50,6 +51,8 @@ public sealed record RequestRecord
     public string DueDate { get; init; } = "";
     public ReferenceValue RequestedFor { get; init; }
     public ReferenceValue OpenedBy { get; init; }
+    public ReferenceValue AssignedTo { get; init; }
+    public ReferenceValue AssignmentGroup { get; init; }
     public string OpenedAtDisplay { get; init; } = "";
     public string UpdatedAtDisplay { get; init; } = "";
     public string UpdatedAtValue { get; init; } = "";
