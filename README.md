@@ -41,7 +41,7 @@ Type a person's name in Caller, Requested for, Assigned to, or Assignment group.
    - **Username and password** when the instance accepts it. Sign in as the agent. "My open" and "My groups" then mean that person. If ServiceNow answers that auth information is required, the instance expects single sign-on: use browser sign-in instead.
    - **OAuth password grant** uses an OAuth client plus the agent's user name and password.
    - **OAuth client credentials** uses the integration user configured on the OAuth app. "My open" is that integration user, not the person at the keyboard.
-4. Click **Connect**. A saved browser session can connect again until ServiceNow expires it. When it expires, sign in with the browser again.
+4. Click **Connect**. A saved browser session connects again for 24 hours after that sign-in, or sooner when the token expires first. A refresh does not extend those 24 hours. When the session is past expiry, or ServiceNow rejects it, the app clears the saved session and returns to Connection so you can sign in again.
 
 The password, client secret, and browser session are stored with Windows DPAPI for the current Windows user, under `%AppData%\ServiceNowDesk\settings.json`. They are not written in plain text.
 

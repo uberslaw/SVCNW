@@ -38,6 +38,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
                 SessionCookie = Unprotect(stored.ProtectedSessionCookie),
                 UserToken = Unprotect(stored.ProtectedUserToken),
                 SessionCapturedAt = stored.SessionCapturedAt,
+                SignedInAt = stored.SignedInAt,
+                SessionExpiresAt = stored.SessionExpiresAt,
                 UseSampleData = stored.UseSampleData,
                 JiggleFrequency = string.IsNullOrWhiteSpace(stored.JiggleFrequency) ? "00:01:00" : stored.JiggleFrequency,
                 JiggleDurationSeconds = stored.JiggleDurationSeconds ?? 2,
@@ -70,6 +72,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
             ProtectedSessionCookie = Protect(settings.SessionCookie),
             ProtectedUserToken = Protect(settings.UserToken),
             SessionCapturedAt = settings.SessionCapturedAt,
+            SignedInAt = settings.SignedInAt,
+            SessionExpiresAt = settings.SessionExpiresAt,
             UseSampleData = settings.UseSampleData,
             JiggleFrequency = settings.JiggleFrequency,
             JiggleDurationSeconds = settings.JiggleDurationSeconds,
@@ -111,6 +115,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
         public string? ProtectedSessionCookie { get; set; }
         public string? ProtectedUserToken { get; set; }
         public DateTimeOffset? SessionCapturedAt { get; set; }
+        public DateTimeOffset? SignedInAt { get; set; }
+        public DateTimeOffset? SessionExpiresAt { get; set; }
         public bool UseSampleData { get; set; }
         public string? JiggleFrequency { get; set; }
         public int? JiggleDurationSeconds { get; set; }

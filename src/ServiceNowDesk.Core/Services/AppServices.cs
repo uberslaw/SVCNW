@@ -14,7 +14,7 @@ public interface ISettingsStore
     void Save(DeskSettings settings);
 }
 
-public sealed record BrowserSignInResult(string CookieHeader, string UserToken);
+public sealed record BrowserSignInResult(string CookieHeader, string UserToken, DateTimeOffset? ExpiresAt = null, int? ExpiresInSeconds = null);
 
 public interface IBrowserSignIn
 {
