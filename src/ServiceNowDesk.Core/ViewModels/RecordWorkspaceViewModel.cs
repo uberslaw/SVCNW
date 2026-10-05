@@ -194,6 +194,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     {
         if (Client is null || IsEditorBusy)
             return;
+        await ResolveReferencesAsync(CancellationToken.None);
         if (!TryValidate(out var message))
         {
             ErrorMessage = message;
@@ -446,8 +447,14 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         target.Add(new Choice(value, string.IsNullOrWhiteSpace(label) ? value : label));
     }
 
-    protected static bool ReferenceIsChosen(ReferenceFieldModel field) =>
-        string.IsNullOrWhiteSpace(field.Text) == (field.SysId.Length == 0);
+    protected virtual Task ResolveReferencesAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    protected static bool ReferenceIsChosen(ReferenceFieldModel field)
+    {
+        var text = field.Text ?? "";
+        var id = field.SysId ?? "";
+        return string.IsNullOrWhiteSpace(text) == (id.Length == 0);
+    }
 
     protected void UpsertRow(TicketRow row)
     {

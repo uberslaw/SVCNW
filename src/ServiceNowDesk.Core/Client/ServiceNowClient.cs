@@ -430,7 +430,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         ServiceNowException? last = null;
         try
         {
-            (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken).ConfigureAwait(false);
+            (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken, null).ConfigureAwait(false);
             try
             {
                 if (AssignmentDirectoryIsStale)
@@ -460,11 +460,14 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
-    public async Task RefreshChoiceCatalogAsync(CancellationToken cancellationToken)
+    public Task RefreshChoiceCatalogAsync(CancellationToken cancellationToken) =>
+        RefreshChoiceCatalogAsync(null, cancellationToken);
+
+    public async Task RefreshChoiceCatalogAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken)
     {
         try
         {
-            var (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken).ConfigureAwait(false);
+            var (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken, progress).ConfigureAwait(false);
             if (saved == 0 && last is not null)
                 throw last;
 
@@ -477,7 +480,13 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
-    public Task RefreshAssignmentDirectoryAsync(CancellationToken cancellationToken)
+    public Task RefreshAssignmentDirectoryAsync(CancellationToken cancellationToken) =>
+        RefreshAssignmentDirectoryAsync(null, null, cancellationToken);
+
+    public Task RefreshAssignmentDirectoryAsync(
+        IProgress<DownloadTick>? groupProgress,
+        IProgress<DownloadTick>? memberProgress,
+        CancellationToken cancellationToken)
     {
         lock (_cacheGate)
         {
@@ -486,9 +495,39 @@ public sealed class ServiceNowClient : IServiceNowClient
 
             var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _directoryRefresh = completion.Task;
-            _ = FinishAssignmentDirectoryAsync(completion, cancellationToken);
+            _ = FinishAssignmentDirectoryAsync(completion, groupProgress, memberProgress, cancellationToken);
             return completion.Task;
         }
+    }
+
+    public async Task DownloadAssignmentGroupsAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken)
+    {
+        var groups = await FetchGroupsAsync(progress, cancellationToken).ConfigureAwait(false);
+        lock (_cacheGate)
+        {
+            var existing = ExportMembers();
+            _groups = groups;
+            _snapshot.Groups = groups.Select(group => new CachedAssignmentGroup { SysId = group.Value, Name = group.Label }).ToList();
+            RebuildMemberIndex(existing, markEmptyGroups: false);
+            CopyMembersToSnapshot();
+        }
+
+        PersistCatalog();
+    }
+
+    public async Task DownloadAssignmentMembersAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken)
+    {
+        var fetched = await FetchMembersAsync(MemberDirectoryQuery, FormCatalogPolicy.MaxGroupMembers, progress, cancellationToken).ConfigureAwait(false);
+        lock (_cacheGate)
+        {
+            RebuildMemberIndex(fetched.Members, markEmptyGroups: !fetched.Truncated);
+            _snapshot.DirectoryComplete = !fetched.Truncated;
+            _snapshot.DirectoryCapturedAt = DateTimeOffset.UtcNow;
+            _snapshot.Groups = _groups.Select(group => new CachedAssignmentGroup { SysId = group.Value, Name = group.Label }).ToList();
+            CopyMembersToSnapshot();
+        }
+
+        PersistCatalog();
     }
 
     public async Task<bool> RefreshAssignmentDirectoryIfStaleAsync(CancellationToken cancellationToken)
@@ -518,7 +557,7 @@ public sealed class ServiceNowClient : IServiceNowClient
                 return _groups.ToArray();
         }
 
-        var groups = await FetchGroupsAsync(cancellationToken).ConfigureAwait(false);
+        var groups = await FetchGroupsAsync(null, cancellationToken).ConfigureAwait(false);
         lock (_cacheGate)
         {
             _groups = groups;
@@ -531,18 +570,27 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     public async Task<IReadOnlyList<Choice>> ListGroupMembersAsync(string groupSysId, CancellationToken cancellationToken)
     {
-        var id = EncodedQuery.SafeToken(groupSysId, "group id");
+        var token = (groupSysId ?? "").Trim();
+        if (token.Length == 0)
+            return [];
+
+        string id;
         lock (_cacheGate)
         {
-            if (_membersByGroup.TryGetValue(id, out var cached))
+            id = ResolveMemberGroupId(token, token);
+            if (_membersByGroup.TryGetValue(id, out var cached) && cached.Count > 0)
                 return cached.ToArray();
             if (_groupsWithMemberList.Contains(id))
                 return [];
         }
 
-        var members = await FetchMembersAsync("group=" + EncodedQuery.Sanitize(id) + "^user.active=true", 200, cancellationToken).ConfigureAwait(false);
-        var choices = members
-            .Select(member => new Choice(member.UserSysId, member.Name))
+        if (!IsGroupToken(id))
+            return [];
+
+        var fetched = await FetchMembersAsync("group=" + EncodedQuery.Sanitize(id) + "^ORDERBYuser", FormCatalogPolicy.MaxGroupMembers, null, cancellationToken).ConfigureAwait(false);
+        var choices = fetched.Members
+            .Where(member => member.UserId.Length > 0)
+            .Select(member => new Choice(member.UserId, member.UserName))
             .OrderBy(choice => choice.Label, StringComparer.OrdinalIgnoreCase)
             .ToList();
         RememberGroupMembers(id, choices);
@@ -822,10 +870,12 @@ public sealed class ServiceNowClient : IServiceNowClient
                 var name = SnowField.Read(row, "name").Display;
                 if (sysId.Length == 0 || name.Length == 0)
                     continue;
+                var userName = user ? SnowField.Read(row, "user_name").Display : "";
+                var email = user ? SnowField.Read(row, "email").Display : "";
                 var detail = user
-                    ? JoinDetail(SnowField.Read(row, "user_name").Display, SnowField.Read(row, "email").Display)
+                    ? JoinDetail(userName, email)
                     : SnowField.Read(row, "description").Display;
-                suggestions.Add(new ReferenceSuggestion(sysId, name, detail));
+                suggestions.Add(new ReferenceSuggestion(sysId, name, detail) { UserName = userName, Email = email });
             }
 
             return suggestions;
@@ -1003,32 +1053,10 @@ public sealed class ServiceNowClient : IServiceNowClient
                 .Where(group => !string.IsNullOrWhiteSpace(group.SysId) && !string.IsNullOrWhiteSpace(group.Name))
                 .Select(group => new Choice(group.SysId, group.Name))
                 .ToList();
-            _membersByGroup.Clear();
-            _groupsWithMemberList.Clear();
-            foreach (var member in _snapshot.Members)
-            {
-                if (string.IsNullOrWhiteSpace(member.GroupSysId) || string.IsNullOrWhiteSpace(member.UserSysId))
-                    continue;
-                if (!_membersByGroup.TryGetValue(member.GroupSysId, out var list))
-                {
-                    list = [];
-                    _membersByGroup[member.GroupSysId] = list;
-                }
-
-                if (list.Any(choice => choice.Value.Equals(member.UserSysId, StringComparison.OrdinalIgnoreCase)))
-                    continue;
-                var name = string.IsNullOrWhiteSpace(member.Name) ? member.UserSysId : member.Name;
-                list.Add(new Choice(member.UserSysId, name));
-            }
-
-            foreach (var list in _membersByGroup.Values)
-                list.Sort((left, right) => string.Compare(left.Label, right.Label, StringComparison.OrdinalIgnoreCase));
-
-            if (_snapshot.DirectoryComplete)
-            {
-                foreach (var group in _groups)
-                    _groupsWithMemberList.Add(group.Value);
-            }
+            var savedMembers = (_snapshot.Members ?? [])
+                .Select(member => new RawMember(member.GroupSysId ?? "", member.GroupSysId ?? "", member.UserSysId ?? "", string.IsNullOrWhiteSpace(member.Name) ? member.UserSysId ?? "" : member.Name))
+                .ToList();
+            RebuildMemberIndex(savedMembers, markEmptyGroups: snapshot.DirectoryComplete);
             foreach (var list in _snapshot.Choices)
             {
                 if (list.Choices is not { Count: > 0 } || string.IsNullOrWhiteSpace(list.Table) || string.IsNullOrWhiteSpace(list.Element))
@@ -1142,10 +1170,13 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
-    private async Task<(int Saved, ServiceNowException? Error)> DownloadChoiceCatalogAsync(CancellationToken cancellationToken)
+    private async Task<(int Saved, ServiceNowException? Error)> DownloadChoiceCatalogAsync(CancellationToken cancellationToken, IProgress<DownloadTick>? progress)
     {
         ServiceNowException? last = null;
         var saved = 0;
+        var completed = 0;
+        var total = FormCatalogFields.Independent.Length;
+        progress?.Report(new DownloadTick(0, total));
         foreach (var field in FormCatalogFields.Independent)
         {
             try
@@ -1158,18 +1189,31 @@ public sealed class ServiceNowClient : IServiceNowClient
             {
                 last = ex;
             }
+
+            completed++;
+            progress?.Report(new DownloadTick(completed, total));
         }
 
         IReadOnlyList<Choice> categories;
+        string[] itemIds;
         lock (_cacheGate)
+        {
             categories = _choices.TryGetValue(ChoiceKey("incident", "category", null), out var cached) ? cached : [];
+            itemIds = _catalogForms.Keys.Take(FormCatalogPolicy.MaxCatalogItems).ToArray();
+        }
 
-        var dependents = 0;
+        var dependents = categories.Count(category => !string.IsNullOrWhiteSpace(category.Value));
+        if (dependents > FormCatalogPolicy.MaxDependentCategories)
+            dependents = FormCatalogPolicy.MaxDependentCategories;
+        total += dependents + itemIds.Length;
+        progress?.Report(new DownloadTick(completed, Math.Max(total, 1)));
+
+        var dependentDone = 0;
         foreach (var category in categories)
         {
-            if (string.IsNullOrWhiteSpace(category.Value) || dependents >= FormCatalogPolicy.MaxDependentCategories)
+            if (string.IsNullOrWhiteSpace(category.Value) || dependentDone >= FormCatalogPolicy.MaxDependentCategories)
                 continue;
-            dependents++;
+            dependentDone++;
             try
             {
                 var choices = await FetchChoiceListAsync("incident", "subcategory", category.Value, cancellationToken).ConfigureAwait(false);
@@ -1180,11 +1224,10 @@ public sealed class ServiceNowClient : IServiceNowClient
             {
                 last = ex;
             }
-        }
 
-        string[] itemIds;
-        lock (_cacheGate)
-            itemIds = _catalogForms.Keys.Take(FormCatalogPolicy.MaxCatalogItems).ToArray();
+            completed++;
+            progress?.Report(new DownloadTick(completed, Math.Max(total, 1)));
+        }
 
         foreach (var itemId in itemIds)
         {
@@ -1198,16 +1241,23 @@ public sealed class ServiceNowClient : IServiceNowClient
             {
                 last = ex;
             }
+
+            completed++;
+            progress?.Report(new DownloadTick(completed, Math.Max(total, 1)));
         }
 
         return (saved, last);
     }
 
-    private async Task FinishAssignmentDirectoryAsync(TaskCompletionSource completion, CancellationToken cancellationToken)
+    private async Task FinishAssignmentDirectoryAsync(
+        TaskCompletionSource completion,
+        IProgress<DownloadTick>? groupProgress,
+        IProgress<DownloadTick>? memberProgress,
+        CancellationToken cancellationToken)
     {
         try
         {
-            await RefreshAssignmentDirectoryCoreAsync(cancellationToken).ConfigureAwait(false);
+            await RefreshAssignmentDirectoryCoreAsync(groupProgress, memberProgress, cancellationToken).ConfigureAwait(false);
             completion.TrySetResult();
         }
         catch (Exception ex)
@@ -1216,15 +1266,27 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
-    private async Task RefreshAssignmentDirectoryCoreAsync(CancellationToken cancellationToken)
+    private async Task RefreshAssignmentDirectoryCoreAsync(
+        IProgress<DownloadTick>? groupProgress,
+        IProgress<DownloadTick>? memberProgress,
+        CancellationToken cancellationToken)
     {
-        var groups = await FetchGroupsAsync(cancellationToken).ConfigureAwait(false);
-        var members = await FetchMembersAsync("user.active=true^group.active=true", FormCatalogPolicy.MaxGroupMembers, cancellationToken).ConfigureAwait(false);
-        ReplaceDirectory(groups, members);
+        var groups = await FetchGroupsAsync(groupProgress, cancellationToken).ConfigureAwait(false);
+        var fetched = await FetchMembersAsync(MemberDirectoryQuery, FormCatalogPolicy.MaxGroupMembers, memberProgress, cancellationToken).ConfigureAwait(false);
+        lock (_cacheGate)
+        {
+            _groups = groups;
+            RebuildMemberIndex(fetched.Members, markEmptyGroups: !fetched.Truncated);
+            _snapshot.DirectoryComplete = !fetched.Truncated;
+            _snapshot.DirectoryCapturedAt = DateTimeOffset.UtcNow;
+            _snapshot.Groups = _groups.Select(group => new CachedAssignmentGroup { SysId = group.Value, Name = group.Label }).ToList();
+            CopyMembersToSnapshot();
+        }
+
         PersistCatalog();
     }
 
-    private async Task<List<Choice>> FetchGroupsAsync(CancellationToken cancellationToken)
+    private async Task<List<Choice>> FetchGroupsAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken)
     {
         var groups = new List<Choice>();
         await PageRowsAsync(
@@ -1232,6 +1294,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             "sys_id,name",
             "active=true^ORDERBYname",
             FormCatalogPolicy.MaxAssignmentGroups,
+            progress,
             row =>
             {
                 var id = SnowField.Read(row, "sys_id").Value;
@@ -1244,34 +1307,46 @@ public sealed class ServiceNowClient : IServiceNowClient
         return groups.OrderBy(group => group.Label, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    private async Task<List<CachedGroupMember>> FetchMembersAsync(string query, int max, CancellationToken cancellationToken)
+    private async Task<MemberFetch> FetchMembersAsync(string query, int max, IProgress<DownloadTick>? progress, CancellationToken cancellationToken)
     {
-        var members = new List<CachedGroupMember>();
-        await PageRowsAsync(
+        var members = new List<RawMember>();
+        var truncated = await PageRowsAsync(
             "sys_user_grmember",
             "group,user",
             query,
             max,
+            progress,
             row =>
             {
                 var group = SnowField.Read(row, "group");
                 var user = SnowField.Read(row, "user");
-                if (group.Value.Length == 0 || user.Value.Length == 0)
+                if (group.Value.Length == 0 && group.Display.Length == 0)
                     return;
-                if (members.Any(member => member.GroupSysId.Equals(group.Value, StringComparison.OrdinalIgnoreCase) && member.UserSysId.Equals(user.Value, StringComparison.OrdinalIgnoreCase)))
+                if (user.Value.Length == 0)
                     return;
                 var name = user.Display.Length > 0 ? user.Display : user.Value;
-                members.Add(new CachedGroupMember { GroupSysId = group.Value, UserSysId = user.Value, Name = name });
+                if (members.Any(member => member.GroupValue.Equals(group.Value, StringComparison.OrdinalIgnoreCase) && member.UserId.Equals(user.Value, StringComparison.OrdinalIgnoreCase)))
+                    return;
+                members.Add(new RawMember(group.Value, group.Display, user.Value, name));
             },
             cancellationToken).ConfigureAwait(false);
-        return members;
+        return new MemberFetch(members, truncated);
     }
 
-    private async Task PageRowsAsync(string table, string fields, string query, int maxRows, Action<JsonElement> accept, CancellationToken cancellationToken)
+    private async Task<bool> PageRowsAsync(
+        string table,
+        string fields,
+        string query,
+        int maxRows,
+        IProgress<DownloadTick>? progress,
+        Action<JsonElement> accept,
+        CancellationToken cancellationToken)
     {
         const int pageSize = 200;
         var offset = 0;
         var kept = 0;
+        var truncated = false;
+        progress?.Report(new DownloadTick(0, 0));
         while (kept < maxRows)
         {
             var limit = Math.Min(pageSize, maxRows - kept);
@@ -1288,50 +1363,132 @@ public sealed class ServiceNowClient : IServiceNowClient
                         break;
                 }
 
+                var fetched = offset + count;
+                var expected = result.TotalCount;
+                if (expected is > 0)
+                    progress?.Report(new DownloadTick(Math.Min(fetched, expected.Value), expected.Value));
+                else if (count < limit)
+                    progress?.Report(new DownloadTick(Math.Max(fetched, 1), Math.Max(fetched, 1)));
+                else
+                    progress?.Report(new DownloadTick(fetched, fetched + limit));
+
                 if (count < limit)
                     break;
+                if (kept >= maxRows)
+                {
+                    truncated = true;
+                    break;
+                }
+
                 offset += count;
             }
         }
+
+        return truncated;
     }
 
-    private void ReplaceDirectory(IReadOnlyList<Choice> groups, IReadOnlyList<CachedGroupMember> members)
+    private List<RawMember> ExportMembers()
     {
-        lock (_cacheGate)
+        var members = new List<RawMember>();
+        foreach (var pair in _membersByGroup)
         {
-            _groups = groups.ToList();
-            _membersByGroup.Clear();
-            _groupsWithMemberList.Clear();
-            foreach (var group in _groups)
+            foreach (var choice in pair.Value)
+                members.Add(new RawMember(pair.Key, pair.Key, choice.Value, choice.Label));
+        }
+
+        return members;
+    }
+
+    private void RebuildMemberIndex(IReadOnlyList<RawMember> members, bool markEmptyGroups)
+    {
+        _membersByGroup.Clear();
+        _groupsWithMemberList.Clear();
+        foreach (var member in members)
+        {
+            if (string.IsNullOrWhiteSpace(member.UserId))
+                continue;
+            var groupId = ResolveMemberGroupId(member.GroupValue, member.GroupDisplay);
+            if (string.IsNullOrWhiteSpace(groupId))
+                continue;
+            if (!_membersByGroup.TryGetValue(groupId, out var list))
+            {
+                list = [];
+                _membersByGroup[groupId] = list;
+            }
+
+            if (list.Any(choice => choice.Value.Equals(member.UserId, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            var name = string.IsNullOrWhiteSpace(member.UserName) ? member.UserId : member.UserName;
+            list.Add(new Choice(member.UserId, name));
+        }
+
+        foreach (var list in _membersByGroup.Values)
+            list.Sort((left, right) => string.Compare(left.Label, right.Label, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var group in _groups)
+        {
+            var listed = _membersByGroup.TryGetValue(group.Value, out var people) && people.Count > 0;
+            if (listed || markEmptyGroups)
                 _groupsWithMemberList.Add(group.Value);
-
-            foreach (var member in members)
-            {
-                if (!_membersByGroup.TryGetValue(member.GroupSysId, out var list))
-                {
-                    list = [];
-                    _membersByGroup[member.GroupSysId] = list;
-                }
-
-                if (list.Any(choice => choice.Value.Equals(member.UserSysId, StringComparison.OrdinalIgnoreCase)))
-                    continue;
-                list.Add(new Choice(member.UserSysId, member.Name));
-            }
-
-            foreach (var list in _membersByGroup.Values)
-                list.Sort((left, right) => string.Compare(left.Label, right.Label, StringComparison.OrdinalIgnoreCase));
-
-            _snapshot.DirectoryComplete = true;
-            _snapshot.DirectoryCapturedAt = DateTimeOffset.UtcNow;
-            _snapshot.Groups = _groups.Select(group => new CachedAssignmentGroup { SysId = group.Value, Name = group.Label }).ToList();
-            _snapshot.Members = [];
-            foreach (var pair in _membersByGroup)
-            {
-                foreach (var member in pair.Value)
-                    _snapshot.Members.Add(new CachedGroupMember { GroupSysId = pair.Key, UserSysId = member.Value, Name = member.Label });
-            }
         }
     }
+
+    private string ResolveMemberGroupId(string rawValue, string display)
+    {
+        var value = (rawValue ?? "").Trim();
+        var name = (display ?? "").Trim();
+        foreach (var group in _groups)
+        {
+            if (value.Length > 0 && group.Value.Equals(value, StringComparison.OrdinalIgnoreCase))
+                return group.Value;
+        }
+
+        Choice? named = null;
+        var matches = 0;
+        foreach (var group in _groups)
+        {
+            var label = group.Label.Trim();
+            var valueMatch = value.Length > 0 && label.Equals(value, StringComparison.OrdinalIgnoreCase);
+            var nameMatch = name.Length > 0 && label.Equals(name, StringComparison.OrdinalIgnoreCase);
+            if (!valueMatch && !nameMatch)
+                continue;
+            named = group;
+            matches++;
+        }
+
+        return matches == 1 && named is not null ? named.Value : value;
+    }
+
+    private void CopyMembersToSnapshot()
+    {
+        _snapshot.Members = [];
+        foreach (var pair in _membersByGroup)
+        {
+            foreach (var member in pair.Value)
+                _snapshot.Members.Add(new CachedGroupMember { GroupSysId = pair.Key, UserSysId = member.Value, Name = member.Label });
+        }
+    }
+
+    private static bool IsGroupToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        try
+        {
+            EncodedQuery.SafeToken(value, "group id");
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private const string MemberDirectoryQuery = "userISNOTEMPTY^groupISNOTEMPTY^ORDERBYsys_id";
+
+    private readonly record struct RawMember(string GroupValue, string GroupDisplay, string UserId, string UserName);
+
+    private readonly record struct MemberFetch(List<RawMember> Members, bool Truncated);
 
     private void RememberGroupMembers(string groupId, IReadOnlyList<Choice> members)
     {

@@ -31,6 +31,8 @@ public sealed class AssignmentFields : ObservableObject
 
     public Task WhenReady { get; private set; } = Task.CompletedTask;
 
+    public bool GroupsLoaded { get; private set; }
+
     public string MemberHint => string.IsNullOrEmpty(GroupId)
         ? "Choose a group to list its members."
         : Members.Count <= 1 ? "No members are saved for this group yet." : "";
@@ -60,7 +62,8 @@ public sealed class AssignmentFields : ObservableObject
 
         var selected = GroupId;
         var selectedMember = MemberId;
-        var selectedLabel = Groups.FirstOrDefault(choice => choice.Value == selected)?.Label ?? selected;
+        var selectedLabel = Groups.FirstOrDefault(choice => string.Equals(choice.Value, selected, StringComparison.OrdinalIgnoreCase))?.Label ?? selected;
+        var memberLabel = Members.FirstOrDefault(choice => string.Equals(choice.Value, selectedMember, StringComparison.OrdinalIgnoreCase))?.Label ?? "";
         _applying = true;
         try
         {
@@ -73,17 +76,24 @@ public sealed class AssignmentFields : ObservableObject
                 Groups.Add(group);
             }
 
-            Ensure(Groups, selected, selectedLabel);
-            GroupId = selected;
+            var resolved = ResolveGroup(selected);
+            if (resolved.Length == 0)
+                resolved = selected;
+            Ensure(Groups, resolved, selectedLabel);
+            GroupId = resolved;
             MemberId = selectedMember;
             OnPropertyChanged(nameof(GroupId));
             OnPropertyChanged(nameof(MemberId));
+            GroupsLoaded = true;
         }
         finally
         {
             _applying = false;
             OnPropertyChanged(nameof(MemberHint));
         }
+
+        if (!string.IsNullOrEmpty(GroupId))
+            await LoadMembersAsync(GroupId, MemberId, memberLabel, keepMissing: true);
     }
 
     public async Task ShowAsync(string? groupId, string? groupLabel, string? memberId, string? memberLabel)
@@ -91,7 +101,9 @@ public sealed class AssignmentFields : ObservableObject
         _applying = true;
         try
         {
-            var group = groupId ?? "";
+            var group = ResolveGroup(groupId ?? "");
+            if (group.Length == 0)
+                group = groupId ?? "";
             var member = memberId ?? "";
             Ensure(Groups, group, groupLabel ?? "");
             GroupId = group;
@@ -126,6 +138,7 @@ public sealed class AssignmentFields : ObservableObject
 
     public void Clear()
     {
+        GroupsLoaded = false;
         ClearSelection();
         Groups.Clear();
         Groups.Add(new Choice("", "Unassigned"));
@@ -136,8 +149,16 @@ public sealed class AssignmentFields : ObservableObject
         OnPropertyChanged(nameof(MemberHint));
         if (_applying)
             return;
+
+        var resolved = ResolveGroup(value);
+        if (!string.Equals(resolved, _groupId, StringComparison.Ordinal))
+        {
+            _groupId = resolved;
+            OnPropertyChanged(nameof(GroupId));
+        }
+
         Changed?.Invoke(this, EventArgs.Empty);
-        _ = LoadMembersAsync(value, "", "", keepMissing: false);
+        _ = LoadMembersAsync(resolved, "", "", keepMissing: false);
     }
 
     private void MemberChanged(string _)
@@ -226,9 +247,36 @@ public sealed class AssignmentFields : ObservableObject
         }
     }
 
+    private string ResolveGroup(string value)
+    {
+        var token = (value ?? "").Trim();
+        if (token.Length == 0)
+            return "";
+
+        var byId = Groups.FirstOrDefault(choice =>
+            !string.IsNullOrEmpty(choice.Value)
+            && choice.Value.Equals(token, StringComparison.OrdinalIgnoreCase));
+        if (byId is not null)
+            return byId.Value;
+
+        Choice? named = null;
+        var matches = 0;
+        foreach (var choice in Groups)
+        {
+            if (string.IsNullOrEmpty(choice.Value))
+                continue;
+            if (!choice.Label.Trim().Equals(token, StringComparison.OrdinalIgnoreCase))
+                continue;
+            named = choice;
+            matches++;
+        }
+
+        return matches == 1 && named is not null ? named.Value : token;
+    }
+
     private static void Ensure(ObservableCollection<Choice> target, string value, string label)
     {
-        if (string.IsNullOrEmpty(value) || target.Any(choice => choice.Value == value))
+        if (string.IsNullOrEmpty(value) || target.Any(choice => choice.Value.Equals(value, StringComparison.OrdinalIgnoreCase)))
             return;
         target.Add(new Choice(value, string.IsNullOrWhiteSpace(label) ? value : label));
     }

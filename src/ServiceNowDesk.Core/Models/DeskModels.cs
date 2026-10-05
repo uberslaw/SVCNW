@@ -67,7 +67,11 @@ public readonly record struct ReferenceValue(string SysId, string Display)
     public static ReferenceValue Empty { get; } = new("", "");
 }
 
-public sealed record ReferenceSuggestion(string SysId, string Display, string Detail);
+public sealed record ReferenceSuggestion(string SysId, string Display, string Detail)
+{
+    public string UserName { get; init; } = "";
+    public string Email { get; init; } = "";
+}
 
 public sealed record JournalEntry(string SysId, string Kind, string KindLabel, string Text, string Author, string CreatedDisplay);
 

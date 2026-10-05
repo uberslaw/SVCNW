@@ -30,7 +30,7 @@ Practice data is built in, so the team can learn the layout before an instance i
 | F5 | Refresh the current list |
 | Esc | Close the resolve panel |
 
-Type a person's name in Caller, Requested for, Assigned to, or Assignment group. The match list opens under the field. Enter accepts the highlighted person.
+Type a person's name in Caller or Requested for. The match list opens under the field. Enter accepts the highlighted person. Assignment group and Assigned to are dropdowns.
 
 ## Connect to your instance
 
@@ -45,9 +45,11 @@ Type a person's name in Caller, Requested for, Assigned to, or Assignment group.
 
 The password, client secret, and browser session are stored with Windows DPAPI for the current Windows user, under `%AppData%\ServiceNowDesk\settings.json`. They are not written in plain text.
 
-Dropdowns for incidents, requests, and request items, plus catalog questions you have opened, are saved on this PC and refreshed about once a day. The forms read that saved copy, so they open without waiting on the website. Ticket lists, saves, notes, and new catalog orders still go to ServiceNow. The saved lists live in `%AppData%\ServiceNowDesk\form-catalog.<instance>.json`.
+Dropdowns for incidents, requests, request items, and walk-ups, plus catalog questions you have opened, are saved on this PC and refreshed about once a day. The forms read that saved copy. Ticket lists, saves, notes, and new catalog orders still go to ServiceNow. The saved lists live in `%AppData%\ServiceNowDesk\form-catalog.<instance>.json`.
 
-Assignment groups and their members download in the background when you connect, if this PC has no saved directory yet or that directory is older than a day. The incident list and Create new stay available while that download runs, and the group dropdown fills in when it finishes. A failed refresh leaves the saved lists in place.
+Connect, and practice mode, keep a download screen up until that data is on the desk. It reads like a console log: the title is "Downloading data 2/6 — Assignment groups" while that section is in progress, and each section is its own line with a percent that climbs from 0% to 100%. Finished lines stay at 100%. The sections are menu choices, assignment groups, assignment group members, open incidents, open requests, and open walk-ups. A saved copy newer than a day shows as cached and is not downloaded again. If one section fails, the others still finish and the desk opens. A failed assignment-group refresh keeps the lists already saved on this PC. The desk behind the screen does not take clicks until the download finishes, so Assignment group and Assigned to are filled before you can use them.
+
+Type a caller's name, user id, or email. If that text matches one person, Save uses that person. If several people match, choose the row from the list.
 
 Incident templates are stored in `%AppData%\ServiceNowDesk\incident-templates.json`. They are local to this PC, including practice mode, and they are not secrets. Saving a template does not create an incident in ServiceNow.
 

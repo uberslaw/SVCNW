@@ -43,6 +43,11 @@ public partial class MainWindow : Window
         var main = Model;
         if (main is null)
             return;
+        if (main.Startup.IsOpen)
+        {
+            e.Handled = true;
+            return;
+        }
 
         var ctrl = Keyboard.Modifiers == ModifierKeys.Control;
         var ctrlShift = Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift);

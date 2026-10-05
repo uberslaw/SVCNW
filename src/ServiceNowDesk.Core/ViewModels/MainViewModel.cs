@@ -29,6 +29,8 @@ public partial class MainViewModel : ObservableObject
     private string _signedInUserId = "";
 
     public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
+    public StartupDownloadModel Startup { get; } = new();
+    private bool _startupGate;
 
     public MainViewModel(
         ISettingsStore store,
@@ -143,12 +145,22 @@ public partial class MainViewModel : ObservableObject
                 ? "Practice data loaded. Nothing is sent to ServiceNow."
                 : "Connected as " + user.Name + ".";
             StartAlertLoop();
-            if (live is not null)
-                await RefreshFormsIfNeededAsync(live, user.Name);
             _loadedFor.Clear();
-            if (SelectedSection == DeskSection.Connection)
-                SelectedSection = DeskSection.Incidents;
-            await EnsureSectionAsync();
+            _startupGate = true;
+            var startup = DownloadStartupAsync(live);
+            AssignmentDirectoryRefresh = startup;
+            try
+            {
+                if (SelectedSection == DeskSection.Connection)
+                    SelectedSection = DeskSection.Incidents;
+                await startup;
+            }
+            finally
+            {
+                _startupGate = false;
+                Startup.Close();
+            }
+
             RefreshActivity();
         }
         catch (Exception ex)
@@ -336,7 +348,7 @@ public partial class MainViewModel : ObservableObject
             _ => "Search"
         };
         UpdateBack();
-        if (IsConnected && !_openingRecord && !_preserveNavigation)
+        if (IsConnected && !_openingRecord && !_preserveNavigation && !_startupGate)
             _ = EnsureSectionAsync();
     }
 
@@ -568,71 +580,187 @@ public partial class MainViewModel : ObservableObject
             : "Opened " + conversion.Incident.Number + ", already linked to this walk-up.";
     }
 
-    private async Task RefreshFormsIfNeededAsync(ServiceNowClient client, string userName)
+    private async Task DownloadStartupAsync(ServiceNowClient? live)
     {
-        QueueAssignmentDirectoryRefresh(client);
-        if (_formCatalog is null || !client.FormCatalogIsStale)
-            return;
+        Startup.Begin(6);
+        if (_ui is not null)
+            await Task.Yield();
+        await RunSectionAsync("Choices", () => DownloadChoicesAsync(live));
+        await RunSectionAsync("Assignment groups", () => DownloadGroupsAsync(live));
+        await RunSectionAsync("Assignment group members", () => DownloadMembersAsync(live));
+        await RunSectionAsync("Incidents", () => DownloadListAsync(DeskSection.Incidents, Incidents));
+        await RunSectionAsync("Requests", () => DownloadListAsync(DeskSection.Requests, Requests));
+        await RunSectionAsync("Walk-ups", () => DownloadListAsync(DeskSection.WalkUps, WalkUps));
+    }
 
-        if (!client.HasCachedChoices)
+    private async Task RunSectionAsync(string name, Func<Task<bool>> action)
+    {
+        Startup.Start(name);
+        if (_ui is not null)
         {
-            StatusMessage = "Connected as " + userName + ". Downloading form lists.";
+            await Task.Yield();
+            if (IsSample)
+                await Task.Delay(40);
+        }
+
+        try
+        {
+            var cached = await action();
+            if (cached)
+                Startup.CompleteCached();
+            else
+                Startup.Complete();
+        }
+        catch (Exception ex)
+        {
+            Startup.Fail(WorkspaceMessages.Describe(ex));
+        }
+    }
+
+    private async Task<bool> DownloadChoicesAsync(ServiceNowClient? live)
+    {
+        var cached = live is not null && live.HasCachedChoices && !live.FormCatalogIsStale;
+        Exception? failure = null;
+        if (live is not null && !cached)
+        {
             try
             {
-                await client.RefreshChoiceCatalogAsync(CancellationToken.None);
-                StatusMessage = "Connected as " + userName + ".";
+                await live.RefreshChoiceCatalogAsync(SplashProgress(), CancellationToken.None);
             }
             catch (Exception ex)
             {
-                StatusMessage = "Connected as " + userName + ".";
-                ErrorMessage = "Form lists could not be downloaded. " + WorkspaceMessages.Describe(ex);
+                failure = ex;
             }
-
-            return;
         }
 
-        _ = RefreshFormCatalogQuietlyAsync(client);
+        if (live is null)
+            Startup.Report(0);
+        await Incidents.LoadChoiceListsAsync();
+        if (live is null)
+            Startup.Report(25);
+        await Requests.LoadChoiceListsAsync();
+        if (live is null)
+            Startup.Report(50);
+        await RequestedItems.LoadChoiceListsAsync();
+        if (live is null)
+            Startup.Report(75);
+        await WalkUps.LoadChoiceListsAsync();
+        if (live is null)
+            Startup.Report(100);
+        if (failure is not null)
+            throw failure;
+        return cached;
     }
 
-    private void QueueAssignmentDirectoryRefresh(ServiceNowClient client)
+    private async Task<bool> DownloadGroupsAsync(ServiceNowClient? live)
     {
-        if (_formCatalog is null || !client.AssignmentDirectoryIsStale)
-            return;
-
-        AssignmentDirectoryRefresh = RefreshAssignmentDirectoryQuietlyAsync(client);
-    }
-
-    private async Task RefreshAssignmentDirectoryQuietlyAsync(ServiceNowClient client)
-    {
+        var cached = live is not null && !live.AssignmentDirectoryIsStale;
         try
         {
-            await client.RefreshAssignmentDirectoryAsync(CancellationToken.None);
-            if (!ReferenceEquals(_client, client))
-                return;
-            await Incidents.Assignment.LoadGroupsAsync();
-            await RequestedItems.Assignment.LoadGroupsAsync();
-            await WalkUps.Assignment.LoadGroupsAsync();
+            if (live is not null && !cached)
+                await live.DownloadAssignmentGroupsAsync(SplashProgress(), CancellationToken.None);
         }
         catch (Exception)
         {
-            if (!ReferenceEquals(_client, client))
-                return;
-            StatusMessage = "Connected as " + ConnectedUser + ". Saved assignment lists are still in use.";
+            await BindGroupsAsync();
+            if (live is not null && await HasSavedGroupsAsync(live))
+                StatusMessage = "Connected as " + ConnectedUser + ". Saved assignment lists are still in use.";
+            throw;
         }
+
+        await BindGroupsAsync();
+        return cached;
     }
 
-    private async Task RefreshFormCatalogQuietlyAsync(ServiceNowClient client)
+    private async Task<bool> DownloadMembersAsync(ServiceNowClient? live)
+    {
+        var cached = live is not null && !live.AssignmentDirectoryIsStale;
+        if (cached)
+            return true;
+
+        if (live is not null)
+        {
+            try
+            {
+                await live.DownloadAssignmentMembersAsync(SplashProgress(), CancellationToken.None);
+                return false;
+            }
+            catch (Exception)
+            {
+                if (await HasSavedGroupsAsync(live))
+                    StatusMessage = "Connected as " + ConnectedUser + ". Saved assignment lists are still in use.";
+                throw;
+            }
+        }
+
+        var groups = Incidents.Assignment.Groups.Where(choice => !string.IsNullOrEmpty(choice.Value)).ToArray();
+        var done = 0;
+        Startup.Report(0);
+        foreach (var group in groups)
+        {
+            if (_client is null)
+                break;
+            await _client.ListGroupMembersAsync(group.Value, CancellationToken.None);
+            done++;
+            var total = Math.Max(groups.Length, 1);
+            Startup.Report(done * 100 / total);
+        }
+
+        return false;
+    }
+
+    private async Task<bool> DownloadListAsync(DeskSection section, RecordWorkspaceViewModel workspace)
+    {
+        if (_client is null)
+            return false;
+
+        Startup.Report(0);
+        workspace.SearchText = SearchText;
+        await workspace.RefreshAsync();
+        if (!workspace.HasLoaded)
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(workspace.ErrorMessage)
+                ? "The list could not be downloaded."
+                : workspace.ErrorMessage);
+
+        _loadedFor[section] = SearchText;
+        return false;
+    }
+
+    private async Task BindGroupsAsync()
+    {
+        if (_client is null)
+            return;
+        Incidents.Assignment.Use(_client);
+        RequestedItems.Assignment.Use(_client);
+        WalkUps.Assignment.Use(_client);
+        await Incidents.Assignment.LoadGroupsAsync();
+        await RequestedItems.Assignment.LoadGroupsAsync();
+        await WalkUps.Assignment.LoadGroupsAsync();
+    }
+
+    private async Task<bool> HasSavedGroupsAsync(ServiceNowClient client)
     {
         try
         {
-            await client.RefreshChoiceCatalogAsync(CancellationToken.None);
+            var groups = await client.ListAssignmentGroupsAsync(CancellationToken.None);
+            return groups.Count > 0;
         }
-        catch (Exception)
+        catch
         {
-            if (!ReferenceEquals(_client, client))
-                return;
-            StatusMessage = "Connected as " + ConnectedUser + ". Saved form lists are still in use.";
+            return false;
         }
+    }
+
+    private IProgress<DownloadTick> SplashProgress()
+    {
+        if (_ui is null)
+            return new InlineProgress(tick => Startup.Report(tick.Percent));
+        return new Progress<DownloadTick>(tick => Startup.Report(tick.Percent));
+    }
+
+    private sealed class InlineProgress(Action<DownloadTick> report) : IProgress<DownloadTick>
+    {
+        public void Report(DownloadTick value) => report(value);
     }
 
     private void ReplaceClient(IServiceNowClient? client)

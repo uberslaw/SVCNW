@@ -32,6 +32,15 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
 
     public override async Task EnsureChoicesAsync()
     {
+        await LoadChoiceListsAsync();
+        if (Client is null || Assignment.GroupsLoaded)
+            return;
+        Assignment.Use(Client);
+        await Assignment.LoadGroupsAsync();
+    }
+
+    public async Task LoadChoiceListsAsync()
+    {
         if (_choicesReady || Client is null)
             return;
         _choicesReady = true;
@@ -40,8 +49,6 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         ResolveChoices.Clear();
         foreach (var choice in DefaultChoices.ItemOutcomes)
             ResolveChoices.Add(choice);
-        Assignment.Use(Client);
-        await Assignment.LoadGroupsAsync();
     }
 
     protected override async Task<PagedResult<TicketRow>> FetchPageAsync(TicketQuery query, CancellationToken cancellationToken)
@@ -112,10 +119,10 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             State = FieldDiff.Changed(State, record.State),
             Priority = FieldDiff.Changed(Priority, record.Priority),
             CloseNotes = FieldDiff.Changed(CloseNotes, record.CloseNotes),
-            AssignedToId = Assignment.MemberId.Length > 0 && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
-            ClearAssignedTo = Assignment.MemberId.Length == 0 && !record.AssignedTo.IsEmpty,
-            AssignmentGroupId = Assignment.GroupId.Length > 0 && Assignment.GroupId != record.AssignmentGroup.SysId ? Assignment.GroupId : null,
-            ClearAssignmentGroup = Assignment.GroupId.Length == 0 && !record.AssignmentGroup.IsEmpty
+            AssignedToId = !string.IsNullOrEmpty(Assignment.MemberId) && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
+            ClearAssignedTo = string.IsNullOrEmpty(Assignment.MemberId) && !record.AssignedTo.IsEmpty,
+            AssignmentGroupId = !string.IsNullOrEmpty(Assignment.GroupId) && Assignment.GroupId != record.AssignmentGroup.SysId ? Assignment.GroupId : null,
+            ClearAssignmentGroup = string.IsNullOrEmpty(Assignment.GroupId) && !record.AssignmentGroup.IsEmpty
         };
         if (!changes.HasChanges || string.IsNullOrEmpty(EditorSysId))
             return;

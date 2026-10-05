@@ -84,7 +84,8 @@ public partial class CatalogWorkspaceViewModel : ObservableObject
             return;
         if (Quantity < 1)
             Quantity = 1;
-        if (!string.IsNullOrWhiteSpace(RequestedFor.Text) && RequestedFor.SysId.Length == 0)
+        await RequestedFor.AcceptExactUserAsync();
+        if (!string.IsNullOrWhiteSpace(RequestedFor.Text) && string.IsNullOrEmpty(RequestedFor.SysId))
         {
             ErrorMessage = "Choose the requested-for person from the list, or clear the field.";
             return;

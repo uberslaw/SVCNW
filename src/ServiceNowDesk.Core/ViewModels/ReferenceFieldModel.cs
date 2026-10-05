@@ -38,11 +38,53 @@ public sealed partial class ReferenceFieldModel : ObservableObject
         if (_suppress)
             return;
 
-        if (SysId.Length > 0)
+        if (!string.IsNullOrEmpty(SysId))
             SysId = "";
         Changed?.Invoke(this, EventArgs.Empty);
         _ = SearchAsync(value);
     }
+
+    public async Task<bool> AcceptExactUserAsync()
+    {
+        if (!string.IsNullOrEmpty(SysId))
+            return true;
+
+        var typed = (Text ?? "").Trim();
+        if (typed.Length == 0)
+            return true;
+
+        _searchCts?.Cancel();
+        IReadOnlyList<ReferenceSuggestion> matches;
+        try
+        {
+            matches = await _search(typed, CancellationToken.None);
+        }
+        catch
+        {
+            return false;
+        }
+
+        var exact = new List<ReferenceSuggestion>();
+        foreach (var match in matches)
+        {
+            if (string.IsNullOrWhiteSpace(match.SysId) || !IsExactUser(match, typed))
+                continue;
+            if (exact.Any(item => item.SysId.Equals(match.SysId, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            exact.Add(match);
+        }
+
+        if (exact.Count != 1)
+            return false;
+
+        Choose(exact[0]);
+        return true;
+    }
+
+    private static bool IsExactUser(ReferenceSuggestion match, string typed) =>
+        string.Equals((match.Display ?? "").Trim(), typed, StringComparison.OrdinalIgnoreCase)
+        || string.Equals((match.UserName ?? "").Trim(), typed, StringComparison.OrdinalIgnoreCase)
+        || string.Equals((match.Email ?? "").Trim(), typed, StringComparison.OrdinalIgnoreCase);
 
     public void Choose(ReferenceSuggestion suggestion)
     {

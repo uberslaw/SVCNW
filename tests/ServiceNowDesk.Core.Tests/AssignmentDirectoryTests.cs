@@ -9,7 +9,7 @@ namespace ServiceNowDesk.Tests;
 public class AssignmentDirectoryTests
 {
     [Fact]
-    public async Task FirstRunDownloadsTheDirectoryWithoutBlockingTheIncidentList()
+    public async Task FirstRunKeepsTheDeskClosedUntilTheDirectoryFinishes()
     {
         var folder = NewFolder();
         var store = new FileFormCatalogStore(folder);
@@ -30,28 +30,27 @@ public class AssignmentDirectoryTests
         var connect = main.ConnectCommand.ExecuteAsync(null);
         try
         {
-            var done = await Task.WhenAny(connect, Task.Delay(TimeSpan.FromSeconds(20)));
-            Assert.True(started.Task.IsCompleted);
-            Assert.Same(connect, done);
-            await connect;
-            Assert.True(main.Incidents.HasLoaded);
-            Assert.Equal("", main.ErrorMessage);
-            main.Incidents.NewRecordCommand.Execute(null);
-            main.Incidents.ShortDescription = "While lists download";
-            Assert.True(main.Incidents.IsNew);
-            Assert.DoesNotContain(main.Incidents.Assignment.Groups, group => group.Value == "group-cs");
+            var startedOrGaveUp = await Task.WhenAny(started.Task, Task.Delay(TimeSpan.FromSeconds(20)));
+            Assert.Same(started.Task, startedOrGaveUp);
+            Assert.False(connect.IsCompleted);
+            Assert.True(main.Startup.IsOpen);
+            Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment groups");
+            Assert.Contains("Downloading data", main.Startup.Title);
         }
         finally
         {
             release.TrySetResult();
         }
 
+        await connect;
         await main.AssignmentDirectoryRefresh;
-        Assert.Equal("While lists download", main.Incidents.ShortDescription);
-        Assert.True(main.Incidents.IsNew);
-        Assert.Equal("", main.Incidents.Assignment.GroupId);
+        Assert.False(main.Startup.IsOpen);
+        Assert.True(main.Incidents.HasLoaded);
+        Assert.Equal("", main.ErrorMessage);
         Assert.Contains(main.Incidents.Assignment.Groups, group => group.Value == "group-cs" && group.Label == "Client Services");
         Assert.DoesNotContain("Saved assignment lists", main.StatusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Walk-ups" && line.Percent == 100);
 
         var offline = new StubHandler((_, _) => throw new InvalidOperationException("The saved assignment lists should not call ServiceNow."));
         using var again = ServiceNowClient.Create(Api.BasicSession(), offline, store);
@@ -185,6 +184,103 @@ public class AssignmentDirectoryTests
         Assert.Empty(offline.Calls);
     }
 
+    [Fact]
+    public async Task MembersAttachToTheGroupSysIdWhenServiceNowSendsTheGroupName()
+    {
+        var folder = NewFolder();
+        var store = new FileFormCatalogStore(folder);
+        var ticks = new TickList();
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            var query = Uri.UnescapeDataString(request.RequestUri.Query);
+            if (path.Contains("sys_user_group", StringComparison.Ordinal))
+            {
+                return Api.Json(
+                    """{"result":[{"sys_id":"group-aus","name":"AUS DT - Client Services"}]}""",
+                    total: 1);
+            }
+
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+            {
+                Assert.DoesNotContain("user.active", query, StringComparison.OrdinalIgnoreCase);
+                return Api.Json(
+                    """
+                    {"result":[
+                      {"group":"AUS DT - Client Services","user":{"value":"user-jordan","display_value":"Jordan Lee"}},
+                      {"group":{"value":"aus dt - client services","display_value":"aus dt - client services"},"user":{"value":"user-sam","display_value":"Sam Patel"}}
+                    ]}
+                    """,
+                    total: 2);
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler, store);
+        await client.RefreshAssignmentDirectoryAsync(ticks, ticks, CancellationToken.None);
+
+        Assert.Contains(ticks.Ticks, tick => tick.Percent == 0);
+        var members = await client.ListGroupMembersAsync("group-aus", CancellationToken.None);
+        Assert.Contains(members, member => member.Value == "user-jordan" && member.Label == "Jordan Lee");
+        Assert.Contains(members, member => member.Value == "user-sam" && member.Label == "Sam Patel");
+        Assert.Equal(1, handler.Calls.Count(call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task FreshCacheShowsCachedLinesAndDoesNotDownloadTheDirectory()
+    {
+        var folder = NewFolder();
+        var store = new FileFormCatalogStore(folder);
+        var session = Api.BasicSession();
+        var snapshot = Directory(DateTimeOffset.UtcNow, "group-aus", "AUS DT - Client Services");
+        snapshot.CapturedAt = DateTimeOffset.UtcNow;
+        snapshot.Choices = FormCatalogFields.Independent.Select(field => new CachedChoiceList
+        {
+            Table = field.Table,
+            Element = field.Element,
+            Choices = [new Choice("1", "One")]
+        }).ToList();
+        snapshot.Members = [new CachedGroupMember { GroupSysId = "group-aus", UserSysId = "user-jordan", Name = "Jordan Lee" }];
+        store.Save(session.InstanceUri, snapshot);
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (path.Contains("sys_user_group", StringComparison.Ordinal)
+                || path.Contains("sys_user_grmember", StringComparison.Ordinal)
+                || path.Contains("sys_choice", StringComparison.Ordinal))
+                throw new InvalidOperationException("A fresh cache should not download " + path);
+            if (path.Contains("/sys_user", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            formCatalog: store,
+            clientFactory: (_, catalog) => ServiceNowClient.Create(session, handler, catalog));
+        main.Connection.InstanceUrl = "https://example.service-now.com";
+        main.Connection.Username = "alex";
+        main.Connection.Password = "secret";
+
+        await main.ConnectCommand.ExecuteAsync(null);
+
+        Assert.False(main.Startup.IsOpen);
+        Assert.Equal("", main.ErrorMessage);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Choices" && line.Text.Contains("cached") && line.Percent == 100);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment groups" && line.Text.Contains("cached"));
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment group members" && line.Text.Contains("cached"));
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Requests" && line.Percent == 100);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Walk-ups" && line.Percent == 100);
+        Assert.Equal(6, main.Startup.Lines.Count);
+        main.Incidents.NewRecordCommand.Execute(null);
+        main.Incidents.Assignment.GroupId = "aus dt - client services";
+        await main.Incidents.Assignment.WhenReady;
+        Assert.Equal("group-aus", main.Incidents.Assignment.GroupId);
+        Assert.Contains(main.Incidents.Assignment.Members, member => member.Value == "user-jordan" && member.Label == "Jordan Lee");
+        Assert.Contains(main.Incidents.Assignment.Members, member => member.Label == "Unassigned");
+    }
+
     private static FormCatalogSnapshot Directory(DateTimeOffset capturedAt, string sysId, string name) => new()
     {
         CapturedAt = DateTimeOffset.UtcNow,
@@ -204,6 +300,13 @@ public class AssignmentDirectoryTests
         Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"},"user":{"value":"user-alex","display_value":"Alex Rivera"}}]}""");
 
     private static string NewFolder() => Path.Combine(Path.GetTempPath(), "snd-directory-" + Guid.NewGuid().ToString("N"));
+
+    private sealed class TickList : IProgress<DownloadTick>
+    {
+        public List<DownloadTick> Ticks { get; } = [];
+
+        public void Report(DownloadTick value) => Ticks.Add(value);
+    }
 
     private sealed class GatedDirectoryHandler : HttpMessageHandler
     {

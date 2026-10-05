@@ -396,8 +396,161 @@ public class WorkspaceTests
         Assert.Equal("Alex Rivera", main.ConnectedUser);
         Assert.Equal(DeskSection.Incidents, main.SelectedSection);
         Assert.NotEmpty(main.Incidents.Items);
+        Assert.True(main.Requests.HasLoaded);
+        Assert.True(main.WalkUps.HasLoaded);
+        Assert.False(main.Startup.IsOpen);
+        Assert.Equal(6, main.Startup.Lines.Count);
+        Assert.All(main.Startup.Lines, line => Assert.Equal(100, line.Percent));
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Walk-ups");
+        Assert.Contains(main.Incidents.Assignment.Groups, group => group.Value == "group-aus" && group.Label == "Aus DT - Client Services");
         Assert.True(store.Current.UseSampleData);
         Assert.NotEmpty(main.Activity);
+    }
+
+    [Fact]
+    public async Task AusClientServicesMembersFollowAnyCasingOfTheGroupName()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.Attach(client);
+        await workspace.EnsureChoicesAsync();
+        workspace.NewRecordCommand.Execute(null);
+
+        workspace.Assignment.GroupId = "aus dt - client services";
+        await workspace.Assignment.WhenReady;
+
+        Assert.Equal("group-aus", workspace.Assignment.GroupId);
+        AssertAusMembers(workspace);
+
+        workspace.Assignment.GroupId = "AUS DT - CLIENT SERVICES";
+        await workspace.Assignment.WhenReady;
+
+        Assert.Equal("group-aus", workspace.Assignment.GroupId);
+        AssertAusMembers(workspace);
+        await workspace.Assignment.LoadGroupsAsync();
+        Assert.Equal("group-aus", workspace.Assignment.GroupId);
+        AssertAusMembers(workspace);
+    }
+
+    [Fact]
+    public async Task SaveAcceptsACallerTypedAsTheirExactEmail()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenIncidentsAsync(client);
+        workspace.NewRecordCommand.Execute(null);
+        workspace.ShortDescription = "Badge printer";
+        workspace.Caller.Text = "  Jordan.Lee@Example.com ";
+
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("", workspace.ErrorMessage);
+        Assert.Equal("user-jordan", workspace.Caller.SysId);
+        Assert.False(workspace.IsNew);
+        Assert.StartsWith("INC", workspace.Number);
+    }
+
+    [Fact]
+    public async Task SaveAcceptsACallerTypedAsTheirDisplayNameInAnotherCasing()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenIncidentsAsync(client);
+        workspace.NewRecordCommand.Execute(null);
+        workspace.ShortDescription = "Badge printer";
+        workspace.Caller.Text = "jordan lee";
+
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("", workspace.ErrorMessage);
+        Assert.Equal("user-jordan", workspace.Caller.SysId);
+        Assert.False(workspace.IsNew);
+    }
+
+    [Fact]
+    public async Task AmbiguousCallerNameStillAsksForTheList()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenIncidentsAsync(client);
+        workspace.NewRecordCommand.Execute(null);
+        workspace.ShortDescription = "Badge printer";
+        workspace.Caller.Text = "Casey Ng";
+
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains("Choose the caller from the list", workspace.ErrorMessage);
+        Assert.Equal("", workspace.Caller.SysId);
+        Assert.True(workspace.IsNew);
+    }
+
+    [Fact]
+    public async Task ChoosingACallerRowCountsAsChosen()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenIncidentsAsync(client);
+        workspace.NewRecordCommand.Execute(null);
+        workspace.ShortDescription = "Badge printer";
+        workspace.Caller.Choose(new ReferenceSuggestion("user-sam", "Sam Patel", "sam.patel · sam.patel@example.com")
+        {
+            UserName = "sam.patel",
+            Email = "sam.patel@example.com"
+        });
+
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("", workspace.ErrorMessage);
+        Assert.Equal("user-sam", workspace.Caller.SysId);
+        Assert.False(workspace.IsNew);
+    }
+
+    [Fact]
+    public async Task EmptyCallerStaysInvalidOnANewIncident()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenIncidentsAsync(client);
+        workspace.NewRecordCommand.Execute(null);
+        workspace.ShortDescription = "Badge printer";
+        workspace.Caller.Text = "   ";
+
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains("Choose the caller from the list", workspace.ErrorMessage);
+        Assert.True(workspace.IsNew);
+    }
+
+    [Fact]
+    public void SplashKeepsEachFinishedLine()
+    {
+        var splash = new StartupDownloadModel();
+        splash.Begin(6);
+        Assert.Equal("Downloading data 0/6", splash.Title);
+        Assert.True(splash.IsOpen);
+
+        splash.Start("Choices");
+        Assert.Equal("Downloading data 0/6 — Choices", splash.Title);
+        splash.Report(0);
+        splash.Report(40);
+        Assert.Equal("Choices    40%", splash.Lines[0].Text);
+
+        splash.Complete();
+        splash.Start("Assignment groups");
+        splash.Report(15);
+
+        Assert.Equal(2, splash.Lines.Count);
+        Assert.Equal(100, splash.Lines[0].Percent);
+        Assert.Equal("Choices    100%", splash.Lines[0].Text);
+        Assert.Equal(15, splash.Lines[1].Percent);
+        Assert.Equal("Downloading data 1/6 — Assignment groups", splash.Title);
+
+        splash.CompleteCached();
+        Assert.Equal("Assignment groups    cached", splash.Lines[1].Text);
+        Assert.Equal(100, splash.Lines[1].Percent);
+
+        splash.Start("Assignment group members");
+        splash.Report(20);
+        splash.Fail("Could not reach the ServiceNow instance.");
+        Assert.Equal("Assignment group members    Could not reach the ServiceNow instance.", splash.Lines[2].Text);
+        Assert.Equal("Choices    100%", splash.Lines[0].Text);
+        splash.Close();
+        Assert.False(splash.IsOpen);
     }
 
     [Fact]
@@ -418,6 +571,13 @@ public class WorkspaceTests
 
         field.Text = "Jordan Leigh";
         Assert.Equal("", field.SysId);
+    }
+
+    private static void AssertAusMembers(IncidentWorkspaceViewModel workspace)
+    {
+        Assert.Contains(workspace.Assignment.Members, member => member.Value == "user-jordan" && member.Label == "Jordan Lee");
+        Assert.Contains(workspace.Assignment.Members, member => member.Value == "user-sam" && member.Label == "Sam Patel");
+        Assert.Contains(workspace.Assignment.Members, member => member.Value == "" && member.Label == "Unassigned");
     }
 
     private static void MimicComboClearingMissingValue(AssignmentFields fields)

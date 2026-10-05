@@ -34,7 +34,9 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
 
     public event EventHandler<string>? RelatedItemRequested;
 
-    public override async Task EnsureChoicesAsync()
+    public override Task EnsureChoicesAsync() => LoadChoiceListsAsync();
+
+    public async Task LoadChoiceListsAsync()
     {
         if (_choicesReady || Client is null)
             return;
@@ -56,6 +58,9 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
             }
         }
     }
+
+    protected override Task ResolveReferencesAsync(CancellationToken cancellationToken) =>
+        RequestedFor.AcceptExactUserAsync();
 
     protected override async Task<PagedResult<TicketRow>> FetchPageAsync(TicketQuery query, CancellationToken cancellationToken)
     {
@@ -119,7 +124,7 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
             return false;
         }
 
-        if (IsNew && RequestedFor.SysId.Length == 0)
+        if (IsNew && string.IsNullOrEmpty(RequestedFor.SysId))
         {
             message = "Choose who the request is for.";
             return false;
@@ -266,7 +271,7 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
     private bool HasNewInput() =>
         !string.IsNullOrWhiteSpace(ShortDescription)
         || !string.IsNullOrWhiteSpace(Description)
-        || RequestedFor.SysId.Length > 0
+        || !string.IsNullOrEmpty(RequestedFor.SysId)
         || !string.IsNullOrWhiteSpace(JournalText);
 
     private Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>

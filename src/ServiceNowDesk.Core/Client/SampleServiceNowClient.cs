@@ -428,7 +428,11 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     public Task<IReadOnlyList<Choice>> ListGroupMembersAsync(string groupSysId, CancellationToken cancellationToken)
     {
-        IReadOnlyList<Choice> members = groupSysId switch
+        var token = (groupSysId ?? "").Trim();
+        var group = Groups.FirstOrDefault(candidate =>
+            candidate.SysId.Equals(token, StringComparison.OrdinalIgnoreCase)
+            || candidate.Display.Equals(token, StringComparison.OrdinalIgnoreCase));
+        IReadOnlyList<Choice> members = group?.SysId switch
         {
             "group-cs" => [new("sample-user", "Alex Rivera"), new("user-jordan", "Jordan Lee")],
             "group-aus" => [new("user-jordan", "Jordan Lee"), new("user-sam", "Sam Patel")],
@@ -1145,9 +1149,11 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     private static readonly ReferenceSuggestion[] Users =
     [
-        new("sample-user", "Alex Rivera", "alex.rivera · alex.rivera@example.com"),
-        new("user-jordan", "Jordan Lee", "jordan.lee · jordan.lee@example.com"),
-        new("user-sam", "Sam Patel", "sam.patel · sam.patel@example.com")
+        new("sample-user", "Alex Rivera", "alex.rivera · alex.rivera@example.com") { UserName = "alex.rivera", Email = "alex.rivera@example.com" },
+        new("user-jordan", "Jordan Lee", "jordan.lee · jordan.lee@example.com") { UserName = "jordan.lee", Email = "jordan.lee@example.com" },
+        new("user-sam", "Sam Patel", "sam.patel · sam.patel@example.com") { UserName = "sam.patel", Email = "sam.patel@example.com" },
+        new("user-casey", "Casey Ng", "casey.ng · casey.ng@example.com") { UserName = "casey.ng", Email = "casey.ng@example.com" },
+        new("user-casey2", "Casey Ng", "casey.ng2 · casey.ng2@example.com") { UserName = "casey.ng2", Email = "casey.ng2@example.com" }
     ];
 
     private static readonly ReferenceSuggestion[] Groups =
@@ -1298,7 +1304,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             return [];
         return source.Where(person =>
             person.Display.Contains(term, StringComparison.OrdinalIgnoreCase)
-            || person.Detail.Contains(term, StringComparison.OrdinalIgnoreCase)).ToArray();
+            || person.Detail.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || person.UserName.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || person.Email.Contains(term, StringComparison.OrdinalIgnoreCase)).ToArray();
     }
 
     private string NextId(string prefix) => prefix + "-" + (++_sequence);

@@ -127,5 +127,23 @@
         <Border Grid.Column="1" Grid.Row="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
             <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource MutedBrush}"/>
         </Border>
+
+        <Grid Grid.RowSpan="3" Grid.ColumnSpan="2" Background="#E6121C1F" Visibility="{Binding Startup.IsOpen, Converter={StaticResource BoolVis}}" Panel.ZIndex="20">
+            <Border Width="720" MaxHeight="520" Margin="32" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="#102226" BorderBrush="#1F6E6B" BorderThickness="1" Padding="22,18">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding Startup.Title}" FontFamily="Consolas" FontSize="18" FontWeight="SemiBold" Foreground="#E7F7F4" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Startup.Lines}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="13" Foreground="#C9E6E1" TextWrapping="Wrap" Margin="0,3"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

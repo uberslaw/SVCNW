@@ -38,6 +38,15 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
 
     public override async Task EnsureChoicesAsync()
     {
+        await LoadChoiceListsAsync();
+        if (Client is null || Assignment.GroupsLoaded)
+            return;
+        Assignment.Use(Client);
+        await Assignment.LoadGroupsAsync();
+    }
+
+    public async Task LoadChoiceListsAsync()
+    {
         if (_choicesReady || Client is null)
             return;
         _choicesReady = true;
@@ -50,9 +59,10 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
             outcomes = DefaultChoices.InteractionOutcomes.ToArray();
         foreach (var choice in outcomes)
             ResolveChoices.Add(choice);
-        Assignment.Use(Client);
-        await Assignment.LoadGroupsAsync();
     }
+
+    protected override Task ResolveReferencesAsync(CancellationToken cancellationToken) =>
+        Caller.AcceptExactUserAsync();
 
     protected override async Task<PagedResult<TicketRow>> FetchPageAsync(TicketQuery query, CancellationToken cancellationToken)
     {
