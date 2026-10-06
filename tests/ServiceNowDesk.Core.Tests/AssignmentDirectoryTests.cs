@@ -386,6 +386,10 @@ public class AssignmentDirectoryTests
             var path = request.RequestUri?.AbsolutePath ?? "";
             if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
             {
+                var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? "");
+                if (query.Contains("getUserID", StringComparison.Ordinal))
+                    return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
+
                 _started.TrySetResult();
                 await _release.Task;
                 return Members();

@@ -9,8 +9,6 @@ namespace ServiceNowDesk.ViewModels;
 
 public partial class NotificationWorkspaceViewModel : ObservableObject
 {
-    private NotificationPreferences _committed = NotificationPreferences.From(new DeskSettings());
-
     public NotificationWorkspaceViewModel()
     {
         foreach (var kind in AlertCatalog.All)
@@ -19,7 +17,6 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
             Circles.Add(new AlertCircleModel(kind));
         }
 
-        Load(_committed);
         MarkSelectedQueue();
     }
 
@@ -28,32 +25,14 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     public ObservableCollection<AlertRow> WidgetItems { get; } = [];
     public ObservableCollection<AlertRow> DashboardRows { get; } = [];
 
-    public NotificationPreferences Committed => _committed.Copy();
-
     public event EventHandler<AlertRow>? OpenRequested;
     public event EventHandler<AlertKind>? QueueSelected;
-    public event EventHandler? SettingsChanged;
     public event EventHandler<AlertAttention>? Attention;
 
     [ObservableProperty] private bool anyUnacknowledged;
     [ObservableProperty] private string pollError = "";
     [ObservableProperty] private string lastChecked = "Not checked yet.";
-    [ObservableProperty] private string settingsMessage = "";
-    [ObservableProperty] private string frequencyText = NotificationPreferences.DefaultFrequency;
-    [ObservableProperty] private string durationText = NotificationPreferences.DefaultDurationSeconds.ToString(CultureInfo.InvariantCulture);
-    [ObservableProperty] private string pollSecondsText = NotificationPreferences.DefaultPollSeconds.ToString(CultureInfo.InvariantCulture);
-    [ObservableProperty] private bool maximizeWhenJiggling = true;
-    [ObservableProperty] private bool playSoundWhenJiggling;
-    [ObservableProperty] private bool playSoundOnAlertMetric = true;
-    [ObservableProperty] private string soundPath = "";
-    [ObservableProperty] private string groupNameText = NotificationPreferences.DefaultGroupName;
-    [ObservableProperty] private string locationsText = string.Join(Environment.NewLine, NotificationPreferences.DefaultLocations);
-    [ObservableProperty] private string activeFrequency = NotificationPreferences.DefaultFrequency;
-    [ObservableProperty] private int activeDurationSeconds = NotificationPreferences.DefaultDurationSeconds;
-    [ObservableProperty] private bool activeMaximizeWhenJiggling = true;
-    [ObservableProperty] private bool activePlaySoundWhenJiggling;
-    [ObservableProperty] private bool activePlaySoundOnAlertMetric = true;
-    [ObservableProperty] private string activeSoundPath = "";
+    [ObservableProperty] private string selectedStatus = "";
     [ObservableProperty] private string widgetSummary = "No notifications";
     [ObservableProperty] private string newestTitle = "";
     [ObservableProperty] private bool isWidgetOpen;
@@ -61,22 +40,6 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool hasDashboardRows;
     [ObservableProperty] private bool widgetHasUnread;
     [ObservableProperty] private AlertKind selectedQueue = AlertKind.AssignedToMe;
-
-    public TimeSpan ActiveJiggleInterval =>
-        NotificationPreferences.TryParseFrequency(ActiveFrequency, out var frequency)
-            ? frequency
-            : TimeSpan.FromMinutes(1);
-
-    public void Load(NotificationPreferences preferences)
-    {
-        ArgumentNullException.ThrowIfNull(preferences);
-        _committed = preferences.Copy();
-        CopyCommittedToDraft();
-        PublishActive();
-        SettingsMessage = "";
-    }
-
-    public void Load(DeskSettings settings) => Load(NotificationPreferences.From(settings));
 
     public void Apply(AlertSnapshot snapshot, AlertWatchState watch)
     {
@@ -87,13 +50,16 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         {
             var bucket = snapshot.Bucket(section.Kind);
             section.Count = bucket.TotalCount;
+            section.Status = bucket.Status;
             section.IsUnacknowledged = watch.IsUnacknowledged(section.Kind);
             section.Replace(bucket.Rows);
         }
 
         foreach (var circle in Circles)
         {
-            circle.Count = snapshot.Count(circle.Kind);
+            var bucket = snapshot.Bucket(circle.Kind);
+            circle.Count = bucket.TotalCount;
+            circle.Status = bucket.Status;
             circle.IsUnacknowledged = watch.IsUnacknowledged(circle.Kind);
         }
 
@@ -101,12 +67,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         PollError = "";
         LastChecked = "Last checked " + DateTime.Now.ToString("t", CultureInfo.CurrentCulture) + ".";
         if (decision.HasIncrease)
-        {
-            Attention?.Invoke(this, new AlertAttention
-            {
-                PlaySound = _committed.PlaySoundOnAlertMetric
-            });
-        }
+            Attention?.Invoke(this, new AlertAttention { PlaySound = true });
 
         RefreshWidget();
     }
@@ -127,6 +88,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         foreach (var section in Sections)
         {
             section.Count = 0;
+            section.Status = "";
             section.IsUnacknowledged = false;
             section.Replace([]);
         }
@@ -134,6 +96,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         foreach (var circle in Circles)
         {
             circle.Count = 0;
+            circle.Status = "";
             circle.IsUnacknowledged = false;
         }
 
@@ -180,55 +143,6 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
 
     [RelayCommand]
     private void ToggleWidget() => IsWidgetOpen = !IsWidgetOpen;
-
-    [RelayCommand]
-    private void SaveSettings()
-    {
-        var next = _committed.Copy();
-        var errors = new List<string>();
-        if (NotificationPreferences.TryParseFrequency(FrequencyText, out var frequency))
-            next.JiggleFrequency = frequency.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
-        else
-        {
-            errors.Add("Jiggle frequency must be HH:MM:SS.");
-            FrequencyText = _committed.JiggleFrequency;
-        }
-
-        if (NotificationPreferences.TryParseDuration(DurationText, out var duration))
-            next.JiggleDurationSeconds = duration;
-        else
-        {
-            errors.Add("Jiggle duration must be at least 1 second.");
-            DurationText = _committed.JiggleDurationSeconds.ToString(CultureInfo.InvariantCulture);
-        }
-
-        if (NotificationPreferences.TryParsePollSeconds(PollSecondsText, out var pollSeconds))
-            next.PollSeconds = pollSeconds;
-        else
-        {
-            errors.Add("Check ServiceNow every (seconds) must be at least 15.");
-            PollSecondsText = _committed.PollSeconds.ToString(CultureInfo.InvariantCulture);
-        }
-
-        next.MaximizeWhenJiggling = MaximizeWhenJiggling;
-        next.PlaySoundWhenJiggling = PlaySoundWhenJiggling;
-        next.PlaySoundOnAlertMetric = PlaySoundOnAlertMetric;
-        next.AlertSoundPath = SoundPath?.Trim() ?? "";
-        next.WatchedGroupName = GroupNameText?.Trim() ?? "";
-        next.OfficeLocations = NotificationPreferences.ParseLocations(LocationsText).ToList();
-        _committed = next;
-        CopyCommittedToDraft();
-        PublishActive();
-        SettingsMessage = errors.Count == 0
-            ? "Notification settings saved."
-            : "Notification settings saved. " + string.Join(" ", errors) + " The previous value was kept.";
-        SettingsChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    public void SetSoundPath(string? path)
-    {
-        SoundPath = path?.Trim() ?? "";
-    }
 
     private void RefreshWidget()
     {
@@ -295,6 +209,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         }
 
         HasDashboardRows = DashboardRows.Count > 0;
+        SelectedStatus = Sections.FirstOrDefault(section => section.Kind == SelectedQueue)?.Status ?? "";
     }
 
     private static DateTime UpdatedStamp(string updated)
@@ -304,29 +219,6 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         if (DateTime.TryParse(updated, CultureInfo.CurrentCulture, DateTimeStyles.AllowWhiteSpaces, out parsed))
             return parsed;
         return DateTime.MinValue;
-    }
-
-    private void CopyCommittedToDraft()
-    {
-        FrequencyText = _committed.JiggleFrequency;
-        DurationText = _committed.JiggleDurationSeconds.ToString(CultureInfo.InvariantCulture);
-        PollSecondsText = _committed.PollSeconds.ToString(CultureInfo.InvariantCulture);
-        MaximizeWhenJiggling = _committed.MaximizeWhenJiggling;
-        PlaySoundWhenJiggling = _committed.PlaySoundWhenJiggling;
-        PlaySoundOnAlertMetric = _committed.PlaySoundOnAlertMetric;
-        SoundPath = _committed.AlertSoundPath;
-        GroupNameText = _committed.WatchedGroupName;
-        LocationsText = string.Join(Environment.NewLine, _committed.OfficeLocations);
-    }
-
-    private void PublishActive()
-    {
-        ActiveFrequency = _committed.JiggleFrequency;
-        ActiveDurationSeconds = _committed.JiggleDurationSeconds;
-        ActiveMaximizeWhenJiggling = _committed.MaximizeWhenJiggling;
-        ActivePlaySoundWhenJiggling = _committed.PlaySoundWhenJiggling;
-        ActivePlaySoundOnAlertMetric = _committed.PlaySoundOnAlertMetric;
-        ActiveSoundPath = _committed.AlertSoundPath;
     }
 }
 
@@ -343,6 +235,7 @@ public partial class AlertSectionModel : ObservableObject
     public ObservableCollection<AlertRow> Rows { get; } = [];
 
     [ObservableProperty] private int count;
+    [ObservableProperty] private string status = "";
     [ObservableProperty] private bool isUnacknowledged;
     [ObservableProperty] private AlertRow? selected;
 
@@ -380,6 +273,7 @@ public partial class AlertCircleModel : ObservableObject
     public string Title { get; }
 
     [ObservableProperty] private int count;
+    [ObservableProperty] private string status = "";
     [ObservableProperty] private bool isUnacknowledged;
     [ObservableProperty] private bool isSelected;
     [ObservableProperty] private string automationName;
@@ -388,12 +282,17 @@ public partial class AlertCircleModel : ObservableObject
 
     public string StatusLabel => Title + " " + Count.ToString(CultureInfo.InvariantCulture);
 
+    public string ToolTipText => string.IsNullOrWhiteSpace(Status) ? StatusLabel : StatusLabel + ". " + Status;
+
     partial void OnCountChanged(int value)
     {
         AutomationName = AlertCatalog.AutomationName(Kind, value);
         OnPropertyChanged(nameof(IsVisible));
         OnPropertyChanged(nameof(StatusLabel));
+        OnPropertyChanged(nameof(ToolTipText));
     }
+
+    partial void OnStatusChanged(string value) => OnPropertyChanged(nameof(ToolTipText));
 }
 
 public sealed class AlertRow

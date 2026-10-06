@@ -19,7 +19,7 @@ public partial class MainWindow : Window
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainViewModel main)
-                _alerts.Attach(main.Notifications);
+                _alerts.Attach(main.Notifications, main.NotificationSettings);
         };
         StateChanged += (_, _) => _alerts.SetMainMinimized(WindowState == WindowState.Minimized);
         Closed += (_, _) => _alerts.Shutdown();

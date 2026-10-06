@@ -20,6 +20,10 @@ public sealed class ServiceNowClient : IServiceNowClient
     private const string AlertIncidentFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
     private const string AlertRequestFields = "sys_id,number,short_description,request_state,assigned_to,assignment_group,sys_updated_on,active";
     private const string AlertItemFields = "sys_id,number,short_description,state,assigned_to,assignment_group,sys_updated_on,active";
+    private const string PopulationIncidentFields = "sys_id,number,short_description,state,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,caller_id,caller_id.user_name,follow_up";
+    private const string PopulationItemFields = "sys_id,number,short_description,state,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,requested_for,requested_for.user_name,request.requested_for,request.requested_for.user_name,follow_up";
+    private const string PopulationInteractionFields = "sys_id,number,short_description,state,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name,follow_up";
+    private const string PopulationInteractionFieldsWithoutFollowUp = "sys_id,number,short_description,state,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name";
     private const int AlertLimit = 100;
     private const string InteractionFields = "sys_id,number,short_description,description,state,type,opened_for,assigned_to,assignment_group,opened_at,sys_updated_on,active";
 
@@ -231,10 +235,15 @@ public sealed class ServiceNowClient : IServiceNowClient
 
         var assignedRows = incidents.Rows.Concat(requests.Rows).Concat(items.Rows).ToArray();
         var assignedTotal = incidents.TotalCount + requests.TotalCount + items.TotalCount;
+        var categories = await LoadCategoryBucketsAsync(search, cancellationToken).ConfigureAwait(false);
         return new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
         {
             [AlertKind.AssignedToMe] = new(assignedRows, assignedTotal),
-            [AlertKind.WatchedGroup] = group
+            [AlertKind.WatchedGroup] = group,
+            [AlertKind.SlaBreaching] = categories.Sla,
+            [AlertKind.OnHoldPastFollowUp] = categories.OnHold,
+            [AlertKind.UpdatedByCaller] = categories.UpdatedByCaller,
+            [AlertKind.ReturnedWithNotes] = categories.Returned
         });
     }
 
@@ -278,6 +287,281 @@ public sealed class ServiceNowClient : IServiceNowClient
             includeLocation ? SnowField.Read(row, "location").Display : "",
             updatedText);
     }
+
+    private async Task<CategoryBuckets> LoadCategoryBucketsAsync(AlertSearch search, CancellationToken cancellationToken)
+    {
+        var notes = new List<string>();
+        var holdNotes = new List<string>();
+        IReadOnlyList<string> groupIds;
+        try
+        {
+            groupIds = await MemberGroupIdsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException ex)
+        {
+            groupIds = [];
+            notes.Add("Group membership was skipped: " + ex.Message);
+        }
+
+        var population = AlertQueryBuilder.Population(search.UserSysId, groupIds, search.GroupName, search.Locations) + "^ORDERBYDESCsys_updated_on";
+        var watched = new List<WatchedRecord>();
+        watched.AddRange(await TryPopulationAsync("incident", PopulationIncidentFields, population, DeskSection.Incidents, "Incidents were skipped: ", notes, cancellationToken).ConfigureAwait(false));
+        watched.AddRange(await TryPopulationAsync("sc_req_item", PopulationItemFields, population, DeskSection.RequestedItems, "Request items were skipped: ", notes, cancellationToken).ConfigureAwait(false));
+
+        var skipInteractionHold = false;
+        try
+        {
+            watched.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFields, population, DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
+        }
+        catch (ServiceNowException ex)
+        {
+            skipInteractionHold = true;
+            holdNotes.Add("Walk-up follow-up was skipped: " + ex.Message);
+            try
+            {
+                watched.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFieldsWithoutFollowUp, population, DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
+            }
+            catch (ServiceNowException retry)
+            {
+                notes.Add("Walk-ups were skipped: " + retry.Message);
+            }
+        }
+
+        var distinct = watched
+            .GroupBy(record => record.SysId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+        var ids = distinct.Select(record => record.SysId).ToArray();
+        var slaStatus = "";
+        IReadOnlyDictionary<string, IReadOnlyList<SlaSignal>> sla;
+        try
+        {
+            sla = await LoadSlaAsync(ids, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException ex)
+        {
+            sla = new Dictionary<string, IReadOnlyList<SlaSignal>>(StringComparer.OrdinalIgnoreCase);
+            slaStatus = ex.Message;
+        }
+
+        var journalStatus = "";
+        IReadOnlyDictionary<string, string> authors;
+        try
+        {
+            authors = await LoadLatestJournalAuthorsAsync(ids, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException ex)
+        {
+            authors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            journalStatus = ex.Message;
+        }
+
+        var folded = distinct.Select(record => FoldSignals(record, sla, authors)).ToArray();
+        var shared = JoinNotes(notes);
+        var now = DateTime.Now;
+        var holdSource = skipInteractionHold
+            ? folded.Where(record => record.Section != DeskSection.WalkUps)
+            : folded;
+        return new CategoryBuckets(
+            AlertClassifier.Bucket(AlertKind.SlaBreaching, folded, now, JoinNotes(slaStatus, shared)),
+            AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, holdSource, now, JoinNotes(holdNotes, shared)),
+            AlertClassifier.Bucket(AlertKind.UpdatedByCaller, folded, now, shared),
+            AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, folded, now, JoinNotes(journalStatus, shared)));
+    }
+
+    private async Task<IReadOnlyList<string>> MemberGroupIdsAsync(CancellationToken cancellationToken)
+    {
+        await MyGroupsClauseAsync(cancellationToken).ConfigureAwait(false);
+        return _groupIds ?? [];
+    }
+
+    private async Task<WatchedRecord[]> TryPopulationAsync(
+        string table,
+        string fields,
+        string query,
+        DeskSection section,
+        string failurePrefix,
+        List<string> notes,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await LoadPopulationAsync(table, fields, query, section, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException ex)
+        {
+            notes.Add(failurePrefix + ex.Message);
+            return [];
+        }
+    }
+
+    private async Task<WatchedRecord[]> LoadPopulationAsync(
+        string table,
+        string fields,
+        string query,
+        DeskSection section,
+        CancellationToken cancellationToken)
+    {
+        var result = await GetListAsync(table, fields, query, AlertLimit, 0, cancellationToken).ConfigureAwait(false);
+        using (result)
+        {
+            var rows = new List<WatchedRecord>();
+            foreach (var row in RequireArray(result.Document).EnumerateArray())
+            {
+                var active = SnowField.Read(row, "active");
+                if (active.Value.Length > 0 && !SnowField.IsTrue(active))
+                    continue;
+                var mapped = MapWatched(row, section);
+                if (mapped.SysId.Length > 0)
+                    rows.Add(mapped);
+            }
+
+            return rows.ToArray();
+        }
+    }
+
+    private static WatchedRecord MapWatched(JsonElement row, DeskSection section)
+    {
+        var state = SnowField.Read(row, "state");
+        var updated = SnowField.Read(row, "sys_updated_on");
+        var followUp = FirstText(row, "follow_up");
+        var hasFollowUp = AlertClassifier.TryParseInstant(followUp, out var followUpAt);
+        return new WatchedRecord
+        {
+            Section = section,
+            SysId = SnowField.Read(row, "sys_id").Value,
+            Number = SnowField.Read(row, "number").Display,
+            Title = SnowField.Read(row, "short_description").Display,
+            State = state.Display.Length > 0 ? state.Display : state.Value,
+            StateValue = state.Value,
+            Group = SnowField.Read(row, "assignment_group").Display,
+            Location = SnowField.Read(row, "location").Display,
+            Updated = updated.Display.Length > 0 ? updated.Display : updated.Value,
+            UpdatedBy = FirstText(row, "sys_updated_by"),
+            CallerUserName = FirstText(row, "caller_id.user_name", "opened_for.user_name", "requested_for.user_name", "request.requested_for.user_name"),
+            AssigneeUserName = FirstText(row, "assigned_to.user_name"),
+            FollowUp = hasFollowUp ? followUpAt : null
+        };
+    }
+
+    private async Task<IReadOnlyDictionary<string, IReadOnlyList<SlaSignal>>> LoadSlaAsync(IReadOnlyList<string> taskIds, CancellationToken cancellationToken)
+    {
+        var query = AlertQueryBuilder.TaskSla(taskIds);
+        var found = new Dictionary<string, List<SlaSignal>>(StringComparer.OrdinalIgnoreCase);
+        if (query is null)
+            return found.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<SlaSignal>)pair.Value, StringComparer.OrdinalIgnoreCase);
+
+        var result = await GetListAsync("task_sla", "task,has_breached,stage,planned_end_time", query, AlertLimit, 0, cancellationToken).ConfigureAwait(false);
+        using (result)
+        {
+            foreach (var row in RequireArray(result.Document).EnumerateArray())
+            {
+                var task = SnowField.Read(row, "task").Value;
+                if (task.Length == 0)
+                    continue;
+                var stage = SnowField.Read(row, "stage");
+                var plannedText = FirstText(row, "planned_end_time");
+                DateTime? planned = AlertClassifier.TryParseInstant(plannedText, out var parsed) ? parsed : null;
+                if (!found.TryGetValue(task, out var list))
+                {
+                    list = [];
+                    found[task] = list;
+                }
+
+                list.Add(new SlaSignal(
+                    SnowField.IsTrue(SnowField.Read(row, "has_breached")),
+                    stage.Value.Length > 0 ? stage.Value : stage.Display,
+                    planned));
+            }
+        }
+
+        return found.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<SlaSignal>)pair.Value, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> LoadLatestJournalAuthorsAsync(IReadOnlyList<string> taskIds, CancellationToken cancellationToken)
+    {
+        var query = AlertQueryBuilder.LatestJournal(taskIds);
+        var authors = new Dictionary<string, (string Author, DateTime Created)>(StringComparer.OrdinalIgnoreCase);
+        if (query is null)
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        var result = await GetListAsync("sys_journal_field", "element_id,element,sys_created_by,sys_created_on", query, 500, 0, cancellationToken).ConfigureAwait(false);
+        using (result)
+        {
+            foreach (var row in RequireArray(result.Document).EnumerateArray())
+            {
+                var element = SnowField.Read(row, "element").Value;
+                if (!element.Equals("comments", StringComparison.OrdinalIgnoreCase)
+                    && !element.Equals("work_notes", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var id = SnowField.Read(row, "element_id").Value;
+                var author = FirstText(row, "sys_created_by");
+                if (id.Length == 0 || author.Length == 0)
+                    continue;
+                var createdText = FirstText(row, "sys_created_on");
+                var created = AlertClassifier.TryParseInstant(createdText, out var parsed) ? parsed : DateTime.MinValue;
+                if (!authors.TryGetValue(id, out var current) || created >= current.Created)
+                    authors[id] = (author, created);
+            }
+        }
+
+        return authors.ToDictionary(pair => pair.Key, pair => pair.Value.Author, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static WatchedRecord FoldSignals(
+        WatchedRecord record,
+        IReadOnlyDictionary<string, IReadOnlyList<SlaSignal>> sla,
+        IReadOnlyDictionary<string, string> authors)
+    {
+        var signals = sla.TryGetValue(record.SysId, out var rows) ? rows : [];
+        var progress = signals
+            .Where(signal => AlertClassifier.StageIsInProgress(signal.Stage))
+            .OrderBy(signal => signal.PlannedEnd ?? DateTime.MaxValue)
+            .FirstOrDefault();
+        return record with
+        {
+            SlaHasBreached = signals.Any(signal => signal.HasBreached),
+            SlaStage = progress?.Stage ?? "",
+            SlaPlannedEnd = progress?.PlannedEnd,
+            LatestJournalAuthor = authors.TryGetValue(record.SysId, out var author) ? author : ""
+        };
+    }
+
+    private static string FirstText(JsonElement row, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var field = SnowField.Read(row, name);
+            var text = field.Value.Length > 0 ? field.Value : field.Display;
+            if (!string.IsNullOrWhiteSpace(text))
+                return text.Trim();
+        }
+
+        return "";
+    }
+
+    private static string JoinNotes(params object?[] parts)
+    {
+        var text = new List<string>();
+        foreach (var part in parts)
+        {
+            switch (part)
+            {
+                case string note when !string.IsNullOrWhiteSpace(note):
+                    text.Add(note.Trim());
+                    break;
+                case IEnumerable<string> notes:
+                    text.AddRange(notes.Where(note => !string.IsNullOrWhiteSpace(note)).Select(note => note.Trim()));
+                    break;
+            }
+        }
+
+        return string.Join(" ", text);
+    }
+
+    private sealed record SlaSignal(bool HasBreached, string Stage, DateTime? PlannedEnd);
+
+    private readonly record struct CategoryBuckets(AlertBucket Sla, AlertBucket OnHold, AlertBucket UpdatedByCaller, AlertBucket Returned);
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken) =>
         SearchAsync("incident", IncidentFields, query, RecordMapper.Incident, cancellationToken);

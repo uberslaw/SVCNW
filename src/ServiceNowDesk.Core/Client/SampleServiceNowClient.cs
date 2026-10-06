@@ -22,6 +22,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private readonly List<InteractionRecord> _interactions = [];
     private readonly Dictionary<string, string> _relatedIncidents = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<JournalEntry>> _journal = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, SampleAlertSignals> _signals = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ApiActivity> _activity = [];
     private int _sequence = 1000;
 
@@ -70,12 +71,129 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         Record("GET", "api/now/table/incident");
         Record("GET", "api/now/table/sc_request");
         Record("GET", "api/now/table/sc_req_item");
+        var watched = WatchedPopulation(search);
+        var now = DateTime.Now;
         return Task.FromResult(new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
         {
             [AlertKind.AssignedToMe] = new(assigned, assigned.Count),
-            [AlertKind.WatchedGroup] = new(group, group.Count)
+            [AlertKind.WatchedGroup] = new(group, group.Count),
+            [AlertKind.SlaBreaching] = AlertClassifier.Bucket(AlertKind.SlaBreaching, watched, now),
+            [AlertKind.OnHoldPastFollowUp] = AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, watched, now),
+            [AlertKind.UpdatedByCaller] = AlertClassifier.Bucket(AlertKind.UpdatedByCaller, watched, now),
+            [AlertKind.ReturnedWithNotes] = AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, watched, now)
         }));
     }
+
+    private List<WatchedRecord> WatchedPopulation(AlertSearch search)
+    {
+        var userId = EncodedQuery.SafeToken(search.UserSysId, "user id");
+        var watched = AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations) is not null;
+        var groupName = EncodedQuery.Sanitize(search.GroupName);
+        var cities = search.Locations
+            .Select(EncodedQuery.Sanitize)
+            .Where(city => city.Length > 0)
+            .ToArray();
+        var rows = new List<WatchedRecord>();
+        foreach (var record in _incidents)
+        {
+            if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, record.Location, userId, watched, groupName, cities))
+                rows.Add(Describe(DeskSection.Incidents, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup.Display, record.Location, record.UpdatedAtDisplay, record.Caller, record.AssignedTo));
+        }
+
+        foreach (var record in _items)
+        {
+            if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
+                rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup.Display, "", record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo));
+        }
+
+        foreach (var record in _interactions)
+        {
+            if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
+                rows.Add(Describe(DeskSection.WalkUps, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup.Display, "", record.UpdatedAtDisplay, record.OpenedFor, record.AssignedTo));
+        }
+
+        return rows;
+    }
+
+    private static bool InPopulation(
+        bool active,
+        string assignedId,
+        ReferenceValue group,
+        string location,
+        string userId,
+        bool watched,
+        string groupName,
+        IReadOnlyList<string> cities)
+    {
+        if (!active)
+            return false;
+        if (assignedId == userId)
+            return true;
+        if (group.SysId == "group-cs" || group.Display.Equals("Client Services", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return watched
+            && group.Display.Equals(groupName, StringComparison.OrdinalIgnoreCase)
+            && cities.Any(city => location.Equals(city, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private WatchedRecord Describe(
+        DeskSection section,
+        string sysId,
+        string number,
+        string title,
+        string stateValue,
+        string stateLabel,
+        string group,
+        string location,
+        string updated,
+        ReferenceValue caller,
+        ReferenceValue assignee)
+    {
+        _signals.TryGetValue(sysId, out var signals);
+        var followUp = signals?.FollowUp ?? "";
+        var planned = signals?.PlannedEnd ?? "";
+        return new WatchedRecord
+        {
+            Section = section,
+            SysId = sysId,
+            Number = number,
+            Title = title,
+            State = stateLabel,
+            StateValue = stateValue,
+            Group = group,
+            Location = location,
+            Updated = updated,
+            UpdatedBy = signals?.UpdatedBy ?? "",
+            CallerUserName = UserNameOf(caller),
+            AssigneeUserName = UserNameOf(assignee),
+            FollowUp = AlertClassifier.TryParseInstant(followUp, out var followUpAt) ? followUpAt : null,
+            SlaHasBreached = signals?.SlaBreached ?? false,
+            SlaStage = signals?.SlaStage ?? "",
+            SlaPlannedEnd = AlertClassifier.TryParseInstant(planned, out var plannedAt) ? plannedAt : null,
+            LatestJournalAuthor = LatestJournalAuthor(sysId)
+        };
+    }
+
+    private string LatestJournalAuthor(string sysId)
+    {
+        if (!_journal.TryGetValue(sysId, out var notes) || notes.Count == 0)
+            return "";
+        return notes
+            .OrderByDescending(note => AlertClassifier.TryParseInstant(note.CreatedDisplay, out var created) ? created : DateTime.MinValue)
+            .ThenByDescending(note => note.SysId, StringComparer.Ordinal)
+            .First()
+            .Author;
+    }
+
+    private static string UserNameOf(ReferenceValue user) => user.SysId switch
+    {
+        "sample-user" => "alex.rivera",
+        "user-jordan" => "jordan.lee",
+        "user-sam" => "sam.patel",
+        "user-casey" => "casey.ng",
+        "user-casey2" => "casey.ng2",
+        _ => ""
+    };
 
     private static AlertRecord ToAlert(IncidentRecord record, AlertKind kind) => new(
         kind,
@@ -1156,6 +1274,240 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             UpdatedAtValue = "2026-10-02 11:25:00",
             Active = true
         });
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-sla",
+            Number = "INC0010010",
+            ShortDescription = "VPN gateway SLA has breached",
+            Description = "The gateway incident is past its resolution SLA.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "2",
+            PriorityLabel = "2 - High",
+            Impact = "2",
+            ImpactLabel = "2 - Medium",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "network",
+            CategoryLabel = "Network",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Sam,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-10-01 08:00",
+            UpdatedAtDisplay = "2026-10-04 09:00",
+            UpdatedAtValue = "2026-10-04 09:00:00",
+            Active = true
+        });
+        _signals["inc-sla"] = new SampleAlertSignals { SlaBreached = true, UpdatedBy = "alex.rivera" };
+
+        _items.Add(new RequestedItemRecord
+        {
+            SysId = "ritm-sla",
+            Number = "RITM0010005",
+            ShortDescription = "Laptop image is past its SLA",
+            Description = "The image task is still in progress after the planned end.",
+            State = "2",
+            StateLabel = "Work in Progress",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            Quantity = "1",
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-10-01 08:00",
+            UpdatedAtDisplay = "2026-10-04 09:10",
+            UpdatedAtValue = "2026-10-04 09:10:00",
+            Active = true
+        });
+        _signals["ritm-sla"] = new SampleAlertSignals { SlaStage = "in_progress", PlannedEnd = "2026-10-02 09:00:00" };
+
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-sla",
+            Number = "IMS0010003",
+            ShortDescription = "Walk-up waiting past the SLA",
+            Description = "The visitor is still at the desk after the response SLA.",
+            State = "work_in_progress",
+            StateLabel = "Work in Progress",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Sam,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-10-03 10:00",
+            UpdatedAtDisplay = "2026-10-04 10:00",
+            UpdatedAtValue = "2026-10-04 10:00:00",
+            Active = true
+        });
+        _signals["ims-sla"] = new SampleAlertSignals { SlaBreached = true };
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-hold",
+            Number = "INC0010011",
+            ShortDescription = "On hold past the caller follow-up",
+            Description = "Waiting on the caller, and the follow-up time has passed.",
+            State = "3",
+            StateLabel = "On Hold",
+            HoldReason = "awaiting_caller",
+            HoldReasonLabel = "Awaiting Caller",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "inquiry",
+            CategoryLabel = "Inquiry / Help",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-09-20 09:00",
+            UpdatedAtDisplay = "2026-10-01 09:00",
+            UpdatedAtValue = "2026-10-01 09:00:00",
+            Active = true
+        });
+        _signals["inc-hold"] = new SampleAlertSignals { FollowUp = "2026-10-01 09:00:00", UpdatedBy = "alex.rivera" };
+
+        _items.Add(new RequestedItemRecord
+        {
+            SysId = "ritm-hold",
+            Number = "RITM0010006",
+            ShortDescription = "Dock request on hold past follow-up",
+            Description = "The dock is on hold and the follow-up was yesterday.",
+            State = "on_hold",
+            StateLabel = "On Hold",
+            Priority = "4",
+            PriorityLabel = "4 - Low",
+            Quantity = "1",
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-09-22 09:00",
+            UpdatedAtDisplay = "2026-10-01 11:00",
+            UpdatedAtValue = "2026-10-01 11:00:00",
+            Active = true
+        });
+        _signals["ritm-hold"] = new SampleAlertSignals { FollowUp = "2026-10-01 11:00:00" };
+
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-hold",
+            Number = "IMS0010004",
+            ShortDescription = "Walk-up on hold past follow-up",
+            Description = "The walk-up was parked and the follow-up time passed.",
+            State = "on_hold",
+            StateLabel = "On Hold",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Jordan,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-09-29 14:00",
+            UpdatedAtDisplay = "2026-10-02 14:00",
+            UpdatedAtValue = "2026-10-02 14:00:00",
+            Active = true
+        });
+        _signals["ims-hold"] = new SampleAlertSignals { FollowUp = "2026-10-02 14:00:00" };
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-caller",
+            Number = "INC0010012",
+            ShortDescription = "Caller updated the VPN notes",
+            Description = "The latest update on this incident was made by the caller.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "network",
+            CategoryLabel = "Network",
+            ContactType = "email",
+            ContactTypeLabel = "Email",
+            Caller = Jordan,
+            AssignedTo = Sam,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-10-03 08:00",
+            UpdatedAtDisplay = "2026-10-05 08:30",
+            UpdatedAtValue = "2026-10-05 08:30:00",
+            Active = true
+        });
+        _signals["inc-caller"] = new SampleAlertSignals { UpdatedBy = "jordan.lee" };
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-returned",
+            Number = "INC0010013",
+            ShortDescription = "Returned with a note from another analyst",
+            Description = "Someone other than the caller or the assignee wrote the latest note. The assignee is blank.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "software",
+            CategoryLabel = "Software",
+            ContactType = "email",
+            ContactTypeLabel = "Email",
+            Caller = Jordan,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-10-03 12:00",
+            UpdatedAtDisplay = "2026-10-05 15:00",
+            UpdatedAtValue = "2026-10-05 15:00:00",
+            Active = true
+        },
+            new JournalEntry("journal-returned-old", "comments", "Customer comment", "I added a comment first.", "jordan.lee", "2026-10-04 09:00"),
+            new JournalEntry("journal-returned-new", "work_notes", "Work note", "Sending this back with what I found.", "casey.ng", "2026-10-05 15:00"));
+        _signals["inc-returned"] = new SampleAlertSignals { UpdatedBy = "alex.rivera" };
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-outside",
+            Number = "INC0010014",
+            ShortDescription = "Network SLA outside the watched population",
+            Description = "This breached SLA belongs to Network and is not assigned to Alex.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "2",
+            PriorityLabel = "2 - High",
+            Impact = "2",
+            ImpactLabel = "2 - Medium",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "network",
+            CategoryLabel = "Network",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Sam,
+            AssignedTo = Sam,
+            AssignmentGroup = Network,
+            Location = "Sydney",
+            OpenedAtDisplay = "2026-10-01 08:00",
+            UpdatedAtDisplay = "2026-10-04 08:00",
+            UpdatedAtValue = "2026-10-04 08:00:00",
+            Active = true
+        });
+        _signals["inc-outside"] = new SampleAlertSignals { SlaBreached = true, UpdatedBy = "sam.patel" };
+    }
+
+    private sealed class SampleAlertSignals
+    {
+        public bool SlaBreached { get; init; }
+        public string SlaStage { get; init; } = "";
+        public string PlannedEnd { get; init; } = "";
+        public string FollowUp { get; init; } = "";
+        public string UpdatedBy { get; init; } = "";
     }
 
     private void AddInteraction(InteractionRecord record, params JournalEntry[] notes)

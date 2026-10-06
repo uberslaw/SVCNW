@@ -73,6 +73,7 @@ public partial class MainViewModel : ObservableObject
         Knowledge = new KnowledgeWorkspaceViewModel();
         Catalog = new CatalogWorkspaceViewModel();
         Notifications = new NotificationWorkspaceViewModel();
+        NotificationSettings = new NotificationSettingsViewModel();
         Requests.RelatedItemRequested += (_, sysId) => _ = OpenRequestedItemAsync(sysId);
         Search.OpenRequested += (_, hit) => SearchOpenTask = OpenSearchResultAsync(hit);
         Catalog.RequestOrdered += (_, result) => _ = OpenOrderedRequestAsync(result);
@@ -82,9 +83,9 @@ public partial class MainViewModel : ObservableObject
             AcknowledgeNotifications();
             SelectedSection = DeskSection.Notifications;
         };
-        Notifications.SettingsChanged += (_, _) =>
+        NotificationSettings.SettingsChanged += (_, _) =>
         {
-            Connection.RememberNotifications(Notifications.Committed);
+            Connection.RememberNotifications(NotificationSettings.Committed);
             _store.Save(Connection.BuildSettings());
             if (IsConnected)
                 StartAlertLoop();
@@ -101,6 +102,7 @@ public partial class MainViewModel : ObservableObject
     public KnowledgeWorkspaceViewModel Knowledge { get; }
     public CatalogWorkspaceViewModel Catalog { get; }
     public NotificationWorkspaceViewModel Notifications { get; }
+    public NotificationSettingsViewModel NotificationSettings { get; }
     public Task SearchOpenTask { get; private set; } = Task.CompletedTask;
     public ObservableCollection<ApiActivity> Activity { get; } = [];
 
@@ -127,7 +129,7 @@ public partial class MainViewModel : ObservableObject
     {
         var settings = _store.Load();
         Connection.Load(settings);
-        Notifications.Load(Connection.Notifications);
+        NotificationSettings.Load(Connection.Notifications);
         if (BrowserSignInClock.IsSavedSessionExpired(settings, DateTimeOffset.UtcNow))
         {
             AbandonExpiredBrowserSession();
@@ -858,7 +860,7 @@ public partial class MainViewModel : ObservableObject
 
             try
             {
-                var seconds = Math.Max(NotificationPreferences.MinimumPollSeconds, Notifications.Committed.PollSeconds);
+                var seconds = Math.Max(NotificationPreferences.MinimumPollSeconds, NotificationSettings.Committed.PollSeconds);
                 await Task.Delay(TimeSpan.FromSeconds(seconds), token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -884,7 +886,7 @@ public partial class MainViewModel : ObservableObject
             if (generation != _alertGeneration || !ReferenceEquals(client, _client))
                 return;
 
-            var snapshot = await client.GetOpenAlertsAsync(Notifications.Committed.ToSearch(_signedInUserId), token).ConfigureAwait(false);
+            var snapshot = await client.GetOpenAlertsAsync(NotificationSettings.Committed.ToSearch(_signedInUserId), token).ConfigureAwait(false);
             PostToUi(() =>
             {
                 if (generation != _alertGeneration || !ReferenceEquals(client, _client))

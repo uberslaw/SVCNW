@@ -72,14 +72,15 @@ public sealed class AlertKindBrushConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        var amber = value is AlertKind.WatchedGroup;
-        var key = amber ? "AmberBrush" : "AccentBrush";
-        if (Application.Current?.TryFindResource(key) is Brush brush)
+        var kind = value is AlertKind alert ? alert : AlertKind.AssignedToMe;
+        var swatch = AlertCatalog.Swatch(kind);
+        if (Application.Current?.TryFindResource(swatch.ResourceKey) is Brush brush)
             return brush;
 
-        return amber
-            ? new SolidColorBrush(Color.FromRgb(0xC4, 0x7E, 0x09))
-            : new SolidColorBrush(Color.FromRgb(0x0F, 0x6E, 0x6B));
+        var color = (Color)ColorConverter.ConvertFromString(swatch.Hex);
+        var created = new SolidColorBrush(color);
+        created.Freeze();
+        return created;
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>

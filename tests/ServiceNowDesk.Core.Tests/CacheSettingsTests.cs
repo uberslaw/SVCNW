@@ -46,7 +46,9 @@ public class CacheSettingsTests
         var calls = handler.Snapshot();
         Assert.DoesNotContain(calls, call => call.PathAndQuery.Contains("sys_choice", StringComparison.Ordinal));
         Assert.DoesNotContain(calls, call => call.PathAndQuery.Contains("sys_user_group", StringComparison.Ordinal));
-        Assert.DoesNotContain(calls, call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal));
+        Assert.DoesNotContain(calls, call =>
+            call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal)
+            && !call.PathAndQuery.Contains("getUserID", StringComparison.Ordinal));
     }
 
     [Fact]

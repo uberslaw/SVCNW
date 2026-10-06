@@ -15,66 +15,71 @@ public partial class AlertWidgetWindow : Window
     private const int GwlExStyle = -20;
     private const int WsExNoActivate = 0x08000000;
     private const int WsExToolWindow = 0x00000080;
+    private const double IndicatorStrip = 4;
     private const double WidgetFallbackWidth = 280;
     private const double WidgetFallbackHeight = 44;
 
     private readonly DispatcherTimer _jiggleTimer;
+    private readonly AlertJiggleSchedule _schedule = new();
+    private readonly AlertWidgetMotion _motion = new();
     private readonly AlertSound _sound = new();
     private NotificationWorkspaceViewModel? _model;
-    private bool _mainMinimized;
-    private bool _jiggling;
+    private NotificationSettingsViewModel? _settings;
+    private DispatcherTimer? _dropTimer;
     private bool _allowClose;
     private bool _opening;
-    private int _jiggleGeneration;
+    private bool _wiggling;
+    private bool _positioning;
+    private int _dropGeneration;
 
     public AlertWidgetWindow()
     {
         InitializeComponent();
         _jiggleTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
-        _jiggleTimer.Tick += (_, _) =>
-        {
-            if (_model is null || !_mainMinimized || !_model.AnyUnacknowledged)
-                return;
-            BeginJiggle(_model.ActivePlaySoundWhenJiggling);
-        };
-        SizeChanged += (_, _) =>
-        {
-            if (IsVisible)
-                PlaceOnScreen();
-        };
+        _jiggleTimer.Tick += (_, _) => BeginScheduledDrop(_settings?.ActivePlaySoundWhenJiggling ?? false);
     }
 
     public event EventHandler<AlertKind>? Opened;
 
-    public void Attach(NotificationWorkspaceViewModel model)
+    public void Attach(NotificationWorkspaceViewModel model, NotificationSettingsViewModel settings)
     {
         ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(settings);
         if (_model is not null)
-        {
-            _model.PropertyChanged -= OnModelChanged;
             _model.Attention -= OnAttention;
-        }
+        if (_settings is not null)
+            _settings.PropertyChanged -= OnSettingsChanged;
 
         _model = model;
+        _settings = settings;
         DataContext = model;
-        model.PropertyChanged += OnModelChanged;
         model.Attention += OnAttention;
-        UpdatePresence();
+        settings.PropertyChanged += OnSettingsChanged;
+        if (!IsVisible)
+        {
+            Opacity = 0;
+            ShowActivated = false;
+            Show();
+            UpdateLayout();
+            Opacity = 1;
+        }
+
+        ApplyChrome();
+        EnsureTimer();
     }
 
     public void SetMainMinimized(bool minimized)
     {
-        _mainMinimized = minimized;
-        if (!minimized)
-            _jiggling = false;
-
-        UpdatePresence();
+        // The strip stays at the top of the screen while the desk is open and while it is minimized.
+        _ = minimized;
     }
 
     public void Shutdown()
     {
         _allowClose = true;
+        _schedule.Stop();
         _jiggleTimer.Stop();
+        _dropTimer?.Stop();
         Close();
     }
 
@@ -91,103 +96,73 @@ public partial class AlertWidgetWindow : Window
         if (!_allowClose)
         {
             e.Cancel = true;
-            Hide();
-            _jiggleTimer.Stop();
             return;
         }
 
+        _jiggleTimer.Stop();
+        _dropTimer?.Stop();
         base.OnClosing(e);
     }
 
-    private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
+    private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(NotificationWorkspaceViewModel.AnyUnacknowledged)
-            or nameof(NotificationWorkspaceViewModel.ActiveFrequency)
-            or nameof(NotificationWorkspaceViewModel.ActiveDurationSeconds)
-            or nameof(NotificationWorkspaceViewModel.ActiveMaximizeWhenJiggling)
-            or nameof(NotificationWorkspaceViewModel.ActivePlaySoundWhenJiggling)
-            or nameof(NotificationWorkspaceViewModel.ActiveSoundPath))
-        {
-            UpdatePresence();
-        }
+        if (e.PropertyName == nameof(NotificationSettingsViewModel.ActiveFrequency))
+            EnsureTimer();
     }
 
     private void OnAttention(object? sender, AlertAttention attention)
     {
-        if (attention.PlaySound)
-            _sound.Play(_model?.ActiveSoundPath);
-
-        if (_mainMinimized && _model is { AnyUnacknowledged: true })
-        {
-            UpdatePresence();
-            BeginJiggle(playSound: false);
-        }
-    }
-
-    private void UpdatePresence()
-    {
-        var show = _mainMinimized
-            && _model is { AnyUnacknowledged: true }
-            && _model.Circles.Any(circle => circle.IsVisible);
-        if (!show)
-        {
-            _jiggleTimer.Stop();
-            if (IsVisible)
-                Hide();
-            return;
-        }
-
-        if (!IsVisible)
-        {
-            Opacity = 0;
-            ShowActivated = false;
-            Show();
-            UpdateLayout();
-            PlaceOnScreen();
-            Opacity = 1;
-        }
-        else
-        {
-            PlaceOnScreen();
-        }
-
-        EnsureTimer();
+        if (attention.PlaySound && _settings is { ActivePlaySoundOnAlertMetric: true })
+            _sound.Play(_settings.ActiveSoundPath);
     }
 
     private void EnsureTimer()
     {
-        var interval = _model?.ActiveJiggleInterval ?? TimeSpan.FromMinutes(1);
-        if (interval <= TimeSpan.Zero)
-            interval = TimeSpan.FromMinutes(1);
-        if (_jiggleTimer.Interval != interval)
-        {
-            var running = _jiggleTimer.IsEnabled;
-            _jiggleTimer.Stop();
-            _jiggleTimer.Interval = interval;
-            if (running)
-                _jiggleTimer.Start();
-        }
+        var interval = _settings?.ActiveJiggleInterval ?? TimeSpan.FromMinutes(1);
+        if (!_schedule.Arm(interval))
+            return;
 
-        if (!_jiggleTimer.IsEnabled)
-            _jiggleTimer.Start();
+        _jiggleTimer.Stop();
+        _jiggleTimer.Interval = _schedule.Interval;
+        _jiggleTimer.Start();
     }
 
-    private void BeginJiggle(bool playSound)
+    private void BeginScheduledDrop(bool playSound)
     {
-        if (_model is null || !IsVisible)
+        if (_settings is null || !IsVisible)
             return;
 
         if (playSound)
-            _sound.Play(_model.ActiveSoundPath);
+            _sound.Play(_settings.ActiveSoundPath);
 
-        PlaceOnScreen();
+        var maximize = _settings.ActiveMaximizeWhenJiggling;
+        _motion.SetTimerDrop(maximize);
+        var generation = ++_dropGeneration;
+        ApplyChrome();
+        if (maximize)
+            StartWiggle(generation);
 
-        var generation = ++_jiggleGeneration;
-        _jiggling = true;
-        var origin = CenterLeft();
+        _dropTimer?.Stop();
+        var seconds = Math.Max(1, _settings.ActiveDurationSeconds);
+        var hold = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+        _dropTimer = hold;
+        hold.Tick += (_, _) =>
+        {
+            hold.Stop();
+            if (generation != _dropGeneration)
+                return;
+            _motion.SetTimerDrop(false);
+            ApplyChrome();
+        };
+        hold.Start();
+    }
+
+    private void StartWiggle(int generation)
+    {
+        var origin = CenterLeft(Width > 1 ? Width : WidgetFallbackWidth);
         BeginAnimation(LeftProperty, null);
         Left = origin;
-        var seconds = Math.Max(1, _model.ActiveDurationSeconds);
+        var seconds = Math.Max(1, _settings?.ActiveDurationSeconds ?? 2);
         var duration = TimeSpan.FromSeconds(seconds);
         var animation = new DoubleAnimationUsingKeyFrames { Duration = duration };
         const int cycles = 6;
@@ -199,54 +174,65 @@ public partial class AlertWidgetWindow : Window
             animation.KeyFrames.Add(new LinearDoubleKeyFrame(origin + offset, KeyTime.FromPercent(t)));
         }
 
+        _wiggling = true;
         animation.Completed += (_, _) =>
         {
-            if (generation != _jiggleGeneration)
+            if (generation != _dropGeneration)
                 return;
-            _jiggling = false;
+            _wiggling = false;
             BeginAnimation(LeftProperty, null);
-            PlaceOnScreen();
+            Left = CenterLeft(Width > 1 ? Width : WidgetFallbackWidth);
         };
         BeginAnimation(LeftProperty, animation);
-        RestartJiggleTimer();
     }
 
-    private void RestartJiggleTimer()
+    private void ApplyChrome()
     {
-        if (!_jiggleTimer.IsEnabled)
+        if (_positioning || !IsVisible)
             return;
-        _jiggleTimer.Stop();
-        _jiggleTimer.Start();
-    }
 
-    private void PlaceOnScreen()
-    {
-        if (!_jiggling)
+        _positioning = true;
+        try
         {
-            BeginAnimation(LeftProperty, null);
-            Left = CenterLeft();
+            WidgetRoot.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var desired = WidgetRoot.DesiredSize;
+            var width = desired.Width > 1 ? desired.Width : WidgetFallbackWidth;
+            var openHeight = desired.Height > 1 ? desired.Height : WidgetFallbackHeight;
+            Width = width;
+            Height = _motion.BarOpen ? openHeight : IndicatorStrip;
+            if (!_wiggling)
+            {
+                BeginAnimation(LeftProperty, null);
+                Left = CenterLeft(width);
+            }
+
+            BeginAnimation(TopProperty, null);
+            Top = SystemParameters.WorkArea.Top;
         }
-
-        BeginAnimation(TopProperty, null);
-        Top = RestTop();
+        finally
+        {
+            _positioning = false;
+        }
     }
 
-    private double RestTop()
+    private double CenterLeft(double width)
     {
         var area = SystemParameters.WorkArea;
-        var height = ActualHeight > 1 ? ActualHeight : WidgetFallbackHeight;
-        var top = area.Top + 8;
-        var maxTop = area.Bottom - height;
-        return top > maxTop ? Math.Max(area.Top, maxTop) : top;
-    }
-
-    private double CenterLeft()
-    {
-        var area = SystemParameters.WorkArea;
-        var width = ActualWidth > 1 ? ActualWidth : WidgetFallbackWidth;
         var left = area.Left + Math.Max(0, (area.Width - width) / 2);
         var maxLeft = area.Right - width;
         return left > maxLeft ? Math.Max(area.Left, maxLeft) : left;
+    }
+
+    private void Window_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        _motion.SetPointerOver(true);
+        ApplyChrome();
+    }
+
+    private void Window_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        _motion.SetPointerOver(false);
+        ApplyChrome();
     }
 
     private void Circle_Click(object sender, RoutedEventArgs e)

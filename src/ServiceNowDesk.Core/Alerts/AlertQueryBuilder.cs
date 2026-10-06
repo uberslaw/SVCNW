@@ -16,6 +16,50 @@ public static class AlertQueryBuilder
     /// </summary>
     public static string? WatchedGroup(string? groupName, IEnumerable<string>? locations)
     {
+        var scope = WatchedScope(groupName, locations);
+        return scope is null ? null : scope + "^active=true^ORDERBYDESCsys_updated_on";
+    }
+
+    /// <summary>
+    /// Open records assigned to the user, in the user's groups, or in the watched group at the office locations.
+    /// Each segment is its own query so a location filter cannot leak onto the other populations.
+    /// </summary>
+    public static string Population(string userSysId, IReadOnlyList<string>? groupIds, string? groupName, IEnumerable<string>? locations)
+    {
+        var user = EncodedQuery.SafeToken(userSysId, "user id");
+        var segments = new List<string> { "assigned_to=" + user + "^active=true" };
+        var groups = (groupIds ?? [])
+            .Select(id => EncodedQuery.SafeToken(id, "group id"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (groups.Length > 0)
+            segments.Add("assignment_groupIN" + string.Join(",", groups) + "^active=true");
+
+        var watched = WatchedScope(groupName, locations);
+        if (watched is not null)
+            segments.Add(watched + "^active=true");
+        return string.Join("^NQ", segments);
+    }
+
+    public static string? TaskSla(IReadOnlyList<string>? taskIds)
+    {
+        var ids = JoinIds(taskIds, "task id");
+        if (ids is null)
+            return null;
+        var listed = "taskIN" + ids;
+        return listed + "^has_breached=true^NQ" + listed + "^stage=in_progress^planned_end_time<javascript:gs.nowDateTime()";
+    }
+
+    public static string? LatestJournal(IReadOnlyList<string>? taskIds)
+    {
+        var ids = JoinIds(taskIds, "record id");
+        if (ids is null)
+            return null;
+        return "element_idIN" + ids + "^elementINcomments,work_notes^ORDERBYDESCsys_created_on";
+    }
+
+    public static string? WatchedScope(string? groupName, IEnumerable<string>? locations)
+    {
         var group = Quote(groupName);
         var cities = (locations ?? [])
             .Select(Quote)
@@ -28,7 +72,16 @@ public static class AlertQueryBuilder
         var location = cities.Length == 1
             ? "location.name=" + cities[0]
             : "location.nameIN" + string.Join(",", cities);
-        return "assignment_group.name=" + group + "^" + location + "^active=true^ORDERBYDESCsys_updated_on";
+        return "assignment_group.name=" + group + "^" + location;
+    }
+
+    private static string? JoinIds(IReadOnlyList<string>? ids, string label)
+    {
+        var tokens = (ids ?? [])
+            .Select(id => EncodedQuery.SafeToken(id, label))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return tokens.Length == 0 ? null : string.Join(",", tokens);
     }
 
     public static string Quote(string? value)

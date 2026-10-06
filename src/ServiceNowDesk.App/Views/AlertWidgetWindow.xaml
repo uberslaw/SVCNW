@@ -10,42 +10,66 @@
         ResizeMode="NoResize"
         ShowActivated="False"
         Focusable="False"
-        SizeToContent="WidthAndHeight"
+        SizeToContent="Manual"
+        Width="280"
+        Height="4"
         WindowStartupLocation="Manual"
         UseLayoutRounding="True"
-        SnapsToDevicePixels="True">
-    <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8">
-        <ItemsControl x:Name="Circles" ItemsSource="{Binding Circles}" Focusable="False">
+        SnapsToDevicePixels="True"
+        MouseEnter="Window_MouseEnter"
+        MouseLeave="Window_MouseLeave">
+    <Grid x:Name="WidgetRoot">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="4"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Border Grid.Row="0" Background="{StaticResource LineBrush}">
+        <ItemsControl ItemsSource="{Binding Circles}" Focusable="False">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <StackPanel Orientation="Horizontal" />
+                    <UniformGrid Rows="1"/>
                 </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <Button Margin="0,0,8,0" Cursor="Hand" Focusable="False" Padding="4,2"
-                            Click="Circle_Click"
-                            AutomationProperties.Name="{Binding StatusLabel}"
-                            ToolTip="{Binding StatusLabel}"
-                            Background="Transparent"
-                            BorderThickness="0">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="Transparent" Padding="{TemplateBinding Padding}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Grid Width="28" Height="28" Margin="0,0,8,0">
-                                            <Ellipse Fill="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
-                                            <TextBlock Text="{Binding Count}" Foreground="White" FontWeight="Bold" FontSize="12"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
-                                        </Grid>
-                                        <TextBlock Text="{Binding StatusLabel}" VerticalAlignment="Center" FontWeight="SemiBold"/>
-                                    </StackPanel>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                    </Button>
+                    <Border Background="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
-    </Border>
+        </Border>
+        <Border Grid.Row="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="0,0,8,8" Padding="10,8">
+            <ItemsControl ItemsSource="{Binding Circles}" Focusable="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Button Margin="0,0,8,0" Cursor="Hand" Focusable="False" Padding="4,2"
+                                Click="Circle_Click"
+                                AutomationProperties.Name="{Binding StatusLabel}"
+                                ToolTip="{Binding ToolTipText}"
+                                Background="Transparent"
+                                BorderThickness="0">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Grid Width="28" Height="28" Margin="0,0,8,0">
+                                                <Ellipse Fill="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
+                                                <TextBlock Text="{Binding Count}" Foreground="White" FontWeight="Bold" FontSize="12"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                            </Grid>
+                                            <TextBlock Text="{Binding StatusLabel}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+    </Grid>
 </Window>

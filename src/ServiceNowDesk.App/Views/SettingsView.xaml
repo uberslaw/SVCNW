@@ -4,6 +4,47 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Settings" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
+
+            <TextBlock Text="Notifications" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
+            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8"
+                    DataContext="{Binding NotificationSettings}">
+                <StackPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                               Text="The desktop strip at the top center of the screen drops the notification bar on this interval, and whenever the pointer is over it. The watched group and office locations decide the group queue."/>
+
+                    <TextBlock Text="Jiggle frequency (HH:MM:SS)" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding FrequencyText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Jiggle duration (seconds)" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding DurationText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+
+                    <CheckBox Content="Maximize when jiggling" IsChecked="{Binding MaximizeWhenJiggling}" Margin="0,0,0,8"/>
+                    <CheckBox Content="Play sound when jiggling" IsChecked="{Binding PlaySoundWhenJiggling}" Margin="0,0,0,8"/>
+                    <CheckBox Content="Play sound on alert metric" IsChecked="{Binding PlaySoundOnAlertMetric}" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Sound (.wav)" Style="{StaticResource FieldLabel}"/>
+                    <DockPanel Margin="0,0,0,10" LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="Browse…" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="BrowseSound_Click"/>
+                        <TextBox Text="{Binding SoundPath, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="True" ToolTip="Leave this empty to use the Windows exclamation sound."/>
+                    </DockPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                               Text="Play sound when jiggling uses the repeating timer. Play sound on alert metric plays as soon as a number increases, even when the timer sound is off. Both use this file, or the Windows exclamation sound when no file is chosen."/>
+
+                    <TextBlock Text="Watched group name" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding GroupNameText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Office locations (one city per line)" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding LocationsText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="110" TextWrapping="Wrap" VerticalContentAlignment="Top" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Check ServiceNow every (seconds)" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Text="{Binding PollSecondsText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+
+                    <Button Content="Save notification settings" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Command="{Binding SaveSettingsCommand}"/>
+                    <TextBlock Text="{Binding SettingsMessage}" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="{StaticResource MutedBrush}"
+                               Visibility="{Binding SettingsMessage, Converter={StaticResource StringVis}}"/>
+                </StackPanel>
+            </Border>
+
             <TextBlock Text="Cache" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
                        Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Incident templates and the saved sign-in stay where they are."/>
