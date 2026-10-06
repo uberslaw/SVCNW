@@ -16,11 +16,17 @@ public partial class AlertWidgetWindow : Window
     private const int GwlExStyle = -20;
     private const int WsExNoActivate = 0x08000000;
     private const int WsExToolWindow = 0x00000080;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoActivate = 0x0010;
+    private static readonly IntPtr HwndTopmost = new(-1);
+    private static readonly TimeSpan TopmostRefresh = TimeSpan.FromSeconds(4);
     private const double IndicatorStrip = 4;
     private const double WidgetFallbackWidth = 280;
     private const double WidgetFallbackHeight = 44;
 
     private readonly DispatcherTimer _jiggleTimer;
+    private readonly DispatcherTimer _topmostTimer;
     private readonly AlertJiggleSchedule _schedule = new();
     private readonly AlertWidgetMotion _motion = new();
     private readonly AlertSound _sound = new();
@@ -38,8 +44,12 @@ public partial class AlertWidgetWindow : Window
     public AlertWidgetWindow()
     {
         InitializeComponent();
+        ShowActivated = false;
+        Topmost = true;
         _jiggleTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _jiggleTimer.Tick += (_, _) => BeginIntervalDrop();
+        _topmostTimer = new DispatcherTimer { Interval = TopmostRefresh };
+        _topmostTimer.Tick += (_, _) => RefreshTopmost();
     }
 
     public event EventHandler<AlertKind>? Opened;
@@ -73,6 +83,7 @@ public partial class AlertWidgetWindow : Window
         _allowClose = true;
         _schedule.Stop();
         _jiggleTimer.Stop();
+        _topmostTimer.Stop();
         _dropTimer?.Stop();
         Close();
     }
@@ -83,6 +94,7 @@ public partial class AlertWidgetWindow : Window
         var handle = new WindowInteropHelper(this).Handle;
         var style = GetWindowLongPtr(handle, GwlExStyle).ToInt64();
         SetWindowLongPtr(handle, GwlExStyle, new IntPtr(style | WsExNoActivate | WsExToolWindow));
+        PinTopmost();
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -94,6 +106,7 @@ public partial class AlertWidgetWindow : Window
         }
 
         _jiggleTimer.Stop();
+        _topmostTimer.Stop();
         _dropTimer?.Stop();
         base.OnClosing(e);
     }
@@ -135,6 +148,7 @@ public partial class AlertWidgetWindow : Window
             _dropTimer?.Stop();
             if (IsVisible)
                 Hide();
+            EnsureTopmostTimer();
             return;
         }
 
@@ -145,11 +159,14 @@ public partial class AlertWidgetWindow : Window
         {
             Opacity = 0;
             ShowActivated = false;
+            Topmost = true;
             Show();
             UpdateLayout();
             Opacity = 1;
         }
 
+        PinTopmost();
+        EnsureTopmostTimer();
         ApplyChrome();
         FlushPending();
     }
@@ -219,6 +236,7 @@ public partial class AlertWidgetWindow : Window
         ApplyChrome();
         if (maximize)
             StartWiggle(generation);
+        PinTopmost();
 
         _dropTimer?.Stop();
         var seconds = Math.Max(1, _settings.ActiveDurationSeconds);
@@ -324,6 +342,42 @@ public partial class AlertWidgetWindow : Window
         e.Handled = true;
     }
 
+    private void RefreshTopmost()
+    {
+        if (!IsVisible)
+        {
+            _topmostTimer.Stop();
+            return;
+        }
+
+        PinTopmost();
+    }
+
+    private void EnsureTopmostTimer()
+    {
+        if (!IsVisible)
+        {
+            _topmostTimer.Stop();
+            return;
+        }
+
+        if (!_topmostTimer.IsEnabled)
+            _topmostTimer.Start();
+    }
+
+    // Topmost is dropped when another window is activated later. Put it back without focusing or moving.
+    private void PinTopmost()
+    {
+        if (!IsVisible)
+            return;
+
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+            return;
+
+        SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoSize | SwpNoMove | SwpNoActivate);
+    }
+
     private void OpenFromCircle(AlertKind kind)
     {
         if (_opening)
@@ -350,4 +404,7 @@ public partial class AlertWidgetWindow : Window
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
     private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int index, IntPtr value);
+
+    [DllImport("user32.dll", SetLastError = false)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
 }

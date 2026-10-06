@@ -5,7 +5,7 @@
         <StackPanel MaxWidth="1040" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Daily Work" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                       Text="This is what to attend to from the notification queues: SLA breaching, updated by caller, follow-up passed, unattended, and returned with notes. Priority comes first, then SLA, then a caller update, then a passed follow-up. The report is saved once each local day, at the first check after midnight or the next time the desk opens. Later checks keep that report and show what left the list and what arrived. My team uses the people ticked under Leads. Click a row to open it."/>
+                       Text="This is what to attend to from the notification queues: SLA breaching, updated by caller, follow-up passed, unattended, and returned with notes. Priority comes first, then SLA, then a caller update, then a passed follow-up. The report is saved once each local day, at the first check after midnight or the next time the desk opens. Later checks keep that report and show which tickets are no longer on it and which arrived. My team uses the people ticked under Leads. Click a row to open it."/>
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                 <RadioButton GroupName="DailyWorkArea" Content="My work" Margin="0,0,18,0"
@@ -96,7 +96,7 @@
             <TextBlock Text="{Binding DifferenceNote}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,4,0,8"
                        Visibility="{Binding DifferenceNote, Converter={StaticResource StringVis}}"/>
 
-            <TextBlock Text="Left today's report" FontWeight="SemiBold" Margin="0,0,0,4"
+            <TextBlock Text="No longer on today's report" FontWeight="SemiBold" Margin="0,0,0,4"
                        Visibility="{Binding HasCleared, Converter={StaticResource BoolVis}}"/>
             <ListBox ItemsSource="{Binding Cleared}"
                      Style="{StaticResource DeskList}"
@@ -104,7 +104,7 @@
                      MaxHeight="220"
                      MouseLeftButtonUp="Cleared_MouseLeftButtonUp"
                      PreviewKeyDown="Cleared_PreviewKeyDown"
-                     AutomationProperties.Name="Cleared since the report"
+                     AutomationProperties.Name="No longer on today's report"
                      Visibility="{Binding HasCleared, Converter={StaticResource BoolVis}}"
                      Margin="0,0,0,12">
                 <ListBox.ItemTemplate>

@@ -66,6 +66,22 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+
+            <TextBlock Text="Leads access" FontWeight="SemiBold" Margin="0,18,0,4"/>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                       Text="Enter the leads password to show the Leads menu."/>
+            <PasswordBox x:Name="LeadsPasswordInput" Width="280" HorizontalAlignment="Left" Margin="0,0,0,8"
+                         PasswordChanged="LeadsPasswordInput_PasswordChanged"
+                         AutomationProperties.Name="Leads password"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Content="Unlock" Style="{StaticResource PrimaryButton}" Command="{Binding Connection.UnlockLeadsCommand}" Margin="0,0,8,0"
+                        AutomationProperties.Name="Unlock Leads"/>
+                <Button Content="Hide Leads" Style="{StaticResource SecondaryButton}" Command="{Binding Connection.HideLeadsCommand}"
+                        Visibility="{Binding Connection.LeadsEnabled, Converter={StaticResource BoolVis}}"
+                        AutomationProperties.Name="Hide Leads"/>
+            </StackPanel>
+            <TextBlock Text="{Binding Connection.LeadsAccessStatus}" TextWrapping="Wrap" Foreground="{StaticResource ErrorBrush}" Margin="0,0,0,8"
+                       Visibility="{Binding Connection.LeadsAccessStatus, Converter={StaticResource StringVis}}"/>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

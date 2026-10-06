@@ -262,7 +262,9 @@
                     <RadioButton Style="{StaticResource NavButton}" Content="Knowledge" Tag="&#xE82D;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Knowledge}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Notifications" Tag="&#xEA8F;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Notifications}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Daily Work" Tag="&#xE787;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=DailyWork}"/>
-                    <RadioButton Style="{StaticResource NavButton}" Content="Leads" Tag="&#xE902;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Leads}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Leads" Tag="&#xE902;"
+                                 Visibility="{Binding Connection.LeadsEnabled, Converter={StaticResource BoolVis}}"
+                                 IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Leads}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Legend" Tag="&#xE790;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Legend}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Order catalog" Tag="&#xE719;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Catalog}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Settings" Tag="&#xE713;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Settings}"/>

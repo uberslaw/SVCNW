@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
 
@@ -36,8 +37,14 @@ public partial class ConnectionViewModel : ObservableObject
     [ObservableProperty] private bool showBrowserSignIn;
     [ObservableProperty] private string browserSessionStatus = "No browser sign-in yet.";
     [ObservableProperty] private bool downloadCacheOnLaunch = true;
+    [ObservableProperty] private string leadsPassword = "";
+    [ObservableProperty] private bool leadsEnabled;
+    [ObservableProperty] private string leadsAccessStatus = "";
 
     public event EventHandler? DownloadCachePreferenceChanged;
+
+    /// <summary>Raised after Unlock or Hide Leads so the desk can save the flag and leave the page.</summary>
+    public event EventHandler? LeadsAccessChanged;
 
     private bool _loadingSettings;
 
@@ -78,7 +85,35 @@ public partial class ConnectionViewModel : ObservableObject
         Notifications.ApplyTo(settings);
         Highlights.ApplyTo(settings);
         settings.LeadTeamMemberIds = [.. LeadTeamMemberIds];
+        settings.LeadsEnabled = LeadsEnabled;
         return settings;
+    }
+
+    [RelayCommand]
+    public void UnlockLeads()
+    {
+        if (!LeadsAccess.Unlocks(LeadsPassword))
+        {
+            if (string.IsNullOrEmpty(LeadsPassword))
+                return;
+
+            LeadsAccessStatus = LeadsAccess.WrongPasswordMessage;
+            return;
+        }
+
+        LeadsPassword = "";
+        LeadsAccessStatus = "";
+        LeadsEnabled = true;
+        LeadsAccessChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    [RelayCommand]
+    public void HideLeads()
+    {
+        LeadsPassword = "";
+        LeadsAccessStatus = "";
+        LeadsEnabled = false;
+        LeadsAccessChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void RememberNotifications(NotificationPreferences preferences)
@@ -122,6 +157,9 @@ public partial class ConnectionViewModel : ObservableObject
         LeadTeamMemberIds = settings.LeadTeamMemberIds is null
             ? []
             : settings.LeadTeamMemberIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        LeadsEnabled = settings.LeadsEnabled;
+        LeadsPassword = "";
+        LeadsAccessStatus = "";
         SyncFlags();
         _loadingSettings = false;
     }

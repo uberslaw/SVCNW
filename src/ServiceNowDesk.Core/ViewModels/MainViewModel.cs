@@ -139,6 +139,24 @@ public partial class MainViewModel : ObservableObject
             }
         };
         Connection.DownloadCachePreferenceChanged += (_, _) => _store.Save(Connection.BuildSettings());
+        Connection.LeadsAccessChanged += (_, _) =>
+        {
+            _store.Save(Connection.BuildSettings());
+            if (!Connection.LeadsEnabled && SelectedSection == DeskSection.Leads)
+                SelectedSection = DeskSection.Incidents;
+        };
+    }
+
+    /// <summary>
+    /// Moves to a section. Leads is refused while it is locked, so a shortcut for that page does nothing.
+    /// </summary>
+    public bool TrySelect(DeskSection section)
+    {
+        if (section == DeskSection.Leads && !Connection.LeadsEnabled)
+            return false;
+
+        SelectedSection = section;
+        return true;
     }
 
     public ConnectionViewModel Connection { get; }

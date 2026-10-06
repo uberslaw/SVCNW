@@ -129,7 +129,7 @@ public partial class MainWindow : Window
 
     private static void Navigate(MainViewModel main, DeskSection section, KeyEventArgs e)
     {
-        main.SelectedSection = section;
+        main.TrySelect(section);
         e.Handled = true;
     }
 
