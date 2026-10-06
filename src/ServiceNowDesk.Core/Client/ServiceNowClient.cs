@@ -419,8 +419,9 @@ public sealed class ServiceNowClient : IServiceNowClient
         var holdSource = skipInteractionHold
             ? folded.Where(record => record.Section != DeskSection.WalkUps)
             : folded;
+        var slaScope = new SlaBreachScope(search.UserSysId, groupIds, search.GroupName);
         return new CategoryBuckets(
-            AlertClassifier.Bucket(AlertKind.SlaBreaching, folded, now, JoinNotes(slaStatus, shared)),
+            AlertClassifier.Bucket(AlertKind.SlaBreaching, folded, now, slaScope, JoinNotes(slaStatus, shared)),
             AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, holdSource, now, JoinNotes(holdNotes, shared)),
             AlertClassifier.Bucket(AlertKind.UpdatedByCaller, folded, now, new CallerUpdateScope(search.UserSysId, search.GroupName, search.Locations), shared),
             AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, folded, now, JoinNotes(journalStatus, shared)));
