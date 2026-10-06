@@ -391,9 +391,45 @@
             <Border Width="680" MaxHeight="520" VerticalAlignment="Center" HorizontalAlignment="Center" Background="#102226" Padding="20" CornerRadius="10">
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12" LastChildFill="True">
-                        <Button DockPanel.Dock="Right" Content="Close" Margin="16,0,0,0" Padding="14,6" Cursor="Hand"
-                                Command="{Binding CloseStartupCommand}" AutomationProperties.Name="Close download"
-                                Foreground="#C9E6E1" Background="Transparent" BorderBrush="#1F6E6B" BorderThickness="1"/>
+                        <Button DockPanel.Dock="Right" Margin="16,0,0,0" Padding="14,6" Cursor="Hand"
+                                Command="{Binding CloseStartupCommand}" AutomationProperties.Name="Close download">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Foreground" Value="#F4FFFC"/>
+                                    <Setter Property="Background" Value="#145E5B"/>
+                                    <Setter Property="BorderBrush" Value="#9FE0D8"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True">
+                                                        <ContentPresenter.Resources>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                                            </Style>
+                                                        </ContentPresenter.Resources>
+                                                    </ContentPresenter>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#1F7A76"/>
+                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#E7F6F3"/>
+                                                        <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#0C3E3C"/>
+                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#7DCDC4"/>
+                                                        <Setter Property="Foreground" Value="#E7F6F3"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Button.Style>
+                            <TextBlock Text="Close" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                        </Button>
                         <TextBlock Text="{Binding Startup.Title}" FontFamily="Consolas" FontSize="16" FontWeight="SemiBold" Foreground="#E7F6F3" VerticalAlignment="Center" TextWrapping="Wrap"/>
                     </DockPanel>
                     <TextBlock DockPanel.Dock="Bottom" Margin="0,12,0,0" Foreground="#8FB8B2" TextWrapping="Wrap"
