@@ -32,6 +32,11 @@ public partial class ConnectionViewModel : ObservableObject
     [ObservableProperty] private bool showUserPassword = true;
     [ObservableProperty] private bool showBrowserSignIn;
     [ObservableProperty] private string browserSessionStatus = "No browser sign-in yet.";
+    [ObservableProperty] private bool downloadCacheOnLaunch = true;
+
+    public event EventHandler? DownloadCachePreferenceChanged;
+
+    private bool _loadingSettings;
 
     public NotificationPreferences Notifications { get; private set; } = NotificationPreferences.From(new DeskSettings());
 
@@ -39,6 +44,11 @@ public partial class ConnectionViewModel : ObservableObject
     partial void OnUseSampleDataChanged(bool value) => SyncFlags();
     partial void OnSessionCookieChanged(string value) => UpdateBrowserStatus();
     partial void OnSessionCapturedAtChanged(DateTimeOffset? value) => UpdateBrowserStatus();
+    partial void OnDownloadCacheOnLaunchChanged(bool value)
+    {
+        if (!_loadingSettings)
+            DownloadCachePreferenceChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     public DeskSettings BuildSettings()
     {
@@ -55,7 +65,8 @@ public partial class ConnectionViewModel : ObservableObject
             SessionCapturedAt = SessionCapturedAt,
             SignedInAt = SignedInAt,
             SessionExpiresAt = SessionExpiresAt,
-            UseSampleData = UseSampleData
+            UseSampleData = UseSampleData,
+            DownloadCacheOnLaunch = DownloadCacheOnLaunch
         };
         Notifications.ApplyTo(settings);
         return settings;
@@ -70,6 +81,7 @@ public partial class ConnectionViewModel : ObservableObject
     public void Load(DeskSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        _loadingSettings = true;
         InstanceUrl = settings.InstanceUrl ?? "";
         AuthMode = settings.AuthMode;
         Username = settings.Username ?? "";
@@ -82,8 +94,10 @@ public partial class ConnectionViewModel : ObservableObject
         SignedInAt = settings.SignedInAt;
         SessionExpiresAt = settings.SessionExpiresAt;
         UseSampleData = settings.UseSampleData;
+        DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch;
         Notifications = NotificationPreferences.From(settings);
         SyncFlags();
+        _loadingSettings = false;
     }
 
     private void SyncFlags()

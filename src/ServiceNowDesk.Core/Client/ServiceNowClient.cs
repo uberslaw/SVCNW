@@ -341,7 +341,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         catch (ServiceNowException ex)
         {
             sla = new Dictionary<string, IReadOnlyList<SlaSignal>>(StringComparer.OrdinalIgnoreCase);
-            slaStatus = ex.Message;
+            slaStatus = SlaFailureStatus(ex);
         }
 
         var journalStatus = "";
@@ -446,36 +446,42 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     private async Task<IReadOnlyDictionary<string, IReadOnlyList<SlaSignal>>> LoadSlaAsync(IReadOnlyList<string> taskIds, CancellationToken cancellationToken)
     {
-        var query = AlertQueryBuilder.TaskSla(taskIds);
         var found = new Dictionary<string, List<SlaSignal>>(StringComparer.OrdinalIgnoreCase);
-        if (query is null)
-            return found.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<SlaSignal>)pair.Value, StringComparer.OrdinalIgnoreCase);
-
-        var result = await GetListAsync("task_sla", "task,has_breached,stage,planned_end_time", query, AlertLimit, 0, cancellationToken).ConfigureAwait(false);
-        using (result)
+        foreach (var query in AlertQueryBuilder.TaskSlaQueries(taskIds))
         {
-            foreach (var row in RequireArray(result.Document).EnumerateArray())
+            var result = await GetListAsync("task_sla", "task,has_breached,stage,planned_end_time", query, AlertLimit, 0, cancellationToken).ConfigureAwait(false);
+            using (result)
             {
-                var task = SnowField.Read(row, "task").Value;
-                if (task.Length == 0)
-                    continue;
-                var stage = SnowField.Read(row, "stage");
-                var plannedText = FirstText(row, "planned_end_time");
-                DateTime? planned = AlertClassifier.TryParseInstant(plannedText, out var parsed) ? parsed : null;
-                if (!found.TryGetValue(task, out var list))
+                foreach (var row in RequireArray(result.Document).EnumerateArray())
                 {
-                    list = [];
-                    found[task] = list;
-                }
+                    var task = SnowField.Read(row, "task").Value;
+                    if (task.Length == 0)
+                        continue;
+                    var stage = SnowField.Read(row, "stage");
+                    var plannedText = FirstText(row, "planned_end_time");
+                    DateTime? planned = AlertClassifier.TryParseInstant(plannedText, out var parsed) ? parsed : null;
+                    if (!found.TryGetValue(task, out var list))
+                    {
+                        list = [];
+                        found[task] = list;
+                    }
 
-                list.Add(new SlaSignal(
-                    SnowField.IsTrue(SnowField.Read(row, "has_breached")),
-                    stage.Value.Length > 0 ? stage.Value : stage.Display,
-                    planned));
+                    list.Add(new SlaSignal(
+                        SnowField.IsTrue(SnowField.Read(row, "has_breached")),
+                        stage.Value.Length > 0 ? stage.Value : stage.Display,
+                        planned));
+                }
             }
         }
 
         return found.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<SlaSignal>)pair.Value, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string SlaFailureStatus(ServiceNowException ex)
+    {
+        if (ex.StatusCode == 403 || ex.Message.Contains("web page", StringComparison.OrdinalIgnoreCase))
+            return AlertQueryBuilder.SlaUnavailableStatus;
+        return ex.Message;
     }
 
     private async Task<IReadOnlyDictionary<string, string>> LoadLatestJournalAuthorsAsync(IReadOnlyList<string> taskIds, CancellationToken cancellationToken)
@@ -1406,7 +1412,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             Record(method.Method, relativeUrl, (int)response.StatusCode, watch.ElapsedMilliseconds);
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
-                throw DescribeFailure((int)response.StatusCode, body);
+                throw DescribeFailure((int)response.StatusCode, body, relativeUrl);
 
             if (string.IsNullOrWhiteSpace(body))
                 return new ApiPayload(JsonDocument.Parse("""{"result":{}}"""), ReadTotal(response), ReadNextLink(response));
@@ -1426,7 +1432,7 @@ public sealed class ServiceNowClient : IServiceNowClient
                     && status.ValueKind == JsonValueKind.String
                     && string.Equals(status.GetString(), "failure", StringComparison.OrdinalIgnoreCase))
                 {
-                    var error = DescribeFailure((int)response.StatusCode, body);
+                    var error = DescribeFailure((int)response.StatusCode, body, relativeUrl);
                     document.Dispose();
                     throw error;
                 }
@@ -1440,7 +1446,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
-    private ServiceNowException DescribeFailure(int statusCode, string body)
+    private ServiceNowException DescribeFailure(int statusCode, string body, string? relativeUrl = null)
     {
         var error = ServiceNowException.FromResponse(statusCode, body);
         if (_authMode == ServiceNowAuthMode.Basic
@@ -1452,6 +1458,9 @@ public sealed class ServiceNowClient : IServiceNowClient
                 "ServiceNow refused the user name and password. This instance expects company single sign-on. Choose Browser sign-in (SSO).",
                 error.Detail);
         }
+
+        if (IsSlaTableDenial(statusCode, body, relativeUrl))
+            return error;
 
         if (IsRejectedBrowserSession(statusCode, body, error))
         {
@@ -1472,6 +1481,15 @@ public sealed class ServiceNowClient : IServiceNowClient
         if (statusCode is 401 or 403)
             return true;
         return ContainsInvalidGrant(body) || ContainsInvalidGrant(error.Message) || ContainsInvalidGrant(error.Detail);
+    }
+
+    private static bool IsSlaTableDenial(int statusCode, string body, string? relativeUrl)
+    {
+        if (relativeUrl is null || !relativeUrl.Contains("api/now/table/task_sla", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (statusCode == 403)
+            return true;
+        return body.TrimStart().StartsWith('<');
     }
 
     private static bool ContainsInvalidGrant(string? text) =>

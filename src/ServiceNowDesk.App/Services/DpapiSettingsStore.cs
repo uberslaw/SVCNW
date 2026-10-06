@@ -51,7 +51,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
                 AlertSoundPath = stored.AlertSoundPath ?? "",
                 WatchedGroupName = stored.WatchedGroupName,
                 OfficeLocations = stored.OfficeLocations,
-                NotificationPollSeconds = stored.NotificationPollSeconds ?? 60
+                NotificationPollSeconds = stored.NotificationPollSeconds ?? 60,
+                DownloadCacheOnLaunch = stored.DownloadCacheOnLaunch ?? true
             };
         }
         catch
@@ -87,7 +88,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
             AlertSoundPath = settings.AlertSoundPath,
             WatchedGroupName = settings.WatchedGroupName,
             OfficeLocations = settings.OfficeLocations is null ? null : [.. settings.OfficeLocations],
-            NotificationPollSeconds = settings.NotificationPollSeconds
+            NotificationPollSeconds = settings.NotificationPollSeconds,
+            DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch
         };
         File.WriteAllText(FilePath, JsonSerializer.Serialize(stored, JsonOptions));
     }
@@ -133,5 +135,6 @@ public sealed class DpapiSettingsStore : ISettingsStore
         public string? WatchedGroupName { get; set; }
         public List<string>? OfficeLocations { get; set; }
         public int? NotificationPollSeconds { get; set; }
+        public bool? DownloadCacheOnLaunch { get; set; }
     }
 }

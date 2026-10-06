@@ -33,6 +33,7 @@ public class CacheSettingsTests
             return Api.Json("""{"result":[]}""");
         });
         var main = Desk(catalog, lists, handler);
+        main.Connection.DownloadCacheOnLaunch = false;
 
         await main.ConnectCommand.ExecuteAsync(null);
 
@@ -77,6 +78,7 @@ public class CacheSettingsTests
         });
         var main = Desk(catalog, lists, handler, settings, templates);
         main.Connection.Password = "secret";
+        main.Connection.DownloadCacheOnLaunch = false;
         await main.ConnectCommand.ExecuteAsync(null);
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC-OLD");
         handler.Calls.Clear();
@@ -133,6 +135,7 @@ public class CacheSettingsTests
             return Api.Json("""{"result":[]}""");
         });
         var main = Desk(catalog, lists, handler);
+        main.Connection.DownloadCacheOnLaunch = false;
         await main.ConnectCommand.ExecuteAsync(null);
         failChoices = true;
 
@@ -191,6 +194,174 @@ public class CacheSettingsTests
         Assert.Contains(main.Caches, row => row.Name == "Assignment group members");
         Assert.Contains(main.Caches, row => row.Name == "Walk-ups");
         Assert.DoesNotContain(main.Caches, row => row.Name.Contains("SLA", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DownloadCacheOnLaunchDefaultsOnAndRoundTrips()
+    {
+        Assert.True(new DeskSettings().DownloadCacheOnLaunch);
+        var connection = new ConnectionViewModel();
+        Assert.True(connection.DownloadCacheOnLaunch);
+        connection.InstanceUrl = "https://example.service-now.com";
+        connection.DownloadCacheOnLaunch = false;
+        var saved = connection.BuildSettings();
+        Assert.False(saved.DownloadCacheOnLaunch);
+
+        var again = new ConnectionViewModel();
+        again.Load(saved);
+        Assert.False(again.DownloadCacheOnLaunch);
+        Assert.Equal("https://example.service-now.com", again.BuildSettings().InstanceUrl);
+        again.DownloadCacheOnLaunch = true;
+        Assert.True(again.BuildSettings().DownloadCacheOnLaunch);
+    }
+
+    [Fact]
+    public async Task PracticeLaunchDownloadsWhenTheSettingIsOnAndTheCacheIsFresh()
+    {
+        var lists = new MemoryDeskListStore();
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = true });
+        lists.Save(DeskListScope.Practice, FreshPractice("INC-BOGUS", "Bogus"));
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
+
+        await main.InitializeAsync();
+
+        Assert.True(main.IsConnected);
+        Assert.True(main.IsSample);
+        Assert.Equal("", main.ErrorMessage);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.ShowBar);
+        Assert.False(main.Startup.IsRunning);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
+        Assert.Equal(6, main.Startup.Lines.Count);
+        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC-BOGUS");
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010001");
+        Assert.True(settings.Current.DownloadCacheOnLaunch);
+    }
+
+    [Fact]
+    public async Task PracticeLaunchSkipsAFreshCacheWhenTheSettingIsOff()
+    {
+        var lists = new MemoryDeskListStore();
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = false });
+        lists.Save(DeskListScope.Practice, FreshPractice("INC-BOGUS", "Bogus"));
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
+
+        await main.InitializeAsync();
+
+        Assert.True(main.IsConnected);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.ShowBar);
+        Assert.Empty(main.Startup.Lines);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-BOGUS");
+        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010001");
+        Assert.False(settings.Current.DownloadCacheOnLaunch);
+    }
+
+    [Fact]
+    public async Task NewBrowserSessionDownloadsAFreshCacheWhenTheSettingIsOn()
+    {
+        var folder = NewFolder();
+        var catalog = new FileFormCatalogStore(folder);
+        var lists = new MemoryDeskListStore();
+        var session = Api.BasicSession();
+        catalog.Save(session.InstanceUri, FreshCatalog());
+        lists.Save(DeskListScope.ForInstance(session.InstanceUri), FreshLists("INC-KEEP", "Kept"));
+        var choiceCalls = 0;
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (IsUser(path))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            if (path.Contains("sys_choice", StringComparison.Ordinal))
+            {
+                choiceCalls++;
+                return Api.Json("""{"result":[{"value":"1","label":"One","sequence":"1"}]}""");
+            }
+
+            if (path.Contains("sys_user_group", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":"group-aus","name":"AUS DT - Client Services"}]}""");
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"group":{"value":"group-aus","display_value":"AUS DT - Client Services"},"user":{"value":"user-jordan","display_value":"Jordan Lee"}}]}""");
+            if (path.Contains("incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":"inc-new","number":"INC-NEW","short_description":"Downloaded","state":"2","sys_updated_on":"2026-10-06 09:00:00"}]}""");
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            browserSignIn: new ScriptedBrowserSignIn("glide_user_session=replaced"),
+            formCatalog: catalog,
+            clientFactory: (_, store) => ServiceNowClient.Create(session, handler, store),
+            lists: lists);
+        main.Connection.InstanceUrl = "https://example.service-now.com";
+        main.Connection.Username = "alex";
+        main.Connection.Password = "secret";
+        main.Connection.DownloadCacheOnLaunch = false;
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.Equal("", main.ErrorMessage);
+        Assert.Equal(0, choiceCalls);
+        Assert.Empty(main.Startup.Lines);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP");
+
+        main.Connection.DownloadCacheOnLaunch = true;
+        await main.SignInWithBrowserCommand.ExecuteAsync(null);
+
+        Assert.Equal("", main.ErrorMessage);
+        Assert.True(choiceCalls > 0);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.IsRunning);
+        Assert.Equal("glide_user_session=replaced", main.Connection.SessionCookie);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-NEW");
+        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC-KEEP");
+    }
+
+    [Fact]
+    public async Task LaunchDownloadFailureKeepsTheSavedCopy()
+    {
+        var folder = NewFolder();
+        var catalog = new FileFormCatalogStore(folder);
+        var lists = new MemoryDeskListStore();
+        var session = Api.BasicSession();
+        catalog.Save(session.InstanceUri, FreshCatalog());
+        lists.Save(DeskListScope.ForInstance(session.InstanceUri), FreshLists("INC-KEEP", "Keep me"));
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            var query = request.RequestUri?.Query ?? "";
+            if (IsUser(path))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            if (path.Contains("/incident", StringComparison.Ordinal) && query.Contains("description", StringComparison.Ordinal))
+            {
+                return Api.Json(
+                    """{"error":{"message":"unavailable","detail":"incident list failed"},"status":"failure"}""",
+                    HttpStatusCode.InternalServerError);
+            }
+
+            if (path.Contains("sys_user_group", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":"group-aus","name":"AUS DT - Client Services"}]}""");
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"group":{"value":"group-aus","display_value":"AUS DT - Client Services"},"user":{"value":"user-jordan","display_value":"Jordan Lee"}}]}""");
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = Desk(catalog, lists, handler);
+        Assert.True(main.Connection.DownloadCacheOnLaunch);
+        await main.ConnectCommand.ExecuteAsync(null);
+
+        Assert.Equal("", main.ErrorMessage);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.IsRunning);
+        var incidents = Assert.Single(main.Startup.Lines, line => line.Name == "Incidents");
+        Assert.Contains("incident list failed", incidents.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP" && row.Title == "Keep me");
+        var saved = lists.Load(DeskListScope.ForInstance(session.InstanceUri));
+        Assert.NotNull(saved);
+        Assert.Contains(saved.Incidents!.Items, row => row.Number == "INC-KEEP" && row.Title == "Keep me");
+        var stillThere = catalog.Load(session.InstanceUri);
+        Assert.NotNull(stillThere);
+        Assert.Contains(stillThere.Groups, group => group.SysId == "group-aus");
     }
 
     private static MainViewModel Desk(
@@ -263,5 +434,26 @@ public class CacheSettingsTests
         };
     }
 
+    private static DeskListSnapshot FreshPractice(string number, string title)
+    {
+        var snapshot = FreshLists(number, title);
+        var now = DateTimeOffset.UtcNow;
+        snapshot.ChoicesCapturedAt = now;
+        snapshot.GroupsCapturedAt = now;
+        snapshot.MembersCapturedAt = now;
+        return snapshot;
+    }
+
+    private static bool IsUser(string path) =>
+        path.Contains("/sys_user", StringComparison.Ordinal)
+        && !path.Contains("sys_user_group", StringComparison.Ordinal)
+        && !path.Contains("sys_user_grmember", StringComparison.Ordinal);
+
     private static string NewFolder() => Path.Combine(Path.GetTempPath(), "snd-cache-" + Guid.NewGuid().ToString("N"));
+
+    private sealed class ScriptedBrowserSignIn(string cookie) : IBrowserSignIn
+    {
+        public Task<BrowserSignInResult> SignInAsync(Uri instanceUri, CancellationToken cancellationToken) =>
+            Task.FromResult(new BrowserSignInResult(cookie, "tok-new", DateTimeOffset.UtcNow.AddHours(4)));
+    }
 }
