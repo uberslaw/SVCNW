@@ -13,13 +13,92 @@ public class WorkspaceTests
         using var client = new SampleServiceNowClient();
         var workspace = await OpenIncidentsAsync(client);
 
-        Assert.Equal(4, workspace.Items.Count);
+        Assert.Equal(3, workspace.Items.Count);
         Assert.Contains(workspace.Items, row => row.Number == "INC0010001");
         Assert.Contains(workspace.Items, row => row.Number == "INC0010002");
         Assert.Contains(workspace.Items, row => row.Number == "INC0010006");
-        Assert.Contains(workspace.Items, row => row.Number == "INC0010015");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "INC0010015");
         Assert.DoesNotContain(workspace.Items, row => row.Number == "INC0010004");
+
+        workspace.SearchText = "INC0010015";
+        await workspace.RefreshAsync();
+        Assert.Empty(workspace.Items);
+
+        workspace.SearchText = "";
+        workspace.ApplyPresetCommand.Execute(PresetCatalog.Incidents.Single(preset => preset.Label == "All open"));
+        await WaitUntilAsync(() => workspace.Items.Any(row => row.Number == "INC0010011"));
+        Assert.Contains(workspace.Items, row => row.Number == "INC0010011" && row.StateLabel == "On Hold");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "INC0010015");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "INC0010003");
+
+        var search = new SearchWorkspaceViewModel();
+        await search.RunAsync(client, "INC0010015");
+        var found = Assert.Single(search.Results);
+        Assert.Equal("INC0010015", found.Number);
+        Assert.Equal(DeskSection.Incidents, found.Section);
     }
+
+    [Fact]
+    public void OpenListDropsResolvedLabelsAndKeepsOnHold()
+    {
+        var incidents = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
+        incidents.ShowCachedRows(
+        [
+            Row("inc-resolved-today", "INC0010015", "Resolved", "6"),
+            Row("inc-hold", "INC0010011", "On Hold", "3"),
+            Row("inc-printer", "INC0010001", "In Progress", "2"),
+            Row("inc-label", "INC0010099", "Closed", "2")
+        ], 4);
+
+        Assert.Equal(2, incidents.Items.Count);
+        Assert.Contains(incidents.Items, row => row.Number == "INC0010011");
+        Assert.Contains(incidents.Items, row => row.Number == "INC0010001");
+        Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010015");
+        Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010099");
+
+        incidents.Preset = PresetCatalog.Incidents.Single(preset => preset.Label == "Closed");
+        incidents.ShowCachedRows([Row("inc-resolved-today", "INC0010015", "Resolved", "6")], 1);
+        Assert.Contains(incidents.Items, row => row.Number == "INC0010015");
+
+        var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
+        items.ShowCachedRows(
+        [
+            Row("ritm-closed", "RITM0010004", "Closed Complete", "3"),
+            Row("ritm-hold", "RITM0010006", "On Hold", "on_hold")
+        ], 2);
+        var held = Assert.Single(items.Items);
+        Assert.Equal("RITM0010006", held.Number);
+
+        var requests = new RequestWorkspaceViewModel(new RecordingDesktopServices());
+        requests.ShowCachedRows(
+        [
+            Row("req-closed", "REQ0010003", "Closed Complete", "closed_complete"),
+            Row("req-open", "REQ0010001", "In Process", "in_process")
+        ], 2);
+        var openRequest = Assert.Single(requests.Items);
+        Assert.Equal("REQ0010001", openRequest.Number);
+
+        var walkUps = new InteractionWorkspaceViewModel(new RecordingDesktopServices());
+        walkUps.ShowCachedRows(
+        [
+            Row("ims-closed", "IMS0010099", "Closed Complete", "closed_complete"),
+            Row("ims-hold", "IMS0010004", "On Hold", "on_hold")
+        ], 2);
+        var openWalkUp = Assert.Single(walkUps.Items);
+        Assert.Equal("IMS0010004", openWalkUp.Number);
+    }
+
+    private static TicketRow Row(string sysId, string number, string stateLabel, string stateValue) => new()
+    {
+        SysId = sysId,
+        Number = number,
+        Title = number,
+        StateLabel = stateLabel,
+        Tone = "open",
+        Meta = "",
+        When = "",
+        StateValue = stateValue
+    };
 
     [Fact]
     public async Task SearchFindsClosedTextAndJournalNotes()
@@ -403,7 +482,8 @@ public class WorkspaceTests
         Assert.False(main.Startup.ShowScreen);
         Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
-        Assert.Equal(8, main.Startup.Lines.Count);
+        Assert.Equal(9, main.Startup.Lines.Count);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Knowledge" && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Service offerings");
         Assert.Contains(main.Startup.Lines, line => line.Name == "Configuration items");
         Assert.All(main.Startup.Lines, line => Assert.Equal(100, line.Percent));

@@ -13,7 +13,7 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
     private bool _choicesReady;
 
     public InteractionWorkspaceViewModel(IDesktopServices desktop, IRecentAssignmentGroupStore? recentGroups = null)
-        : base(desktop, "interaction", "walk-up", true, PresetCatalog.WalkUps)
+        : base(desktop, "interaction", "walk-up", true, PresetCatalog.WalkUps, DeskSection.WalkUps)
     {
         Assignment = new AssignmentFields(recentGroups);
         Caller = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);

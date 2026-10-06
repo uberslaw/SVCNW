@@ -12,7 +12,7 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     private bool _choicesReady;
 
     public RequestedItemWorkspaceViewModel(IDesktopServices desktop, IRecentAssignmentGroupStore? recentGroups = null)
-        : base(desktop, "sc_req_item", "request item", false, PresetCatalog.RequestedItems, attachments: true)
+        : base(desktop, "sc_req_item", "request item", false, PresetCatalog.RequestedItems, DeskSection.RequestedItems, attachments: true)
     {
         Assignment = new AssignmentFields(recentGroups);
         ServiceOffering = new ReferenceChoiceField((client, token) => client.ListServiceOfferingsAsync(token));

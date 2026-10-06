@@ -107,6 +107,8 @@ public sealed record InteractionRecord
 
 public sealed record InteractionConversion(IncidentRecord Incident, bool Created, string? LinkError);
 
+public readonly record struct KnowledgeDownload(IReadOnlyList<KnowledgeArticle> Articles, bool Truncated);
+
 public sealed record KnowledgeArticle
 {
     public string SysId { get; init; } = "";

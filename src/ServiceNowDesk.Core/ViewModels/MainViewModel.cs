@@ -40,6 +40,7 @@ public partial class MainViewModel : ObservableObject
         new CacheRowModel("requests", "Requests"),
         new CacheRowModel("request-items", "Request items"),
         new CacheRowModel("walk-ups", "Walk-ups"),
+        new CacheRowModel("knowledge", "Knowledge"),
         new CacheRowModel("choices", "Choices (menus)"),
         new CacheRowModel("groups", "Assignment groups"),
         new CacheRowModel("members", "Assignment group members"),
@@ -48,7 +49,8 @@ public partial class MainViewModel : ObservableObject
     ]);
     private bool _startupGate;
     private int _downloadBusy;
-    private static readonly string[] StartupCacheKeys = ["choices", "groups", "members", "service-offerings", "configuration-items", "incidents", "requests", "walk-ups"];
+    private static readonly string[] StartupCacheKeys = ["choices", "groups", "members", "service-offerings", "configuration-items", "incidents", "requests", "walk-ups", "knowledge"];
+    private int _knowledgeQuiet;
 
     public MainViewModel(
         ISettingsStore store,
@@ -110,6 +112,7 @@ public partial class MainViewModel : ObservableObject
         };
         Requests.RelatedItemRequested += (_, sysId) => _ = OpenRequestedItemAsync(sysId);
         Search.OpenRequested += (_, hit) => SearchOpenTask = OpenSearchResultAsync(hit);
+        Search.KnowledgeSearchRequested += (_, _) => _ = RefreshKnowledgeQuietlyAsync();
         Catalog.RequestOrdered += (_, result) => _ = OpenOrderedRequestAsync(result);
         Notifications.OpenRequested += (_, row) => _ = OpenNotificationAsync(row);
         Notifications.QueueSelected += (_, _) =>
@@ -232,6 +235,9 @@ public partial class MainViewModel : ObservableObject
                 : "Connected as " + user.Name + ".";
             StartAlertLoop();
             _loadedFor.Clear();
+            ShowSavedKnowledge();
+            if (settings.UseSampleData && !Knowledge.HasArticles)
+                await PrimeSampleKnowledgeAsync();
             _startupGate = true;
             var startup = DownloadStartupAsync(live);
             AssignmentDirectoryRefresh = startup;
@@ -479,7 +485,7 @@ public partial class MainViewModel : ObservableObject
             DeskSection.RequestedItems => "Search request items",
             DeskSection.WalkUps => "Search walk-up interactions",
             DeskSection.Search => "Search incidents, requests, items, walk-ups, and knowledge",
-            DeskSection.Knowledge => "Open articles from Search",
+            DeskSection.Knowledge => "Filter knowledge articles",
             DeskSection.Catalog => "Search the catalog",
             DeskSection.Notifications => "Notifications",
             DeskSection.Leads => "Leads",
@@ -529,6 +535,12 @@ public partial class MainViewModel : ObservableObject
             await Task.Delay(250, token);
             if (!IsConnected || SelectedSection != section)
                 return;
+            if (section == DeskSection.Knowledge)
+            {
+                Knowledge.FilterText = SearchText.Trim();
+                return;
+            }
+
             _loadedFor.Remove(section);
             await EnsureSectionAsync();
         }
@@ -561,6 +573,8 @@ public partial class MainViewModel : ObservableObject
                     await Search.RunAsync(_client, SearchText);
                 break;
             case DeskSection.Knowledge:
+                if (!Knowledge.HasArticles)
+                    ShowSavedKnowledge();
                 break;
             case DeskSection.Catalog:
                 await Catalog.RunAsync(_client, SearchText);
@@ -907,6 +921,7 @@ public partial class MainViewModel : ObservableObject
         RequestedItems.Attach(client);
         WalkUps.Attach(client);
         Catalog.Attach(client);
+        Knowledge.Attach(client);
     }
 
     private void StartAlertLoop()

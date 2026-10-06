@@ -298,7 +298,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             "",
             record.Active,
             record.Number,
-            Texts(record.ShortDescription, record.Description, record.CloseNotes, record.Number, JournalText(record.SysId))));
+            Texts(record.ShortDescription, record.Description, record.CloseNotes, record.Number, JournalText(record.SysId)),
+            DeskSection.Incidents,
+            record.State,
+            record.StateLabel));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -417,7 +420,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             record.OpenedBy.SysId,
             record.Active,
             record.Number,
-            Texts(record.ShortDescription, record.Description, record.SpecialInstructions, record.Number, JournalText(record.SysId))));
+            Texts(record.ShortDescription, record.Description, record.SpecialInstructions, record.Number, JournalText(record.SysId)),
+            DeskSection.Requests,
+            record.RequestState,
+            record.RequestStateLabel));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -508,7 +514,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 "",
                 record.Active,
                 record.Number,
-                Texts(record.ShortDescription, record.Description, record.CloseNotes, record.Number, record.CatalogItem.Display, JournalText(record.SysId))));
+                Texts(record.ShortDescription, record.Description, record.CloseNotes, record.Number, record.CatalogItem.Display, JournalText(record.SysId)),
+                DeskSection.RequestedItems,
+                record.State,
+                record.StateLabel));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -759,6 +768,15 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     public Task<KnowledgeArticle> GetKnowledgeAsync(string sysId, CancellationToken cancellationToken) =>
         Task.FromResult(Find(_articles, sysId, "knowledge article"));
 
+    public Task<KnowledgeDownload> DownloadKnowledgeAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken)
+    {
+        var articles = _articles.ToArray();
+        progress?.Report(new DownloadTick(0, Math.Max(articles.Length, 1)));
+        progress?.Report(new DownloadTick(Math.Max(articles.Length, 1), Math.Max(articles.Length, 1)));
+        Record("GET", "api/now/table/kb_knowledge");
+        return Task.FromResult(new KnowledgeDownload(articles, false));
+    }
+
     public Task<PagedResult<InteractionRecord>> SearchInteractionsAsync(TicketQuery query, CancellationToken cancellationToken)
     {
         var matches = _interactions.Where(record =>
@@ -771,7 +789,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 "",
                 record.Active,
                 record.Number,
-                Texts(record.ShortDescription, record.Description, record.Number, record.OpenedFor.Display, JournalText(record.SysId))));
+                Texts(record.ShortDescription, record.Description, record.Number, record.OpenedFor.Display, JournalText(record.SysId)),
+                DeskSection.WalkUps,
+                record.State,
+                record.StateLabel));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -1687,10 +1708,26 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         new("cat-monitor", "27 inch monitor", "Desk monitor for an existing computer")
     ];
 
-    private bool Passes(TicketQuery query, string assignedTo, string groupId, string requestedFor, string openedBy, bool active, string number, IEnumerable<string> haystack)
+    private bool Passes(
+        TicketQuery query,
+        string assignedTo,
+        string groupId,
+        string requestedFor,
+        string openedBy,
+        bool active,
+        string number,
+        IEnumerable<string> haystack,
+        DeskSection? section = null,
+        string? stateValue = null,
+        string? stateLabel = null)
     {
-        if (query.Activity == ActivityFilter.Open && !active)
-            return false;
+        if (query.Activity == ActivityFilter.Open)
+        {
+            if (!active)
+                return false;
+            if (section is DeskSection known && !AlertClassifier.IsStillOpen(known, stateValue, stateLabel))
+                return false;
+        }
         if (query.Activity == ActivityFilter.Closed && active)
             return false;
 

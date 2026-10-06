@@ -45,6 +45,7 @@ public sealed class DeskListSnapshot
     public CachedTicketList? Requests { get; set; }
     public CachedTicketList? RequestItems { get; set; }
     public CachedTicketList? WalkUps { get; set; }
+    public CachedTicketList? Knowledge { get; set; }
 }
 
 public interface IDeskListStore

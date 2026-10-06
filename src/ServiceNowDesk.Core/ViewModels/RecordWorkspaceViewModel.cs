@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
@@ -16,7 +17,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     private int _loadVersion;
     private int _openVersion;
 
-    protected RecordWorkspaceViewModel(IDesktopServices desktop, string tableName, string recordLabel, bool allowCreate, IReadOnlyList<PresetOption> presets, bool attachments = false)
+    protected RecordWorkspaceViewModel(IDesktopServices desktop, string tableName, string recordLabel, bool allowCreate, IReadOnlyList<PresetOption> presets, DeskSection section, bool attachments = false)
     {
         Desktop = desktop;
         TableName = tableName;
@@ -24,6 +25,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         AllowCreate = allowCreate;
         Presets = presets;
         Preset = presets[0];
+        Section = section;
         ResolveChoiceLabel = "Outcome";
         SupportsAttachments = attachments;
     }
@@ -35,6 +37,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     public string TableName { get; }
     public string RecordLabel { get; }
+    public DeskSection Section { get; }
     public bool AllowCreate { get; }
     public bool SupportsAttachments { get; }
     public ObservableCollection<AttachmentSummary> Attachments { get; } = [];
@@ -134,14 +137,15 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     public void ShowCachedRows(IReadOnlyList<TicketRow> rows, int totalCount)
     {
+        var visible = rows.Where(ShowsOnThisList).ToArray();
         _suppressSelection = true;
         Items.Clear();
-        foreach (var row in rows)
+        foreach (var row in visible)
         {
             PrepareRow?.Invoke(row);
             Items.Add(row);
         }
-        TotalCount = totalCount;
+        TotalCount = visible.Length == rows.Count ? totalCount : visible.Length;
         Selected = null;
         _boundRow = null;
         _suppressSelection = false;
@@ -179,14 +183,17 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             var openedDuringRefresh = openAtStart != _openVersion;
             var openStillApplying = openedDuringRefresh && EditorSysId == editorAtStart;
             var keep = openStillApplying ? null : EditorSysId;
+            var visible = page.Items.Where(ShowsOnThisList).ToArray();
             _suppressSelection = true;
             Items.Clear();
-            foreach (var row in page.Items)
+            foreach (var row in visible)
             {
                 PrepareRow?.Invoke(row);
                 Items.Add(row);
             }
-            TotalCount = page.TotalCount ?? page.Items.Count;
+            TotalCount = visible.Length == page.Items.Count
+                ? page.TotalCount ?? visible.Length
+                : visible.Length;
             var match = keep is null ? null : Items.FirstOrDefault(row => row.SysId == keep);
             if (match is not null)
             {
@@ -529,6 +536,12 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     protected void UpsertRow(TicketRow row)
     {
+        if (!ShowsOnThisList(row))
+        {
+            RemoveFromList(row.SysId);
+            return;
+        }
+
         var index = -1;
         for (var i = 0; i < Items.Count; i++)
         {
@@ -547,6 +560,39 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             Items[index] = row;
         Selected = Items.First(item => item.SysId == row.SysId);
         _boundRow = Selected;
+        _suppressSelection = false;
+    }
+
+    /// <summary>
+    /// Open presets hide resolved, closed, and cancelled rows that still come back from ServiceNow.
+    /// On hold stays. Closed and any-activity lists keep every row.
+    /// </summary>
+    protected bool ShowsOnThisList(TicketRow row)
+    {
+        if (Preset?.Activity != ActivityFilter.Open)
+            return true;
+        return AlertClassifier.IsStillOpen(Section, row.StateValue, row.StateLabel);
+    }
+
+    private void RemoveFromList(string sysId)
+    {
+        var index = -1;
+        for (var i = 0; i < Items.Count; i++)
+        {
+            if (Items[i].SysId == sysId)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0)
+            return;
+
+        _suppressSelection = true;
+        Items.RemoveAt(index);
+        if (Selected?.SysId == sysId)
+            Selected = null;
         _suppressSelection = false;
     }
 

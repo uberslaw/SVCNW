@@ -32,6 +32,9 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
 
     public event EventHandler<SearchHit>? OpenRequested;
 
+    /// <summary>Raised when a search includes knowledge, so the desk can refresh the saved article list.</summary>
+    public event EventHandler? KnowledgeSearchRequested;
+
     public bool HasCurrentResultsFor(string? text) =>
         _resultsCurrent && string.Equals(Query, (text ?? "").Trim(), StringComparison.Ordinal);
 
@@ -105,7 +108,10 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             var items = (kind is null or DeskSection.RequestedItems) && IncludeItems
                 ? client.SearchRequestedItemsAsync(query, CancellationToken.None)
                 : Task.FromResult(new PagedResult<RequestedItemRecord>([], 0));
-            var articles = (kind is null or DeskSection.Knowledge) && IncludeKnowledge
+            var includeArticles = (kind is null or DeskSection.Knowledge) && IncludeKnowledge;
+            if (includeArticles)
+                KnowledgeSearchRequested?.Invoke(this, EventArgs.Empty);
+            var articles = includeArticles
                 ? client.SearchKnowledgeAsync(query, CancellationToken.None)
                 : Task.FromResult(new PagedResult<KnowledgeArticle>([], 0));
             var walkUps = (kind is null or DeskSection.WalkUps) && IncludeWalkUps

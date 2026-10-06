@@ -192,6 +192,7 @@ public sealed class TicketRow : IHighlightRow
     public required string When { get; init; }
     public string Badge { get; init; } = "";
     public bool Unassigned { get; init; }
+    public string StateValue { get; init; } = "";
 
     public string HighlightHex
     {
@@ -218,7 +219,8 @@ public sealed class TicketRow : IHighlightRow
         Meta = Join(record.Caller.Display, record.AssignmentGroup.Display),
         When = record.UpdatedAtDisplay,
         Badge = BadgeFor(record.Priority),
-        Unassigned = record.AssignedTo.IsEmpty
+        Unassigned = record.AssignedTo.IsEmpty,
+        StateValue = record.State
     };
 
     public static TicketRow FromRequest(RequestRecord record) => new()
@@ -230,7 +232,8 @@ public sealed class TicketRow : IHighlightRow
         Tone = Client.StateTone.ForRequest(record.RequestState),
         Meta = Join(record.RequestedFor.Display, record.StageLabel),
         When = record.UpdatedAtDisplay,
-        Badge = BadgeFor(record.Priority)
+        Badge = BadgeFor(record.Priority),
+        StateValue = record.RequestState
     };
 
     public static TicketRow FromInteraction(InteractionRecord record) => new()
@@ -242,7 +245,8 @@ public sealed class TicketRow : IHighlightRow
         Tone = Client.StateTone.ForInteraction(record.State),
         Meta = Join(record.OpenedFor.Display, record.AssignmentGroup.Display),
         When = record.UpdatedAtDisplay,
-        Unassigned = record.AssignedTo.IsEmpty
+        Unassigned = record.AssignedTo.IsEmpty,
+        StateValue = record.State
     };
 
     public static TicketRow FromItem(RequestedItemRecord record) => new()
@@ -255,7 +259,8 @@ public sealed class TicketRow : IHighlightRow
         Meta = Join(record.CatalogItem.Display, record.AssignmentGroup.Display),
         When = record.UpdatedAtDisplay,
         Badge = BadgeFor(record.Priority),
-        Unassigned = record.AssignedTo.IsEmpty
+        Unassigned = record.AssignedTo.IsEmpty,
+        StateValue = record.State
     };
 
     private static string BadgeFor(string priority) =>

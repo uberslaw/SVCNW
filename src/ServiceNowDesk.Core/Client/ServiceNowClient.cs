@@ -17,6 +17,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     private const string RequestFields = "sys_id,number,short_description,description,request_state,requested_for,opened_by,opened_at,due_date,priority,special_instructions,approval,stage,active,sys_updated_on";
     private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,priority,close_notes";
     private const string KnowledgeFields = "sys_id,number,short_description,text,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
+    private const string KnowledgeListFields = "sys_id,number,short_description,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
     private const string AlertIncidentFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
     private const string AlertRequestFields = "sys_id,number,short_description,request_state,assigned_to,assignment_group,sys_updated_on,active";
     private const string AlertItemFields = "sys_id,number,short_description,state,assigned_to,assignment_group,sys_updated_on,active";
@@ -694,7 +695,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     private readonly record struct CategoryLoad(CategoryBuckets Personal, LeadBoard Leads, DailyWorkBoard Daily);
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken) =>
-        SearchAsync("incident", IncidentFields, query, RecordMapper.Incident, cancellationToken);
+        SearchAsync("incident", IncidentFields, ForList(query, DeskSection.Incidents), RecordMapper.Incident, cancellationToken);
 
     public Task<IncidentRecord> GetIncidentAsync(string sysId, CancellationToken cancellationToken) =>
         GetOneAsync("incident", sysId, IncidentFields, RecordMapper.Incident, cancellationToken);
@@ -733,7 +734,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     }
 
     public Task<PagedResult<RequestRecord>> SearchRequestsAsync(TicketQuery query, CancellationToken cancellationToken) =>
-        SearchAsync("sc_request", RequestFields, query, RecordMapper.Request, cancellationToken);
+        SearchAsync("sc_request", RequestFields, ForList(query, DeskSection.Requests), RecordMapper.Request, cancellationToken);
 
     public Task<RequestRecord> GetRequestAsync(string sysId, CancellationToken cancellationToken) =>
         GetOneAsync("sc_request", sysId, RequestFields, RecordMapper.Request, cancellationToken);
@@ -771,7 +772,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     }
 
     public Task<PagedResult<RequestedItemRecord>> SearchRequestedItemsAsync(TicketQuery query, CancellationToken cancellationToken) =>
-        SearchAsync("sc_req_item", ItemFields, query, RecordMapper.RequestedItem, cancellationToken);
+        SearchAsync("sc_req_item", ItemFields, ForList(query, DeskSection.RequestedItems), RecordMapper.RequestedItem, cancellationToken);
 
     public Task<RequestedItemRecord> GetRequestedItemAsync(string sysId, CancellationToken cancellationToken) =>
         GetOneAsync("sc_req_item", sysId, ItemFields, RecordMapper.RequestedItem, cancellationToken);
@@ -806,7 +807,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         var clause = string.IsNullOrWhiteSpace(query.ExtraClause)
             ? "type=" + DefaultChoices.WalkUpType
             : query.ExtraClause + "^type=" + DefaultChoices.WalkUpType;
-        return SearchAsync("interaction", InteractionFields, query with { ExtraClause = clause }, RecordMapper.Interaction, cancellationToken);
+        return SearchAsync("interaction", InteractionFields, ForList(query, DeskSection.WalkUps) with { ExtraClause = clause }, RecordMapper.Interaction, cancellationToken);
     }
 
     public Task<InteractionRecord> GetInteractionAsync(string sysId, CancellationToken cancellationToken) =>
@@ -868,6 +869,20 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     public Task<KnowledgeArticle> GetKnowledgeAsync(string sysId, CancellationToken cancellationToken) =>
         GetOneAsync("kb_knowledge", sysId, KnowledgeFields, RecordMapper.Knowledge, cancellationToken);
+
+    public async Task<KnowledgeDownload> DownloadKnowledgeAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken)
+    {
+        var articles = new List<KnowledgeArticle>();
+        var truncated = await PageRowsAsync(
+            "kb_knowledge",
+            KnowledgeListFields,
+            "ORDERBYDESCsys_updated_on",
+            FormCatalogPolicy.MaxKnowledgeArticles,
+            progress,
+            row => articles.Add(RecordMapper.Knowledge(row)),
+            cancellationToken).ConfigureAwait(false);
+        return new KnowledgeDownload(articles, truncated);
+    }
 
     public async Task AddJournalAsync(string table, string sysId, JournalKind kind, string text, CancellationToken cancellationToken)
     {
@@ -1304,9 +1319,26 @@ public sealed class ServiceNowClient : IServiceNowClient
         return EncodedQuery.Build(
             EncodedQuery.TextSearch(query.Text),
             assignment,
-            EncodedQuery.ActivityClause(query.Activity),
+            OpenListClause(query),
             extra);
     }
+
+    /// <summary>
+    /// Open ticket lists exclude resolved, closed, and cancelled rows. Search uses any activity and stays unchanged.
+    /// The operators are NOT IN and NOT LIKE. A less-than date comparison in this URL makes ServiceNow return an HTML page.
+    /// </summary>
+    private static string OpenListClause(TicketQuery query)
+    {
+        if (query.Activity == ActivityFilter.Open && query.ListSection is DeskSection section && IsOpenList(section))
+            return AlertQueryBuilder.StillWorking(section);
+        return EncodedQuery.ActivityClause(query.Activity);
+    }
+
+    private static bool IsOpenList(DeskSection section) =>
+        section is DeskSection.Incidents or DeskSection.Requests or DeskSection.RequestedItems or DeskSection.WalkUps;
+
+    private static TicketQuery ForList(TicketQuery query, DeskSection section) =>
+        query with { ListSection = section };
 
     private async Task<string> MyGroupsClauseAsync(CancellationToken cancellationToken)
     {

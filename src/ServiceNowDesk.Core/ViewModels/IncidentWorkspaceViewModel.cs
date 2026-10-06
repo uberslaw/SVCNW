@@ -14,7 +14,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     private bool _choicesReady;
 
     public IncidentWorkspaceViewModel(IDesktopServices desktop, IIncidentTemplateStore? templates = null, IRecentAssignmentGroupStore? recentGroups = null)
-        : base(desktop, "incident", "incident", true, PresetCatalog.Incidents, attachments: true)
+        : base(desktop, "incident", "incident", true, PresetCatalog.Incidents, DeskSection.Incidents, attachments: true)
     {
         _templates = templates ?? new MemoryIncidentTemplateStore();
         Assignment = new AssignmentFields(recentGroups);

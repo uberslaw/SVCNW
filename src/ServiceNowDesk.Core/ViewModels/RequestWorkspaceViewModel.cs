@@ -13,7 +13,7 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
     private bool _choicesReady;
 
     public RequestWorkspaceViewModel(IDesktopServices desktop)
-        : base(desktop, "sc_request", "request", true, PresetCatalog.Requests)
+        : base(desktop, "sc_request", "request", true, PresetCatalog.Requests, DeskSection.Requests)
     {
         RequestedFor = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
         RequestedFor.Changed += (_, _) => Touch();

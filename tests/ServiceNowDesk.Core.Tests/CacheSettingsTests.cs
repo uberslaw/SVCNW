@@ -235,7 +235,7 @@ public class CacheSettingsTests
         Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
-        Assert.Equal(6, main.Startup.Lines.Count);
+        Assert.Equal(7, main.Startup.Lines.Count);
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC-BOGUS");
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010001");
         Assert.True(settings.Current.DownloadCacheOnLaunch);
@@ -436,7 +436,8 @@ public class CacheSettingsTests
             Incidents = List("inc-cached", number, title),
             Requests = List("req-keep", "REQ-KEEP", "Kept request"),
             RequestItems = List("ritm-keep", "RITM-KEEP", "Kept item"),
-            WalkUps = List("ims-keep", "IMS-KEEP", "Kept walk-up")
+            WalkUps = List("ims-keep", "IMS-KEEP", "Kept walk-up"),
+            Knowledge = List("kb-keep", "KB-KEEP", "Kept article")
         };
     }
 

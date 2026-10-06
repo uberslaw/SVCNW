@@ -156,6 +156,7 @@ public partial class MainViewModel
         "service-offerings" => DownloadServiceOfferingsAsync(live, force),
         "configuration-items" => DownloadConfigurationItemsAsync(live, force),
         "incidents" or "requests" or "request-items" or "walk-ups" => DownloadListAsync(key, force),
+        "knowledge" => DownloadKnowledgeSectionAsync(force),
         _ => Task.FromResult(new SectionOutcome(false, null))
     };
 
@@ -169,6 +170,7 @@ public partial class MainViewModel
         ApplyFreshList("requests", snapshot);
         ApplyFreshList("request-items", snapshot);
         ApplyFreshList("walk-ups", snapshot);
+        ApplyFreshKnowledge(snapshot);
         if (live is null)
             RememberPracticeStamp("choices");
     }
@@ -626,6 +628,7 @@ public partial class MainViewModel
         "requests" => "Requests",
         "request-items" => "Request items",
         "walk-ups" => "Walk-ups",
+        "knowledge" => "Knowledge",
         _ => key
     };
 
@@ -638,6 +641,7 @@ public partial class MainViewModel
         "requests" => snapshot?.Requests,
         "request-items" => snapshot?.RequestItems,
         "walk-ups" => snapshot?.WalkUps,
+        "knowledge" => snapshot?.Knowledge,
         _ => null
     };
 
@@ -657,7 +661,114 @@ public partial class MainViewModel
             case "walk-ups":
                 snapshot.WalkUps = list;
                 break;
+            case "knowledge":
+                snapshot.Knowledge = list;
+                break;
         }
+    }
+
+    private async Task<SectionOutcome> DownloadKnowledgeSectionAsync(bool force)
+    {
+        if (!force && TryApplyFreshKnowledge())
+            return new SectionOutcome(true, null);
+        return await FetchKnowledgeAsync(reportSplash: true);
+    }
+
+    private bool TryApplyFreshKnowledge()
+    {
+        var list = ListFor(LoadLists(), "knowledge");
+        if (list is null || ListIsStale(list))
+            return false;
+        Knowledge.ShowArticles(list.Items.Select(KnowledgeListRow.FromCached));
+        return true;
+    }
+
+    private void ApplyFreshKnowledge(DeskListSnapshot? snapshot)
+    {
+        var list = ListFor(snapshot, "knowledge");
+        if (list is null || ListIsStale(list))
+            return;
+        Knowledge.ShowArticles(list.Items.Select(KnowledgeListRow.FromCached));
+    }
+
+    private void ShowSavedKnowledge()
+    {
+        var list = ListFor(LoadLists(), "knowledge");
+        if (list?.Items is not { Count: > 0 })
+            return;
+        Knowledge.ShowArticles(list.Items.Select(KnowledgeListRow.FromCached));
+    }
+
+    private async Task PrimeSampleKnowledgeAsync()
+    {
+        if (_client is null)
+            return;
+        try
+        {
+            await FetchKnowledgeAsync(reportSplash: false);
+        }
+        catch (Exception ex)
+        {
+            Knowledge.NoteListFailure(WorkspaceMessages.Describe(ex));
+        }
+    }
+
+    private async Task RefreshKnowledgeQuietlyAsync()
+    {
+        if (_client is null || Volatile.Read(ref _downloadBusy) != 0)
+            return;
+        if (Interlocked.CompareExchange(ref _knowledgeQuiet, 1, 0) != 0)
+            return;
+        try
+        {
+            if (Volatile.Read(ref _downloadBusy) != 0)
+                return;
+            await FetchKnowledgeAsync(reportSplash: false);
+        }
+        catch (Exception ex)
+        {
+            if (!Knowledge.HasArticles)
+                Knowledge.NoteListFailure(WorkspaceMessages.Describe(ex));
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _knowledgeQuiet, 0);
+        }
+    }
+
+    private async Task<SectionOutcome> FetchKnowledgeAsync(bool reportSplash)
+    {
+        if (_client is null)
+            return new SectionOutcome(false, null);
+
+        if (reportSplash)
+            Startup.Report(0);
+        var downloaded = await _client.DownloadKnowledgeAsync(reportSplash ? SplashProgress() : null, CancellationToken.None);
+        var rows = downloaded.Articles.Select(KnowledgeListRow.FromArticle).ToArray();
+        SaveKnowledge(rows);
+        Knowledge.ShowArticles(rows);
+        if (!downloaded.Truncated)
+            return new SectionOutcome(false, null);
+
+        var note = rows.Length.ToString(CultureInfo.InvariantCulture)
+            + " saved; stopped at the "
+            + FormCatalogPolicy.MaxKnowledgeArticles.ToString(CultureInfo.InvariantCulture)
+            + " limit";
+        return new SectionOutcome(false, note);
+    }
+
+    private void SaveKnowledge(IReadOnlyList<KnowledgeListRow> rows)
+    {
+        if (_lists is null)
+            return;
+        var snapshot = LoadLists() ?? new DeskListSnapshot();
+        snapshot.Knowledge = new CachedTicketList
+        {
+            CapturedAt = DateTimeOffset.UtcNow,
+            TotalCount = rows.Count,
+            Items = rows.Select(row => row.ToCached()).ToList()
+        };
+        _lists.Save(CacheScope(), snapshot);
     }
 
     private static CachedTicketRow FromTicket(TicketRow row) => new()

@@ -30,6 +30,8 @@ public class ServiceNowClientTests
         Assert.Contains("123TEXTQUERY321=vpn active=false", query);
         Assert.Contains("assigned_to=javascript:gs.getUserID()", query);
         Assert.Contains("active=true", query);
+        Assert.Contains("stateNOT IN6,7,8", query);
+        Assert.DoesNotContain("<", query);
         Assert.DoesNotContain("vpn^", query);
         Assert.Equal("GET", client.RecentActivity[0].Method);
         Assert.DoesNotContain("secret", client.RecentActivity[0].Path);
@@ -174,6 +176,40 @@ public class ServiceNowClientTests
         Assert.Equal("GET", client.RecentActivity[0].Method);
         Assert.Contains("kb_knowledge", client.RecentActivity[0].Path);
         Assert.DoesNotContain("secret", client.RecentActivity[0].Path);
+    }
+
+    [Fact]
+    public async Task OpenListQueriesExcludeFinishedStatesAndSearchDoesNot()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""{"result":[]}"""));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        await client.SearchIncidentsAsync(new TicketQuery { Activity = ActivityFilter.Open, Assignment = AssignmentScope.Mine }, CancellationToken.None);
+        await client.SearchRequestsAsync(new TicketQuery { Activity = ActivityFilter.Open }, CancellationToken.None);
+        await client.SearchRequestedItemsAsync(new TicketQuery { Activity = ActivityFilter.Open, Assignment = AssignmentScope.Any }, CancellationToken.None);
+        await client.SearchInteractionsAsync(new TicketQuery { Activity = ActivityFilter.Open, Assignment = AssignmentScope.Mine }, CancellationToken.None);
+        await client.SearchIncidentsAsync(new TicketQuery
+        {
+            Text = "INC0010015",
+            Activity = ActivityFilter.Any,
+            Assignment = AssignmentScope.Any
+        }, CancellationToken.None);
+
+        var queries = handler.Calls.Select(call => QueryOf(call.PathAndQuery)).ToArray();
+        Assert.Contains("active=true^stateNOT IN6,7,8", queries[0]);
+        Assert.DoesNotContain("<", queries[0]);
+        Assert.Contains("request_stateNOT LIKEclosed", queries[1]);
+        Assert.Contains("request_stateNOT LIKEcancel", queries[1]);
+        Assert.DoesNotContain("<", queries[1]);
+        Assert.Contains("stateNOT IN3,4,7", queries[2]);
+        Assert.DoesNotContain("<", queries[2]);
+        Assert.Contains("stateNOT LIKEclosed", queries[3]);
+        Assert.Contains("stateNOT LIKEcancel", queries[3]);
+        Assert.Contains("type=walkup", queries[3]);
+        Assert.DoesNotContain("<", queries[3]);
+        Assert.Contains("number=INC0010015", queries[4]);
+        Assert.DoesNotContain("stateNOT IN", queries[4]);
+        Assert.DoesNotContain("NOT LIKE", queries[4]);
     }
 
     [Fact]

@@ -88,6 +88,12 @@ public sealed record TicketQuery
     public string? ExtraClause { get; init; }
     public int Limit { get; init; } = 50;
     public int Offset { get; init; }
+
+    /// <summary>
+    /// Set by the table search so an open list can exclude resolved, closed, and cancelled rows.
+    /// Search leaves this unset and uses <see cref="ActivityFilter.Any"/>.
+    /// </summary>
+    public DeskSection? ListSection { get; init; }
 }
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int? TotalCount);

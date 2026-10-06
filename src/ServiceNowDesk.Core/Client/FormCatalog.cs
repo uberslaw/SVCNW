@@ -23,6 +23,12 @@ public static class FormCatalogPolicy
     /// </summary>
     public const int MaxConfigurationItems = 5000;
 
+    /// <summary>
+    /// Knowledge articles are paged until this many rows are saved.
+    /// A larger knowledge base keeps the first pages and says so on the download line.
+    /// </summary>
+    public const int MaxKnowledgeArticles = 2000;
+
     public static bool IsStale(DateTimeOffset capturedAt, DateTimeOffset now) =>
         capturedAt == default || now - capturedAt >= MaxAge;
 }

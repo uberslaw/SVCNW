@@ -48,6 +48,9 @@ public class WalkUpTests
         var query = QueryOf(call.PathAndQuery);
         Assert.Contains("type=walkup", query);
         Assert.Contains("active=true", query);
+        Assert.Contains("stateNOT LIKEclosed", query);
+        Assert.Contains("stateNOT LIKEcancel", query);
+        Assert.DoesNotContain("<", query);
         Assert.Contains("assigned_to=javascript:gs.getUserID()", query);
     }
 
