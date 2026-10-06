@@ -245,6 +245,7 @@ public sealed class RequestedItemChanges
     public bool ClearServiceOffering { get; init; }
     public string? ConfigurationItemId { get; init; }
     public bool ClearConfigurationItem { get; init; }
+    public string? RequestedForId { get; init; }
 
     public bool HasChanges =>
         ShortDescription is not null
@@ -259,5 +260,6 @@ public sealed class RequestedItemChanges
         || ServiceOfferingId is not null
         || ClearServiceOffering
         || ConfigurationItemId is not null
-        || ClearConfigurationItem;
+        || ClearConfigurationItem
+        || RequestedForId is not null;
 }

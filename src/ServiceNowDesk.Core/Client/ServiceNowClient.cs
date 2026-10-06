@@ -781,6 +781,14 @@ public sealed class ServiceNowClient : IServiceNowClient
     public Task<RequestedItemRecord> GetRequestedItemAsync(string sysId, CancellationToken cancellationToken) =>
         GetOneAsync("sc_req_item", sysId, ItemFields, RecordMapper.RequestedItem, cancellationToken);
 
+    public Task<RequestedItemRecord> CreateRequestedItemAsync(RequestedItemChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (string.IsNullOrWhiteSpace(changes.ShortDescription))
+            throw new ArgumentException("Enter a short description.");
+        return WriteAsync(HttpMethod.Post, "sc_req_item", null, ChangeJson.FromRequestedItem(changes), ItemFields, RecordMapper.RequestedItem, cancellationToken);
+    }
+
     public Task<RequestedItemRecord> UpdateRequestedItemAsync(string sysId, RequestedItemChanges changes, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(changes);

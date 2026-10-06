@@ -11,19 +11,14 @@ public sealed class DpapiSettingsStore : ISettingsStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    private static string Folder =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ServiceNowDesk");
-
-    private static string FilePath => Path.Combine(Folder, "settings.json");
-
     public DeskSettings Load()
     {
         try
         {
-            if (!File.Exists(FilePath))
+            if (!File.Exists(DeskAppData.SettingsPath))
                 return new DeskSettings();
 
-            var stored = JsonSerializer.Deserialize<StoredSettings>(File.ReadAllText(FilePath));
+            var stored = JsonSerializer.Deserialize<StoredSettings>(File.ReadAllText(DeskAppData.SettingsPath));
             if (stored is null)
                 return new DeskSettings();
 
@@ -65,7 +60,6 @@ public sealed class DpapiSettingsStore : ISettingsStore
 
     public void Save(DeskSettings settings)
     {
-        Directory.CreateDirectory(Folder);
         var stored = new StoredSettings
         {
             InstanceUrl = settings.InstanceUrl,
@@ -95,7 +89,7 @@ public sealed class DpapiSettingsStore : ISettingsStore
             EnabledHighlights = settings.EnabledHighlights is null ? null : [.. settings.EnabledHighlights],
             LeadTeamMemberIds = settings.LeadTeamMemberIds is null ? [] : [.. settings.LeadTeamMemberIds]
         };
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(stored, JsonOptions));
+        DeskAppData.WriteSettings(JsonSerializer.Serialize(stored, JsonOptions));
     }
 
     private static string Protect(string? value)

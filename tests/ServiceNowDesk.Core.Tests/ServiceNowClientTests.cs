@@ -213,6 +213,38 @@ public class ServiceNowClientTests
     }
 
     [Fact]
+    public async Task CreateRequestedItemPostsShortDescriptionAndRequestedFor()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""
+            {"result":{
+              "sys_id":{"value":"ritm-new","display_value":"ritm-new"},
+              "number":{"value":"RITM0099001","display_value":"RITM0099001"},
+              "short_description":{"value":"Order a spare dock","display_value":"Order a spare dock"},
+              "state":{"value":"1","display_value":"Open"},
+              "active":{"value":"true","display_value":"true"}
+            }}
+            """));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        var created = await client.CreateRequestedItemAsync(new RequestedItemChanges
+        {
+            ShortDescription = "Order a spare dock",
+            RequestedForId = "user-alex"
+        }, CancellationToken.None);
+
+        Assert.Equal("RITM0099001", created.Number);
+        Assert.Equal("Order a spare dock", created.ShortDescription);
+        var call = handler.Calls.Single();
+        Assert.Equal("POST", call.Method);
+        Assert.Contains("/api/now/table/sc_req_item", call.PathAndQuery);
+        using var body = JsonDocument.Parse(call.Body);
+        Assert.Equal("Order a spare dock", body.RootElement.GetProperty("short_description").GetString());
+        Assert.Equal("user-alex", body.RootElement.GetProperty("requested_for").GetString());
+        Assert.False(body.RootElement.TryGetProperty("cat_item", out _));
+        Assert.False(body.RootElement.TryGetProperty("request", out _));
+    }
+
+    [Fact]
     public async Task CatalogOrderPostsQuantityRequestedForAndVariables()
     {
         var handler = new StubHandler((_, _) => Api.Json("""{"result":{"request_id":"req-9","request_number":"REQ0090001"}}"""));

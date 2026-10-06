@@ -128,6 +128,73 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+
+            <TextBlock Text="My notes" FontWeight="SemiBold" Margin="0,18,0,4"/>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                       Text="These stay on this PC for the current Windows user. They are not ServiceNow records until you choose Incident or RITM."/>
+
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Text="{Binding NoteText, UpdateSourceTrigger=PropertyChanged}"
+                         MaxLength="500"
+                         VerticalAlignment="Center"
+                         ToolTip="Note"
+                         AutomationProperties.Name="Note text"
+                         PreviewKeyDown="NoteText_PreviewKeyDown"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,8,0">
+                    <RadioButton GroupName="PersonalNoteLight" Style="{StaticResource TrafficChoice}" Background="#C0392B" ToolTip="Red"
+                                 AutomationProperties.Name="Red"
+                                 IsChecked="{Binding NoteLight, Converter={StaticResource EnumEq}, ConverterParameter=Red}"/>
+                    <RadioButton GroupName="PersonalNoteLight" Style="{StaticResource TrafficChoice}" Background="#E6A317" ToolTip="Amber"
+                                 AutomationProperties.Name="Amber"
+                                 IsChecked="{Binding NoteLight, Converter={StaticResource EnumEq}, ConverterParameter=Amber}"/>
+                    <RadioButton GroupName="PersonalNoteLight" Style="{StaticResource TrafficChoice}" Background="#2E9B4F" ToolTip="Green"
+                                 AutomationProperties.Name="Green"
+                                 IsChecked="{Binding NoteLight, Converter={StaticResource EnumEq}, ConverterParameter=Green}"/>
+                </StackPanel>
+                <Button Grid.Column="2" Content="Add" Style="{StaticResource PrimaryButton}" VerticalAlignment="Center"
+                        Command="{Binding AddNoteCommand}" AutomationProperties.Name="Add note"/>
+            </Grid>
+
+            <TextBlock Text="No notes yet." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                       Visibility="{Binding HasNotes, Converter={StaticResource InverseBoolVis}}"/>
+
+            <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Background="{StaticResource CardBrush}"
+                    Visibility="{Binding HasNotes, Converter={StaticResource BoolVis}}" Margin="0,0,0,8">
+                <ItemsControl ItemsSource="{Binding Notes}" AutomationProperties.Name="My notes">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderBrush="#EEF2F4" BorderThickness="0,0,0,1" Padding="10,8">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="22"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Ellipse Width="12" Height="12" VerticalAlignment="Center" HorizontalAlignment="Left"
+                                             Fill="{Binding LightHex, Converter={StaticResource HexBrush}}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="Incident" Style="{StaticResource SecondaryButton}" Padding="10,4" MinHeight="28" Margin="0,0,6,0"
+                                                Command="{Binding DataContext.CreateIncidentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}" AutomationProperties.Name="Create incident"/>
+                                        <Button Content="RITM" Style="{StaticResource SecondaryButton}" Padding="10,4" MinHeight="28" Margin="0,0,6,0"
+                                                Command="{Binding DataContext.CreateRequestedItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}" AutomationProperties.Name="Create requested item"/>
+                                        <Button Content="Remove" Style="{StaticResource SecondaryButton}" Padding="10,4" MinHeight="28"
+                                                Command="{Binding DataContext.RemoveNoteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}" AutomationProperties.Name="Remove note"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

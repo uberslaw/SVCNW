@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.Services;
 
 namespace ServiceNowDesk.ViewModels;
 
@@ -21,10 +22,12 @@ public partial class DailyWorkViewModel : ObservableObject
     private IReadOnlyList<string> _teamIds = [];
     private DateTime? _now;
 
-    public DailyWorkViewModel(IDailyWorkStore store)
+    public DailyWorkViewModel(IDailyWorkStore store, IPersonalTaskStore? personalTasks = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         _store = store;
+        _personalTasks = personalTasks ?? new MemoryPersonalTaskStore();
+        LoadNotes();
     }
 
     public ObservableCollection<DailyWorkRow> Attend { get; } = [];

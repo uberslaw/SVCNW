@@ -16,6 +16,8 @@ public partial class MainViewModel : ObservableObject
     private readonly IDeskListStore? _lists;
     private readonly IDailyWorkStore _dailyWork;
     private readonly Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? _clientFactory;
+    private readonly Func<IServiceNowClient>? _sampleClientFactory;
+    private int _convertingNote;
     private readonly Stack<DeskSection> _returnStack = [];
     private IServiceNowClient? _client;
     private CancellationTokenSource? _searchCts;
@@ -61,12 +63,15 @@ public partial class MainViewModel : ObservableObject
         Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? clientFactory = null,
         IRecentAssignmentGroupStore? recentGroups = null,
         IDeskListStore? lists = null,
-        IDailyWorkStore? dailyWork = null)
+        IDailyWorkStore? dailyWork = null,
+        IPersonalTaskStore? personalTasks = null,
+        Func<IServiceNowClient>? sampleClientFactory = null)
     {
         _store = store;
         _browserSignIn = browserSignIn;
         _formCatalog = formCatalog;
         _clientFactory = clientFactory;
+        _sampleClientFactory = sampleClientFactory;
         _lists = lists;
         _dailyWork = dailyWork ?? new MemoryDailyWorkStore();
         Startup.Dismissed += (_, _) => _startupGate = false;
@@ -84,9 +89,11 @@ public partial class MainViewModel : ObservableObject
         NotificationSettings = new NotificationSettingsViewModel();
         Legend = new LegendSettingsViewModel();
         Leads = new LeadsViewModel();
-        DailyWork = new DailyWorkViewModel(_dailyWork);
+        DailyWork = new DailyWorkViewModel(_dailyWork, personalTasks ?? new MemoryPersonalTaskStore());
         Leads.Board.OpenRequested += (_, row) => _ = OpenNotificationAsync(row);
         DailyWork.OpenRequested += (_, row) => _ = OpenDailyWorkAsync(row);
+        DailyWork.IncidentRequested += (_, row) => NoteConvertTask = ConvertNoteAsync(row, incident: true);
+        DailyWork.RequestedItemRequested += (_, row) => NoteConvertTask = ConvertNoteAsync(row, incident: false);
         Leads.TeamChanged += (_, _) =>
         {
             Connection.RememberLeadTeam(Leads.SelectedMemberIds);
@@ -149,6 +156,7 @@ public partial class MainViewModel : ObservableObject
     public LeadsViewModel Leads { get; }
     public DailyWorkViewModel DailyWork { get; }
     public Task SearchOpenTask { get; private set; } = Task.CompletedTask;
+    public Task NoteConvertTask { get; private set; } = Task.CompletedTask;
     public ObservableCollection<ApiActivity> Activity { get; } = [];
 
     [ObservableProperty] private DeskSection selectedSection = DeskSection.Connection;
@@ -202,7 +210,7 @@ public partial class MainViewModel : ObservableObject
             ServiceNowClient? live = null;
             if (settings.UseSampleData)
             {
-                created = new SampleServiceNowClient();
+                created = _sampleClientFactory?.Invoke() ?? new SampleServiceNowClient();
             }
             else
             {
@@ -617,6 +625,75 @@ public partial class MainViewModel : ObservableObject
             When = row.Updated,
             SortKey = row.Updated
         }, fromSearch: false);
+    }
+
+    private async Task ConvertNoteAsync(PersonalTaskRow row, bool incident)
+    {
+        if (Interlocked.Exchange(ref _convertingNote, 1) == 1)
+            return;
+
+        try
+        {
+            if (!IsConnected || _client is null)
+            {
+                ErrorMessage = PersonalTaskConversion.NotConnectedMessage;
+                return;
+            }
+
+            ErrorMessage = "";
+            var userId = string.IsNullOrWhiteSpace(_signedInUserId) ? null : _signedInUserId.Trim();
+            if (incident)
+            {
+                var created = await _client.CreateIncidentAsync(
+                    PersonalTaskConversion.ToIncident(row.Text, userId),
+                    CancellationToken.None);
+                await OpenHitAsync(new SearchHit
+                {
+                    Section = DeskSection.Incidents,
+                    TableLabel = "Incident",
+                    SysId = created.SysId,
+                    Number = created.Number,
+                    Title = created.ShortDescription,
+                    StateLabel = created.StateLabel,
+                    Tone = StateTone.ForIncident(created.State),
+                    Meta = "",
+                    When = "",
+                    SortKey = created.Number
+                }, fromSearch: false);
+                DailyWork.RemovePersonalNote(row.Id);
+                if (string.IsNullOrEmpty(ErrorMessage))
+                    StatusMessage = "Created " + created.Number + " from a note.";
+                return;
+            }
+
+            var item = await _client.CreateRequestedItemAsync(
+                PersonalTaskConversion.ToRequestedItem(row.Text, userId),
+                CancellationToken.None);
+            await OpenHitAsync(new SearchHit
+            {
+                Section = DeskSection.RequestedItems,
+                TableLabel = "Request item",
+                SysId = item.SysId,
+                Number = item.Number,
+                Title = item.ShortDescription,
+                StateLabel = item.StateLabel,
+                Tone = StateTone.ForItem(item.State),
+                Meta = "",
+                When = "",
+                SortKey = item.Number
+            }, fromSearch: false);
+            DailyWork.RemovePersonalNote(row.Id);
+            if (string.IsNullOrEmpty(ErrorMessage))
+                StatusMessage = "Created " + item.Number + " from a note.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _convertingNote, 0);
+        }
     }
 
     private Task OpenDailyWorkAsync(DailyWorkRow row)

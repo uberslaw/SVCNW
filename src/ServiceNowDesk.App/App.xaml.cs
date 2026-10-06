@@ -37,7 +37,8 @@ public partial class App : Application
             FileIncidentTemplateStore.InApplicationData(),
             recentGroups: FileRecentAssignmentGroupStore.InApplicationData(),
             lists: FileDeskListStore.InApplicationData(),
-            dailyWork: FileDailyWorkStore.InApplicationData());
+            dailyWork: FileDailyWorkStore.InApplicationData(),
+            personalTasks: FilePersonalTaskStore.InApplicationData());
         var window = new MainWindow { DataContext = main };
         MainWindow = window;
         window.Show();
