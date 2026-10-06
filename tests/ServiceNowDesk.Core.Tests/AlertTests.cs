@@ -1,4 +1,6 @@
+using System.Net;
 using System.Reflection;
+using System.Text;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
@@ -524,7 +526,8 @@ public class AlertTests
             new AlertSearch("sample-user", "Aus DT - Client Services", ["Brisbane"]),
             CancellationToken.None);
 
-        Assert.Contains("task_sla denied", snapshot.Bucket(AlertKind.SlaBreaching).Status, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(AlertQueryBuilder.SlaUnavailableStatus, snapshot.Bucket(AlertKind.SlaBreaching).Status);
+        Assert.Equal(0, snapshot.Count(AlertKind.SlaBreaching));
         Assert.Equal(1, snapshot.Count(AlertKind.AssignedToMe));
         Assert.Equal("", snapshot.Bucket(AlertKind.UpdatedByCaller).Status);
         Assert.Equal("", snapshot.Bucket(AlertKind.WatchedGroup).Status);
@@ -576,6 +579,151 @@ public class AlertTests
         Assert.Contains(interactionCalls, call => call.PathAndQuery.Contains("follow_up", StringComparison.Ordinal));
         Assert.Contains(interactionCalls, call => !call.PathAndQuery.Contains("follow_up", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void TaskSlaQueryUsesTheTableShapeWithoutALessThanComparison()
+    {
+        var one = Assert.Single(AlertQueryBuilder.TaskSlaQueries(["inc-printer"]));
+        Assert.Contains("taskINinc-printer", one);
+        Assert.Contains("task.sys_class_nameINincident,sc_req_item,interaction", one);
+        Assert.Contains("has_breached=true", one);
+        Assert.Contains("^NQ", one);
+        Assert.Contains("stage=in_progress", one);
+        Assert.DoesNotContain("<", one);
+        Assert.DoesNotContain("javascript:gs.nowDateTime", one);
+        Assert.Empty(AlertQueryBuilder.TaskSlaQueries([]));
+        Assert.Empty(AlertQueryBuilder.TaskSlaQueries(null));
+
+        var many = Enumerable.Range(0, 41).Select(index => "task" + index.ToString("00")).ToArray();
+        var queries = AlertQueryBuilder.TaskSlaQueries(many);
+        Assert.Equal(2, queries.Count);
+        Assert.All(queries, query =>
+        {
+            Assert.DoesNotContain("<", query);
+            Assert.Contains("task.sys_class_nameINincident,sc_req_item,interaction", query);
+        });
+    }
+
+    [Fact]
+    public async Task HtmlSlaResponseKeepsTheOtherCategoriesAndExplainsTheGap()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (path.Contains("/task_sla", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("<html><body>Not authorized</body></html>", Encoding.UTF8, "text/html")
+                };
+            }
+
+            if (path.Contains("/incident", StringComparison.Ordinal))
+                return Api.Json("{\"result\":[" + WatchedIncident("inc-caller", "INC0092001", "jordan.lee", "jordan.lee") + "]}");
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(BrowserSession(), handler);
+        var rejected = 0;
+        client.BrowserSessionRejected += (_, _) => rejected++;
+        var snapshot = await client.GetOpenAlertsAsync(new AlertSearch("sample-user", "", []), CancellationToken.None);
+
+        Assert.Equal(0, rejected);
+        Assert.Equal(AlertQueryBuilder.SlaUnavailableStatus, snapshot.Bucket(AlertKind.SlaBreaching).Status);
+        Assert.Equal(0, snapshot.Count(AlertKind.SlaBreaching));
+        Assert.Equal(1, snapshot.Count(AlertKind.AssignedToMe));
+        Assert.Equal("INC0092001", Assert.Single(snapshot.Bucket(AlertKind.UpdatedByCaller).Rows).Number);
+        Assert.Equal("", snapshot.Bucket(AlertKind.UpdatedByCaller).Status);
+        Assert.Equal("", snapshot.Bucket(AlertKind.OnHoldPastFollowUp).Status);
+        var slaCall = Assert.Single(handler.Calls, call => call.PathAndQuery.Contains("/task_sla", StringComparison.Ordinal));
+        Assert.StartsWith("/api/now/table/task_sla", slaCall.PathAndQuery, StringComparison.Ordinal);
+        Assert.DoesNotContain("<", QueryOf(slaCall.PathAndQuery));
+        Assert.Contains("task.sys_class_nameINincident,sc_req_item,interaction", QueryOf(slaCall.PathAndQuery));
+    }
+
+    [Fact]
+    public async Task BreachedTaskSlaJsonProducesAnSlaRow()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (path.Contains("/task_sla", StringComparison.Ordinal))
+            {
+                Assert.Null(request.Headers.Authorization);
+                var cookie = Assert.Single(request.Headers.GetValues("Cookie"));
+                Assert.Contains("glide_user_session=abc", cookie);
+                Assert.Equal("tok-sla", Assert.Single(request.Headers.GetValues("X-UserToken")));
+                Assert.StartsWith("/api/now/table/task_sla", path, StringComparison.Ordinal);
+                return Api.Json("{\"result\":[" + string.Join(",",
+                    SlaRow("inc-breach", breached: true, "completed", "2020-01-01 00:00:00"),
+                    SlaRow("inc-late", breached: false, "in_progress", "2020-01-01 00:00:00"),
+                    SlaRow("inc-open", breached: false, "in_progress", "2099-01-01 00:00:00")) + "]}");
+            }
+
+            if (path.Contains("/incident", StringComparison.Ordinal))
+            {
+                return Api.Json("{\"result\":[" + string.Join(",",
+                    WatchedIncident("inc-breach", "INC0093001", "alex.rivera", "jordan.lee"),
+                    WatchedIncident("inc-late", "INC0093002", "alex.rivera", "jordan.lee"),
+                    WatchedIncident("inc-open", "INC0093003", "alex.rivera", "jordan.lee")) + "]}");
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(BrowserSession(), handler);
+        var snapshot = await client.GetOpenAlertsAsync(new AlertSearch("sample-user", "", []), CancellationToken.None);
+
+        var sla = snapshot.Bucket(AlertKind.SlaBreaching);
+        Assert.Equal("", sla.Status);
+        Assert.Contains(sla.Rows, row => row.Number == "INC0093001" && row.Section == DeskSection.Incidents);
+        Assert.Contains(sla.Rows, row => row.Number == "INC0093002");
+        Assert.DoesNotContain(sla.Rows, row => row.Number == "INC0093003");
+        Assert.Equal(3, snapshot.Count(AlertKind.AssignedToMe));
+        var slaCall = Assert.Single(handler.Calls, call => call.PathAndQuery.Contains("/task_sla", StringComparison.Ordinal));
+        var query = QueryOf(slaCall.PathAndQuery);
+        Assert.Contains("taskINinc-breach,inc-late,inc-open", query);
+        Assert.Contains("has_breached=true", query);
+        Assert.Contains("stage=in_progress", query);
+        Assert.Contains("task.sys_class_nameINincident,sc_req_item,interaction", query);
+        Assert.DoesNotContain("<", query);
+        Assert.DoesNotContain("javascript:gs.nowDateTime", query);
+    }
+
+    private static string WatchedIncident(string sysId, string number, string updatedBy, string caller) =>
+        $$"""
+        {
+          "sys_id": {"value": "{{sysId}}", "display_value": "{{sysId}}"},
+          "number": {"value": "{{number}}", "display_value": "{{number}}"},
+          "short_description": {"value": "Printer", "display_value": "Printer"},
+          "state": {"value": "2", "display_value": "In Progress"},
+          "assigned_to": {"value": "sample-user", "display_value": "Alex Rivera"},
+          "assignment_group": {"value": "group-cs", "display_value": "Client Services"},
+          "sys_updated_on": {"value": "2026-10-01 09:00:00", "display_value": "2026-10-01 09:00"},
+          "sys_updated_by": {"value": "{{updatedBy}}", "display_value": "{{updatedBy}}"},
+          "caller_id.user_name": {"value": "{{caller}}", "display_value": "{{caller}}"},
+          "active": {"value": "true", "display_value": "true"}
+        }
+        """;
+
+    private static string SlaRow(string taskId, bool breached, string stage, string planned)
+    {
+        var flag = breached ? "true" : "false";
+        return $$"""
+            {
+              "task": {"value": "{{taskId}}", "display_value": "{{taskId}}"},
+              "has_breached": {"value": "{{flag}}", "display_value": "{{flag}}"},
+              "stage": {"value": "{{stage}}", "display_value": "{{stage}}"},
+              "planned_end_time": {"value": "{{planned}}", "display_value": "{{planned}}"}
+            }
+            """;
+    }
+
+    private static ServiceNowSession BrowserSession() => ServiceNowSession.FromSettings(new DeskSettings
+    {
+        InstanceUrl = "https://example.service-now.com",
+        AuthMode = ServiceNowAuthMode.BrowserSession,
+        SessionCookie = "glide_user_session=abc",
+        UserToken = "tok-sla"
+    });
 
     private static WatchedRecord SampleRecord() => new()
     {

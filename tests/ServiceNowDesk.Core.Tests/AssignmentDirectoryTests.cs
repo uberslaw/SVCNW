@@ -320,6 +320,7 @@ public class AssignmentDirectoryTests
         main.Connection.InstanceUrl = "https://example.service-now.com";
         main.Connection.Username = "alex";
         main.Connection.Password = "secret";
+        main.Connection.DownloadCacheOnLaunch = false;
 
         await main.ConnectCommand.ExecuteAsync(null);
 

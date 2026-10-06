@@ -348,7 +348,12 @@ public partial class MainViewModel
         catch
         {
             if (force)
+            {
                 RestoreList(key, previous);
+                if (previous is not null)
+                    ApplyList(key, previous);
+            }
+
             throw;
         }
     }

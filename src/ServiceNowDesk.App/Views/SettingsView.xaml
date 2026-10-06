@@ -49,6 +49,11 @@
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
                        Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Incident templates and the saved sign-in stay where they are."/>
 
+            <CheckBox Content="Download cache on launch or new browser session"
+                      IsChecked="{Binding Connection.DownloadCacheOnLaunch}"
+                      Margin="0,0,0,14"
+                      AutomationProperties.Name="Download cache on launch or new browser session"/>
+
             <Button Content="Refresh all" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,0,0,14"
                     Command="{Binding RefreshAllCachesCommand}"
                     AutomationProperties.Name="Refresh all caches"

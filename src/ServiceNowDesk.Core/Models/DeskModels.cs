@@ -110,6 +110,7 @@ public sealed class DeskSettings
         "Cairns"
     ];
     public int NotificationPollSeconds { get; set; } = 60;
+    public bool DownloadCacheOnLaunch { get; set; } = true;
 }
 
 public sealed class ServiceNowSession

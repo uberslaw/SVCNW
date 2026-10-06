@@ -41,13 +41,33 @@ public static class AlertQueryBuilder
         return string.Join("^NQ", segments);
     }
 
-    public static string? TaskSla(IReadOnlyList<string>? taskIds)
+    public const string SlaUnavailableStatus = "SLA data is not available to this user";
+
+    /// <summary>
+    /// Table API queries for breached or in-progress SLAs on the already scoped tasks.
+    /// A "&lt;" date comparison in this URL makes ServiceNow return an HTML page, so
+    /// planned-end is applied after the JSON comes back. Each query stays short so the
+    /// instance does not answer the Table API with an error page.
+    /// </summary>
+    public static IReadOnlyList<string> TaskSlaQueries(IReadOnlyList<string>? taskIds)
     {
-        var ids = JoinIds(taskIds, "task id");
-        if (ids is null)
-            return null;
-        var listed = "taskIN" + ids;
-        return listed + "^has_breached=true^NQ" + listed + "^stage=in_progress^planned_end_time<javascript:gs.nowDateTime()";
+        var tokens = (taskIds ?? [])
+            .Select(id => EncodedQuery.SafeToken(id, "task id"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (tokens.Length == 0)
+            return [];
+
+        const int chunkSize = 40;
+        var queries = new List<string>();
+        for (var start = 0; start < tokens.Length; start += chunkSize)
+        {
+            var ids = string.Join(",", tokens.Skip(start).Take(chunkSize));
+            var scope = "taskIN" + ids + "^task.sys_class_nameINincident,sc_req_item,interaction";
+            queries.Add(scope + "^has_breached=true^NQ" + scope + "^stage=in_progress");
+        }
+
+        return queries;
     }
 
     public static string? LatestJournal(IReadOnlyList<string>? taskIds)

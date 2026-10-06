@@ -90,6 +90,7 @@ public partial class MainViewModel : ObservableObject
             if (IsConnected)
                 StartAlertLoop();
         };
+        Connection.DownloadCachePreferenceChanged += (_, _) => _store.Save(Connection.BuildSettings());
     }
 
     public ConnectionViewModel Connection { get; }
@@ -190,7 +191,7 @@ public partial class MainViewModel : ObservableObject
             AssignmentDirectoryRefresh = startup;
             try
             {
-                if (SelectedSection == DeskSection.Connection)
+                if (epoch == _sessionEpoch && SelectedSection == DeskSection.Connection)
                     SelectedSection = DeskSection.Incidents;
                 await startup;
             }
@@ -198,6 +199,9 @@ public partial class MainViewModel : ObservableObject
             {
                 _startupGate = false;
             }
+
+            if (epoch != _sessionEpoch)
+                return;
 
             RefreshActivity();
         }
@@ -666,7 +670,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     private Task<bool> DownloadStartupAsync(ServiceNowClient? live) =>
-        RunDownloadAsync(live, StartupCacheKeys, force: false);
+        RunDownloadAsync(live, StartupCacheKeys, force: Connection.DownloadCacheOnLaunch);
 
     private async Task BindGroupsAsync()
     {
