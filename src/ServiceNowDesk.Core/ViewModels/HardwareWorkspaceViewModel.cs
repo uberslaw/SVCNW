@@ -23,9 +23,12 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         AssignedTo.Changed += (_, _) => Touch();
         Location.Changed += (_, _) => Touch();
         Stockroom.Changed += (_, _) => Touch();
-        PendingScans.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPending));
-        UnmatchedScans.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasUnmatched));
-        Received.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasReceived));
+        ReceiveStockroom.Changed += (_, _) =>
+        {
+            if (!string.IsNullOrEmpty(ReceiveStockroom.SysId))
+                StockroomApply = ApplyWaitingAsync();
+        };
+        Batch.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasBatch));
     }
 
     public ReferenceFieldModel AssignedTo { get; }
@@ -35,13 +38,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     public ObservableCollection<HardwareAsset> Items { get; } = [];
     public ObservableCollection<Choice> InstallStatuses { get; } = [];
     public ObservableCollection<Choice> Substatuses { get; } = [];
-    public ObservableCollection<string> PendingScans { get; } = [];
-    public ObservableCollection<string> UnmatchedScans { get; } = [];
-    public ObservableCollection<HardwareReceiptLine> Received { get; } = [];
+    public ObservableCollection<HardwareScanRow> Batch { get; } = [];
 
-    public bool HasPending => PendingScans.Count > 0;
-    public bool HasUnmatched => UnmatchedScans.Count > 0;
-    public bool HasReceived => Received.Count > 0;
+    public bool HasBatch => Batch.Count > 0;
     public bool ShowSubstate => Substatuses.Any(choice => !string.IsNullOrEmpty(choice.Value));
     public string StateLabelText => HardwareCatalog.LabelOf(InstallStatuses, InstallStatus);
     public bool StockroomRequired => HardwareCatalog.RequiresStockroom(StateLabelText);
@@ -49,6 +48,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     public Task SubstateLoad { get; private set; } = Task.CompletedTask;
     public Task OpenTask { get; private set; } = Task.CompletedTask;
+    public Task StockroomApply { get; private set; } = Task.CompletedTask;
 
     [ObservableProperty] private string searchText = "";
     [ObservableProperty] private HardwareAsset? selected;
@@ -88,6 +88,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         Location.Clear();
         Stockroom.Clear();
         ReceiveStockroom.Clear();
+        Batch.Clear();
     }
 
     public async Task RefreshAsync()
@@ -137,16 +138,48 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [RelayCommand]
     private async Task ReceiveScanAsync()
     {
-        var raw = ScanText ?? "";
-        var scan = raw.Trim();
-        ScanText = "";
-        if (scan.Length == 0 || _client is null)
+        var scan = ScanText ?? "";
+        if (string.IsNullOrWhiteSpace(scan) || _client is null)
             return;
 
-        if (string.IsNullOrEmpty(ReceiveStockroom.SysId))
+        ScanText = "";
+        var row = new HardwareScanRow { Text = scan };
+        Batch.Insert(0, row);
+        await LookupCoreAsync(row);
+    }
+
+    [RelayCommand]
+    private Task LookupRowAsync(HardwareScanRow? row) =>
+        row is null ? Task.CompletedTask : LookupCoreAsync(row);
+
+    private async Task ApplyWaitingAsync()
+    {
+        foreach (var row in Batch.ToArray())
         {
-            PendingScans.Add(scan);
-            ReceiveMessage = "Choose the stockroom first.";
+            if (row.Status == "Needs stockroom")
+                await LookupCoreAsync(row);
+        }
+    }
+
+    private async Task LookupCoreAsync(HardwareScanRow row)
+    {
+        var text = row.Text ?? "";
+        row.Hint = HardwareSerial.HintFor(text);
+        if (!string.Equals(row.LastText, text, StringComparison.Ordinal))
+        {
+            row.OldState = "";
+            row.NewState = "";
+            row.LastText = text;
+        }
+
+        if (_client is null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            row.Status = "Unmatched";
+            row.MatchedSerial = "";
+            row.Detail = "No hardware asset matches this serial.";
             return;
         }
 
@@ -154,22 +187,41 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         {
             ErrorMessage = "";
             await EnsureChoicesAsync();
-            var asset = await HardwareSerial.FindAsync(scan, (serial, ignoreCase) =>
-                _client.FindHardwareBySerialAsync(serial, ignoreCase, CancellationToken.None));
+            var asset = await _client.FindHardwareBySerialAsync(text, true, CancellationToken.None);
             if (asset is null)
             {
-                UnmatchedScans.Add(scan);
-                ReceiveMessage = "No hardware asset matches " + scan + ".";
+                row.MatchedSerial = "";
+                row.Model = "";
+                row.AssignedToName = "";
+                row.Status = "Unmatched";
+                row.Detail = "No hardware asset matches this serial.";
+                ReceiveMessage = "No hardware asset matches " + text + ".";
                 return;
             }
 
+            row.MatchedSerial = asset.SerialNumber;
+            row.Model = asset.Model;
+            row.AssignedToName = asset.AssignedTo.Display;
             if (HardwareCatalog.IsInStock(asset.InstallStatusLabel, asset.InstallStatus, InstallStatuses))
             {
-                Received.Insert(0, new HardwareReceiptLine(asset.SerialNumber, asset.InstallStatusLabel, HardwareCatalog.InStock, "Already in stock"));
-                ReceiveMessage = asset.SerialNumber + " is already in stock.";
+                if (string.IsNullOrEmpty(row.OldState))
+                    row.OldState = asset.InstallStatusLabel;
+                row.NewState = asset.InstallStatusLabel;
+                row.Status = "Already in stock";
+                row.Detail = asset.SerialNumber + " is already in stock.";
+                ReceiveMessage = row.Detail;
                 return;
             }
 
+            if (string.IsNullOrEmpty(ReceiveStockroom.SysId))
+            {
+                row.Status = "Needs stockroom";
+                row.Detail = "Choose the stockroom first.";
+                ReceiveMessage = "Choose the stockroom first.";
+                return;
+            }
+
+            var previous = asset.InstallStatusLabel;
             var statusValue = HardwareCatalog.ValueForLabel(InstallStatuses, HardwareCatalog.InStock, HardwareCatalog.InStock);
             var substates = await ReadChoicesAsync("substatus", statusValue, HardwareCatalog.RealSubstates(HardwareCatalog.LabelOf(InstallStatuses, statusValue)));
             var available = HardwareCatalog.ValueForLabel(substates, HardwareCatalog.Available, HardwareCatalog.Available);
@@ -180,7 +232,10 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
                 StockroomId = ReceiveStockroom.SysId
             }, CancellationToken.None);
 
-            Received.Insert(0, new HardwareReceiptLine(asset.SerialNumber, asset.InstallStatusLabel, updated.InstallStatusLabel, "Received"));
+            row.OldState = previous;
+            row.NewState = updated.InstallStatusLabel;
+            row.Status = "Received";
+            row.Detail = updated.SerialNumber + "  " + previous + " → " + updated.InstallStatusLabel;
             ReceiveMessage = "Received " + updated.SerialNumber + ".";
             ReplaceItem(updated);
             if (_loaded?.SysId == updated.SysId && !IsDirty)
@@ -506,4 +561,25 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _client is null
             ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
             : _client.SearchStockroomsAsync(text, cancellationToken);
+}
+
+public partial class HardwareScanRow : ObservableObject
+{
+    [ObservableProperty] private string text = "";
+    [ObservableProperty] private string hint = "";
+    [ObservableProperty] private string status = "";
+    [ObservableProperty] private string detail = "";
+    [ObservableProperty] private string matchedSerial = "";
+    [ObservableProperty] private string oldState = "";
+    [ObservableProperty] private string newState = "";
+    [ObservableProperty] private string model = "";
+    [ObservableProperty] private string assignedToName = "";
+
+    public string LastText { get; set; } = "\0";
+
+    public bool HasHint => !string.IsNullOrEmpty(Hint);
+
+    partial void OnTextChanged(string value) => Hint = HardwareSerial.HintFor(value);
+
+    partial void OnHintChanged(string value) => OnPropertyChanged(nameof(HasHint));
 }

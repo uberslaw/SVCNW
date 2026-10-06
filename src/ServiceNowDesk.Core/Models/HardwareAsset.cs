@@ -42,5 +42,3 @@ public sealed class HardwareChanges
         || ClearLocation
         || Comments is not null;
 }
-
-public sealed record HardwareReceiptLine(string SerialNumber, string OldState, string NewState, string Note);

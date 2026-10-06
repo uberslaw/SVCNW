@@ -73,26 +73,19 @@ public class HardwareDeskTests
     }
 
     [Fact]
-    public async Task ExactSerialMatchDoesNotDropALeadingCharacter()
+    public void HpPrefixHintDoesNotRewriteTheSerial()
     {
-        Assert.Null(HardwareSerial.LeadingFiveRemainder("5CG6245F8S"));
-        Assert.Equal("5CG6245F8S", HardwareSerial.LeadingFiveRemainder("35CG6245F8S"));
-        Assert.Null(HardwareSerial.LeadingFiveRemainder("3ABC123"));
-        Assert.Null(HardwareSerial.LeadingFiveRemainder("5"));
-
-        var calls = new List<string>();
-        var found = await HardwareSerial.FindAsync("5CG6245F8S", (serial, ignoreCase) =>
-        {
-            calls.Add(serial + ":" + ignoreCase);
-            return Task.FromResult<string?>(serial == "5CG6245F8S" && !ignoreCase ? "exact" : null);
-        });
-
-        Assert.Equal("exact", found);
-        Assert.Equal(["5CG6245F8S:False"], calls);
+        Assert.Equal(HardwareSerial.HpPrefixHint, HardwareSerial.HintFor("35CG6245F8S"));
+        Assert.Equal(HardwareSerial.HpPrefixHint, HardwareSerial.HintFor("35CG62720ZR"));
+        Assert.Equal(HardwareSerial.HpPrefixHint, HardwareSerial.HintFor("SN:5cd6220GYW"));
+        Assert.Equal(HardwareSerial.HpPrefixHint, HardwareSerial.HintFor("SN:5c"));
+        Assert.Equal("", HardwareSerial.HintFor("5CG6245F8S"));
+        Assert.Equal("", HardwareSerial.HintFor("5cd6220GYW"));
+        Assert.Equal("", HardwareSerial.HintFor("ABCDEFG"));
     }
 
     [Fact]
-    public async Task ScanMovesTransitLaptopToInStockAndIgnoresOneLeadingCharacter()
+    public async Task EnterAddsTheExactScanAndALeadingCharacterDoesNotMatchUntilEdited()
     {
         using var client = new SampleServiceNowClient();
         var workspace = await OpenHardwareAsync(client);
@@ -100,27 +93,94 @@ public class HardwareDeskTests
 
         workspace.ScanText = "5CG6245F8S";
         await workspace.ReceiveScanCommand.ExecuteAsync(null);
+        Assert.Equal("", workspace.ScanText);
 
         var received = await client.GetHardwareAsync("hw-transit", CancellationToken.None);
         Assert.Equal(HardwareCatalog.InStock, received.InstallStatus);
-        Assert.Equal(HardwareCatalog.InStock, received.InstallStatusLabel);
         Assert.Equal(HardwareCatalog.Available, received.Substatus);
         Assert.Equal("stock-bne", received.Stockroom.SysId);
         Assert.Equal("For testing by Mark Lindsay", received.Comments);
-        Assert.Contains(workspace.Received, row => row.SerialNumber == "5CG6245F8S" && row.OldState == HardwareCatalog.InTransit && row.NewState == HardwareCatalog.InStock);
+        var exact = Assert.Single(workspace.Batch);
+        Assert.Equal("5CG6245F8S", exact.Text);
+        Assert.Equal("Received", exact.Status);
+        Assert.Equal(HardwareCatalog.InTransit, exact.OldState);
+        Assert.Equal(HardwareCatalog.InStock, exact.NewState);
 
         var patches = HardwarePatches(client);
         workspace.ScanText = "35CG6245F8S";
         await workspace.ReceiveScanCommand.ExecuteAsync(null);
 
+        Assert.Equal("", workspace.ScanText);
         Assert.Equal(patches, HardwarePatches(client));
-        Assert.Empty(workspace.UnmatchedScans);
-        Assert.Contains(workspace.Received, row => row.SerialNumber == "5CG6245F8S" && row.Note == "Already in stock");
-        Assert.Contains(workspace.Received, row => row.SerialNumber == "5CG6245F8S" && row.Note == "Received");
+        var junk = workspace.Batch[0];
+        Assert.Equal("35CG6245F8S", junk.Text);
+        Assert.Equal("Unmatched", junk.Status);
+        Assert.Equal(HardwareSerial.HpPrefixHint, junk.Hint);
+        Assert.Equal(5, client.HardwareCount);
+
+        junk.Text = "5CG6245F8S";
+        await workspace.LookupRowCommand.ExecuteAsync(junk);
+
+        Assert.Equal("5CG6245F8S", junk.Text);
+        Assert.Equal("Already in stock", junk.Status);
+        Assert.Equal(patches, HardwarePatches(client));
         var again = await client.GetHardwareAsync("hw-transit", CancellationToken.None);
         Assert.Equal(HardwareCatalog.InStock, again.InstallStatus);
         Assert.Equal("For testing by Mark Lindsay", again.Comments);
-        Assert.Equal(3, client.HardwareCount);
+    }
+
+    [Fact]
+    public async Task CaseInsensitiveHpSerialAndTypedDellSerialMatchAsEdited()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenHardwareAsync(client);
+        workspace.ReceiveStockroom.Set("stock-bne", "Brisbane");
+
+        workspace.ScanText = "5cd6220GYW";
+        await workspace.ReceiveScanCommand.ExecuteAsync(null);
+        var hp = Assert.Single(workspace.Batch);
+        Assert.Equal("5cd6220GYW", hp.Text);
+        Assert.Equal("Received", hp.Status);
+        Assert.Equal("5CD6220GYW", hp.MatchedSerial);
+        var stored = await client.GetHardwareAsync("hw-hp-case", CancellationToken.None);
+        Assert.Equal(HardwareCatalog.InStock, stored.InstallStatus);
+        Assert.Equal("HP serial stored in uppercase", stored.Comments);
+
+        workspace.ScanText = "ABCDEFG";
+        await workspace.ReceiveScanCommand.ExecuteAsync(null);
+        var dell = workspace.Batch[0];
+        Assert.Equal("ABCDEFG", dell.Text);
+        Assert.Equal("", dell.Hint);
+        Assert.Equal("Received", dell.Status);
+        Assert.Equal("ABCDEFG", dell.MatchedSerial);
+        var tag = await client.GetHardwareAsync("hw-dell", CancellationToken.None);
+        Assert.Equal(HardwareCatalog.InStock, tag.InstallStatus);
+        Assert.Equal("Dell service tag", tag.Comments);
+    }
+
+    [Fact]
+    public async Task PrefixedHpSerialDoesNotMatchUntilTheRowIsEdited()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenHardwareAsync(client);
+        workspace.ReceiveStockroom.Set("stock-bne", "Brisbane");
+        workspace.ScanText = "SN:5cd6220GYW";
+        await workspace.ReceiveScanCommand.ExecuteAsync(null);
+
+        var row = Assert.Single(workspace.Batch);
+        Assert.Equal("SN:5cd6220GYW", row.Text);
+        Assert.Equal("Unmatched", row.Status);
+        Assert.Equal(HardwareSerial.HpPrefixHint, row.Hint);
+        Assert.Equal(0, HardwarePatches(client));
+        Assert.Equal(HardwareCatalog.InTransit, (await client.GetHardwareAsync("hw-hp-case", CancellationToken.None)).InstallStatus);
+
+        row.Text = "5cd6220GYW";
+        await workspace.LookupRowCommand.ExecuteAsync(row);
+
+        Assert.Equal("5cd6220GYW", row.Text);
+        Assert.Equal("Received", row.Status);
+        Assert.Equal("5CD6220GYW", row.MatchedSerial);
+        Assert.Equal(HardwareCatalog.InStock, (await client.GetHardwareAsync("hw-hp-case", CancellationToken.None)).InstallStatus);
     }
 
     [Fact]
@@ -132,9 +192,11 @@ public class HardwareDeskTests
         workspace.ScanText = "ZZZNOTREAL1";
         await workspace.ReceiveScanCommand.ExecuteAsync(null);
 
-        Assert.Equal(["ZZZNOTREAL1"], workspace.UnmatchedScans);
-        Assert.Empty(workspace.Received);
-        Assert.Equal(3, client.HardwareCount);
+        var row = Assert.Single(workspace.Batch);
+        Assert.Equal("ZZZNOTREAL1", row.Text);
+        Assert.Equal("Unmatched", row.Status);
+        Assert.Equal("", row.Hint);
+        Assert.Equal(5, client.HardwareCount);
         Assert.Equal(0, HardwarePatches(client));
     }
 
@@ -143,14 +205,17 @@ public class HardwareDeskTests
     {
         using var client = new SampleServiceNowClient();
         var workspace = await OpenHardwareAsync(client);
-        workspace.ScanText = "  5CG6245F8S  ";
+        workspace.ScanText = "5CG6245F8S";
         await workspace.ReceiveScanCommand.ExecuteAsync(null);
 
-        Assert.Equal(["5CG6245F8S"], workspace.PendingScans);
+        var row = Assert.Single(workspace.Batch);
+        Assert.Equal("5CG6245F8S", row.Text);
+        Assert.Equal("Needs stockroom", row.Status);
         Assert.Contains("stockroom", workspace.ReceiveMessage, StringComparison.OrdinalIgnoreCase);
         var asset = await client.GetHardwareAsync("hw-transit", CancellationToken.None);
         Assert.Equal(HardwareCatalog.InTransit, asset.InstallStatus);
         Assert.Equal("", asset.Substatus);
+        Assert.Equal("For testing by Mark Lindsay", asset.Comments);
         Assert.Equal(0, HardwarePatches(client));
     }
 
@@ -236,7 +301,7 @@ public class HardwareDeskTests
     {
         using var client = new SampleServiceNowClient();
         var workspace = await OpenHardwareAsync(client);
-        Assert.Equal(3, workspace.Items.Count);
+        Assert.Equal(5, workspace.Items.Count);
 
         workspace.SearchText = "5CG6245F8S";
         await workspace.RefreshAsync();

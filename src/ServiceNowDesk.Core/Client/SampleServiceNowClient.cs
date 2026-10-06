@@ -1885,6 +1885,34 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             SubstatusLabel = HardwareCatalog.Available,
             Comments = "On the shelf"
         });
+        _hardware.Add(new HardwareAsset
+        {
+            SysId = "hw-hp-case",
+            SerialNumber = "5CD6220GYW",
+            DisplayName = "HP ZBook",
+            Model = "HP ZBook",
+            ModelCategory = HardwareCatalog.Computer,
+            AssignedTo = ReferenceValue.Empty,
+            Location = new ReferenceValue("loc-bne", "Brisbane Office"),
+            Stockroom = ReferenceValue.Empty,
+            InstallStatus = HardwareCatalog.InTransit,
+            InstallStatusLabel = HardwareCatalog.InTransit,
+            Comments = "HP serial stored in uppercase"
+        });
+        _hardware.Add(new HardwareAsset
+        {
+            SysId = "hw-dell",
+            SerialNumber = "ABCDEFG",
+            DisplayName = "Dell Latitude",
+            Model = "Dell Latitude",
+            ModelCategory = HardwareCatalog.Computer,
+            AssignedTo = ReferenceValue.Empty,
+            Location = new ReferenceValue("loc-syd", "Sydney Office"),
+            Stockroom = ReferenceValue.Empty,
+            InstallStatus = HardwareCatalog.InTransit,
+            InstallStatusLabel = HardwareCatalog.InTransit,
+            Comments = "Dell service tag"
+        });
     }
 
     private sealed class SampleAlertSignals
