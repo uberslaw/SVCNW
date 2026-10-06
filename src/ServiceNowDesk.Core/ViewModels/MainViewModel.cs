@@ -160,6 +160,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool isSample;
     [ObservableProperty] private bool isBusy;
     [ObservableProperty] private bool showBack;
+    [ObservableProperty] private bool showRowLegend;
 
     public bool ResolvePanelOpen =>
         (SelectedSection == DeskSection.Incidents && Incidents.ShowResolvePanel)
@@ -483,9 +484,18 @@ public partial class MainViewModel : ObservableObject
             DeskSection.Notifications => "Notifications",
             DeskSection.Leads => "Leads",
             DeskSection.DailyWork => "Daily work",
+            DeskSection.Legend => "Legend",
             DeskSection.Settings => "Settings",
             _ => "Search"
         };
+        ShowRowLegend = value is DeskSection.Incidents
+            or DeskSection.Requests
+            or DeskSection.RequestedItems
+            or DeskSection.WalkUps
+            or DeskSection.Search
+            or DeskSection.Notifications
+            or DeskSection.Leads
+            or DeskSection.DailyWork;
         UpdateBack();
         if (IsConnected && !_openingRecord && !_preserveNavigation && !_startupGate)
             _ = EnsureSectionAsync();

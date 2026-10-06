@@ -64,7 +64,8 @@ public enum DeskSection
     Notifications,
     Settings,
     Leads,
-    DailyWork
+    DailyWork,
+    Legend
 }
 
 public sealed record Choice(string Value, string Label)

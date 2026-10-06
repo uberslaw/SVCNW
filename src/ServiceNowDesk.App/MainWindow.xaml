@@ -244,6 +244,7 @@
                     <RadioButton Style="{StaticResource NavButton}" Content="Notifications" Tag="&#xEA8F;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Notifications}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Daily Work" Tag="&#xE787;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=DailyWork}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Leads" Tag="&#xE902;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Leads}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Legend" Tag="&#xE790;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Legend}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Order catalog" Tag="&#xE719;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Catalog}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Settings" Tag="&#xE713;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Settings}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Connection" Tag="&#xE774;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Connection}"/>
@@ -277,6 +278,38 @@
                         <TextBlock Text="{Binding ConnectedUser}" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,8,0"/>
                         <TextBlock Text="{Binding InstanceLabel}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
                     </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,8"
+                    Visibility="{Binding ShowRowLegend, Converter={StaticResource BoolVis}}"
+                    AutomationProperties.Name="Row color legend">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Legend" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Legend.EmptyNote}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap"
+                               Visibility="{Binding Legend.EmptyNote, Converter={StaticResource StringVis}}"/>
+                    <ItemsControl Grid.Column="1" ItemsSource="{Binding Legend.Shown}"
+                                  Visibility="{Binding Legend.AnyShown, Converter={StaticResource BoolVis}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,14,2" VerticalAlignment="Center">
+                                    <Border Width="28" Height="14" CornerRadius="3" Margin="0,0,6,0" VerticalAlignment="Center"
+                                            BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                            Background="{Binding RowHex, Converter={StaticResource HexBrush}}"/>
+                                    <TextBlock Text="{Binding Title}" FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </Grid>
             </Border>
 
@@ -321,6 +354,9 @@
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Connection}">
                     <views:ConnectionView DataContext="{Binding}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Legend}">
+                    <views:LegendView DataContext="{Binding}"/>
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Settings}">
                     <views:SettingsView DataContext="{Binding}"/>

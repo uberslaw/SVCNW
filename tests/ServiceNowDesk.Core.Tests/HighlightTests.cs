@@ -208,6 +208,41 @@ public class HighlightTests
         Assert.Equal("secret", store.Current.Password);
         Assert.True(store.Current.UseSampleData);
         Assert.Equal([HighlightCatalog.Unassigned], store.Current.EnabledHighlights);
+        Assert.Contains(main.Legend.Shown, entry => entry.Key == HighlightCatalog.Unassigned);
+        Assert.True(main.Legend.AnyShown);
+        Assert.Equal("", main.Legend.EmptyNote);
+    }
+
+    [Fact]
+    public void TheLegendSitsAboveTicketListsAndNamesTheColorsThatAreOn()
+    {
+        var store = new MemorySettingsStore();
+        store.Save(new DeskSettings { UseSampleData = true });
+        var main = new MainViewModel(store, new RecordingDesktopServices());
+        Assert.Equal(DeskSection.Connection, main.SelectedSection);
+        Assert.False(main.ShowRowLegend);
+        Assert.Contains(main.Legend.Shown, entry => entry.Key == HighlightCatalog.Unassigned);
+        Assert.DoesNotContain(main.Legend.Shown, entry => entry.Key == HighlightCatalog.AssignedToMe);
+
+        main.SelectedSection = DeskSection.Incidents;
+        Assert.True(main.ShowRowLegend);
+        main.SelectedSection = DeskSection.Search;
+        Assert.True(main.ShowRowLegend);
+        main.SelectedSection = DeskSection.Notifications;
+        Assert.True(main.ShowRowLegend);
+        main.SelectedSection = DeskSection.Leads;
+        Assert.True(main.ShowRowLegend);
+        main.SelectedSection = DeskSection.DailyWork;
+        Assert.True(main.ShowRowLegend);
+        main.SelectedSection = DeskSection.Legend;
+        Assert.False(main.ShowRowLegend);
+        main.SelectedSection = DeskSection.Settings;
+        Assert.False(main.ShowRowLegend);
+
+        main.Legend.Load(HighlightPreferences.FromKeys([]));
+        Assert.Empty(main.Legend.Shown);
+        Assert.False(main.Legend.AnyShown);
+        Assert.Contains("Legend", main.Legend.EmptyNote, StringComparison.Ordinal);
     }
 
     [Fact]
