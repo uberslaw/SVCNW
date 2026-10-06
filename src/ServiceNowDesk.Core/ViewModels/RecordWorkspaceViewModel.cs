@@ -28,6 +28,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         Section = section;
         ResolveChoiceLabel = "Outcome";
         SupportsAttachments = attachments;
+        Journal.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasJournal));
     }
 
     protected IDesktopServices Desktop { get; }
@@ -79,6 +80,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string attachmentNote = "";
 
     public bool HasJournalText => !string.IsNullOrWhiteSpace(JournalText);
+
+    public bool HasJournal => Journal.Count > 0;
 
     public void Attach(IServiceNowClient client)
     {
@@ -653,6 +656,13 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         AttachmentNote = Attachments.Count == 0 ? "No attachments." : "";
     }
 
+    protected void ReplaceJournal(IEnumerable<JournalEntry> notes)
+    {
+        Journal.Clear();
+        foreach (var note in notes)
+            Journal.Add(note);
+    }
+
     protected async Task PostPendingJournalAsync(CancellationToken cancellationToken)
     {
         if (Client is null || string.IsNullOrWhiteSpace(JournalText) || string.IsNullOrEmpty(EditorSysId))
@@ -662,10 +672,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         var kind = JournalKind;
         await Client.AddJournalAsync(TableName, EditorSysId, kind, text, cancellationToken);
         JournalText = "";
-        var notes = await Client.GetJournalAsync(EditorSysId, cancellationToken);
-        Journal.Clear();
-        foreach (var note in notes)
-            Journal.Add(note);
+        var notes = await Client.GetJournalAsync(TableName, EditorSysId, cancellationToken);
+        ReplaceJournal(notes);
     }
 
     private async Task LoadEditorAsync(string sysId, CancellationToken cancellationToken)
@@ -689,13 +697,11 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             ShowResolvePanel = false;
             ShowUnsavedBanner = false;
             Applying = false;
-            var notes = await Client.GetJournalAsync(sysId, cancellationToken);
+            var notes = await Client.GetJournalAsync(TableName, sysId, cancellationToken);
             if (version != _openVersion)
                 return;
 
-            Journal.Clear();
-            foreach (var note in notes)
-                Journal.Add(note);
+            ReplaceJournal(notes);
             await RefreshAttachmentsAsync(cancellationToken);
             if (version != _openVersion)
                 return;

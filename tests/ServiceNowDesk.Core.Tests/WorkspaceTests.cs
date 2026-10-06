@@ -122,6 +122,90 @@ public class WorkspaceTests
     }
 
     [Fact]
+    public async Task OpeningAnIncidentShowsWorkNotesAndCustomerComments()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenIncidentsAsync(client);
+        await workspace.OpenFromSearchAsync("inc-printer");
+
+        Assert.Equal("The HP printer by finance is jammed and the queue is stuck.", workspace.Description);
+        Assert.True(workspace.HasJournal);
+        Assert.Equal(2, workspace.Journal.Count);
+
+        var work = Assert.Single(workspace.Journal, note => note.Kind == "work_notes");
+        Assert.Equal("Work note", work.KindLabel);
+        Assert.Equal("alex.rivera", work.Author);
+        Assert.Equal("2026-09-28 10:40", work.CreatedDisplay);
+        Assert.Contains("reprint", work.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.False(work.IsCustomer);
+
+        var comment = Assert.Single(workspace.Journal, note => note.Kind == "comments");
+        Assert.Equal("Customer comment", comment.KindLabel);
+        Assert.Equal("jordan.lee", comment.Author);
+        Assert.Equal("2026-09-28 09:30", comment.CreatedDisplay);
+        Assert.Contains("call me", comment.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.True(comment.IsCustomer);
+
+        Assert.Equal("work_notes", workspace.Journal[0].Kind);
+        Assert.Equal("comments", workspace.Journal[1].Kind);
+
+        await workspace.OpenFromSearchAsync("inc-vpn");
+        Assert.Empty(workspace.Journal);
+        Assert.False(workspace.HasJournal);
+        Assert.Contains("VPN", workspace.Description);
+    }
+
+    [Fact]
+    public async Task PostingAWorkNoteAppendsItToTheHistory()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenIncidentsAsync(client);
+        await workspace.OpenFromSearchAsync("inc-printer");
+        var before = workspace.Journal.Select(note => note.Text).ToArray();
+
+        workspace.JournalKind = JournalKind.WorkNotes;
+        workspace.JournalText = "Asked the user to reprint from their desk.";
+        await workspace.PostJournalCommand.ExecuteAsync(null);
+
+        Assert.Equal("", workspace.JournalText);
+        Assert.Equal(before.Length + 1, workspace.Journal.Count);
+        Assert.Equal("Asked the user to reprint from their desk.", workspace.Journal[0].Text);
+        Assert.Equal("Work note", workspace.Journal[0].KindLabel);
+        Assert.Equal("alex.rivera", workspace.Journal[0].Author);
+        Assert.All(before, text => Assert.Contains(workspace.Journal, note => note.Text == text));
+        Assert.Equal("The HP printer by finance is jammed and the queue is stuck.", workspace.Description);
+    }
+
+    [Fact]
+    public async Task RequestItemAndWalkUpEditorsLoadBothJournalKinds()
+    {
+        using var client = new SampleServiceNowClient();
+
+        var requests = new RequestWorkspaceViewModel(new RecordingDesktopServices());
+        requests.Attach(client);
+        await requests.OpenFromSearchAsync("req-laptop");
+        Assert.Equal("Replacement laptop for the finance analyst.", requests.Description);
+        Assert.Contains(requests.Journal, note => note.Kind == "work_notes" && note.Author == "alex.rivera" && note.Text.Contains("dock", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(requests.Journal, note => note.IsCustomer && note.Author == "jordan.lee" && note.Text.Contains("finance software", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("work_notes", requests.Journal[0].Kind);
+
+        var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
+        items.Attach(client);
+        await items.OpenFromSearchAsync("ritm-laptop");
+        Assert.Equal("Standard laptop for the finance analyst.", items.Description);
+        Assert.Contains(items.Journal, note => note.Kind == "work_notes" && note.Text.Contains("delivery", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(items.Journal, note => note.IsCustomer && note.Author == "jordan.lee");
+
+        var walkUps = new InteractionWorkspaceViewModel(new RecordingDesktopServices());
+        walkUps.Attach(client);
+        await walkUps.OpenFromSearchAsync("ims-password");
+        Assert.Contains("locked out", walkUps.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(walkUps.Journal, note => note.Kind == "work_notes" && note.Author == "alex.rivera");
+        Assert.Contains(walkUps.Journal, note => note.IsCustomer && note.Author == "sam.patel");
+        Assert.Equal("work_notes", walkUps.Journal[0].Kind);
+    }
+
+    [Fact]
     public async Task CreateUpdateResolveAndJournalRoundTrip()
     {
         using var client = new SampleServiceNowClient();

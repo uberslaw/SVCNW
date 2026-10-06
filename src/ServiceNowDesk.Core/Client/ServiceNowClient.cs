@@ -913,15 +913,16 @@ public sealed class ServiceNowClient : IServiceNowClient
         result.Dispose();
     }
 
-    public async Task<IReadOnlyList<JournalEntry>> GetJournalAsync(string sysId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<JournalEntry>> GetJournalAsync(string table, string sysId, CancellationToken cancellationToken)
     {
         var id = EncodedQuery.SafeToken(sysId, "record id");
-        var query = "element_id=" + id + "^ORDERBYDESCsys_created_on";
+        EncodedQuery.SafeToken(table, "table");
+        var query = "element_id=" + id + "^elementINcomments,additional_comments,work_notes^ORDERBYDESCsys_created_on";
         var result = await GetListAsync(
             "sys_journal_field",
-            "sys_id,element,value,sys_created_on,sys_created_by",
+            "sys_id,name,element,value,sys_created_on,sys_created_by",
             query,
-            40,
+            100,
             0,
             cancellationToken).ConfigureAwait(false);
         using (result)

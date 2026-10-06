@@ -231,23 +231,7 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
-                        <TextBlock Text="Notes" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <ListBox ItemsSource="{Binding Journal}" MaxHeight="200" Style="{StaticResource DeskList}" ItemContainerStyle="{StaticResource DeskListItem}" Margin="0,0,0,8">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel>
-                                        <TextBlock>
-                                            <Run Text="{Binding KindLabel}" FontWeight="SemiBold"/>
-                                            <Run Text=" · "/>
-                                            <Run Text="{Binding Author}"/>
-                                            <Run Text=" · "/>
-                                            <Run Text="{Binding CreatedDisplay}"/>
-                                        </TextBlock>
-                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource JournalHistoryTemplate}" Focusable="False" IsTabStop="False"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                             <RadioButton Content="Work note" GroupName="IncidentJournal" Margin="0,0,16,0"
                                          IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=WorkNotes}"/>

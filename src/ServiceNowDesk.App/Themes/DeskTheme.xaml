@@ -384,6 +384,69 @@
         </Setter>
     </Style>
 
+    <!-- History sits in its own scroller. A virtualized ListBox inside the page ScrollViewer collapses to a blank gap. -->
+    <DataTemplate x:Key="JournalHistoryTemplate">
+        <StackPanel>
+            <TextBlock Text="Notes" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <TextBlock Text="No notes yet." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                       Visibility="{Binding HasJournal, Converter={StaticResource InverseBoolVis}}"/>
+            <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,8">
+                <ItemsControl ItemsSource="{Binding Journal}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Padding="10,8" Background="{StaticResource CardBrush}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="BorderBrush" Value="#EEF2F4"/>
+                                        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsCustomer}" Value="True">
+                                                <Setter Property="BorderBrush" Value="{StaticResource CustomerBrush}"/>
+                                                <Setter Property="BorderThickness" Value="3,0,0,1"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel>
+                                    <WrapPanel>
+                                        <TextBlock Text="{Binding KindLabel}" FontWeight="SemiBold" Margin="0,0,8,0">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsCustomer}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource CustomerBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="·" Margin="0,0,8,0" Foreground="{StaticResource MutedBrush}"/>
+                                        <TextBlock Text="{Binding Author}" Margin="0,0,8,0"/>
+                                        <TextBlock Text="·" Margin="0,0,8,0" Foreground="{StaticResource MutedBrush}"/>
+                                        <TextBlock Text="{Binding CreatedDisplay}" Foreground="{StaticResource MutedBrush}"/>
+                                    </WrapPanel>
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsCustomer}" Value="True">
+                                                        <Setter Property="Foreground" Value="{StaticResource CustomerBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </StackPanel>
+    </DataTemplate>
+
     <Style x:Key="Banner" TargetType="Border">
         <Setter Property="CornerRadius" Value="6"/>
         <Setter Property="Padding" Value="10,8"/>

@@ -187,10 +187,8 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
         await Client.AddJournalAsync(TableName, EditorSysId!, JournalKind.WorkNotes, ResolveNotes.Trim(), cancellationToken);
         Apply(updated);
         UpsertRow(TicketRow.FromInteraction(updated));
-        var notes = await Client.GetJournalAsync(EditorSysId!, cancellationToken);
-        Journal.Clear();
-        foreach (var note in notes)
-            Journal.Add(note);
+        var notes = await Client.GetJournalAsync(TableName, EditorSysId!, cancellationToken);
+        ReplaceJournal(notes);
     }
 
     protected override void OnDetached()

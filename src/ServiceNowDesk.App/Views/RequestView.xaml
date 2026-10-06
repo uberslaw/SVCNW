@@ -121,29 +121,14 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
 
+                        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource JournalHistoryTemplate}" Focusable="False" IsTabStop="False"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                             <RadioButton Content="Work note" GroupName="RequestJournal" Margin="0,0,16,0" IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=WorkNotes}"/>
                             <RadioButton Content="Customer comment" GroupName="RequestJournal" Foreground="{StaticResource CustomerBrush}" IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=Comments}"/>
                         </StackPanel>
                         <TextBlock Text="Visible to the requester." Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding JournalIsCustomerVisible, Converter={StaticResource BoolVis}}"/>
                         <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"/>
-                        <Button Content="Post note" Style="{StaticResource SecondaryButton}" Command="{Binding PostJournalCommand}" HorizontalAlignment="Left" Margin="0,0,0,8"/>
-                        <ListBox ItemsSource="{Binding Journal}" MaxHeight="180" Style="{StaticResource DeskList}" ItemContainerStyle="{StaticResource DeskListItem}">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel>
-                                        <TextBlock>
-                                            <Run Text="{Binding KindLabel}" FontWeight="SemiBold"/>
-                                            <Run Text=" · "/>
-                                            <Run Text="{Binding Author}"/>
-                                            <Run Text=" · "/>
-                                            <Run Text="{Binding CreatedDisplay}"/>
-                                        </TextBlock>
-                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <Button Content="Post note" Style="{StaticResource SecondaryButton}" Command="{Binding PostJournalCommand}" HorizontalAlignment="Left"/>
                     </StackPanel>
                 </ScrollViewer>
             </DockPanel>

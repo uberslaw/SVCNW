@@ -86,6 +86,70 @@ public class RecordMapperTests
     }
 
     [Fact]
+    public void JournalReadsDisplayValueAllForWorkNotesAndCustomerComments()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "result": [
+                {
+                  "sys_id": {"value":"journal-printer","display_value":"journal-printer"},
+                  "name": {"value":"incident","display_value":"incident"},
+                  "element": {"value":"work_notes","display_value":"Work notes"},
+                  "element_id": {"value":"inc-printer","display_value":"INC0010001"},
+                  "value": {"value":"Replaced the tray and asked finance to reprint.","display_value":"Replaced the tray and asked finance to reprint."},
+                  "sys_created_on": {"value":"2026-09-28 10:40:00","display_value":"2026-09-28 10:40:00"},
+                  "sys_created_by": {"value":"alex.rivera","display_value":"Alex Rivera"}
+                },
+                {
+                  "sys_id": {"value":"journal-printer-comment","display_value":"journal-printer-comment"},
+                  "name": {"value":"incident","display_value":"Incident"},
+                  "element": {"value":"comments","display_value":"Additional comments"},
+                  "element_id": {"value":"inc-printer","display_value":"INC0010001"},
+                  "value": {"value":"The finance queue is still stuck. Can someone call me?","display_value":""},
+                  "sys_created_on": {"value":"2026-09-28 09:30:00","display_value":"2026-09-28 09:30:00"},
+                  "sys_created_by": {"value":"jordan.lee","display_value":"Jordan Lee"}
+                },
+                {
+                  "sys_id": {"value":"journal-label-only","display_value":"journal-label-only"},
+                  "name": {"value":"task","display_value":"Task"},
+                  "element": {"value":"","display_value":"Work notes"},
+                  "value": {"value":"","display_value":"Noted from the activity label."},
+                  "sys_created_on": {"value":"2026-09-27 08:00:00","display_value":"2026-09-27 08:00:00"},
+                  "sys_created_by": {"value":"casey.ng","display_value":""}
+                }
+              ]
+            }
+            """);
+
+        var rows = document.RootElement.GetProperty("result").EnumerateArray().Select(RecordMapper.Journal).ToArray();
+
+        var work = rows[0];
+        Assert.Equal("incident", work.Table);
+        Assert.Equal("work_notes", work.Kind);
+        Assert.Equal("Work note", work.KindLabel);
+        Assert.False(work.IsCustomer);
+        Assert.Equal("Alex Rivera", work.Author);
+        Assert.Equal("2026-09-28 10:40:00", work.CreatedDisplay);
+        Assert.Equal("Replaced the tray and asked finance to reprint.", work.Text);
+
+        var comment = rows[1];
+        Assert.Equal("incident", comment.Table);
+        Assert.Equal("comments", comment.Kind);
+        Assert.Equal("Customer comment", comment.KindLabel);
+        Assert.True(comment.IsCustomer);
+        Assert.Equal("Jordan Lee", comment.Author);
+        Assert.Equal("2026-09-28 09:30:00", comment.CreatedDisplay);
+        Assert.Equal("The finance queue is still stuck. Can someone call me?", comment.Text);
+
+        var labeled = rows[2];
+        Assert.Equal("task", labeled.Table);
+        Assert.Equal("work_notes", labeled.Kind);
+        Assert.Equal("Work note", labeled.KindLabel);
+        Assert.Equal("casey.ng", labeled.Author);
+        Assert.Equal("Noted from the activity label.", labeled.Text);
+    }
+
+    [Fact]
     public void ChangeJsonOmitsUnsetFieldsAndClearsReferences()
     {
         var json = ChangeJson.FromIncident(new IncidentChanges

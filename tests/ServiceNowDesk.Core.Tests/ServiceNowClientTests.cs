@@ -245,6 +245,64 @@ public class ServiceNowClientTests
     }
 
     [Fact]
+    public async Task JournalQueryReturnsWorkNotesAndCustomerComments()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""
+            {
+              "result": [
+                {
+                  "sys_id": {"value":"journal-new","display_value":"journal-new"},
+                  "name": {"value":"incident","display_value":"incident"},
+                  "element": {"value":"work_notes","display_value":"Work notes"},
+                  "value": {"value":"Sending this back with what I found.","display_value":"Sending this back with what I found."},
+                  "sys_created_on": {"value":"2026-10-05 15:00:00","display_value":"2026-10-05 15:00:00"},
+                  "sys_created_by": {"value":"casey.ng","display_value":"Casey Ng"}
+                },
+                {
+                  "sys_id": {"value":"journal-old","display_value":"journal-old"},
+                  "name": {"value":"incident","display_value":"incident"},
+                  "element": {"value":"comments","display_value":"Additional comments"},
+                  "value": {"value":"I added a comment first.","display_value":""},
+                  "sys_created_on": {"value":"2026-10-04 09:00:00","display_value":"2026-10-04 09:00:00"},
+                  "sys_created_by": {"value":"jordan.lee","display_value":"Jordan Lee"}
+                }
+              ]
+            }
+            """));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        var notes = await client.GetJournalAsync("incident", "inc-printer", CancellationToken.None);
+
+        var call = handler.Calls.Single();
+        Assert.Contains("/api/now/table/sys_journal_field", call.PathAndQuery);
+        Assert.Contains("sysparm_limit=100", call.PathAndQuery);
+        Assert.DoesNotContain("sysparm_limit=0", call.PathAndQuery);
+        var fields = FieldsOf(call.PathAndQuery);
+        Assert.Contains("name", fields);
+        Assert.Contains("element", fields);
+        Assert.Contains("value", fields);
+        Assert.Contains("sys_created_on", fields);
+        Assert.Contains("sys_created_by", fields);
+        var query = QueryOf(call.PathAndQuery);
+        Assert.Contains("element_id=inc-printer", query);
+        Assert.Contains("comments", query);
+        Assert.Contains("work_notes", query);
+        Assert.Contains("ORDERBYDESCsys_created_on", query);
+
+        Assert.Equal(2, notes.Count);
+        Assert.Equal("work_notes", notes[0].Kind);
+        Assert.Equal("Work note", notes[0].KindLabel);
+        Assert.Equal("Casey Ng", notes[0].Author);
+        Assert.Equal("Sending this back with what I found.", notes[0].Text);
+        Assert.Equal("2026-10-05 15:00:00", notes[0].CreatedDisplay);
+        Assert.Equal("comments", notes[1].Kind);
+        Assert.Equal("Customer comment", notes[1].KindLabel);
+        Assert.True(notes[1].IsCustomer);
+        Assert.Equal("Jordan Lee", notes[1].Author);
+        Assert.Equal("I added a comment first.", notes[1].Text);
+    }
+
+    [Fact]
     public async Task CatalogOrderPostsQuantityRequestedForAndVariables()
     {
         var handler = new StubHandler((_, _) => Api.Json("""{"result":{"request_id":"req-9","request_number":"REQ0090001"}}"""));
@@ -262,6 +320,18 @@ public class ServiceNowClientTests
         Assert.Equal("2", body.RootElement.GetProperty("sysparm_quantity").GetString());
         Assert.Equal("user-jordan", body.RootElement.GetProperty("sysparm_requested_for").GetString());
         Assert.Equal("win11", body.RootElement.GetProperty("variables").GetProperty("preferred_os").GetString());
+    }
+
+    private static string FieldsOf(string pathAndQuery)
+    {
+        const string marker = "sysparm_fields=";
+        var start = pathAndQuery.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        var encoded = pathAndQuery[(start + marker.Length)..];
+        var end = encoded.IndexOf('&');
+        if (end >= 0)
+            encoded = encoded[..end];
+        return Uri.UnescapeDataString(encoded);
     }
 
     private static string QueryOf(string pathAndQuery)

@@ -111,7 +111,15 @@ public sealed record ReferenceSuggestion(string SysId, string Display, string De
     public string Email { get; init; } = "";
 }
 
-public sealed record JournalEntry(string SysId, string Kind, string KindLabel, string Text, string Author, string CreatedDisplay);
+public sealed record JournalEntry(string SysId, string Kind, string KindLabel, string Text, string Author, string CreatedDisplay)
+{
+    /// <summary>
+    /// sys_journal_field.name, the table that owns the journal field.
+    /// </summary>
+    public string Table { get; init; } = "";
+
+    public bool IsCustomer => string.Equals(Kind, "comments", StringComparison.OrdinalIgnoreCase);
+}
 
 public sealed record ApiActivity(DateTimeOffset Time, string Method, string Path, int StatusCode, long ElapsedMilliseconds);
 

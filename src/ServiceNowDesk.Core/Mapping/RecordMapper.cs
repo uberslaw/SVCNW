@@ -165,20 +165,61 @@ public static class RecordMapper
     public static JournalEntry Journal(JsonElement record)
     {
         var element = SnowField.Read(record, "element");
-        var kind = element.Value;
+        var kind = JournalElement(element);
         var label = kind switch
         {
             "work_notes" => "Work note",
             "comments" => "Customer comment",
-            _ => string.IsNullOrWhiteSpace(element.Display) ? "Note" : element.Display
+            _ => FirstFilled(element.Display, element.Value, "Note")
         };
+        var table = SnowField.Read(record, "name");
         return new JournalEntry(
             SnowField.Read(record, "sys_id").Value,
             kind,
             label,
-            SnowField.Read(record, "value").Display,
-            SnowField.Read(record, "sys_created_by").Display,
-            SnowField.Read(record, "sys_created_on").Display);
+            JournalBody(SnowField.Read(record, "value")),
+            JournalBody(SnowField.Read(record, "sys_created_by")),
+            JournalBody(SnowField.Read(record, "sys_created_on")))
+        {
+            Table = FirstFilled(table.Value, table.Display, "")
+        };
+    }
+
+    private static string JournalElement(SnowField element)
+    {
+        foreach (var candidate in new[] { element.Value, element.Display })
+        {
+            var normalized = NormalizeJournalToken(candidate);
+            if (normalized.Length > 0)
+                return normalized;
+        }
+
+        return FirstFilled(element.Value, element.Display, "");
+    }
+
+    private static string NormalizeJournalToken(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+
+        var compact = text.Trim().ToLowerInvariant().Replace(' ', '_').Replace('-', '_');
+        return compact switch
+        {
+            "work_notes" or "work_note" or "worknotes" => "work_notes",
+            "comments" or "comment" or "additional_comments" or "additional_comment" or "customer_comment" or "customer_comments" => "comments",
+            _ => ""
+        };
+    }
+
+    private static string JournalBody(SnowField field) => FirstFilled(field.Display, field.Value, "");
+
+    private static string FirstFilled(string? first, string? second, string fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(first))
+            return first.Trim();
+        if (!string.IsNullOrWhiteSpace(second))
+            return second.Trim();
+        return fallback;
     }
 
     public static ReferenceValue Reference(JsonElement record, string name)

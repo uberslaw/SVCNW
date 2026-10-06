@@ -631,10 +631,18 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<JournalEntry>> GetJournalAsync(string sysId, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<JournalEntry>> GetJournalAsync(string table, string sysId, CancellationToken cancellationToken)
     {
+        EncodedQuery.SafeToken(table, "table");
         Record("GET", "api/now/table/sys_journal_field");
-        return Task.FromResult<IReadOnlyList<JournalEntry>>(_journal.TryGetValue(sysId, out var list) ? list.ToArray() : []);
+        if (!_journal.TryGetValue(sysId, out var list) || list.Count == 0)
+            return Task.FromResult<IReadOnlyList<JournalEntry>>([]);
+
+        var ordered = list
+            .OrderByDescending(note => AlertClassifier.TryParseInstant(note.CreatedDisplay, out var created) ? created : DateTime.MinValue)
+            .ThenByDescending(note => note.SysId, StringComparer.Ordinal)
+            .ToArray();
+        return Task.FromResult<IReadOnlyList<JournalEntry>>(ordered);
     }
 
     public Task<IReadOnlyList<Choice>> GetChoicesAsync(string table, string element, string? dependentValue, CancellationToken cancellationToken)
@@ -962,7 +970,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             UpdatedAtDisplay = "2026-09-28 10:40",
             UpdatedAtValue = "2026-09-28 10:40:00",
             Active = true
-        }, new JournalEntry("journal-printer", "work_notes", "Work note", "Replaced the tray and asked finance to reprint.", "alex.rivera", "2026-09-28 10:40"));
+        },
+            new JournalEntry("journal-printer-comment", "comments", "Customer comment", "The finance queue is still stuck. Can someone call me?", "jordan.lee", "2026-09-28 09:30"),
+            new JournalEntry("journal-printer", "work_notes", "Work note", "Replaced the tray and asked finance to reprint.", "alex.rivera", "2026-09-28 10:40"));
 
         AddIncident(new IncidentRecord
         {
@@ -1254,6 +1264,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             ApprovalLabel = "Approved"
         };
         _requests.AddRange([laptop, access, monitorRequest]);
+        RememberJournal(
+            laptop.SysId,
+            new JournalEntry("journal-req-comment", "comments", "Customer comment", "Please include the finance software image.", "jordan.lee", "2026-09-24 09:20"),
+            new JournalEntry("journal-req-work", "work_notes", "Work note", "Image is staged and waiting on the dock.", "alex.rivera", "2026-09-28 08:15"));
 
         _items.AddRange(
         [
@@ -1340,6 +1354,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 Quantity = "1"
             }
         ]);
+        RememberJournal(
+            "ritm-laptop",
+            new JournalEntry("journal-ritm-comment", "comments", "Customer comment", "I need the laptop before Monday.", "jordan.lee", "2026-09-25 11:00"),
+            new JournalEntry("journal-ritm-work", "work_notes", "Work note", "Laptop is built and queued for delivery.", "alex.rivera", "2026-09-28 08:40"));
 
         _articles.AddRange(
         [
@@ -1410,7 +1428,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             UpdatedAtDisplay = "2026-10-01 09:12",
             UpdatedAtValue = "2026-10-01 09:12:00",
             Active = true
-        }, new JournalEntry("journal-walkup", "work_notes", "Work note", "Checked the badge photo against the payroll roster.", "alex.rivera", "2026-10-01 09:12"));
+        },
+            new JournalEntry("journal-walkup-comment", "comments", "Customer comment", "I am locked out of payroll at the front desk.", "sam.patel", "2026-10-01 09:05"),
+            new JournalEntry("journal-walkup", "work_notes", "Work note", "Checked the badge photo against the payroll roster.", "alex.rivera", "2026-10-01 09:12"));
 
         AddInteraction(new InteractionRecord
         {
@@ -1720,6 +1740,12 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         public string PlannedEnd { get; init; } = "";
         public string FollowUp { get; init; } = "";
         public string UpdatedBy { get; init; } = "";
+    }
+
+    private void RememberJournal(string sysId, params JournalEntry[] notes)
+    {
+        if (notes.Length > 0)
+            _journal[sysId] = notes.ToList();
     }
 
     private void AddInteraction(InteractionRecord record, params JournalEntry[] notes)
