@@ -7,15 +7,18 @@ namespace ServiceNowDesk.ViewModels;
 public sealed partial class ReferenceFieldModel : ObservableObject
 {
     private readonly Func<string, CancellationToken, Task<IReadOnlyList<ReferenceSuggestion>>> _search;
+    private readonly Func<string, CancellationToken, Task<IReadOnlyList<ReferenceSuggestion>>> _match;
     private readonly TimeSpan _delay;
     private CancellationTokenSource? _searchCts;
     private bool _suppress;
 
     public ReferenceFieldModel(
         Func<string, CancellationToken, Task<IReadOnlyList<ReferenceSuggestion>>> search,
-        TimeSpan? delay = null)
+        TimeSpan? delay = null,
+        Func<string, CancellationToken, Task<IReadOnlyList<ReferenceSuggestion>>>? match = null)
     {
         _search = search;
+        _match = match ?? search;
         _delay = delay ?? TimeSpan.FromMilliseconds(180);
         Suggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSuggestions));
     }
@@ -57,7 +60,7 @@ public sealed partial class ReferenceFieldModel : ObservableObject
         IReadOnlyList<ReferenceSuggestion> matches;
         try
         {
-            matches = await _search(typed, CancellationToken.None);
+            matches = await _match(typed, CancellationToken.None);
         }
         catch
         {
@@ -166,6 +169,7 @@ public sealed class TicketRow
     public required string Meta { get; init; }
     public required string When { get; init; }
     public string Badge { get; init; } = "";
+    public bool Unassigned { get; init; }
 
     public static TicketRow FromIncident(IncidentRecord record) => new()
     {
@@ -176,7 +180,8 @@ public sealed class TicketRow
         Tone = Client.StateTone.ForIncident(record.State),
         Meta = Join(record.Caller.Display, record.AssignmentGroup.Display),
         When = record.UpdatedAtDisplay,
-        Badge = BadgeFor(record.Priority)
+        Badge = BadgeFor(record.Priority),
+        Unassigned = record.AssignedTo.IsEmpty
     };
 
     public static TicketRow FromRequest(RequestRecord record) => new()
@@ -199,7 +204,8 @@ public sealed class TicketRow
         StateLabel = record.StateLabel,
         Tone = Client.StateTone.ForInteraction(record.State),
         Meta = Join(record.OpenedFor.Display, record.AssignmentGroup.Display),
-        When = record.UpdatedAtDisplay
+        When = record.UpdatedAtDisplay,
+        Unassigned = record.AssignedTo.IsEmpty
     };
 
     public static TicketRow FromItem(RequestedItemRecord record) => new()
@@ -211,7 +217,8 @@ public sealed class TicketRow
         Tone = Client.StateTone.ForItem(record.State),
         Meta = Join(record.CatalogItem.Display, record.AssignmentGroup.Display),
         When = record.UpdatedAtDisplay,
-        Badge = BadgeFor(record.Priority)
+        Badge = BadgeFor(record.Priority),
+        Unassigned = record.AssignedTo.IsEmpty
     };
 
     private static string BadgeFor(string priority) =>

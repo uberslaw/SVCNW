@@ -58,7 +58,7 @@ public partial class MainWindow : Window
         if (ctrl && e.Key is Key.D1 or Key.NumPad1)
             Navigate(main, DeskSection.Incidents, e);
         else if (ctrl && e.Key is Key.D2 or Key.NumPad2)
-            Navigate(main, DeskSection.Requests, e);
+            Navigate(main, DeskSection.RequestedItems, e);
         else if (ctrl && e.Key is Key.D3 or Key.NumPad3)
             Navigate(main, DeskSection.RequestedItems, e);
         else if (ctrl && e.Key is Key.D4 or Key.NumPad4)

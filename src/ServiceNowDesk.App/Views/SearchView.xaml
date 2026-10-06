@@ -17,7 +17,7 @@
                  ItemsSource="{Binding Results}"
                  SelectedItem="{Binding Selected}"
                  Style="{StaticResource DeskList}"
-                 ItemContainerStyle="{StaticResource DeskListItem}"
+                 ItemContainerStyle="{StaticResource TicketListItem}"
                  MouseDoubleClick="Results_MouseDoubleClick"
                  PreviewKeyDown="Results_PreviewKeyDown">
             <ListBox.ItemTemplate>

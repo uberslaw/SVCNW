@@ -24,7 +24,7 @@ public partial class CatalogWorkspaceViewModel : ObservableObject
 
     public CatalogWorkspaceViewModel()
     {
-        RequestedFor = new ReferenceFieldModel(SearchUsersAsync);
+        RequestedFor = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
     }
 
     public ReferenceFieldModel RequestedFor { get; }
@@ -153,4 +153,9 @@ public partial class CatalogWorkspaceViewModel : ObservableObject
         _client is null
             ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
             : _client.SearchUsersAsync(text, cancellationToken);
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken) =>
+        _client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : _client.MatchUsersAsync(text, cancellationToken);
 }

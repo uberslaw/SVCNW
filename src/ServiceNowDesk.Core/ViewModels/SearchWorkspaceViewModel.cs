@@ -124,7 +124,8 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 Tone = StateTone.ForIncident(record.State),
                 Meta = record.Caller.Display,
                 When = record.UpdatedAtDisplay,
-                SortKey = record.UpdatedAtValue
+                SortKey = record.UpdatedAtValue,
+                Unassigned = record.AssignedTo.IsEmpty
             }));
             hits.AddRange(requests.Result.Items.Select(record => new SearchHit
             {
@@ -150,7 +151,8 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 Tone = StateTone.ForItem(record.State),
                 Meta = record.CatalogItem.Display,
                 When = record.UpdatedAtDisplay,
-                SortKey = record.UpdatedAtValue
+                SortKey = record.UpdatedAtValue,
+                Unassigned = record.AssignedTo.IsEmpty
             }));
             hits.AddRange(walkUps.Result.Items.Select(record => new SearchHit
             {
@@ -163,7 +165,8 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 Tone = StateTone.ForInteraction(record.State),
                 Meta = record.OpenedFor.Display,
                 When = record.UpdatedAtDisplay,
-                SortKey = record.UpdatedAtValue
+                SortKey = record.UpdatedAtValue,
+                Unassigned = record.AssignedTo.IsEmpty
             }));
             hits.AddRange(articles.Result.Items.Select(record => new SearchHit
             {
@@ -226,4 +229,5 @@ public sealed class SearchHit
     public required string Meta { get; init; }
     public required string When { get; init; }
     public required string SortKey { get; init; }
+    public bool Unassigned { get; init; }
 }

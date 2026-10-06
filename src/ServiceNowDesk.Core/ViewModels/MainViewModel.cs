@@ -53,6 +53,7 @@ public partial class MainViewModel : ObservableObject
         IFormCatalogStore? formCatalog = null,
         IIncidentTemplateStore? templates = null,
         Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? clientFactory = null,
+        IRecentAssignmentGroupStore? recentGroups = null,
         IDeskListStore? lists = null)
     {
         _store = store;
@@ -61,11 +62,12 @@ public partial class MainViewModel : ObservableObject
         _clientFactory = clientFactory;
         _lists = lists;
         Startup.Dismissed += (_, _) => _startupGate = false;
+        var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
-        Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore());
+        Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
         Requests = new RequestWorkspaceViewModel(desktop);
-        RequestedItems = new RequestedItemWorkspaceViewModel(desktop);
-        WalkUps = new InteractionWorkspaceViewModel(desktop);
+        RequestedItems = new RequestedItemWorkspaceViewModel(desktop, recent);
+        WalkUps = new InteractionWorkspaceViewModel(desktop, recent);
         WalkUps.IncidentRequested += (_, conversion) => ConvertOpenTask = OpenConvertedIncidentAsync(conversion);
         Search = new SearchWorkspaceViewModel();
         Knowledge = new KnowledgeWorkspaceViewModel();

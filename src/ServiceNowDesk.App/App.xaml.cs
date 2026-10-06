@@ -34,6 +34,7 @@ public partial class App : Application
             new WebViewBrowserSignIn(),
             FileFormCatalogStore.InApplicationData(),
             FileIncidentTemplateStore.InApplicationData(),
+            recentGroups: FileRecentAssignmentGroupStore.InApplicationData(),
             lists: FileDeskListStore.InApplicationData());
         var window = new MainWindow { DataContext = main };
         MainWindow = window;

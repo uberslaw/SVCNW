@@ -104,7 +104,7 @@
                         <TextBlock Text="{Binding ApprovalLabel, StringFormat=Approval: {0}}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10" Visibility="{Binding ApprovalLabel, Converter={StaticResource StringVis}}"/>
 
                         <TextBlock Text="Items on this request" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <ListBox ItemsSource="{Binding RelatedItems}" MaxHeight="160" Style="{StaticResource DeskList}" ItemContainerStyle="{StaticResource DeskListItem}" Margin="0,0,0,12">
+                        <ListBox ItemsSource="{Binding RelatedItems}" MaxHeight="160" Style="{StaticResource DeskList}" ItemContainerStyle="{StaticResource TicketListItem}" Margin="0,0,0,12">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel>
