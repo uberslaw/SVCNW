@@ -6,6 +6,7 @@ namespace ServiceNowDesk.ViewModels;
 
 public sealed partial class StartupDownloadModel : ObservableObject
 {
+    private readonly object _gate = new();
     private int _total = 1;
     private int _finished;
     private int _current = -1;
@@ -25,69 +26,91 @@ public sealed partial class StartupDownloadModel : ObservableObject
 
     public void Begin(int total)
     {
-        Lines.Clear();
-        _total = Math.Max(1, total);
-        _finished = 0;
-        _current = -1;
-        _dismissed = false;
-        Title = Heading(null);
-        IsRunning = true;
-        ShowScreen = true;
-        ShowBar = false;
-        UpdateSummary();
+        lock (_gate)
+        {
+            Lines.Clear();
+            _total = Math.Max(1, total);
+            _finished = 0;
+            _current = -1;
+            _dismissed = false;
+            Title = Heading(null);
+            IsRunning = true;
+            ShowScreen = true;
+            ShowBar = false;
+            UpdateSummary();
+        }
     }
 
     public void Start(string name)
     {
-        var line = new StartupDownloadLine(name);
-        line.ShowPercent(0);
-        Lines.Add(line);
-        _current = Lines.Count - 1;
-        Title = Heading(name);
+        lock (_gate)
+        {
+            var line = new StartupDownloadLine(name);
+            line.ShowPercent(0);
+            Lines.Add(line);
+            _current = Lines.Count - 1;
+            Title = Heading(name);
+        }
     }
 
     public void Report(int percent)
     {
-        if (_current < 0 || _current >= Lines.Count)
-            return;
-        var line = Lines[_current];
-        if (line.IsFinished)
-            return;
-        line.ShowPercent(Math.Clamp(percent, 0, 99));
+        lock (_gate)
+        {
+            if (_current < 0 || _current >= Lines.Count)
+                return;
+            var line = Lines[_current];
+            if (line.IsFinished)
+                return;
+            line.ShowPercent(Math.Clamp(percent, 0, 99));
+        }
     }
 
     public void Complete()
     {
-        if (_current < 0 || _current >= Lines.Count)
-            return;
-        Lines[_current].ShowPercent(100);
-        FinishCurrent();
+        lock (_gate)
+        {
+            if (_current < 0 || _current >= Lines.Count)
+                return;
+            Lines[_current].ShowPercent(100);
+            FinishCurrent();
+        }
     }
 
     public void CompleteCached()
     {
-        if (_current < 0 || _current >= Lines.Count)
-            return;
-        var line = Lines[_current];
-        line.ShowPercent(100);
-        line.ShowNote("cached");
-        FinishCurrent();
+        lock (_gate)
+        {
+            if (_current < 0 || _current >= Lines.Count)
+                return;
+            var line = Lines[_current];
+            line.ShowPercent(100);
+            line.ShowNote("cached");
+            FinishCurrent();
+        }
     }
 
     public void Fail(string error)
     {
-        if (_current < 0 || _current >= Lines.Count)
-            return;
-        var text = string.IsNullOrWhiteSpace(error) ? "Could not download this section." : error.Trim();
-        Lines[_current].ShowNote(text);
-        FinishCurrent();
+        lock (_gate)
+        {
+            if (_current < 0 || _current >= Lines.Count)
+                return;
+            var text = string.IsNullOrWhiteSpace(error) ? "Could not download this section." : error.Trim();
+            Lines[_current].ShowNote(text);
+            FinishCurrent();
+        }
     }
 
     public void Dismiss()
     {
-        _dismissed = true;
-        ShowScreen = false;
-        ShowBar = IsRunning;
+        lock (_gate)
+        {
+            _dismissed = true;
+            ShowScreen = false;
+            ShowBar = IsRunning;
+        }
+
         Dismissed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -95,17 +118,20 @@ public sealed partial class StartupDownloadModel : ObservableObject
 
     public void Reset()
     {
-        Lines.Clear();
-        _finished = 0;
-        _current = -1;
-        _dismissed = false;
-        IsRunning = false;
-        ShowScreen = false;
-        ShowBar = false;
-        Title = "";
-        CountText = "";
-        PercentText = "";
-        Percent = 0;
+        lock (_gate)
+        {
+            Lines.Clear();
+            _finished = 0;
+            _current = -1;
+            _dismissed = false;
+            IsRunning = false;
+            ShowScreen = false;
+            ShowBar = false;
+            Title = "";
+            CountText = "";
+            PercentText = "";
+            Percent = 0;
+        }
     }
 
     private void FinishCurrent()
