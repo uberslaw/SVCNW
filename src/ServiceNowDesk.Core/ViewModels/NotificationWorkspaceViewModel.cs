@@ -357,11 +357,15 @@ public partial class AlertCircleModel : ObservableObject
     {
         Kind = kind;
         Title = AlertCatalog.Title(kind);
+        Description = AlertCatalog.Description(kind);
         AutomationName = AlertCatalog.AutomationName(kind, 0);
     }
 
     public AlertKind Kind { get; }
     public string Title { get; }
+
+    /// <summary>What this chip counts. Shown even when the count is zero.</summary>
+    public string Description { get; }
 
     [ObservableProperty] private int count;
     [ObservableProperty] private string status = "";

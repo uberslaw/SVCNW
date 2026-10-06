@@ -64,7 +64,14 @@
                                 Command="{Binding DataContext.SelectQueueCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding Kind}"
                                 AutomationProperties.Name="{Binding StatusLabel}"
-                                ToolTip="{Binding ToolTipText}">
+                                ToolTipService.InitialShowDelay="400"
+                                ToolTipService.Placement="Top">
+                            <Button.ToolTip>
+                                <ToolTip Placement="Top">
+                                    <TextBlock TextWrapping="Wrap" MaxWidth="420"
+                                               Text="{Binding PlacementTarget.DataContext.Description, RelativeSource={RelativeSource AncestorType=ToolTip}}"/>
+                                </ToolTip>
+                            </Button.ToolTip>
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
                                     <Border x:Name="Bd" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">

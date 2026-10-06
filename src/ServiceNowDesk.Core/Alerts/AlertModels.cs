@@ -44,6 +44,28 @@ public static class AlertCatalog
         _ => kind.ToString()
     };
 
+    /// <summary>
+    /// Hover text for a notification chip. Each sentence follows the query and the classifier.
+    /// </summary>
+    public static string Description(AlertKind kind) => kind switch
+    {
+        AlertKind.AssignedToMe =>
+            "Open incidents, requests, and request items assigned to you. On hold counts, and resolved, closed, and cancelled do not.",
+        AlertKind.WatchedGroup =>
+            "Open incidents in the watched group whose location is one of the office cities under Settings. On hold counts, and resolved, closed, and cancelled do not.",
+        AlertKind.SlaBreaching =>
+            "An open incident, request item, or walk-up that has breached, or is in progress past its planned end, and is assigned to you or unassigned in one of your groups or the watched group.",
+        AlertKind.OnHoldPastFollowUp =>
+            "An incident, request item, or walk-up assigned to you that is on hold and whose follow-up time has passed. Resolved, closed, and cancelled do not count.",
+        AlertKind.UpdatedByCaller =>
+            "The person who last updated an open incident, request item, or walk-up is the caller. It counts when the ticket is yours, in the watched group, or unassigned with no group, and the location matches a configured office when offices are set.",
+        AlertKind.ReturnedWithNotes =>
+            "Open incidents, request items, and walk-ups assigned to you, in one of your groups, or in the watched group at a configured office. The newest comment or work note is from someone other than the caller and the assignee.",
+        AlertKind.Unattended =>
+            "Open incidents, request items, and walk-ups assigned to you, including on hold, that were last updated at least 24 hours ago. Any update resets the clock, and a missing update time does not count.",
+        _ => Title(kind)
+    };
+
     public static AlertSwatch Swatch(AlertKind kind) => kind switch
     {
         AlertKind.WatchedGroup => new("Amber", "#9A6408", "AmberBrush"),

@@ -601,6 +601,44 @@ public class AlertTests
     }
 
     [Fact]
+    public void NotificationChipsExplainEachQueueEvenWhenEmpty()
+    {
+        var notifications = new NotificationWorkspaceViewModel();
+        Assert.Equal(7, notifications.Circles.Count);
+        foreach (var circle in notifications.Circles)
+        {
+            Assert.Equal(0, circle.Count);
+            Assert.False(string.IsNullOrWhiteSpace(circle.Description));
+            Assert.Equal(AlertCatalog.Description(circle.Kind), circle.Description);
+            Assert.DoesNotContain("AlertKind", circle.Description, StringComparison.Ordinal);
+            Assert.DoesNotContain("sc_", circle.Description, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("task_sla", circle.Description, StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.Equal(
+            "Open incidents, requests, and request items assigned to you. On hold counts, and resolved, closed, and cancelled do not.",
+            AlertCatalog.Description(AlertKind.AssignedToMe));
+        Assert.Equal(
+            "Open incidents in the watched group whose location is one of the office cities under Settings. On hold counts, and resolved, closed, and cancelled do not.",
+            AlertCatalog.Description(AlertKind.WatchedGroup));
+        Assert.Equal(
+            "An open incident, request item, or walk-up that has breached, or is in progress past its planned end, and is assigned to you or unassigned in one of your groups or the watched group.",
+            AlertCatalog.Description(AlertKind.SlaBreaching));
+        Assert.Equal(
+            "An incident, request item, or walk-up assigned to you that is on hold and whose follow-up time has passed. Resolved, closed, and cancelled do not count.",
+            AlertCatalog.Description(AlertKind.OnHoldPastFollowUp));
+        Assert.Equal(
+            "The person who last updated an open incident, request item, or walk-up is the caller. It counts when the ticket is yours, in the watched group, or unassigned with no group, and the location matches a configured office when offices are set.",
+            AlertCatalog.Description(AlertKind.UpdatedByCaller));
+        Assert.Equal(
+            "Open incidents, request items, and walk-ups assigned to you, in one of your groups, or in the watched group at a configured office. The newest comment or work note is from someone other than the caller and the assignee.",
+            AlertCatalog.Description(AlertKind.ReturnedWithNotes));
+        Assert.Equal(
+            "Open incidents, request items, and walk-ups assigned to you, including on hold, that were last updated at least 24 hours ago. Any update resets the clock, and a missing update time does not count.",
+            AlertCatalog.Description(AlertKind.Unattended));
+    }
+
+    [Fact]
     public void EachNewCategoryIsClassifiedFromASampleRecord()
     {
         var now = new DateTime(2026, 10, 6, 12, 0, 0);
