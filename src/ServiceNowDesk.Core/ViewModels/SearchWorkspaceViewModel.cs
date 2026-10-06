@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
@@ -23,6 +25,8 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string errorMessage = "";
 
     public ObservableCollection<SearchHit> Results { get; } = [];
+
+    public Action<SearchHit>? PrepareHit { get; set; }
 
     public string Query { get; private set; } = "";
 
@@ -185,7 +189,10 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             var previous = Selected?.SysId;
             Results.Clear();
             foreach (var hit in hits.OrderByDescending(hit => hit.SortKey, StringComparer.Ordinal))
+            {
+                PrepareHit?.Invoke(hit);
                 Results.Add(hit);
+            }
             Selected = previous is null ? null : Results.FirstOrDefault(hit => hit.SysId == previous);
             Query = trimmed;
             Summary = Results.Count == 1 ? "1 match" : Results.Count + " matches";
@@ -217,8 +224,10 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         string.Join(" · ", parts.Where(part => !string.IsNullOrWhiteSpace(part)));
 }
 
-public sealed class SearchHit
+public sealed class SearchHit : IHighlightRow
 {
+    private string _highlightHex = "";
+
     public required DeskSection Section { get; init; }
     public required string TableLabel { get; init; }
     public required string SysId { get; init; }
@@ -230,4 +239,19 @@ public sealed class SearchHit
     public required string When { get; init; }
     public required string SortKey { get; init; }
     public bool Unassigned { get; init; }
+
+    public string HighlightHex
+    {
+        get => _highlightHex;
+        set
+        {
+            var next = value ?? "";
+            if (string.Equals(_highlightHex, next, StringComparison.Ordinal))
+                return;
+            _highlightHex = next;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HighlightHex)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 }

@@ -231,7 +231,11 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
             }, CancellationToken.None);
             RelatedItems.Clear();
             foreach (var item in page.Items)
-                RelatedItems.Add(TicketRow.FromItem(item));
+            {
+                var row = TicketRow.FromItem(item);
+                PrepareRow?.Invoke(row);
+                RelatedItems.Add(row);
+            }
         }
         catch (Exception ex)
         {

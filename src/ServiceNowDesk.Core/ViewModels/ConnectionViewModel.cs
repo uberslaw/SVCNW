@@ -43,6 +43,8 @@ public partial class ConnectionViewModel : ObservableObject
 
     public NotificationPreferences Notifications { get; private set; } = NotificationPreferences.From(new DeskSettings());
 
+    public HighlightPreferences Highlights { get; private set; } = HighlightPreferences.Default;
+
     partial void OnAuthModeChanged(ServiceNowAuthMode value) => SyncFlags();
     partial void OnUseSampleDataChanged(bool value) => SyncFlags();
     partial void OnSessionCookieChanged(string value) => UpdateBrowserStatus();
@@ -72,6 +74,7 @@ public partial class ConnectionViewModel : ObservableObject
             DownloadCacheOnLaunch = DownloadCacheOnLaunch
         };
         Notifications.ApplyTo(settings);
+        Highlights.ApplyTo(settings);
         return settings;
     }
 
@@ -79,6 +82,12 @@ public partial class ConnectionViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(preferences);
         Notifications = preferences.Copy();
+    }
+
+    public void RememberHighlights(HighlightPreferences preferences)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        Highlights = preferences;
     }
 
     public void Load(DeskSettings settings)
@@ -99,6 +108,7 @@ public partial class ConnectionViewModel : ObservableObject
         UseSampleData = settings.UseSampleData;
         DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch;
         Notifications = NotificationPreferences.From(settings);
+        Highlights = HighlightPreferences.From(settings);
         SyncFlags();
         _loadingSettings = false;
     }

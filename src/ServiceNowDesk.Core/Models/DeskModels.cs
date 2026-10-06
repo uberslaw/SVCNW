@@ -141,6 +141,11 @@ public sealed class DeskSettings
     ];
     public int NotificationPollSeconds { get; set; } = 60;
     public bool DownloadCacheOnLaunch { get; set; } = true;
+
+    /// <summary>
+    /// Legend keys that paint list rows. Null means the built-in defaults. An empty list means every highlight is off.
+    /// </summary>
+    public List<string>? EnabledHighlights { get; set; }
 }
 
 public sealed class ServiceNowSession

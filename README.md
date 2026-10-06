@@ -34,7 +34,7 @@ Type a person's name in Caller or Requested for. After two characters the desk s
 
 Requests stay out of the left navigation. Request items stay. Ctrl+2 opens Request items. Opening a request item can still show the parent request.
 
-Lists of incidents, request items, and walk-ups use a light red row when nobody is assigned. A group with no person is red. A person with no group is not.
+Lists of incidents, request items, walk-ups, and search can tint a row. Settings, then Legend, explains each color and turns it on or off. The choice is saved on this PC with the other settings. The light red row is Unassigned: nobody is assigned. A group with no person is included. A person who is assigned, even with no group, stays on the normal background. The other colors are light tints of the notification circles (SLA breaching, on hold past follow-up, updated by caller, returned with notes, assigned to me, and the group queue). Assigned to me and the group queue start off so a list of your own tickets is not painted end to end. When a ticket matches more than one highlight that is on, the entry higher in the legend is the color you see. Hover and the selected row keep the usual teal.
 
 A saved incident or request item lists its attachment file names. Click a name to download it and open it with the usual Windows app. A new incident has no attachments until you save it. Practice data includes one sample attachment on the printer incident and the laptop request item.
 

@@ -64,6 +64,34 @@
                 </StackPanel>
             </Border>
 
+            <TextBlock Text="Legend" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
+            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8">
+                <StackPanel DataContext="{Binding Legend}">
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
+                               Text="The light red row is Unassigned: nobody is assigned. The other colors are light tints of the notification circles, and they follow the tickets in those queues. Turn any highlight on or off. The choice is saved on this PC. When a ticket matches more than one highlight that is on, the entry higher in this list is the color on the row. Hover and the selected row keep the usual teal."/>
+                    <ItemsControl ItemsSource="{Binding Entries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,0,0,14" LastChildFill="True">
+                                    <CheckBox DockPanel.Dock="Right" Content="Show on rows" VerticalAlignment="Center" Margin="12,0,0,0"
+                                              IsChecked="{Binding IsEnabled}"
+                                              AutomationProperties.Name="{Binding Title, StringFormat=Show {0} highlight}"/>
+                                    <Border DockPanel.Dock="Left" Width="14" Height="14" CornerRadius="7" Margin="0,3,8,0" VerticalAlignment="Top"
+                                            Background="{Binding SwatchHex, Converter={StaticResource HexBrush}}"/>
+                                    <Border DockPanel.Dock="Left" Width="44" Height="18" CornerRadius="4" Margin="0,2,12,0" VerticalAlignment="Top"
+                                            BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                            Background="{Binding RowHex, Converter={StaticResource HexBrush}}"/>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
             <TextBlock Text="Cache" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
                        Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Incident templates and the saved sign-in stay where they are."/>

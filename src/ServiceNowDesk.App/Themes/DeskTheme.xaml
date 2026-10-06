@@ -11,6 +11,7 @@
     <conv:EnumEqualsConverter x:Key="EnumEq"/>
     <conv:EqualsMultiConverter x:Key="EqualsMulti"/>
     <conv:AlertKindBrushConverter x:Key="AlertBrush"/>
+    <conv:HexBrushConverter x:Key="HexBrush"/>
 
     <Color x:Key="NavColor">#1B2B2E</Color>
     <Color x:Key="NavMutedColor">#B7C7C6</Color>
@@ -281,13 +282,10 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
-                    <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}" BorderThickness="0,0,0,1" BorderBrush="#EEF2F4">
+                    <Border x:Name="Bd" Background="{Binding HighlightHex, Converter={StaticResource HexBrush}}" Padding="{TemplateBinding Padding}" BorderThickness="0,0,0,1" BorderBrush="#EEF2F4">
                         <ContentPresenter/>
                     </Border>
                     <ControlTemplate.Triggers>
-                        <DataTrigger Binding="{Binding Unassigned}" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource ErrorSoftBrush}"/>
-                        </DataTrigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
                         </Trigger>

@@ -23,6 +23,7 @@ public partial class MainViewModel : ObservableObject
     private bool _preserveNavigation;
     private bool _suppressSearchText;
     private readonly AlertWatchState _watch = new();
+    private readonly RowHighlighter _rows = new();
     private readonly SemaphoreSlim _alertGate = new(1, 1);
     private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
     private CancellationTokenSource? _alertCts;
@@ -76,6 +77,21 @@ public partial class MainViewModel : ObservableObject
         Catalog = new CatalogWorkspaceViewModel();
         Notifications = new NotificationWorkspaceViewModel();
         NotificationSettings = new NotificationSettingsViewModel();
+        Legend = new LegendSettingsViewModel();
+        Incidents.PrepareRow = _rows.Paint;
+        Requests.PrepareRow = _rows.Paint;
+        RequestedItems.PrepareRow = _rows.Paint;
+        WalkUps.PrepareRow = _rows.Paint;
+        Search.PrepareHit = _rows.Paint;
+        Legend.Changed += (_, preferences) =>
+        {
+            if (preferences is null)
+                return;
+            Connection.RememberHighlights(preferences);
+            _rows.Use(preferences);
+            RepaintRows();
+            _store.Save(Connection.BuildSettings());
+        };
         Requests.RelatedItemRequested += (_, sysId) => _ = OpenRequestedItemAsync(sysId);
         Search.OpenRequested += (_, hit) => SearchOpenTask = OpenSearchResultAsync(hit);
         Catalog.RequestOrdered += (_, result) => _ = OpenOrderedRequestAsync(result);
@@ -106,6 +122,7 @@ public partial class MainViewModel : ObservableObject
     public CatalogWorkspaceViewModel Catalog { get; }
     public NotificationWorkspaceViewModel Notifications { get; }
     public NotificationSettingsViewModel NotificationSettings { get; }
+    public LegendSettingsViewModel Legend { get; }
     public Task SearchOpenTask { get; private set; } = Task.CompletedTask;
     public ObservableCollection<ApiActivity> Activity { get; } = [];
 
@@ -133,6 +150,8 @@ public partial class MainViewModel : ObservableObject
         var settings = _store.Load();
         Connection.Load(settings);
         NotificationSettings.Load(Connection.Notifications);
+        Legend.Load(Connection.Highlights);
+        _rows.Use(Connection.Highlights);
         if (BrowserSignInClock.IsSavedSessionExpired(settings, DateTimeOffset.UtcNow))
         {
             AbandonExpiredBrowserSession();
@@ -898,6 +917,8 @@ public partial class MainViewModel : ObservableObject
                 if (generation != _alertGeneration || !ReferenceEquals(client, _client))
                     return;
                 Notifications.Apply(snapshot, _watch);
+                _rows.Use(snapshot);
+                RepaintRows();
             });
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
@@ -916,6 +937,23 @@ public partial class MainViewModel : ObservableObject
         {
             _alertGate.Release();
         }
+    }
+
+    private void RepaintRows()
+    {
+        Paint(Incidents.Items);
+        Paint(Requests.Items);
+        Paint(Requests.RelatedItems);
+        Paint(RequestedItems.Items);
+        Paint(WalkUps.Items);
+        foreach (var hit in Search.Results)
+            _rows.Paint(hit);
+    }
+
+    private void Paint(IEnumerable<TicketRow> rows)
+    {
+        foreach (var row in rows)
+            _rows.Paint(row);
     }
 
     private void PostToUi(Action action)

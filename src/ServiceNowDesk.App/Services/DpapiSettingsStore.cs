@@ -52,7 +52,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
                 WatchedGroupName = stored.WatchedGroupName,
                 OfficeLocations = stored.OfficeLocations,
                 NotificationPollSeconds = stored.NotificationPollSeconds ?? 60,
-                DownloadCacheOnLaunch = stored.DownloadCacheOnLaunch ?? true
+                DownloadCacheOnLaunch = stored.DownloadCacheOnLaunch ?? true,
+                EnabledHighlights = stored.EnabledHighlights is null ? null : [.. stored.EnabledHighlights]
             };
         }
         catch
@@ -89,7 +90,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
             WatchedGroupName = settings.WatchedGroupName,
             OfficeLocations = settings.OfficeLocations is null ? null : [.. settings.OfficeLocations],
             NotificationPollSeconds = settings.NotificationPollSeconds,
-            DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch
+            DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch,
+            EnabledHighlights = settings.EnabledHighlights is null ? null : [.. settings.EnabledHighlights]
         };
         File.WriteAllText(FilePath, JsonSerializer.Serialize(stored, JsonOptions));
     }
@@ -136,5 +138,6 @@ public sealed class DpapiSettingsStore : ISettingsStore
         public List<string>? OfficeLocations { get; set; }
         public int? NotificationPollSeconds { get; set; }
         public bool? DownloadCacheOnLaunch { get; set; }
+        public List<string>? EnabledHighlights { get; set; }
     }
 }

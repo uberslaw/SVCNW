@@ -87,6 +87,38 @@ public sealed class AlertKindBrushConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+public sealed class HexBrushConverter : IValueConverter
+{
+    private static readonly Dictionary<string, SolidColorBrush> Cache = new(StringComparer.OrdinalIgnoreCase);
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var hex = value as string;
+        if (string.IsNullOrWhiteSpace(hex))
+            return Brushes.Transparent;
+
+        if (Cache.TryGetValue(hex, out var cached))
+            return cached;
+
+        try
+        {
+            if (ColorConverter.ConvertFromString(hex) is not Color color)
+                return Brushes.Transparent;
+            var created = new SolidColorBrush(color);
+            created.Freeze();
+            Cache[hex] = created;
+            return created;
+        }
+        catch (FormatException)
+        {
+            return Brushes.Transparent;
+        }
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 public sealed class EqualsMultiConverter : IMultiValueConverter
 {
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>

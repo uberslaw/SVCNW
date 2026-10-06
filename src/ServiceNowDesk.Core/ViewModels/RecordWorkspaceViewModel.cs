@@ -40,6 +40,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     public ObservableCollection<AttachmentSummary> Attachments { get; } = [];
     public IReadOnlyList<PresetOption> Presets { get; }
     public ObservableCollection<TicketRow> Items { get; } = [];
+
+    public Action<TicketRow>? PrepareRow { get; set; }
     public ObservableCollection<JournalEntry> Journal { get; } = [];
     public ObservableCollection<Choice> ResolveChoices { get; } = [];
 
@@ -135,7 +137,10 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         _suppressSelection = true;
         Items.Clear();
         foreach (var row in rows)
+        {
+            PrepareRow?.Invoke(row);
             Items.Add(row);
+        }
         TotalCount = totalCount;
         Selected = null;
         _boundRow = null;
@@ -177,7 +182,10 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             _suppressSelection = true;
             Items.Clear();
             foreach (var row in page.Items)
+            {
+                PrepareRow?.Invoke(row);
                 Items.Add(row);
+            }
             TotalCount = page.TotalCount ?? page.Items.Count;
             var match = keep is null ? null : Items.FirstOrDefault(row => row.SysId == keep);
             if (match is not null)
@@ -531,6 +539,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             }
         }
 
+        PrepareRow?.Invoke(row);
         _suppressSelection = true;
         if (index < 0)
             Items.Insert(0, row);

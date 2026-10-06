@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
 
 namespace ServiceNowDesk.ViewModels;
@@ -177,8 +179,10 @@ public sealed partial class ReferenceFieldModel : ObservableObject
     }
 }
 
-public sealed class TicketRow
+public sealed class TicketRow : IHighlightRow
 {
+    private string _highlightHex = "";
+
     public required string SysId { get; init; }
     public required string Number { get; init; }
     public required string Title { get; init; }
@@ -188,6 +192,21 @@ public sealed class TicketRow
     public required string When { get; init; }
     public string Badge { get; init; } = "";
     public bool Unassigned { get; init; }
+
+    public string HighlightHex
+    {
+        get => _highlightHex;
+        set
+        {
+            var next = value ?? "";
+            if (string.Equals(_highlightHex, next, StringComparison.Ordinal))
+                return;
+            _highlightHex = next;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HighlightHex)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public static TicketRow FromIncident(IncidentRecord record) => new()
     {
