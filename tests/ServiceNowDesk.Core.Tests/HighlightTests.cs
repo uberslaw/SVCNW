@@ -233,7 +233,7 @@ public class HighlightTests
         main.SelectedSection = DeskSection.Leads;
         Assert.True(main.ShowRowLegend);
         main.SelectedSection = DeskSection.DailyWork;
-        Assert.True(main.ShowRowLegend);
+        Assert.False(main.ShowRowLegend);
         main.SelectedSection = DeskSection.Legend;
         Assert.False(main.ShowRowLegend);
         main.SelectedSection = DeskSection.Settings;

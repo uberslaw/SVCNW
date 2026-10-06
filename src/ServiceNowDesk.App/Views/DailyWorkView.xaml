@@ -16,6 +16,27 @@
                              AutomationProperties.Name="My team daily work"/>
             </StackPanel>
 
+            <WrapPanel Margin="0,0,0,12" AutomationProperties.Name="Daily work color key">
+                <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                    <Border Width="28" Height="14" CornerRadius="3" Margin="0,0,6,0" VerticalAlignment="Center"
+                            BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                            Background="{Binding ActFirstHex, Converter={StaticResource HexBrush}}"/>
+                    <TextBlock Text="Red, act first" FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                    <Border Width="28" Height="14" CornerRadius="3" Margin="0,0,6,0" VerticalAlignment="Center"
+                            BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                            Background="{Binding NextHex, Converter={StaticResource HexBrush}}"/>
+                    <TextBlock Text="Yellow, next" FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <Border Width="28" Height="14" CornerRadius="3" Margin="0,0,6,0" VerticalAlignment="Center"
+                            BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                            Background="{Binding AfterThoseHex, Converter={StaticResource HexBrush}}"/>
+                    <TextBlock Text="Green, after those" FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+                </StackPanel>
+            </WrapPanel>
+
             <TextBlock Text="{Binding TeamPrompt}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
                        Visibility="{Binding TeamPrompt, Converter={StaticResource StringVis}}"/>
 

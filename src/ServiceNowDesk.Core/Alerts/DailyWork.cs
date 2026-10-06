@@ -136,6 +136,29 @@ public static class DailyWorkRanker
         return AlertClassifier.IsReturnedWithNotes(record);
     }
 
+    /// <summary>Pale red. Priority 1, or an SLA that is breaching. Act on these first.</summary>
+    public const string ActFirstHex = "#F8D6D6";
+
+    /// <summary>Pale yellow. The caller updated the ticket, or the follow-up has passed.</summary>
+    public const string NextHex = "#FFF3C4";
+
+    /// <summary>Pale green. Still on the daily list, after the red and yellow rows.</summary>
+    public const string AfterThoseHex = "#D8F5D6";
+
+    /// <summary>
+    /// How soon to act on a daily-work row. The highest matching tier wins.
+    /// A missing priority is not red.
+    /// </summary>
+    public static string HighlightHex(WorkItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (item.PriorityRank == 1 || item.SlaBreaching)
+            return ActFirstHex;
+        if (item.UpdatedByCaller || item.FollowUpPassed)
+            return NextHex;
+        return AfterThoseHex;
+    }
+
     /// <summary>ServiceNow priority 1 is the most urgent. A blank priority sorts last.</summary>
     public static int PriorityRank(string? value, string? label)
     {

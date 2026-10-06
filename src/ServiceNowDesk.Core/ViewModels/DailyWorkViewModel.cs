@@ -42,6 +42,12 @@ public partial class DailyWorkViewModel : ObservableObject
     [ObservableProperty] private bool hasCleared;
     [ObservableProperty] private bool hasArrived;
 
+    public string ActFirstHex => DailyWorkRanker.ActFirstHex;
+
+    public string NextHex => DailyWorkRanker.NextHex;
+
+    public string AfterThoseHex => DailyWorkRanker.AfterThoseHex;
+
     public void Show(DailyWorkBoard? board, string? userSysId, IReadOnlyList<string>? teamMemberIds, DateTime? localNow = null)
     {
         _board = board ?? DailyWorkBoard.Empty;
@@ -164,7 +170,8 @@ public sealed class DailyWorkRow
         PriorityText = item.PriorityText,
         Reasons = item.Reasons,
         State = item.State,
-        AssigneeText = item.AssigneeText
+        AssigneeText = item.AssigneeText,
+        HighlightHex = DailyWorkRanker.HighlightHex(item)
     };
 
     public static DailyWorkRow FromCleared(DailyWorkLine line)

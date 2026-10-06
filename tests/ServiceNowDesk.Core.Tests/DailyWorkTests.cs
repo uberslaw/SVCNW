@@ -141,6 +141,51 @@ public class DailyWorkTests
         Assert.Equal("", page.TeamPrompt);
         page.Area = DailyWorkArea.Mine;
         Assert.Equal("INC-MINE", Assert.Single(page.Attend).Number);
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, page.Attend[0].HighlightHex);
+        Assert.Equal(DailyWorkRanker.ActFirstHex, page.ActFirstHex);
+        Assert.Equal(DailyWorkRanker.NextHex, page.NextHex);
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, page.AfterThoseHex);
+    }
+
+    [Fact]
+    public void DailyWorkRowsUseTrafficLightHues()
+    {
+        var quiet = Item("inc-quiet", "INC-QUIET");
+        var critical = quiet with { SysId = "inc-p1", Number = "INC-P1", PriorityValue = "1", PriorityLabel = "1 - Critical" };
+        var criticalLabel = quiet with { SysId = "inc-label", Number = "INC-LABEL", PriorityValue = "", PriorityLabel = "1 - Critical" };
+        var missing = quiet with { SysId = "inc-blank", Number = "INC-BLANK", PriorityValue = "", PriorityLabel = "" };
+        var sla = quiet with { SysId = "inc-sla", Number = "INC-SLA", SlaBreaching = true, PriorityValue = "4", PriorityLabel = "4 - Low" };
+        var slaBlank = missing with { SysId = "inc-sla-blank", Number = "INC-SLA-BLANK", SlaBreaching = true };
+        var caller = quiet with { SysId = "inc-caller", Number = "INC-CALLER", UpdatedByCaller = true, Unattended = true };
+        var follow = quiet with { SysId = "inc-follow", Number = "INC-FOLLOW", FollowUpPassed = true, Unattended = false };
+        var returned = quiet with { SysId = "inc-back", Number = "INC-BACK", Unattended = false, ReturnedWithNotes = true };
+        var both = critical with { UpdatedByCaller = true, FollowUpPassed = true, SlaBreaching = true };
+
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRanker.HighlightHex(critical));
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRanker.HighlightHex(criticalLabel));
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRanker.HighlightHex(missing));
+        Assert.Equal(99, missing.PriorityRank);
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRanker.HighlightHex(sla));
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRanker.HighlightHex(slaBlank));
+        Assert.Equal(DailyWorkRanker.NextHex, DailyWorkRanker.HighlightHex(caller));
+        Assert.Equal(DailyWorkRanker.NextHex, DailyWorkRanker.HighlightHex(follow));
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRanker.HighlightHex(returned));
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRanker.HighlightHex(quiet));
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRanker.HighlightHex(both));
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRow.From(both).HighlightHex);
+
+        var store = new MemoryDailyWorkStore();
+        var now = new DateTime(2026, 10, 6, 9, 0, 0);
+        var page = new DailyWorkViewModel(store);
+        page.Show(new DailyWorkBoard([quiet], []), "sample-user", [], now);
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, Assert.Single(page.Attend).HighlightHex);
+
+        page.Show(new DailyWorkBoard([critical], []), "sample-user", [], now.AddHours(2));
+        Assert.Equal(DailyWorkRanker.ActFirstHex, Assert.Single(page.Attend).HighlightHex);
+        Assert.Equal(DailyWorkRanker.ActFirstHex, Assert.Single(page.Arrived).HighlightHex);
+        var cleared = Assert.Single(page.Cleared);
+        Assert.Equal("INC-QUIET", cleared.Number);
+        Assert.Equal("", cleared.HighlightHex);
     }
 
     [Fact]
@@ -160,6 +205,14 @@ public class DailyWorkTests
         Assert.All(report.Daily.Personal.Skip(1).Take(4), item => Assert.Equal("Unattended", item.Reasons));
         Assert.Equal("SLA, Unattended", report.Daily.Personal[5].Reasons);
         Assert.Contains(report.Daily.Personal, item => item.Number == "INC0010010" && item.SlaBreaching);
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRow.From(report.Daily.Personal[0]).HighlightHex);
+        Assert.All(
+            report.Daily.Personal.Skip(1).Take(4),
+            item => Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRow.From(item).HighlightHex));
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRow.From(report.Daily.Personal[5]).HighlightHex);
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRow.From(report.Daily.Personal[6]).HighlightHex);
+        Assert.Contains(report.Daily.Personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.ActFirstHex);
+        Assert.Contains(report.Daily.Personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.AfterThoseHex);
 
         var team = report.Daily.Team;
         Assert.Equal("INC0010016", team[0].Number);
@@ -170,6 +223,15 @@ public class DailyWorkTests
         Assert.DoesNotContain(team, item => item.Number == "INC0010010");
         var moderate = team.Where(item => item.PriorityRank == 3).Select(item => item.Number).ToArray();
         Assert.Equal(["INC0010007", "INC0010011", "RITM0010003"], moderate);
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRow.From(team[0]).HighlightHex);
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRow.From(team[1]).HighlightHex);
+        Assert.Equal(DailyWorkRanker.NextHex, DailyWorkRow.From(team.Single(item => item.Number == "INC0010007")).HighlightHex);
+        Assert.Equal(DailyWorkRanker.NextHex, DailyWorkRow.From(team.Single(item => item.Number == "INC0010011")).HighlightHex);
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRow.From(team.Single(item => item.Number == "RITM0010003")).HighlightHex);
+        var teamHues = team.Select(DailyWorkRanker.HighlightHex).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(DailyWorkRanker.ActFirstHex, teamHues);
+        Assert.Contains(DailyWorkRanker.NextHex, teamHues);
+        Assert.Contains(DailyWorkRanker.AfterThoseHex, teamHues);
 
         var teamHold = report.Leads.For(LeadArea.Team).Bucket(AlertKind.OnHoldPastFollowUp).Rows;
         Assert.Contains(teamHold, row => row.Number == "INC0010011");
