@@ -22,11 +22,31 @@ public partial class MainWindow : Window
         };
         StateChanged += (_, _) => _alerts.SetMainMinimized(WindowState == WindowState.Minimized);
         Closed += (_, _) => _alerts.Shutdown();
+        SourceInitialized += (_, _) => FitToWorkArea();
         Loaded += async (_, _) =>
         {
+            FitToWorkArea();
             if (DataContext is MainViewModel main)
                 await main.InitializeAsync();
         };
+    }
+
+    private void FitToWorkArea()
+    {
+        var area = SystemParameters.WorkArea;
+        const double margin = 16;
+        var maxWidth = Math.Max(640, area.Width - margin);
+        var maxHeight = Math.Max(480, area.Height - margin);
+        if (MinWidth > maxWidth)
+            MinWidth = maxWidth;
+        if (MinHeight > maxHeight)
+            MinHeight = maxHeight;
+        if (Width > maxWidth)
+            Width = maxWidth;
+        if (Height > maxHeight)
+            Height = maxHeight;
+        Left = area.Left + Math.Max(0, (area.Width - Width) / 2);
+        Top = area.Top + Math.Max(0, (area.Height - Height) / 2);
     }
 
     private MainViewModel? Model => DataContext as MainViewModel;

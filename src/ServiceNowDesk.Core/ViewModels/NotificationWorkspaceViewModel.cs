@@ -328,10 +328,13 @@ public partial class AlertCircleModel : ObservableObject
 
     public bool IsVisible => Count > 0;
 
+    public string StatusLabel => Title + " " + Count.ToString(CultureInfo.InvariantCulture);
+
     partial void OnCountChanged(int value)
     {
         AutomationName = AlertCatalog.AutomationName(Kind, value);
         OnPropertyChanged(nameof(IsVisible));
+        OnPropertyChanged(nameof(StatusLabel));
     }
 }
 

@@ -228,12 +228,16 @@ public class AlertTests
         Assert.False(notifications.IsWidgetOpen);
         Assert.False(notifications.HasWidgetItems);
         Assert.Empty(notifications.WidgetItems);
+        Assert.Equal("Assigned to me 0", notifications.Circles.Single(circle => circle.Kind == AlertKind.AssignedToMe).StatusLabel);
+        Assert.Equal("Group queue 0", notifications.Circles.Single(circle => circle.Kind == AlertKind.WatchedGroup).StatusLabel);
 
         notifications.Apply(BannerSnapshot(
             BannerRow("inc9", "VPN is down", "2026-09-01 09:00:00", AlertKind.AssignedToMe)), watch);
 
         Assert.Equal("1 unread", notifications.WidgetSummary);
         Assert.Equal("VPN is down", notifications.NewestTitle);
+        Assert.Equal("Assigned to me 1", notifications.Circles.Single(circle => circle.Kind == AlertKind.AssignedToMe).StatusLabel);
+        Assert.Equal("Group queue 0", notifications.Circles.Single(circle => circle.Kind == AlertKind.WatchedGroup).StatusLabel);
         Assert.False(notifications.IsWidgetOpen);
         Assert.Equal("VPN is down", Assert.Single(notifications.WidgetItems).Title);
         Assert.Equal("VPN is down", Assert.Single(notifications.Sections.Single(section => section.Kind == AlertKind.AssignedToMe).Rows).Title);

@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -16,15 +15,13 @@ public partial class AlertWidgetWindow : Window
     private const int GwlExStyle = -20;
     private const int WsExNoActivate = 0x08000000;
     private const int WsExToolWindow = 0x00000080;
-    private const double PeekFraction = 0.15;
-    private const double CircleDiameter = 36;
+    private const double WidgetFallbackWidth = 280;
+    private const double WidgetFallbackHeight = 44;
 
     private readonly DispatcherTimer _jiggleTimer;
     private readonly AlertSound _sound = new();
     private NotificationWorkspaceViewModel? _model;
     private bool _mainMinimized;
-    private bool _pointerInside;
-    private bool _holdFull;
     private bool _jiggling;
     private bool _allowClose;
     private bool _opening;
@@ -43,7 +40,7 @@ public partial class AlertWidgetWindow : Window
         SizeChanged += (_, _) =>
         {
             if (IsVisible)
-                Reposition(animateTop: false);
+                PlaceOnScreen();
         };
     }
 
@@ -69,11 +66,7 @@ public partial class AlertWidgetWindow : Window
     {
         _mainMinimized = minimized;
         if (!minimized)
-        {
-            _pointerInside = false;
-            _holdFull = false;
             _jiggling = false;
-        }
 
         UpdatePresence();
     }
@@ -150,12 +143,12 @@ public partial class AlertWidgetWindow : Window
             ShowActivated = false;
             Show();
             UpdateLayout();
-            Reposition(animateTop: false);
+            PlaceOnScreen();
             Opacity = 1;
         }
         else
         {
-            Reposition(animateTop: false);
+            PlaceOnScreen();
         }
 
         EnsureTimer();
@@ -187,10 +180,7 @@ public partial class AlertWidgetWindow : Window
         if (playSound)
             _sound.Play(_model.ActiveSoundPath);
 
-        var maximize = _model.ActiveMaximizeWhenJiggling;
-        _holdFull = maximize;
-        if (maximize || _pointerInside)
-            Slide(FullTop());
+        PlaceOnScreen();
 
         var generation = ++_jiggleGeneration;
         _jiggling = true;
@@ -214,11 +204,8 @@ public partial class AlertWidgetWindow : Window
             if (generation != _jiggleGeneration)
                 return;
             _jiggling = false;
-            _holdFull = false;
             BeginAnimation(LeftProperty, null);
-            Left = CenterLeft();
-            if (!_pointerInside)
-                Slide(PeekTop());
+            PlaceOnScreen();
         };
         BeginAnimation(LeftProperty, animation);
         RestartJiggleTimer();
@@ -232,7 +219,7 @@ public partial class AlertWidgetWindow : Window
         _jiggleTimer.Start();
     }
 
-    private void Reposition(bool animateTop)
+    private void PlaceOnScreen()
     {
         if (!_jiggling)
         {
@@ -240,54 +227,26 @@ public partial class AlertWidgetWindow : Window
             Left = CenterLeft();
         }
 
-        var top = _pointerInside || _holdFull ? FullTop() : PeekTop();
-        if (animateTop)
-            Slide(top);
-        else
-        {
-            BeginAnimation(TopProperty, null);
-            Top = top;
-        }
+        BeginAnimation(TopProperty, null);
+        Top = RestTop();
     }
 
-    private void Slide(double top)
+    private double RestTop()
     {
-        var animation = new DoubleAnimation
-        {
-            To = top,
-            Duration = TimeSpan.FromMilliseconds(180),
-            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-        };
-        BeginAnimation(TopProperty, animation);
+        var area = SystemParameters.WorkArea;
+        var height = ActualHeight > 1 ? ActualHeight : WidgetFallbackHeight;
+        var top = area.Top + 8;
+        var maxTop = area.Bottom - height;
+        return top > maxTop ? Math.Max(area.Top, maxTop) : top;
     }
-
-    private double PeekTop()
-    {
-        var height = ActualHeight > 1 ? ActualHeight : CircleDiameter;
-        var visible = CircleDiameter * PeekFraction;
-        return SystemParameters.WorkArea.Top - height + visible;
-    }
-
-    private double FullTop() => SystemParameters.WorkArea.Top;
 
     private double CenterLeft()
     {
         var area = SystemParameters.WorkArea;
-        var width = ActualWidth > 1 ? ActualWidth : CircleDiameter;
-        return area.Left + Math.Max(0, (area.Width - width) / 2);
-    }
-
-    private void Window_MouseEnter(object sender, MouseEventArgs e)
-    {
-        _pointerInside = true;
-        Slide(FullTop());
-    }
-
-    private void Window_MouseLeave(object sender, MouseEventArgs e)
-    {
-        _pointerInside = false;
-        if (!_holdFull)
-            Slide(PeekTop());
+        var width = ActualWidth > 1 ? ActualWidth : WidgetFallbackWidth;
+        var left = area.Left + Math.Max(0, (area.Width - width) / 2);
+        var maxLeft = area.Right - width;
+        return left > maxLeft ? Math.Max(area.Left, maxLeft) : left;
     }
 
     private void Circle_Click(object sender, RoutedEventArgs e)

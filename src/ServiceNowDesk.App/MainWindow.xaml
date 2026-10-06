@@ -3,10 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:ServiceNowDesk.Views"
         Title="{Binding WindowTitle}"
-        Height="920"
-        Width="1440"
-        MinHeight="720"
-        MinWidth="1100"
+        Height="800"
+        Width="1280"
+        MinHeight="640"
+        MinWidth="1024"
         WindowStartupLocation="CenterScreen"
         Icon="Assets/AppIcon.ico"
         Background="{StaticResource AppBrush}"
@@ -88,6 +88,25 @@
                             </TextBlock>
                             <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="{StaticResource AccentBrush}" Text="&#xEA8F;"/>
                             <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold" Text="Notifications"/>
+                            <ItemsControl DockPanel.Dock="Left" ItemsSource="{Binding Notifications.Circles}" Focusable="False" IsHitTestVisible="False" VerticalAlignment="Center" Margin="0,0,8,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
+                                            <Grid Width="22" Height="22" Margin="0,0,6,0">
+                                                <Ellipse Fill="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
+                                                <TextBlock Text="{Binding Count}" Foreground="White" FontWeight="Bold" FontSize="11"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <TextBlock Text="{Binding StatusLabel}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold" Text="{Binding Notifications.WidgetSummary}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
