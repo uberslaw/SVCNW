@@ -73,7 +73,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         Record("GET", "api/now/table/sc_req_item");
         var watched = WatchedPopulation(search);
         var now = DateTime.Now;
-        var callerScope = new CallerUpdateScope(userId, ["group-cs"], search.GroupName);
+        var callerScope = new CallerUpdateScope(userId, search.GroupName, search.Locations);
         return Task.FromResult(new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
         {
             [AlertKind.AssignedToMe] = new(assigned, assigned.Count),
@@ -1011,6 +1011,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             UpdatedAtValue = "2026-09-30 08:20:00",
             Active = true
         });
+        _signals["inc-brisbane"] = new SampleAlertSignals { UpdatedBy = "jordan.lee" };
 
         AddIncident(new IncidentRecord
         {

@@ -419,7 +419,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         return new CategoryBuckets(
             AlertClassifier.Bucket(AlertKind.SlaBreaching, folded, now, JoinNotes(slaStatus, shared)),
             AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, holdSource, now, JoinNotes(holdNotes, shared)),
-            AlertClassifier.Bucket(AlertKind.UpdatedByCaller, folded, now, new CallerUpdateScope(search.UserSysId, groupIds, search.GroupName), shared),
+            AlertClassifier.Bucket(AlertKind.UpdatedByCaller, folded, now, new CallerUpdateScope(search.UserSysId, search.GroupName, search.Locations), shared),
             AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, folded, now, JoinNotes(journalStatus, shared)));
     }
 

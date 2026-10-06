@@ -129,37 +129,64 @@ public static class AlertClassifier
 }
 
 /// <summary>
-/// Updated by caller includes a record only when it is assigned to the signed-in user,
-/// to one of that user's groups, or to the watched group when one is configured.
+/// Updated by caller is limited to the signed-in user, the watched (main) group, or an unassigned
+/// ticket in that group or with no group. Membership in other groups does not qualify.
+/// A configured office list must match the record location. An empty office list does not hide tickets.
 /// </summary>
 public sealed class CallerUpdateScope
 {
-    public CallerUpdateScope(string? userSysId, IEnumerable<string>? groupIds, string? watchedGroupName)
+    public CallerUpdateScope(string? userSysId, string? mainGroupName, IEnumerable<string>? offices)
     {
         UserSysId = userSysId?.Trim() ?? "";
-        GroupIds = new HashSet<string>(
-            (groupIds ?? []).Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id.Trim()),
+        MainGroupName = mainGroupName?.Trim() ?? "";
+        Offices = new HashSet<string>(
+            (offices ?? []).Select(office => office?.Trim() ?? "").Where(office => office.Length > 0),
             StringComparer.OrdinalIgnoreCase);
-        WatchedGroupName = watchedGroupName?.Trim() ?? "";
     }
 
     public string UserSysId { get; }
 
-    public IReadOnlySet<string> GroupIds { get; }
+    public string MainGroupName { get; }
 
-    public string WatchedGroupName { get; }
+    public IReadOnlySet<string> Offices { get; }
 
     public bool Includes(WatchedRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
+        if (!MatchesAssignment(record))
+            return false;
+        return MatchesOffice(record);
+    }
+
+    private bool MatchesAssignment(WatchedRecord record)
+    {
         if (UserSysId.Length > 0 && record.AssignedToSysId.Trim().Equals(UserSysId, StringComparison.OrdinalIgnoreCase))
             return true;
-
-        var groupId = record.AssignmentGroupSysId.Trim();
-        if (groupId.Length > 0 && GroupIds.Contains(groupId))
+        if (IsMainGroup(record))
             return true;
-
-        return WatchedGroupName.Length > 0
-            && record.Group.Trim().Equals(WatchedGroupName, StringComparison.OrdinalIgnoreCase);
+        return !HasAssignee(record) && !HasGroup(record);
     }
+
+    private bool MatchesOffice(WatchedRecord record)
+    {
+        if (Offices.Count == 0)
+            return true;
+        var location = record.Location.Trim();
+        return location.Length > 0 && Offices.Contains(location);
+    }
+
+    private bool IsMainGroup(WatchedRecord record)
+    {
+        if (MainGroupName.Length == 0)
+            return false;
+        if (record.Group.Trim().Equals(MainGroupName, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return record.AssignmentGroupSysId.Trim().Equals(MainGroupName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasAssignee(WatchedRecord record) =>
+        !string.IsNullOrWhiteSpace(record.AssignedToSysId);
+
+    private static bool HasGroup(WatchedRecord record) =>
+        !string.IsNullOrWhiteSpace(record.AssignmentGroupSysId) || !string.IsNullOrWhiteSpace(record.Group);
 }
