@@ -27,6 +27,8 @@
     <Color x:Key="WarningSoftColor">#FFF6E8</Color>
     <Color x:Key="CustomerColor">#8A4B08</Color>
     <Color x:Key="AmberColor">#C47E09</Color>
+    <Color x:Key="DownloadTrackColor">#F2F4F2</Color>
+    <Color x:Key="DownloadFillColor">#B7E6B9</Color>
 
     <SolidColorBrush x:Key="NavBrush" Color="{StaticResource NavColor}"/>
     <SolidColorBrush x:Key="NavMutedBrush" Color="{StaticResource NavMutedColor}"/>
@@ -42,6 +44,8 @@
     <SolidColorBrush x:Key="WarningSoftBrush" Color="{StaticResource WarningSoftColor}"/>
     <SolidColorBrush x:Key="CustomerBrush" Color="{StaticResource CustomerColor}"/>
     <SolidColorBrush x:Key="AmberBrush" Color="{StaticResource AmberColor}"/>
+    <SolidColorBrush x:Key="DownloadTrackBrush" Color="{StaticResource DownloadTrackColor}"/>
+    <SolidColorBrush x:Key="DownloadFillBrush" Color="{StaticResource DownloadFillColor}"/>
     <SolidColorBrush x:Key="SlaBrush" Color="#B42318"/>
     <SolidColorBrush x:Key="FollowUpBrush" Color="#1D4E89"/>
     <SolidColorBrush x:Key="CallerUpdateBrush" Color="#6D28D9"/>

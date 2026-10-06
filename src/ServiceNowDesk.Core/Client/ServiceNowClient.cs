@@ -44,6 +44,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     private List<Choice> _groups = [];
     private List<Choice> _serviceOfferings = [];
     private List<Choice> _configurationItems = [];
+    private bool _configurationItemsReady;
     private string[]? _groupIds;
     private Task? _directoryRefresh;
 
@@ -166,6 +167,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         lock (_cacheGate)
         {
             _configurationItems = [];
+            _configurationItemsReady = true;
             _snapshot.ConfigurationItems = [];
             _snapshot.ConfigurationItemsCapturedAt = default;
             _snapshot.ConfigurationItemsTruncated = false;
@@ -204,6 +206,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             _groups = [];
             _serviceOfferings = [];
             _configurationItems = [];
+            _configurationItemsReady = false;
             _groupIds = null;
             _snapshot.Choices = [];
             _snapshot.CatalogItems = [];
@@ -459,8 +462,9 @@ public sealed class ServiceNowClient : IServiceNowClient
             ? personalFolded.Where(record => record.Section != DeskSection.WalkUps)
             : personalFolded;
         var viewer = new AssigneeScope(search.UserSysId);
+        var slaScope = new SlaBreachScope(search.UserSysId, groupIds, search.GroupName);
         var personal = new CategoryBuckets(
-            AlertClassifier.Bucket(AlertKind.SlaBreaching, personalFolded, now, JoinNotes(slaStatus, shared)),
+            AlertClassifier.Bucket(AlertKind.SlaBreaching, personalFolded, now, slaScope, JoinNotes(slaStatus, shared)),
             AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, holdSource, now, viewer, JoinNotes(holdNotes, shared)),
             AlertClassifier.Bucket(AlertKind.UpdatedByCaller, personalFolded, now, new CallerUpdateScope(search.UserSysId, search.GroupName, search.Locations), shared),
             AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, personalFolded, now, JoinNotes(journalStatus, shared)),
@@ -1131,7 +1135,38 @@ public sealed class ServiceNowClient : IServiceNowClient
     public Task<IReadOnlyList<Choice>> ListConfigurationItemsAsync(CancellationToken cancellationToken)
     {
         lock (_cacheGate)
-            return Task.FromResult<IReadOnlyList<Choice>>(_configurationItems.ToArray());
+        {
+            if (_configurationItemsReady)
+                return Task.FromResult<IReadOnlyList<Choice>>(_configurationItems.ToArray());
+        }
+
+        return Task.Run(ReadConfigurationItemsFromDisk, cancellationToken);
+    }
+
+    private IReadOnlyList<Choice> ReadConfigurationItemsFromDisk()
+    {
+        FormCatalogSnapshot? snapshot = null;
+        if (_catalog is not null && InstanceUri is not null)
+            snapshot = _catalog.Load(InstanceUri);
+
+        var saved = snapshot?.ConfigurationItems;
+        var choices = saved is { Count: > 0 } ? ToChoices(saved) : null;
+        lock (_cacheGate)
+        {
+            if (_configurationItemsReady)
+                return _configurationItems.ToArray();
+
+            if (choices is { Count: > 0 })
+            {
+                _snapshot.ConfigurationItems = CopyNamed(saved);
+                _snapshot.ConfigurationItemsCapturedAt = snapshot!.ConfigurationItemsCapturedAt;
+                _snapshot.ConfigurationItemsTruncated = snapshot.ConfigurationItemsTruncated;
+                _configurationItems = choices;
+            }
+
+            _configurationItemsReady = true;
+            return _configurationItems.ToArray();
+        }
     }
 
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchConfigurationItemsAsync(string text, CancellationToken cancellationToken)
@@ -1717,6 +1752,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             _snapshot.ConfigurationItems = CopyNamed(snapshot.ConfigurationItems);
             _serviceOfferings = ToChoices(_snapshot.ServiceOfferings);
             _configurationItems = ToChoices(_snapshot.ConfigurationItems);
+            _configurationItemsReady = true;
             _groups = _snapshot.Groups
                 .Where(group => !string.IsNullOrWhiteSpace(group.SysId) && !string.IsNullOrWhiteSpace(group.Name))
                 .Select(group => new Choice(group.SysId, group.Name))
@@ -2017,6 +2053,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         lock (_cacheGate)
         {
             _configurationItems = rows;
+            _configurationItemsReady = true;
             _snapshot.ConfigurationItems = rows.Select(ToNamed).ToList();
             _snapshot.ConfigurationItemsCapturedAt = DateTimeOffset.UtcNow;
             _snapshot.ConfigurationItemsTruncated = truncated;

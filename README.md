@@ -67,6 +67,8 @@ Connect and practice mode open a download screen only when something on this PC 
 
 Updated by caller lists a record only when the caller made the latest update, it is assigned to you or to the watched group or is unassigned in that group or with no group, and its location is one of the notification offices. If no offices are set, the office check is skipped.
 
+SLA breaching is rebuilt on every check. It keeps an open incident, request item, or walk-up only when the ticket is assigned to you, or has no assignee and sits in one of your groups or the watched group. Resolved, closed, and cancelled tickets drop off even when the old breach flag is still set. A ticket assigned to someone else in the group is not listed.
+
 F5 refreshes the list you are looking at. It does not open the download screen. To force a saved copy to download again, open Settings and use Cache. Each row has a refresh button. Refresh all clears every listed cache and downloads them again. That screen does not delete incident templates or the saved sign-in. A failed refresh leaves the other caches in place.
 
 Type a caller's name, user id, or email. The desk searches ServiceNow as you type. If that text matches one person, Save uses that person. If several people match, choose the row from the list.

@@ -8,6 +8,7 @@ public static class AlertClassifier
     /// <summary>An open ticket with no update for this long is unattended. On hold is included.</summary>
     public static readonly TimeSpan UnattendedQuiet = TimeSpan.FromHours(24);
 
+    /// <summary>The breach condition itself. Callers that already limited the population use this.</summary>
     public static bool IsSlaBreaching(WatchedRecord record, DateTime now)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -16,6 +17,20 @@ public static class AlertClassifier
         return StageIsInProgress(record.SlaStage)
             && record.SlaPlannedEnd is DateTime planned
             && planned < now;
+    }
+
+    /// <summary>
+    /// A personal SLA notification. The ticket must still be open and inside
+    /// <paramref name="scope"/> (assigned to the signed-in user, or unassigned in one of that user's groups or the watched group).
+    /// A breach flag stays true after the ticket is finished, so the open check is what keeps it out of the queue.
+    /// </summary>
+    public static bool IsSlaBreaching(WatchedRecord record, DateTime now, SlaBreachScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        ArgumentNullException.ThrowIfNull(scope);
+        if (!IsStillOpen(record) || !scope.Includes(record))
+            return false;
+        return IsSlaBreaching(record, now);
     }
 
     public static bool IsOnHold(DeskSection section, string? stateValue, string? stateLabel)
@@ -106,14 +121,22 @@ public static class AlertClassifier
         return SameUser(record.UpdatedBy, record.CallerUserName);
     }
 
-    public static bool Matches(AlertKind kind, WatchedRecord record, DateTime now, CallerUpdateScope? callerScope = null, AssigneeScope? holdScope = null)
+    public static bool Matches(
+        AlertKind kind,
+        WatchedRecord record,
+        DateTime now,
+        CallerUpdateScope? callerScope = null,
+        AssigneeScope? holdScope = null,
+        SlaBreachScope? slaScope = null)
     {
         ArgumentNullException.ThrowIfNull(record);
         if (!IsStillOpen(record))
             return false;
         return kind switch
         {
-            AlertKind.SlaBreaching => IsSlaBreaching(record, now),
+            AlertKind.SlaBreaching => slaScope is null
+                ? IsSlaBreaching(record, now)
+                : IsSlaBreaching(record, now, slaScope),
             AlertKind.OnHoldPastFollowUp => IsOnHoldPastFollowUp(record, now) && (holdScope is null || holdScope.Includes(record)),
             AlertKind.UpdatedByCaller => callerScope is not null && CallerMadeTheLatestUpdate(record) && callerScope.Includes(record),
             AlertKind.ReturnedWithNotes => IsReturnedWithNotes(record),
@@ -123,25 +146,41 @@ public static class AlertClassifier
     }
 
     public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, string? status = null) =>
-        Bucket(kind, records, now, (CallerUpdateScope?)null, status);
+        Collect(kind, records, now, null, null, null, status);
 
     public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, AssigneeScope holdScope, string? status = null)
     {
         ArgumentNullException.ThrowIfNull(holdScope);
-        return Bucket(kind, records, now, null, holdScope, status);
+        return Collect(kind, records, now, null, holdScope, null, status);
     }
 
-    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope? callerScope, string? status = null)
+    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope callerScope, string? status = null)
     {
-        ArgumentNullException.ThrowIfNull(records);
-        return Bucket(kind, records, now, callerScope, null, status);
+        ArgumentNullException.ThrowIfNull(callerScope);
+        return Collect(kind, records, now, callerScope, null, null, status);
     }
 
-    private static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope? callerScope, AssigneeScope? holdScope, string? status)
+    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, SlaBreachScope slaScope, string? status = null)
+    {
+        ArgumentNullException.ThrowIfNull(slaScope);
+        return Collect(kind, records, now, null, null, slaScope, status);
+    }
+
+    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope? callerScope, SlaBreachScope? slaScope, string? status = null) =>
+        Collect(kind, records, now, callerScope, null, slaScope, status);
+
+    private static AlertBucket Collect(
+        AlertKind kind,
+        IEnumerable<WatchedRecord> records,
+        DateTime now,
+        CallerUpdateScope? callerScope,
+        AssigneeScope? holdScope,
+        SlaBreachScope? slaScope,
+        string? status)
     {
         ArgumentNullException.ThrowIfNull(records);
         var rows = records
-            .Where(record => Matches(kind, record, now, callerScope, holdScope))
+            .Where(record => Matches(kind, record, now, callerScope, holdScope, slaScope))
             .Select(record => ToRecord(record, kind))
             .ToArray();
         return new AlertBucket(rows, rows.Length, status ?? "");
@@ -291,4 +330,45 @@ public sealed class CallerUpdateScope
 
     private static bool HasGroup(WatchedRecord record) =>
         !string.IsNullOrWhiteSpace(record.AssignmentGroupSysId) || !string.IsNullOrWhiteSpace(record.Group);
+}
+
+/// <summary>
+/// SLA breaches are rebuilt on every poll. A ticket counts only when it is still open and
+/// assigned to the signed-in user, or unassigned in one of that user's groups or the watched group.
+/// </summary>
+public sealed class SlaBreachScope
+{
+    public SlaBreachScope(string? userSysId, IEnumerable<string>? groupIds, string? watchedGroupName)
+    {
+        UserSysId = userSysId?.Trim() ?? "";
+        GroupIds = new HashSet<string>(
+            (groupIds ?? []).Select(id => id?.Trim() ?? "").Where(id => id.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
+        WatchedGroupName = watchedGroupName?.Trim() ?? "";
+    }
+
+    public string UserSysId { get; }
+
+    public IReadOnlySet<string> GroupIds { get; }
+
+    public string WatchedGroupName { get; }
+
+    public bool Includes(WatchedRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        var assignee = record.AssignedToSysId?.Trim() ?? "";
+        var groupId = record.AssignmentGroupSysId?.Trim() ?? "";
+        var group = record.Group?.Trim() ?? "";
+        if (UserSysId.Length > 0 && assignee.Equals(UserSysId, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (assignee.Length > 0)
+            return false;
+        if (GroupIds.Contains(groupId))
+            return true;
+        if (WatchedGroupName.Length == 0)
+            return false;
+        if (group.Equals(WatchedGroupName, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return groupId.Equals(WatchedGroupName, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -87,6 +87,13 @@ public class ReferenceCatalogTests
                     HttpStatusCode.InternalServerError);
             }
 
+            if (path.Contains("cmdb_ci", StringComparison.Ordinal))
+            {
+                return Api.Json(
+                    """{"result":[{"sys_id":"ci-printer","name":"HQ-PRINTER-01"}]}""",
+                    total: 1);
+            }
+
             return Api.Json("""{"result":[]}""");
         });
         var main = new MainViewModel(
@@ -128,6 +135,9 @@ public class ReferenceCatalogTests
 
         main.Incidents.ConfigurationItem.Filter = "core-switch";
         await main.Incidents.ConfigurationItem.WhenReady;
+        Assert.DoesNotContain(main.Incidents.ConfigurationItem.Choices, choice => choice.Value == "ci-switch");
+
+        await main.Incidents.ConfigurationItem.CommitAsync();
 
         Assert.Contains(main.Incidents.ConfigurationItem.Choices, choice => choice.Value == "ci-switch" && choice.Label == "CORE-SWITCH-02");
         main.Incidents.ConfigurationItem.Id = "ci-switch";

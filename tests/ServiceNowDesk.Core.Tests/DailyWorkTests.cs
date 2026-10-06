@@ -154,18 +154,22 @@ public class DailyWorkTests
 
         Assert.Empty(report.Personal.Bucket(AlertKind.OnHoldPastFollowUp).Rows);
         Assert.Equal(
-            ["INC0010002", "INC0010006", "INC0010001", "RITM0010001", "IMS0010001"],
+            ["INC0010010", "INC0010002", "INC0010006", "INC0010001", "RITM0010001", "IMS0010003", "IMS0010001"],
             report.Daily.Personal.Select(item => item.Number).ToArray());
-        Assert.All(report.Daily.Personal, item => Assert.Equal("Unattended", item.Reasons));
-        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "INC0010010");
+        Assert.Equal("SLA, Unattended", report.Daily.Personal[0].Reasons);
+        Assert.All(report.Daily.Personal.Skip(1).Take(4), item => Assert.Equal("Unattended", item.Reasons));
+        Assert.Equal("SLA, Unattended", report.Daily.Personal[5].Reasons);
+        Assert.Contains(report.Daily.Personal, item => item.Number == "INC0010010" && item.SlaBreaching);
 
         var team = report.Daily.Team;
-        Assert.Equal("INC0010010", team[0].Number);
+        Assert.Equal("INC0010016", team[0].Number);
         Assert.True(team[0].SlaBreaching);
+        Assert.Equal("Jordan Lee", team[0].Assignee);
         Assert.Equal("INC0010005", team[1].Number);
         Assert.DoesNotContain(team, item => item.Number == "INC0010008");
+        Assert.DoesNotContain(team, item => item.Number == "INC0010010");
         var moderate = team.Where(item => item.PriorityRank == 3).Select(item => item.Number).ToArray();
-        Assert.Equal(["RITM0010005", "INC0010007", "INC0010011", "RITM0010003"], moderate);
+        Assert.Equal(["INC0010007", "INC0010011", "RITM0010003"], moderate);
 
         var teamHold = report.Leads.For(LeadArea.Team).Bucket(AlertKind.OnHoldPastFollowUp).Rows;
         Assert.Contains(teamHold, row => row.Number == "INC0010011");

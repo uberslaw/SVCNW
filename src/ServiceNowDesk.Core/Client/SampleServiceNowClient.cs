@@ -83,11 +83,12 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         var now = DateTime.Now;
         var callerScope = new CallerUpdateScope(userId, search.GroupName, search.Locations);
         var viewer = new AssigneeScope(userId);
+        var slaScope = new SlaBreachScope(userId, ["group-cs"], search.GroupName);
         var personal = new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
         {
             [AlertKind.AssignedToMe] = new(assigned, assigned.Count),
             [AlertKind.WatchedGroup] = new(group, group.Count),
-            [AlertKind.SlaBreaching] = AlertClassifier.Bucket(AlertKind.SlaBreaching, watched, now),
+            [AlertKind.SlaBreaching] = AlertClassifier.Bucket(AlertKind.SlaBreaching, watched, now, slaScope),
             [AlertKind.OnHoldPastFollowUp] = AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, watched, now, viewer),
             [AlertKind.UpdatedByCaller] = AlertClassifier.Bucket(AlertKind.UpdatedByCaller, watched, now, callerScope),
             [AlertKind.ReturnedWithNotes] = AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, watched, now),
@@ -1407,7 +1408,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             ContactType = "phone",
             ContactTypeLabel = "Phone",
             Caller = Sam,
-            AssignedTo = Jordan,
+            AssignedTo = Alex,
             AssignmentGroup = ClientServices,
             OpenedAtDisplay = "2026-10-01 08:00",
             UpdatedAtDisplay = "2026-10-04 09:00",
@@ -1427,7 +1428,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Priority = "3",
             PriorityLabel = "3 - Moderate",
             Quantity = "1",
-            AssignedTo = Jordan,
+            AssignedTo = ReferenceValue.Empty,
             AssignmentGroup = ClientServices,
             OpenedAtDisplay = "2026-10-01 08:00",
             UpdatedAtDisplay = "2026-10-04 09:10",
@@ -1447,7 +1448,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Type = DefaultChoices.WalkUpType,
             TypeLabel = "Walk-up",
             OpenedFor = Sam,
-            AssignedTo = Jordan,
+            AssignedTo = Alex,
             AssignmentGroup = ClientServices,
             OpenedAtDisplay = "2026-10-03 10:00",
             UpdatedAtDisplay = "2026-10-04 10:00",
@@ -1618,7 +1619,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             SysId = "inc-resolved-today",
             Number = "INC0010015",
             ShortDescription = "Resolved today and still marked active",
-            Description = "This incident was resolved today. It stays out of the queues.",
+            Description = "This incident was resolved today. The breach flag stays true, and it stays out of the queues.",
             State = "6",
             StateLabel = "Resolved",
             Priority = "1",
@@ -1640,6 +1641,34 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Active = true
         });
         _signals["inc-resolved-today"] = new SampleAlertSignals { SlaBreached = true, UpdatedBy = "alex.rivera" };
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-sla-colleague",
+            Number = "INC0010016",
+            ShortDescription = "Colleague's breached SLA in the same group",
+            Description = "Assigned to someone else in Client Services, so it is not Alex's notification.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "2",
+            PriorityLabel = "2 - High",
+            Impact = "2",
+            ImpactLabel = "2 - Medium",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "network",
+            CategoryLabel = "Network",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Sam,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-10-02 08:00",
+            UpdatedAtDisplay = "2026-10-04 11:00",
+            UpdatedAtValue = "2026-10-04 11:00:00",
+            Active = true
+        });
+        _signals["inc-sla-colleague"] = new SampleAlertSignals { SlaBreached = true };
     }
 
     private sealed class SampleAlertSignals
