@@ -220,6 +220,7 @@ public class CacheSettingsTests
             CapturedAt = now,
             DirectoryCapturedAt = now,
             DirectoryComplete = true,
+            MembersVerified = true,
             Choices = FormCatalogFields.Independent.Select(field => new CachedChoiceList
             {
                 Table = field.Table,

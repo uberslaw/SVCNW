@@ -69,6 +69,8 @@ public sealed class FormCatalogSnapshot
     public DateTimeOffset CapturedAt { get; set; }
     public DateTimeOffset DirectoryCapturedAt { get; set; }
     public bool DirectoryComplete { get; set; }
+    public bool MembersVerified { get; set; }
+    public List<string> VerifiedMemberGroups { get; set; } = [];
     public List<CachedChoiceList> Choices { get; set; } = [];
     public List<CachedCatalogForm> CatalogItems { get; set; } = [];
     public List<CachedAssignmentGroup> Groups { get; set; } = [];

@@ -298,6 +298,7 @@ public class AssignmentDirectoryTests
             Element = field.Element,
             Choices = [new Choice("1", "One")]
         }).ToList();
+        snapshot.MembersVerified = true;
         snapshot.Members = [new CachedGroupMember { GroupSysId = "group-aus", UserSysId = "user-jordan", Name = "Jordan Lee" }];
         store.Save(session.InstanceUri, snapshot);
         var handler = new StubHandler((request, _) =>
@@ -346,6 +347,7 @@ public class AssignmentDirectoryTests
         CapturedAt = DateTimeOffset.UtcNow,
         DirectoryCapturedAt = capturedAt,
         DirectoryComplete = true,
+        MembersVerified = true,
         Groups = [new CachedAssignmentGroup { SysId = sysId, Name = name }],
         Members =
         [

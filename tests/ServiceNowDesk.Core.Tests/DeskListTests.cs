@@ -73,6 +73,100 @@ public class DeskListTests
     }
 
     [Fact]
+    public async Task AssignedToListsEveryMemberWhenTheGroupIsServedInPagesOfSeven()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "snd-members-" + Guid.NewGuid().ToString("N"));
+        var store = new FileFormCatalogStore(folder);
+        var session = Api.BasicSession();
+        store.Save(session.InstanceUri, new FormCatalogSnapshot
+        {
+            DirectoryCapturedAt = DateTimeOffset.UtcNow,
+            DirectoryComplete = true,
+            Groups = [new CachedAssignmentGroup { SysId = "group-aus", Name = "AUS DT - Client Services" }],
+            Members = Enumerable.Range(1, 7).Select(index => new CachedGroupMember
+            {
+                GroupSysId = "group-aus",
+                UserSysId = "stale-" + index,
+                Name = "Stale " + index
+            }).ToList()
+        });
+        var offsets = new List<int>();
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            if (!path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+
+            var text = Uri.UnescapeDataString(path);
+            Assert.Contains("group=group-aus", text);
+            Assert.Contains("user.user_name", text);
+            Assert.DoesNotContain("user.active", text, StringComparison.OrdinalIgnoreCase);
+            var offset = QueryOffset(text);
+            lock (offsets)
+                offsets.Add(offset);
+
+            const int pageSize = 7;
+            const int total = 25;
+            var count = Math.Max(0, Math.Min(pageSize, total - offset));
+            var rows = new List<string>();
+            for (var index = 0; index < count; index++)
+            {
+                var number = offset + index + 1;
+                var id = "user-" + number.ToString("00");
+                if (number == 8)
+                {
+                    rows.Add(
+                        "{\"group\":{\"value\":\"group-aus\",\"display_value\":\"AUS DT - Client Services\"},\"user\":{\"value\":\""
+                        + id + "\",\"display_value\":\"\"},\"user.user_name\":{\"value\":\"person.08\",\"display_value\":\"person.08\"},\"user.email\":{\"value\":\"person.08@example.com\",\"display_value\":\"person.08@example.com\"}}");
+                }
+                else
+                {
+                    var label = "Person " + number.ToString("00");
+                    rows.Add(
+                        "{\"group\":{\"value\":\"group-aus\",\"display_value\":\"AUS DT - Client Services\"},\"user\":{\"value\":\""
+                        + id + "\",\"display_value\":\"" + label + "\"}}");
+                }
+            }
+
+            var response = Api.Json("{\"result\":[" + string.Join(",", rows) + "]}", total: total);
+            var next = offset + count;
+            if (next < total)
+            {
+                response.Headers.TryAddWithoutValidation(
+                    "Link",
+                    "</api/now/table/sys_user_grmember?sysparm_fields=group,user&sysparm_limit=200&sysparm_offset="
+                    + (offset + 200)
+                    + "&sysparm_query=group%3Dgroup-aus>;rel=\"next\"");
+            }
+
+            return response;
+        });
+        using var client = ServiceNowClient.Create(session, handler, store);
+        var fields = new AssignmentFields();
+        fields.Use(client);
+        fields.GroupId = "group-aus";
+        await fields.WhenReady;
+
+        Assert.Equal([0, 7, 14, 21], offsets);
+        Assert.Equal(26, fields.Members.Count);
+        Assert.Equal("Unassigned", fields.Members[0].Label);
+        Assert.Contains(fields.Members, member => member.Value == "" && member.Label == "Unassigned");
+        Assert.Contains(fields.Members, member => member.Value == "user-08" && member.Label == "person.08");
+        Assert.DoesNotContain(fields.Members, member => member.Label.StartsWith("Stale", StringComparison.Ordinal));
+        for (var number = 1; number <= 25; number++)
+        {
+            if (number == 8)
+                continue;
+            var id = "user-" + number.ToString("00");
+            var label = "Person " + number.ToString("00");
+            Assert.Contains(fields.Members, member => member.Value == id && member.Label == label);
+        }
+
+        await client.ListGroupMembersAsync("group-aus", CancellationToken.None);
+        Assert.Equal(4, handler.Calls.Count(call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void RecentGroupsKeepTheLastFiveOnDisk()
     {
         var folder = Path.Combine(Path.GetTempPath(), "snd-recent-" + Guid.NewGuid().ToString("N"));
@@ -336,6 +430,19 @@ public class DeskListTests
 
     private static string OneUser(string sysId, string name, string userName, string email) =>
         "{\"sys_id\":{\"value\":\"" + sysId + "\",\"display_value\":\"" + sysId + "\"},\"name\":{\"value\":\"" + name + "\",\"display_value\":\"" + name + "\"},\"user_name\":{\"value\":\"" + userName + "\",\"display_value\":\"" + userName + "\"},\"email\":{\"value\":\"" + email + "\",\"display_value\":\"" + email + "\"}}";
+
+    private static int QueryOffset(string text)
+    {
+        const string marker = "sysparm_offset=";
+        var index = text.IndexOf(marker, StringComparison.Ordinal);
+        if (index < 0)
+            return 0;
+        var start = index + marker.Length;
+        var end = start;
+        while (end < text.Length && char.IsDigit(text[end]))
+            end++;
+        return end > start ? int.Parse(text[start..end], System.Globalization.CultureInfo.InvariantCulture) : 0;
+    }
 
     private static async Task WaitUntilAsync(Func<bool> ready)
     {
