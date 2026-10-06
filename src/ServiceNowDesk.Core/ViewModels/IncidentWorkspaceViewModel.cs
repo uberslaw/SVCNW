@@ -12,6 +12,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     private readonly IIncidentTemplateStore _templates;
     private IncidentRecord? _loaded;
     private bool _choicesReady;
+    private bool _contactEdited;
 
     public IncidentWorkspaceViewModel(IDesktopServices desktop, IIncidentTemplateStore? templates = null, IRecentAssignmentGroupStore? recentGroups = null)
         : base(desktop, "incident", "incident", true, PresetCatalog.Incidents, DeskSection.Incidents, attachments: true)
@@ -60,8 +61,9 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     [ObservableProperty] private string category = "";
     [ObservableProperty] private string subcategory = "";
     [ObservableProperty] private string subcategoryLabel = "";
-    [ObservableProperty] private string contactType = "phone";
+    [ObservableProperty] private string contactType = ContactTypeCatalog.DirectValue;
     [ObservableProperty] private string holdReason = "";
+    [ObservableProperty] private string locationText = "";
 
     public bool ShowHoldReason => State == "3";
 
@@ -92,6 +94,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         await FillChoicesAsync(PriorityChoices, "incident", "priority", DefaultChoices.Priorities, includeBlank: true, blankLabel: "Let ServiceNow set this");
         await FillChoicesAsync(CategoryChoices, "incident", "category", DefaultChoices.Categories, includeBlank: true, blankLabel: "None");
         await FillChoicesAsync(ContactChoices, "incident", "contact_type", DefaultChoices.ContactTypes);
+        PublishContactChoices();
         await FillChoicesAsync(HoldReasonChoices, "incident", "hold_reason", DefaultChoices.HoldReasons, includeBlank: true, blankLabel: "None");
         await FillChoicesAsync(ResolveChoices, "incident", "close_code", DefaultChoices.CloseCodes);
     }
@@ -129,7 +132,6 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             || State != record.State
             || Impact != record.Impact
             || Urgency != record.Urgency
-            || Priority != record.Priority
             || Category != record.Category
             || Subcategory != record.Subcategory
             || ContactType != record.ContactType
@@ -144,14 +146,17 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     protected override void OnStartNew()
     {
         _loaded = null;
+        _contactEdited = false;
         ShortDescription = "";
         Description = "";
         State = "1";
         Impact = "3";
         Urgency = "3";
         Priority = "";
+        PriorityLabel = "";
         Category = "";
-        ContactType = "phone";
+        LocationText = "";
+        ContactType = ContactTypeCatalog.DefaultValue(ContactChoices);
         HoldReason = "";
         Caller.Clear();
         Assignment.ClearSelection();
@@ -219,7 +224,6 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             State = State,
             Impact = Impact,
             Urgency = Urgency,
-            Priority = FieldDiff.NullIfEmpty(Priority),
             Category = FieldDiff.NullIfEmpty(Category),
             Subcategory = FieldDiff.NullIfEmpty(Subcategory),
             ContactType = ContactType,
@@ -289,8 +293,12 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
 
     partial void OnImpactChanged(string value) => Touch();
     partial void OnUrgencyChanged(string value) => Touch();
-    partial void OnPriorityChanged(string value) => Touch();
-    partial void OnContactTypeChanged(string value) => Touch();
+    partial void OnContactTypeChanged(string value)
+    {
+        if (!Applying)
+            _contactEdited = true;
+        Touch();
+    }
     partial void OnHoldReasonChanged(string value) => Touch();
     partial void OnSubcategoryChanged(string value) => Touch();
 
@@ -312,6 +320,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     private void Apply(IncidentRecord record)
     {
         _loaded = record;
+        _contactEdited = false;
         EnsureChoice(StateChoices, record.State, record.StateLabel);
         EnsureChoice(CategoryChoices, record.Category, record.CategoryLabel);
         EnsureChoice(SubcategoryChoices, record.Subcategory, record.SubcategoryLabel);
@@ -328,7 +337,8 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         Category = record.Category;
         SubcategoryLabel = record.SubcategoryLabel;
         Subcategory = record.Subcategory;
-        ContactType = string.IsNullOrEmpty(record.ContactType) ? "phone" : record.ContactType;
+        LocationText = record.Location;
+        ContactType = record.ContactType;
         HoldReason = record.HoldReason;
         Caller.Set(record.Caller.SysId, record.Caller.Display);
         ServiceOffering.Show(record.ServiceOffering.SysId, record.ServiceOffering.Display);
@@ -346,7 +356,6 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             State = FieldDiff.Changed(State, record.State),
             Impact = FieldDiff.Changed(Impact, record.Impact),
             Urgency = FieldDiff.Changed(Urgency, record.Urgency),
-            Priority = FieldDiff.Changed(Priority, record.Priority),
             Category = FieldDiff.Changed(Category, record.Category),
             Subcategory = FieldDiff.Changed(Subcategory, record.Subcategory),
             ContactType = FieldDiff.Changed(ContactType, record.ContactType),
@@ -392,7 +401,9 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             Urgency = string.IsNullOrEmpty(template.Urgency) ? "3" : template.Urgency;
             Priority = template.Priority ?? "";
             Category = template.Category ?? "";
-            ContactType = string.IsNullOrEmpty(template.ContactType) ? "phone" : template.ContactType;
+            ContactType = string.IsNullOrEmpty(template.ContactType)
+                ? ContactTypeCatalog.DefaultValue(ContactChoices)
+                : template.ContactType;
             HoldReason = template.HoldReason ?? "";
             Caller.Set(template.CallerId, template.CallerDisplay);
             await Assignment.ShowAsync(
@@ -519,14 +530,30 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         || State != "1"
         || Impact != "3"
         || Urgency != "3"
-        || !string.IsNullOrEmpty(Priority)
         || !string.IsNullOrEmpty(Category)
         || !string.IsNullOrEmpty(Subcategory)
-        || ContactType != "phone"
+        || ContactType != ContactTypeCatalog.DefaultValue(ContactChoices)
         || !string.IsNullOrEmpty(HoldReason);
 
     private static bool SameId(string? left, string? right) =>
         string.Equals(left ?? "", right ?? "", StringComparison.Ordinal);
+
+    private void PublishContactChoices()
+    {
+        var keep = ContactType;
+        var merged = ContactTypeCatalog.Merge(ContactChoices.ToArray());
+        ContactChoices.Clear();
+        foreach (var choice in merged)
+            ContactChoices.Add(choice);
+
+        if (!string.IsNullOrEmpty(keep))
+            EnsureChoice(ContactChoices, keep, keep);
+
+        var keepSaved = !IsNew || _contactEdited || (!string.IsNullOrEmpty(keep) && keep != ContactTypeCatalog.DirectValue);
+        Applying = true;
+        ContactType = keepSaved ? keep : ContactTypeCatalog.DefaultValue(ContactChoices);
+        Applying = false;
+    }
 
     private async Task LoadReferenceChoicesAsync()
     {

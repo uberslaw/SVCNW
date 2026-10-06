@@ -1,0 +1,182 @@
+<UserControl x:Class="ServiceNowDesk.Views.HardwareView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:ServiceNowDesk.Controls">
+    <Grid Margin="16,12,16,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="12" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="Receive laptops" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="Choose one stockroom for the batch, then scan each serial. The scanner sends Enter." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="280"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Stockroom" Style="{StaticResource FieldLabel}"/>
+                        <controls:ReferenceEditor DataContext="{Binding ReceiveStockroom}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Scan serial" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding ScanText, UpdateSourceTrigger=PropertyChanged}"
+                                 PreviewKeyDown="ScanBox_PreviewKeyDown"
+                                 AutomationProperties.Name="Scan serial"/>
+                    </StackPanel>
+                </Grid>
+                <TextBlock Text="{Binding ReceiveMessage}" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding ReceiveMessage, Converter={StaticResource StringVis}}"/>
+                <TextBlock Text="Received" FontWeight="SemiBold" Margin="0,0,0,4" Visibility="{Binding HasReceived, Converter={StaticResource BoolVis}}"/>
+                <ItemsControl ItemsSource="{Binding Received}" Margin="0,0,0,8" Visibility="{Binding HasReceived, Converter={StaticResource BoolVis}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Margin="0,0,0,2">
+                                <Run Text="{Binding SerialNumber, Mode=OneWay}" FontWeight="SemiBold"/>
+                                <Run Text="  "/>
+                                <Run Text="{Binding OldState, Mode=OneWay}"/>
+                                <Run Text=" → "/>
+                                <Run Text="{Binding NewState, Mode=OneWay}"/>
+                                <Run Text="  "/>
+                                <Run Text="{Binding Note, Mode=OneWay}"/>
+                            </TextBlock>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="Waiting for a stockroom" FontWeight="SemiBold" Margin="0,0,0,4" Visibility="{Binding HasPending, Converter={StaticResource BoolVis}}"/>
+                <ItemsControl ItemsSource="{Binding PendingScans}" Margin="0,0,0,8" Visibility="{Binding HasPending, Converter={StaticResource BoolVis}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="Unmatched" FontWeight="SemiBold" Margin="0,0,0,4" Visibility="{Binding HasUnmatched, Converter={StaticResource BoolVis}}"/>
+                <ItemsControl ItemsSource="{Binding UnmatchedScans}" Visibility="{Binding HasUnmatched, Converter={StaticResource BoolVis}}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="16"/>
+                <ColumnDefinition Width="380"/>
+            </Grid.ColumnDefinitions>
+
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="{Binding Items.Count, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
+                </StackPanel>
+                <Grid DockPanel.Dock="Top" Margin="8,0,8,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="140"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Serial" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="1" Text="Model" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="2" Text="Assigned to" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="3" Text="Location" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="4" Text="State" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="5" Text="Substate" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="6" Text="Comments" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                </Grid>
+                <ListBox ItemsSource="{Binding Items}"
+                         SelectedItem="{Binding Selected}"
+                         Style="{StaticResource DeskList}"
+                         ItemContainerStyle="{StaticResource DeskListItem}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid MinWidth="780">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="110"/>
+                                    <ColumnDefinition Width="110"/>
+                                    <ColumnDefinition Width="90"/>
+                                    <ColumnDefinition Width="110"/>
+                                    <ColumnDefinition Width="140"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding SerialNumber}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Model}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding AssignedTo.Display}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="3" Text="{Binding Location.Display}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="4" Text="{Binding InstallStatusLabel}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="5" Text="{Binding SubstatusLabel}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
+                                <TextBlock Grid.Column="6" Text="{Binding Comments}" TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <DockPanel Grid.Column="2">
+                <StackPanel DockPanel.Dock="Top">
+                    <Border Style="{StaticResource Banner}" Background="{StaticResource ErrorSoftBrush}" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}">
+                        <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
+                    </Border>
+                </StackPanel>
+                <Border DockPanel.Dock="Bottom" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,8,0,0"
+                        Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding EditorMessage}" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,8" Visibility="{Binding EditorMessage, Converter={StaticResource StringVis}}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Save" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Margin="0,0,8,0"/>
+                            <Button Content="Discard" Style="{StaticResource SecondaryButton}" Command="{Binding DiscardCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <TextBlock DockPanel.Dock="Top" Text="Select a serial number to open the asset." Margin="0,24,0,0" HorizontalAlignment="Center" Foreground="{StaticResource MutedBrush}"
+                           Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
+                    <StackPanel>
+                        <TextBlock Text="Serial number" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding SerialNumber, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Display name" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding DisplayName, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Model" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding ModelName, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
+
+                        <TextBlock Text="Assigned to" Style="{StaticResource FieldLabel}"/>
+                        <controls:ReferenceEditor DataContext="{Binding AssignedTo}" Margin="0,0,0,10"/>
+
+                        <TextBlock Text="State" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox ItemsSource="{Binding InstallStatuses}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding InstallStatus}" Margin="0,0,0,10"/>
+
+                        <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowSubstate, Converter={StaticResource BoolVis}}">
+                            <TextBlock Text="Substate" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox ItemsSource="{Binding Substatuses}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Substatus}"/>
+                        </StackPanel>
+
+                        <StackPanel Margin="0,0,0,10" Visibility="{Binding StockroomRequired, Converter={StaticResource BoolVis}}">
+                            <TextBlock Text="Stockroom" Style="{StaticResource FieldLabel}"/>
+                            <controls:ReferenceEditor DataContext="{Binding Stockroom}"/>
+                        </StackPanel>
+
+                        <TextBlock Text="Location" Style="{StaticResource FieldLabel}"/>
+                        <controls:ReferenceEditor DataContext="{Binding Location}" Margin="0,0,0,4"/>
+                        <TextBlock Text="Required for In stock, Missing, and Retired." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
+
+                        <TextBlock Text="Comments" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Comments, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" VerticalScrollBarVisibility="Auto"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Grid>
+    </Grid>
+</UserControl>

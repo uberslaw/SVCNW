@@ -21,6 +21,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private readonly List<RequestedItemRecord> _items = [];
     private readonly List<KnowledgeArticle> _articles = [];
     private readonly List<InteractionRecord> _interactions = [];
+    private readonly List<HardwareAsset> _hardware = [];
+    private readonly List<ReferenceSuggestion> _stockrooms = [];
+    private readonly List<ReferenceSuggestion> _locations = [];
     private readonly Dictionary<string, string> _relatedIncidents = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<JournalEntry>> _journal = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SampleAlertSignals> _signals = new(StringComparer.OrdinalIgnoreCase);
@@ -33,6 +36,12 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     }
 
     public Uri? InstanceUri => null;
+
+    public int HardwareCount => _hardware.Count;
+
+    public string LastHardwarePayload { get; private set; } = "";
+
+    public IReadOnlyList<Choice>? ContactTypeChoices { get; set; }
 
     public IReadOnlyList<ApiActivity> RecentActivity => _activity.ToArray();
 
@@ -341,8 +350,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Category = changes.Category ?? "",
             CategoryLabel = Label(DefaultChoices.Categories, changes.Category, changes.Category ?? ""),
             Subcategory = changes.Subcategory ?? "",
-            ContactType = string.IsNullOrWhiteSpace(changes.ContactType) ? "phone" : changes.ContactType,
-            ContactTypeLabel = Label(DefaultChoices.ContactTypes, changes.ContactType, "Phone"),
+            ContactType = string.IsNullOrWhiteSpace(changes.ContactType) ? ContactTypeCatalog.DirectValue : changes.ContactType,
+            ContactTypeLabel = Label(DefaultChoices.ContactTypes, string.IsNullOrWhiteSpace(changes.ContactType) ? ContactTypeCatalog.DirectValue : changes.ContactType, ContactTypeCatalog.DirectLabel),
             Caller = UserRef(changes.CallerId),
             AssignedTo = UserRef(changes.AssignedToId),
             AssignmentGroup = GroupRef(changes.AssignmentGroupId),
@@ -651,6 +660,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     public Task<IReadOnlyList<Choice>> GetChoicesAsync(string table, string element, string? dependentValue, CancellationToken cancellationToken)
     {
+        if (table == "incident" && element == "contact_type" && ContactTypeChoices is not null)
+            return Task.FromResult(ContactTypeChoices);
+
         if (table == "incident" && element == "subcategory")
         {
             IReadOnlyList<Choice> choices = dependentValue switch
@@ -663,7 +675,82 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             return Task.FromResult(choices);
         }
 
+        if (table == "alm_hardware" && element == "install_status")
+            return Task.FromResult(HardwareCatalog.InstallStatuses);
+
+        if (table == "alm_hardware" && element == "substatus")
+            return Task.FromResult(HardwareCatalog.RealSubstates(dependentValue));
+
         return Task.FromResult(DefaultChoices.For(table, element));
+    }
+
+    public Task<PagedResult<HardwareAsset>> SearchHardwareAsync(TicketQuery query, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var matches = _hardware
+            .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
+            .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        Record("GET", "api/now/table/alm_hardware");
+        var limit = Math.Clamp(query.Limit, 1, 100);
+        return Task.FromResult(new PagedResult<HardwareAsset>(matches.Take(limit).ToArray(), matches.Length));
+    }
+
+    public Task<HardwareAsset> GetHardwareAsync(string sysId, CancellationToken cancellationToken)
+    {
+        Record("GET", "api/now/table/alm_hardware");
+        return Task.FromResult(Find(_hardware, sysId, "hardware asset"));
+    }
+
+    public Task<HardwareAsset> UpdateHardwareAsync(string sysId, HardwareChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (!changes.HasChanges)
+            throw new InvalidOperationException("There is nothing to update.");
+
+        var current = Find(_hardware, sysId, "hardware asset");
+        var updated = current with
+        {
+            InstallStatus = changes.InstallStatus ?? current.InstallStatus,
+            InstallStatusLabel = changes.InstallStatus is null
+                ? current.InstallStatusLabel
+                : Label(HardwareCatalog.InstallStatuses, changes.InstallStatus, changes.InstallStatus),
+            Substatus = changes.ClearSubstatus ? "" : changes.Substatus ?? current.Substatus,
+            SubstatusLabel = changes.ClearSubstatus
+                ? ""
+                : changes.Substatus is null
+                    ? current.SubstatusLabel
+                    : Label(HardwareCatalog.RealSubstates(changes.InstallStatus ?? current.InstallStatus), changes.Substatus, changes.Substatus),
+            AssignedTo = changes.ClearAssignedTo ? ReferenceValue.Empty : changes.AssignedToId is null ? current.AssignedTo : UserRef(changes.AssignedToId),
+            Location = changes.ClearLocation ? ReferenceValue.Empty : changes.LocationId is null ? current.Location : PlaceRef(_locations, changes.LocationId),
+            Stockroom = changes.ClearStockroom ? ReferenceValue.Empty : changes.StockroomId is null ? current.Stockroom : PlaceRef(_stockrooms, changes.StockroomId),
+            Comments = changes.Comments ?? current.Comments
+        };
+        Replace(_hardware, updated);
+        LastHardwarePayload = ChangeJson.FromHardware(changes);
+        Record("PATCH", "api/now/table/alm_hardware");
+        return Task.FromResult(updated);
+    }
+
+    public Task<HardwareAsset?> FindHardwareBySerialAsync(string serial, bool ignoreCase, CancellationToken cancellationToken)
+    {
+        Record("GET", "api/now/table/alm_hardware");
+        var comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return Task.FromResult(_hardware.FirstOrDefault(asset => string.Equals(asset.SerialNumber, serial, comparison)));
+    }
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> SearchStockroomsAsync(string text, CancellationToken cancellationToken) =>
+        Task.FromResult(SearchPeople(text, _stockrooms));
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> SearchLocationsAsync(string text, CancellationToken cancellationToken) =>
+        Task.FromResult(SearchPeople(text, _locations));
+
+    private static ReferenceValue PlaceRef(IReadOnlyList<ReferenceSuggestion> places, string? sysId)
+    {
+        if (string.IsNullOrWhiteSpace(sysId))
+            return ReferenceValue.Empty;
+        var place = places.FirstOrDefault(item => item.SysId == sysId);
+        return place is null ? new ReferenceValue(sysId, sysId) : new ReferenceValue(place.SysId, place.Display);
     }
 
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
@@ -1744,6 +1831,60 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Active = true
         });
         _signals["inc-sla-colleague"] = new SampleAlertSignals { SlaBreached = true };
+        SeedHardware();
+    }
+
+    private void SeedHardware()
+    {
+        _stockrooms.Add(new ReferenceSuggestion("stock-bne", "Brisbane", ""));
+        _locations.Add(new ReferenceSuggestion("loc-bne", "Brisbane Office", ""));
+        _locations.Add(new ReferenceSuggestion("loc-syd", "Sydney Office", ""));
+        _locations.Add(new ReferenceSuggestion("loc-hkg", "Hong Kong Office", ""));
+
+        _hardware.Add(new HardwareAsset
+        {
+            SysId = "hw-transit",
+            SerialNumber = "5CG6245F8S",
+            DisplayName = "HP HP ZBook Ultra G1a 14 inch Mobile Workstation PC",
+            Model = "HP ZBook Ultra G1a 14 inch Mobile Workstation PC",
+            ModelCategory = HardwareCatalog.Computer,
+            AssignedTo = ReferenceValue.Empty,
+            Location = new ReferenceValue("loc-bne", "Brisbane Office"),
+            Stockroom = ReferenceValue.Empty,
+            InstallStatus = HardwareCatalog.InTransit,
+            InstallStatusLabel = HardwareCatalog.InTransit,
+            Comments = "For testing by Mark Lindsay"
+        });
+        _hardware.Add(new HardwareAsset
+        {
+            SysId = "hw-inuse",
+            SerialNumber = "5CG0000DBR",
+            DisplayName = "HP ZBook Ultra 16 inch G1i Mobile Workstation",
+            Model = "HP ZBook Ultra 16 inch G1i Mobile Workstation",
+            ModelCategory = HardwareCatalog.Computer,
+            AssignedTo = Jordan,
+            Location = new ReferenceValue("loc-syd", "Sydney Office"),
+            Stockroom = ReferenceValue.Empty,
+            InstallStatus = HardwareCatalog.InUse,
+            InstallStatusLabel = HardwareCatalog.InUse,
+            Comments = "Assigned laptop"
+        });
+        _hardware.Add(new HardwareAsset
+        {
+            SysId = "hw-stock",
+            SerialNumber = "5CG30710BR",
+            DisplayName = "HP ZBook Fury 16 G9",
+            Model = "HP ZBook Fury 16 G9",
+            ModelCategory = HardwareCatalog.Computer,
+            AssignedTo = ReferenceValue.Empty,
+            Location = new ReferenceValue("loc-hkg", "Hong Kong Office"),
+            Stockroom = new ReferenceValue("stock-bne", "Brisbane"),
+            InstallStatus = HardwareCatalog.InStock,
+            InstallStatusLabel = HardwareCatalog.InStock,
+            Substatus = HardwareCatalog.Available,
+            SubstatusLabel = HardwareCatalog.Available,
+            Comments = "On the shelf"
+        });
     }
 
     private sealed class SampleAlertSignals
@@ -1924,6 +2065,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         RequestedItemRecord item => item.SysId,
         KnowledgeArticle article => article.SysId,
         InteractionRecord interaction => interaction.SysId,
+        HardwareAsset asset => asset.SysId,
         _ => ""
     };
 

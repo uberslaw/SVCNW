@@ -1,0 +1,509 @@
+using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using ServiceNowDesk.Client;
+using ServiceNowDesk.Models;
+
+namespace ServiceNowDesk.ViewModels;
+
+public partial class HardwareWorkspaceViewModel : ObservableObject
+{
+    private IServiceNowClient? _client;
+    private HardwareAsset? _loaded;
+    private bool _choicesReady;
+    private bool _suppressSelection;
+    private int _substateGeneration;
+
+    public HardwareWorkspaceViewModel()
+    {
+        AssignedTo = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
+        Location = new ReferenceFieldModel(SearchLocationsAsync);
+        Stockroom = new ReferenceFieldModel(SearchStockroomsAsync);
+        ReceiveStockroom = new ReferenceFieldModel(SearchStockroomsAsync);
+        AssignedTo.Changed += (_, _) => Touch();
+        Location.Changed += (_, _) => Touch();
+        Stockroom.Changed += (_, _) => Touch();
+        PendingScans.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPending));
+        UnmatchedScans.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasUnmatched));
+        Received.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasReceived));
+    }
+
+    public ReferenceFieldModel AssignedTo { get; }
+    public ReferenceFieldModel Location { get; }
+    public ReferenceFieldModel Stockroom { get; }
+    public ReferenceFieldModel ReceiveStockroom { get; }
+    public ObservableCollection<HardwareAsset> Items { get; } = [];
+    public ObservableCollection<Choice> InstallStatuses { get; } = [];
+    public ObservableCollection<Choice> Substatuses { get; } = [];
+    public ObservableCollection<string> PendingScans { get; } = [];
+    public ObservableCollection<string> UnmatchedScans { get; } = [];
+    public ObservableCollection<HardwareReceiptLine> Received { get; } = [];
+
+    public bool HasPending => PendingScans.Count > 0;
+    public bool HasUnmatched => UnmatchedScans.Count > 0;
+    public bool HasReceived => Received.Count > 0;
+    public bool ShowSubstate => Substatuses.Any(choice => !string.IsNullOrEmpty(choice.Value));
+    public string StateLabelText => HardwareCatalog.LabelOf(InstallStatuses, InstallStatus);
+    public bool StockroomRequired => HardwareCatalog.RequiresStockroom(StateLabelText);
+    public bool LocationRequired => HardwareCatalog.RequiresLocation(StateLabelText);
+
+    public Task SubstateLoad { get; private set; } = Task.CompletedTask;
+    public Task OpenTask { get; private set; } = Task.CompletedTask;
+
+    [ObservableProperty] private string searchText = "";
+    [ObservableProperty] private HardwareAsset? selected;
+    [ObservableProperty] private bool hasEditor;
+    [ObservableProperty] private bool isDirty;
+    [ObservableProperty] private bool isLoading;
+    [ObservableProperty] private string errorMessage = "";
+    [ObservableProperty] private string editorMessage = "";
+    [ObservableProperty] private string receiveMessage = "";
+    [ObservableProperty] private string scanText = "";
+    [ObservableProperty] private string serialNumber = "";
+    [ObservableProperty] private string displayName = "";
+    [ObservableProperty] private string modelName = "";
+    [ObservableProperty] private string installStatus = "";
+    [ObservableProperty] private string substatus = "";
+    [ObservableProperty] private string comments = "";
+
+    private bool Applying { get; set; }
+
+    public void Attach(IServiceNowClient? client)
+    {
+        _client = client;
+        _choicesReady = false;
+    }
+
+    public void Detach()
+    {
+        _client = null;
+        _choicesReady = false;
+        _loaded = null;
+        HasEditor = false;
+        IsDirty = false;
+        Items.Clear();
+        InstallStatuses.Clear();
+        Substatuses.Clear();
+        AssignedTo.Clear();
+        Location.Clear();
+        Stockroom.Clear();
+        ReceiveStockroom.Clear();
+    }
+
+    public async Task RefreshAsync()
+    {
+        if (_client is null)
+            return;
+
+        try
+        {
+            IsLoading = true;
+            ErrorMessage = "";
+            await EnsureChoicesAsync();
+            var page = await _client.SearchHardwareAsync(new TicketQuery { Text = SearchText, Limit = 100, Activity = ActivityFilter.Any }, CancellationToken.None);
+            var keep = Selected?.SysId ?? _loaded?.SysId;
+            _suppressSelection = true;
+            Items.Clear();
+            foreach (var asset in page.Items)
+                Items.Add(asset);
+            Selected = string.IsNullOrEmpty(keep) ? null : Items.FirstOrDefault(asset => asset.SysId == keep);
+            _suppressSelection = false;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public async Task EnsureChoicesAsync()
+    {
+        if (_choicesReady || _client is null)
+            return;
+
+        _choicesReady = true;
+        var choices = await ReadChoicesAsync("install_status", null, HardwareCatalog.InstallStatuses);
+        InstallStatuses.Clear();
+        foreach (var choice in choices)
+            InstallStatuses.Add(choice);
+        OnPropertyChanged(nameof(StateLabelText));
+        OnPropertyChanged(nameof(StockroomRequired));
+        OnPropertyChanged(nameof(LocationRequired));
+    }
+
+    [RelayCommand]
+    private async Task ReceiveScanAsync()
+    {
+        var raw = ScanText ?? "";
+        var scan = raw.Trim();
+        ScanText = "";
+        if (scan.Length == 0 || _client is null)
+            return;
+
+        if (string.IsNullOrEmpty(ReceiveStockroom.SysId))
+        {
+            PendingScans.Add(scan);
+            ReceiveMessage = "Choose the stockroom first.";
+            return;
+        }
+
+        try
+        {
+            ErrorMessage = "";
+            await EnsureChoicesAsync();
+            var asset = await HardwareSerial.FindAsync(scan, (serial, ignoreCase) =>
+                _client.FindHardwareBySerialAsync(serial, ignoreCase, CancellationToken.None));
+            if (asset is null)
+            {
+                UnmatchedScans.Add(scan);
+                ReceiveMessage = "No hardware asset matches " + scan + ".";
+                return;
+            }
+
+            if (HardwareCatalog.IsInStock(asset.InstallStatusLabel, asset.InstallStatus, InstallStatuses))
+            {
+                Received.Insert(0, new HardwareReceiptLine(asset.SerialNumber, asset.InstallStatusLabel, HardwareCatalog.InStock, "Already in stock"));
+                ReceiveMessage = asset.SerialNumber + " is already in stock.";
+                return;
+            }
+
+            var statusValue = HardwareCatalog.ValueForLabel(InstallStatuses, HardwareCatalog.InStock, HardwareCatalog.InStock);
+            var substates = await ReadChoicesAsync("substatus", statusValue, HardwareCatalog.RealSubstates(HardwareCatalog.LabelOf(InstallStatuses, statusValue)));
+            var available = HardwareCatalog.ValueForLabel(substates, HardwareCatalog.Available, HardwareCatalog.Available);
+            var updated = await _client.UpdateHardwareAsync(asset.SysId, new HardwareChanges
+            {
+                InstallStatus = statusValue,
+                Substatus = available,
+                StockroomId = ReceiveStockroom.SysId
+            }, CancellationToken.None);
+
+            Received.Insert(0, new HardwareReceiptLine(asset.SerialNumber, asset.InstallStatusLabel, updated.InstallStatusLabel, "Received"));
+            ReceiveMessage = "Received " + updated.SerialNumber + ".";
+            ReplaceItem(updated);
+            if (_loaded?.SysId == updated.SysId && !IsDirty)
+                await ShowAsync(updated);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+            ReceiveMessage = ErrorMessage;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SaveAsync()
+    {
+        if (_client is null || _loaded is null)
+            return;
+
+        if (!TryValidate(out var message))
+        {
+            ErrorMessage = message;
+            return;
+        }
+
+        var changes = BuildChanges();
+        if (!changes.HasChanges)
+        {
+            IsDirty = false;
+            EditorMessage = "No changes to save.";
+            return;
+        }
+
+        try
+        {
+            ErrorMessage = "";
+            var updated = await _client.UpdateHardwareAsync(_loaded.SysId, changes, CancellationToken.None);
+            await ShowAsync(updated);
+            ReplaceItem(updated);
+            EditorMessage = "Saved " + updated.SerialNumber + ".";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+        }
+    }
+
+    [RelayCommand]
+    private async Task DiscardAsync()
+    {
+        if (_loaded is null)
+            return;
+        await ShowAsync(_loaded);
+        EditorMessage = "Changes discarded.";
+        ErrorMessage = "";
+    }
+
+    public Task OpenAsync(string sysId)
+    {
+        OpenTask = OpenCoreAsync(sysId);
+        return OpenTask;
+    }
+
+    partial void OnSelectedChanged(HardwareAsset? value)
+    {
+        if (_suppressSelection || value is null)
+            return;
+        if (IsDirty && _loaded is not null && value.SysId != _loaded.SysId)
+        {
+            _suppressSelection = true;
+            Selected = Items.FirstOrDefault(asset => asset.SysId == _loaded.SysId);
+            _suppressSelection = false;
+            EditorMessage = "Save or discard unsaved changes first.";
+            return;
+        }
+
+        if (_loaded?.SysId == value.SysId && HasEditor)
+            return;
+        OpenTask = OpenCoreAsync(value.SysId);
+    }
+
+    partial void OnInstallStatusChanged(string value)
+    {
+        OnPropertyChanged(nameof(StateLabelText));
+        OnPropertyChanged(nameof(StockroomRequired));
+        OnPropertyChanged(nameof(LocationRequired));
+        if (Applying)
+            return;
+        Touch();
+        SubstateLoad = LoadSubstatesAsync(value, Substatus, preserveUnknown: false);
+    }
+
+    partial void OnSubstatusChanged(string value)
+    {
+        if (!Applying)
+            Touch();
+    }
+
+    partial void OnCommentsChanged(string value)
+    {
+        if (!Applying)
+            Touch();
+    }
+
+    private async Task OpenCoreAsync(string sysId)
+    {
+        if (_client is null || string.IsNullOrWhiteSpace(sysId))
+            return;
+
+        try
+        {
+            ErrorMessage = "";
+            await EnsureChoicesAsync();
+            var asset = await _client.GetHardwareAsync(sysId, CancellationToken.None);
+            await ShowAsync(asset);
+            EditorMessage = "";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+        }
+    }
+
+    private async Task ShowAsync(HardwareAsset asset)
+    {
+        Applying = true;
+        try
+        {
+            _loaded = asset;
+            HasEditor = true;
+            SerialNumber = asset.SerialNumber;
+            DisplayName = asset.DisplayName;
+            ModelName = asset.Model;
+            Comments = asset.Comments;
+            AssignedTo.Set(asset.AssignedTo.SysId, asset.AssignedTo.Display);
+            Location.Set(asset.Location.SysId, asset.Location.Display);
+            Stockroom.Set(asset.Stockroom.SysId, asset.Stockroom.Display);
+            InstallStatus = string.IsNullOrEmpty(asset.InstallStatus) ? asset.InstallStatusLabel : asset.InstallStatus;
+            if (!string.IsNullOrEmpty(InstallStatus) && InstallStatuses.All(choice => choice.Value != InstallStatus))
+                InstallStatuses.Add(new Choice(InstallStatus, string.IsNullOrWhiteSpace(asset.InstallStatusLabel) ? InstallStatus : asset.InstallStatusLabel));
+        }
+        finally
+        {
+            Applying = false;
+        }
+
+        await LoadSubstatesAsync(InstallStatus, asset.Substatus, preserveUnknown: true);
+        IsDirty = false;
+    }
+
+    private async Task LoadSubstatesAsync(string installStatus, string selected, bool preserveUnknown)
+    {
+        var generation = ++_substateGeneration;
+        var label = HardwareCatalog.LabelOf(InstallStatuses, installStatus);
+        var fallback = HardwareCatalog.RealSubstates(label);
+        var choices = await ReadChoicesAsync("substatus", installStatus, fallback);
+        if (generation != _substateGeneration)
+            return;
+
+        Substatuses.Clear();
+        if (choices.Count > 0)
+            Substatuses.Add(new Choice("", "None"));
+        foreach (var choice in choices)
+        {
+            if (string.IsNullOrEmpty(choice.Value))
+                continue;
+            if (Substatuses.All(existing => existing.Value != choice.Value))
+                Substatuses.Add(choice);
+        }
+
+        if (preserveUnknown && !string.IsNullOrEmpty(selected) && Substatuses.All(choice => choice.Value != selected))
+            Substatuses.Add(new Choice(selected, selected));
+
+        var keep = Substatuses.Any(choice => choice.Value == selected) ? selected : "";
+        Applying = true;
+        Substatus = keep;
+        Applying = false;
+        OnPropertyChanged(nameof(ShowSubstate));
+        OnPropertyChanged(nameof(StockroomRequired));
+        OnPropertyChanged(nameof(LocationRequired));
+    }
+
+    private HardwareChanges BuildChanges()
+    {
+        var record = _loaded ?? throw new InvalidOperationException("Open a hardware asset before saving.");
+        var substatus = FieldDiff.Changed(Substatus, record.Substatus);
+        var clearSubstatus = substatus is not null && string.IsNullOrEmpty(Substatus);
+        return new HardwareChanges
+        {
+            InstallStatus = FieldDiff.Changed(InstallStatus, record.InstallStatus),
+            Substatus = clearSubstatus ? null : substatus,
+            ClearSubstatus = clearSubstatus,
+            Comments = FieldDiff.Changed(Comments, record.Comments),
+            AssignedToId = !string.IsNullOrEmpty(AssignedTo.SysId) && AssignedTo.SysId != record.AssignedTo.SysId ? AssignedTo.SysId : null,
+            ClearAssignedTo = string.IsNullOrEmpty(AssignedTo.SysId) && !record.AssignedTo.IsEmpty,
+            LocationId = !string.IsNullOrEmpty(Location.SysId) && Location.SysId != record.Location.SysId ? Location.SysId : null,
+            ClearLocation = string.IsNullOrEmpty(Location.SysId) && !record.Location.IsEmpty,
+            StockroomId = !string.IsNullOrEmpty(Stockroom.SysId) && Stockroom.SysId != record.Stockroom.SysId ? Stockroom.SysId : null,
+            ClearStockroom = string.IsNullOrEmpty(Stockroom.SysId) && !record.Stockroom.IsEmpty
+        };
+    }
+
+    private bool TryValidate(out string message)
+    {
+        if (!ReferenceIsChosen(AssignedTo))
+        {
+            message = "Choose the assigned person from the list, or clear the field.";
+            return false;
+        }
+
+        if (StockroomRequired && string.IsNullOrEmpty(Stockroom.SysId))
+        {
+            message = "Choose a stockroom.";
+            return false;
+        }
+
+        if (!ReferenceIsChosen(Stockroom))
+        {
+            message = "Choose the stockroom from the list, or clear the field.";
+            return false;
+        }
+
+        if (LocationRequired && string.IsNullOrEmpty(Location.SysId))
+        {
+            message = "Choose a location.";
+            return false;
+        }
+
+        if (!ReferenceIsChosen(Location))
+        {
+            message = "Choose the location from the list, or clear the field.";
+            return false;
+        }
+
+        message = "";
+        return true;
+    }
+
+    private bool ComputeDirty()
+    {
+        if (_loaded is null)
+            return false;
+        var record = _loaded;
+        return SerialNumber != record.SerialNumber
+            || Comments != record.Comments
+            || InstallStatus != record.InstallStatus
+            || Substatus != record.Substatus
+            || AssignedTo.SysId != record.AssignedTo.SysId
+            || Location.SysId != record.Location.SysId
+            || Stockroom.SysId != record.Stockroom.SysId;
+    }
+
+    private void Touch()
+    {
+        if (Applying)
+            return;
+        IsDirty = ComputeDirty();
+    }
+
+    private void ReplaceItem(HardwareAsset updated)
+    {
+        var index = -1;
+        for (var i = 0; i < Items.Count; i++)
+        {
+            if (Items[i].SysId == updated.SysId)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0)
+            return;
+
+        _suppressSelection = true;
+        var wasSelected = Selected?.SysId == updated.SysId;
+        Items[index] = updated;
+        if (wasSelected)
+            Selected = updated;
+        _suppressSelection = false;
+    }
+
+    private async Task<IReadOnlyList<Choice>> ReadChoicesAsync(string element, string? dependent, IReadOnlyList<Choice> fallback)
+    {
+        if (_client is null)
+            return fallback;
+
+        try
+        {
+            var choices = await _client.GetChoicesAsync("alm_hardware", element, dependent, CancellationToken.None);
+            if (choices is null || choices.Count == 0)
+                return fallback;
+            return choices;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    private static bool ReferenceIsChosen(ReferenceFieldModel field)
+    {
+        var text = field.Text ?? "";
+        var id = field.SysId ?? "";
+        return string.IsNullOrWhiteSpace(text) == (id.Length == 0);
+    }
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
+        _client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : _client.SearchUsersAsync(text, cancellationToken);
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken) =>
+        _client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : _client.MatchUsersAsync(text, cancellationToken);
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> SearchLocationsAsync(string text, CancellationToken cancellationToken) =>
+        _client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : _client.SearchLocationsAsync(text, cancellationToken);
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> SearchStockroomsAsync(string text, CancellationToken cancellationToken) =>
+        _client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : _client.SearchStockroomsAsync(text, cancellationToken);
+}

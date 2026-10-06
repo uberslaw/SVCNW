@@ -78,6 +78,7 @@ public partial class MainViewModel : ObservableObject
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
+        Hardware = new HardwareWorkspaceViewModel();
         Requests = new RequestWorkspaceViewModel(desktop);
         RequestedItems = new RequestedItemWorkspaceViewModel(desktop, recent);
         WalkUps = new InteractionWorkspaceViewModel(desktop, recent);
@@ -161,6 +162,7 @@ public partial class MainViewModel : ObservableObject
 
     public ConnectionViewModel Connection { get; }
     public IncidentWorkspaceViewModel Incidents { get; }
+    public HardwareWorkspaceViewModel Hardware { get; }
     public RequestWorkspaceViewModel Requests { get; }
     public RequestedItemWorkspaceViewModel RequestedItems { get; }
     public InteractionWorkspaceViewModel WalkUps { get; }
@@ -387,6 +389,14 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        if (SelectedSection == DeskSection.Hardware)
+        {
+            Hardware.SearchText = SearchText;
+            await Hardware.RefreshAsync();
+            AbandonIfRejected(Hardware.ErrorMessage);
+            return;
+        }
+
         switch (SelectedSection)
         {
             case DeskSection.Search:
@@ -434,6 +444,12 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveActiveAsync()
     {
+        if (SelectedSection == DeskSection.Hardware)
+        {
+            await Hardware.SaveCommand.ExecuteAsync(null);
+            return;
+        }
+
         if (ActiveRecord is not null)
             await ActiveRecord.SaveCommand.ExecuteAsync(null);
     }
@@ -508,6 +524,7 @@ public partial class MainViewModel : ObservableObject
         SearchPlaceholder = value switch
         {
             DeskSection.Incidents => "Search incidents",
+            DeskSection.Hardware => "Search hardware by serial, model, or assignee",
             DeskSection.Requests => "Search requests",
             DeskSection.RequestedItems => "Search request items",
             DeskSection.WalkUps => "Search walk-up interactions",
@@ -584,6 +601,11 @@ public partial class MainViewModel : ObservableObject
         {
             case DeskSection.Incidents:
                 await LoadRecordSectionAsync(DeskSection.Incidents, Incidents);
+                break;
+            case DeskSection.Hardware:
+                Hardware.SearchText = SearchText;
+                await Hardware.RefreshAsync();
+                AbandonIfRejected(Hardware.ErrorMessage);
                 break;
             case DeskSection.Requests:
                 await LoadRecordSectionAsync(DeskSection.Requests, Requests);
@@ -998,6 +1020,7 @@ public partial class MainViewModel : ObservableObject
         _watch.Reset();
         Notifications.Clear();
         Incidents.Detach();
+        Hardware.Detach();
         Requests.Detach();
         RequestedItems.Detach();
         WalkUps.Detach();
@@ -1013,6 +1036,7 @@ public partial class MainViewModel : ObservableObject
             return;
 
         Incidents.Attach(client);
+        Hardware.Attach(client);
         Requests.Attach(client);
         RequestedItems.Attach(client);
         WalkUps.Attach(client);

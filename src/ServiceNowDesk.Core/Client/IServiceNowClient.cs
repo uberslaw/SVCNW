@@ -58,6 +58,13 @@ public interface IServiceNowClient : IDisposable
     Task<IReadOnlyList<Choice>> ListConfigurationItemsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<ReferenceSuggestion>> SearchConfigurationItemsAsync(string text, CancellationToken cancellationToken);
 
+    Task<PagedResult<HardwareAsset>> SearchHardwareAsync(TicketQuery query, CancellationToken cancellationToken);
+    Task<HardwareAsset> GetHardwareAsync(string sysId, CancellationToken cancellationToken);
+    Task<HardwareAsset> UpdateHardwareAsync(string sysId, HardwareChanges changes, CancellationToken cancellationToken);
+    Task<HardwareAsset?> FindHardwareBySerialAsync(string serial, bool ignoreCase, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ReferenceSuggestion>> SearchStockroomsAsync(string text, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ReferenceSuggestion>> SearchLocationsAsync(string text, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<CatalogItemSummary>> SearchCatalogItemsAsync(string text, CancellationToken cancellationToken);
     Task<IReadOnlyList<CatalogVariableDefinition>> GetCatalogVariablesAsync(string itemSysId, CancellationToken cancellationToken);
     Task<CatalogOrderResult> OrderCatalogItemAsync(

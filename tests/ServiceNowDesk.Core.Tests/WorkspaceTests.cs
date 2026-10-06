@@ -294,7 +294,7 @@ public class WorkspaceTests
         Assert.Equal("", workspace.Category);
         Assert.Equal("", workspace.Subcategory);
         Assert.Contains(workspace.SubcategoryChoices, choice => choice.Value == "" && choice.Label == "None");
-        Assert.Equal("phone", workspace.ContactType);
+        Assert.Equal("direct", workspace.ContactType);
         Assert.Equal("", workspace.Caller.SysId);
         Assert.Equal("", workspace.Caller.Text);
         Assert.Equal("", workspace.Assignment.GroupId);

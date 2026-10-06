@@ -13,7 +13,8 @@ namespace ServiceNowDesk.Client;
 
 public sealed class ServiceNowClient : IServiceNowClient
 {
-    private const string IncidentFields = "sys_id,number,short_description,description,state,priority,impact,urgency,category,subcategory,contact_type,caller_id,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,close_code,close_notes,hold_reason";
+    private const string IncidentFields = "sys_id,number,short_description,description,state,priority,impact,urgency,category,subcategory,contact_type,caller_id,assigned_to,assignment_group,service_offering,cmdb_ci,location,opened_at,sys_updated_on,active,close_code,close_notes,hold_reason";
+    private const string HardwareFields = "sys_id,serial_number,display_name,model,model_category,assigned_to,location,install_status,substatus,stockroom,comments";
     private const string RequestFields = "sys_id,number,short_description,description,request_state,requested_for,opened_by,opened_at,due_date,priority,special_instructions,approval,stage,active,sys_updated_on";
     private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,priority,close_notes";
     private const string KnowledgeFields = "sys_id,number,short_description,text,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
@@ -1260,6 +1261,82 @@ public sealed class ServiceNowClient : IServiceNowClient
             return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
 
         return SearchReferencesAsync("cmdb_ci", "sys_id,name,sys_class_name", "active=true^nameLIKE" + term, false, 20, cancellationToken);
+    }
+
+    public async Task<PagedResult<HardwareAsset>> SearchHardwareAsync(TicketQuery query, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var limit = Math.Clamp(query.Limit, 1, 100);
+        var offset = Math.Max(0, query.Offset);
+        var result = await GetListAsync("alm_hardware", HardwareFields, HardwareCatalog.ListQuery(query.Text), limit, offset, cancellationToken).ConfigureAwait(false);
+        using (result)
+        {
+            var items = RequireArray(result.Document)
+                .EnumerateArray()
+                .Select(RecordMapper.Hardware)
+                .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return new PagedResult<HardwareAsset>(items, result.TotalCount);
+        }
+    }
+
+    public Task<HardwareAsset> GetHardwareAsync(string sysId, CancellationToken cancellationToken) =>
+        GetOneAsync("alm_hardware", sysId, HardwareFields, RecordMapper.Hardware, cancellationToken);
+
+    public Task<HardwareAsset> UpdateHardwareAsync(string sysId, HardwareChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (!changes.HasChanges)
+            throw new InvalidOperationException("There is nothing to update.");
+
+        return WriteAsync(HttpMethod.Patch, "alm_hardware", sysId, ChangeJson.FromHardware(changes), HardwareFields, RecordMapper.Hardware, cancellationToken);
+    }
+
+    public async Task<HardwareAsset?> FindHardwareBySerialAsync(string serial, bool ignoreCase, CancellationToken cancellationToken)
+    {
+        string token;
+        try
+        {
+            token = EncodedQuery.SafeToken(serial, "serial number");
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+
+        if (!ignoreCase)
+        {
+            var exact = await QueryHardwareAsync("serial_number=" + token, 20, cancellationToken).ConfigureAwait(false);
+            return exact.FirstOrDefault(row => string.Equals(row.SerialNumber, serial, StringComparison.Ordinal));
+        }
+
+        var like = await QueryHardwareAsync("serial_numberLIKE" + token, 50, cancellationToken).ConfigureAwait(false);
+        return like.FirstOrDefault(row => string.Equals(row.SerialNumber, serial, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> SearchStockroomsAsync(string text, CancellationToken cancellationToken)
+    {
+        var term = EncodedQuery.Sanitize(text);
+        if (term.Length < 2)
+            return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
+
+        return SearchReferencesAsync("alm_stockroom", "sys_id,name", "nameLIKE" + term, false, 20, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> SearchLocationsAsync(string text, CancellationToken cancellationToken)
+    {
+        var term = EncodedQuery.Sanitize(text);
+        if (term.Length < 2)
+            return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
+
+        return SearchReferencesAsync("cmn_location", "sys_id,name", "nameLIKE" + term, false, 20, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<HardwareAsset>> QueryHardwareAsync(string query, int limit, CancellationToken cancellationToken)
+    {
+        var result = await GetListAsync("alm_hardware", HardwareFields, query, limit, 0, cancellationToken).ConfigureAwait(false);
+        using (result)
+            return RequireArray(result.Document).EnumerateArray().Select(RecordMapper.Hardware).ToArray();
     }
 
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchGroupsAsync(string text, CancellationToken cancellationToken)

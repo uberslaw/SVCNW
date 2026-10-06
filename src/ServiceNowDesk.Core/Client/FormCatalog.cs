@@ -50,7 +50,8 @@ public static class FormCatalogFields
         ("sc_req_item", "state"),
         ("sc_req_item", "priority"),
         ("interaction", "state"),
-        ("interaction", "type")
+        ("interaction", "type"),
+        ("alm_hardware", "install_status")
     ];
 }
 

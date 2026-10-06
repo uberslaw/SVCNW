@@ -50,6 +50,7 @@ public static class RecordMapper
             AssignmentGroup = Reference(record, "assignment_group"),
             ServiceOffering = Reference(record, "service_offering"),
             ConfigurationItem = Reference(record, "cmdb_ci"),
+            Location = LocationName(record),
             OpenedAtDisplay = SnowField.Read(record, "opened_at").Display,
             UpdatedAtDisplay = updated.Display,
             UpdatedAtValue = updated.Value,
@@ -368,6 +369,37 @@ public static class RecordMapper
         return new ReferenceValue(field.Value, field.Display);
     }
 
+    public static HardwareAsset Hardware(JsonElement record)
+    {
+        var status = SnowField.Read(record, "install_status");
+        var substatus = SnowField.Read(record, "substatus");
+        var model = Reference(record, "model");
+        var serial = SnowField.Read(record, "serial_number");
+        var displayName = SnowField.Read(record, "display_name");
+        return new HardwareAsset
+        {
+            SysId = SnowField.Read(record, "sys_id").Value,
+            SerialNumber = string.IsNullOrWhiteSpace(serial.Display) ? serial.Value : serial.Display,
+            DisplayName = string.IsNullOrWhiteSpace(displayName.Display) ? displayName.Value : displayName.Display,
+            Model = string.IsNullOrWhiteSpace(model.Display) ? model.SysId : model.Display,
+            ModelCategory = SnowField.Read(record, "model_category").Display,
+            AssignedTo = Reference(record, "assigned_to"),
+            Location = Reference(record, "location"),
+            Stockroom = Reference(record, "stockroom"),
+            InstallStatus = status.Value,
+            InstallStatusLabel = LabelOrValue(status),
+            Substatus = substatus.Value,
+            SubstatusLabel = string.IsNullOrWhiteSpace(substatus.Value) ? "" : LabelOrValue(substatus),
+            Comments = SnowField.Read(record, "comments").Display
+        };
+    }
+
+    private static string LocationName(JsonElement record)
+    {
+        var location = SnowField.Read(record, "location");
+        return string.IsNullOrWhiteSpace(location.Display) ? location.Value : location.Display;
+    }
+
     public static string LabelOrValue(SnowField field) =>
         string.IsNullOrWhiteSpace(field.Display) ? field.Value : field.Display;
 
@@ -420,6 +452,20 @@ public static class ChangeJson
             ["hold_reason"] = changes.HoldReason,
             ["service_offering"] = changes.ClearServiceOffering ? "" : changes.ServiceOfferingId,
             ["cmdb_ci"] = changes.ClearConfigurationItem ? "" : changes.ConfigurationItemId
+        });
+    }
+
+    public static string FromHardware(HardwareChanges changes)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        return Serialize(new Dictionary<string, string?>
+        {
+            ["assigned_to"] = changes.ClearAssignedTo ? "" : changes.AssignedToId,
+            ["install_status"] = changes.InstallStatus,
+            ["substatus"] = changes.ClearSubstatus ? "" : changes.Substatus,
+            ["stockroom"] = changes.ClearStockroom ? "" : changes.StockroomId,
+            ["location"] = changes.ClearLocation ? "" : changes.LocationId,
+            ["comments"] = changes.Comments
         });
     }
 

@@ -45,6 +45,7 @@ public static class DefaultChoices
 
     public static IReadOnlyList<Choice> ContactTypes { get; } =
     [
+        new(ContactTypeCatalog.DirectValue, ContactTypeCatalog.DirectLabel),
         new("phone", "Phone"),
         new("email", "Email"),
         new("walk-in", "Walk-in"),
