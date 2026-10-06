@@ -39,6 +39,13 @@ public class DailyWorkTests
             Now,
             mine);
         Assert.Equal("INC-quiet", Assert.Single(bucket.Rows).Number);
+
+        var resolvedToday = Sample("today") with { State = "Resolved", StateValue = "6", SlaHasBreached = true, UpdatedAt = Now };
+        Assert.False(AlertClassifier.IsStillOpen(resolvedToday));
+        Assert.False(AlertClassifier.Matches(AlertKind.SlaBreaching, resolvedToday, Now));
+        Assert.Empty(AlertClassifier.Bucket(AlertKind.SlaBreaching, [resolvedToday], Now).Rows);
+        Assert.Empty(DailyWorkRanker.Rank([resolvedToday], Now));
+        Assert.True(AlertClassifier.IsStillOpen(DeskSection.Incidents, "3", "On Hold"));
     }
 
     [Fact]

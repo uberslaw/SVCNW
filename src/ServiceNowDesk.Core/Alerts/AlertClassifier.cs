@@ -36,12 +36,21 @@ public static class AlertClassifier
     public static bool IsStillOpen(WatchedRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
-        if (LooksClosed(record.State) || LooksClosed(record.StateValue))
+        return IsStillOpen(record.Section, record.StateValue, record.State);
+    }
+
+    /// <summary>
+    /// Resolved, closed, and cancelled records stay out of the queues. Search can still find them.
+    /// On hold remains open. A label that says resolved, closed, or cancelled counts even when the value is custom.
+    /// </summary>
+    public static bool IsStillOpen(DeskSection section, string? stateValue, string? stateLabel)
+    {
+        if (LooksClosed(stateLabel) || LooksClosed(stateValue))
             return false;
-        var value = record.StateValue?.Trim() ?? "";
-        if (record.Section == DeskSection.Incidents && value is "6" or "7" or "8")
+        var value = stateValue?.Trim() ?? "";
+        if (section == DeskSection.Incidents && value is "6" or "7" or "8")
             return false;
-        if (record.Section == DeskSection.RequestedItems && value is "3" or "4" or "7")
+        if (section == DeskSection.RequestedItems && value is "3" or "4" or "7")
             return false;
         return true;
     }
@@ -97,15 +106,21 @@ public static class AlertClassifier
         return SameUser(record.UpdatedBy, record.CallerUserName);
     }
 
-    public static bool Matches(AlertKind kind, WatchedRecord record, DateTime now, CallerUpdateScope? callerScope = null, AssigneeScope? holdScope = null) => kind switch
+    public static bool Matches(AlertKind kind, WatchedRecord record, DateTime now, CallerUpdateScope? callerScope = null, AssigneeScope? holdScope = null)
     {
-        AlertKind.SlaBreaching => IsSlaBreaching(record, now),
-        AlertKind.OnHoldPastFollowUp => IsOnHoldPastFollowUp(record, now) && (holdScope is null || holdScope.Includes(record)),
-        AlertKind.UpdatedByCaller => callerScope is not null && CallerMadeTheLatestUpdate(record) && callerScope.Includes(record),
-        AlertKind.ReturnedWithNotes => IsReturnedWithNotes(record),
-        AlertKind.Unattended => IsUnattended(record, now) && (holdScope is null || holdScope.Includes(record)),
-        _ => false
-    };
+        ArgumentNullException.ThrowIfNull(record);
+        if (!IsStillOpen(record))
+            return false;
+        return kind switch
+        {
+            AlertKind.SlaBreaching => IsSlaBreaching(record, now),
+            AlertKind.OnHoldPastFollowUp => IsOnHoldPastFollowUp(record, now) && (holdScope is null || holdScope.Includes(record)),
+            AlertKind.UpdatedByCaller => callerScope is not null && CallerMadeTheLatestUpdate(record) && callerScope.Includes(record),
+            AlertKind.ReturnedWithNotes => IsReturnedWithNotes(record),
+            AlertKind.Unattended => IsUnattended(record, now) && (holdScope is null || holdScope.Includes(record)),
+            _ => false
+        };
+    }
 
     public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, string? status = null) =>
         Bucket(kind, records, now, (CallerUpdateScope?)null, status);

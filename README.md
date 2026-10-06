@@ -38,6 +38,8 @@ Lists of incidents, request items, walk-ups, and search can tint a row. Settings
 
 On hold past follow-up in Notifications lists only tickets assigned to the signed-in user.
 
+Resolved, closed, and cancelled records stay out of Notifications, Leads, and Daily Work. Search still finds them. On hold stays in the queues. An incident that was resolved today is excluded, even when ServiceNow still marks it active.
+
 Unattended tickets are still open, including on hold, and nobody has updated them for 24 hours. In Notifications that queue is only tickets assigned to the signed-in user.
 
 Daily Work, in the left navigation, lists what the signed-in user should attend to. A ticket is included when it matches a notification: SLA breaching, updated by caller, follow-up passed, unattended, or returned with notes. Priority comes first, then SLA, then a caller update, then a passed follow-up. The desk saves that list once each local day, at the first check after midnight or the next time the desk opens. Later checks keep the saved report and show which tickets left the list and which arrived. My team uses the people ticked under Leads. The reports are on this PC in `%AppData%\ServiceNowDesk\daily-work.json`.

@@ -54,9 +54,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         cancellationToken.ThrowIfCancellationRequested();
         var userId = EncodedQuery.SafeToken(search.UserSysId, "user id");
         var assigned = new List<AlertRecord>();
-        assigned.AddRange(_incidents.Where(record => record.Active && record.AssignedTo.SysId == userId).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
-        assigned.AddRange(_requests.Where(record => record.Active && record.AssignedTo.SysId == userId).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
-        assigned.AddRange(_items.Where(record => record.Active && record.AssignedTo.SysId == userId).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
+        assigned.AddRange(_incidents.Where(record => record.Active && record.AssignedTo.SysId == userId && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel)).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
+        assigned.AddRange(_requests.Where(record => record.Active && record.AssignedTo.SysId == userId && AlertClassifier.IsStillOpen(DeskSection.Requests, record.RequestState, record.RequestStateLabel)).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
+        assigned.AddRange(_items.Where(record => record.Active && record.AssignedTo.SysId == userId && AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel)).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
 
         var group = new List<AlertRecord>();
         if (AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations) is not null)
@@ -68,6 +68,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 .ToArray();
             group.AddRange(_incidents.Where(record =>
                 record.Active
+                && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel)
                 && string.Equals(record.AssignmentGroup.Display, name, StringComparison.OrdinalIgnoreCase)
                 && cities.Any(city => string.Equals(record.Location, city, StringComparison.OrdinalIgnoreCase)))
                 .Select(record => ToAlert(record, AlertKind.WatchedGroup)));
@@ -116,19 +117,19 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         var rows = new List<WatchedRecord>();
         foreach (var record in _incidents)
         {
-            if (record.Active && Take(record.AssignedTo.SysId, record.AssignmentGroup))
+            if (record.Active && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel) && Take(record.AssignedTo.SysId, record.AssignmentGroup))
                 rows.Add(Describe(DeskSection.Incidents, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, record.Location, record.UpdatedAtDisplay, record.Caller, record.AssignedTo, record.Priority, record.PriorityLabel));
         }
 
         foreach (var record in _items)
         {
-            if (record.Active && Take(record.AssignedTo.SysId, record.AssignmentGroup))
+            if (record.Active && AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel) && Take(record.AssignedTo.SysId, record.AssignmentGroup))
                 rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo, record.Priority, record.PriorityLabel));
         }
 
         foreach (var record in _interactions)
         {
-            if (record.Active && Take(record.AssignedTo.SysId, record.AssignmentGroup))
+            if (record.Active && AlertClassifier.IsStillOpen(DeskSection.WalkUps, record.State, record.StateLabel) && Take(record.AssignedTo.SysId, record.AssignmentGroup))
                 rows.Add(Describe(DeskSection.WalkUps, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, record.OpenedFor, record.AssignedTo));
         }
 
@@ -147,19 +148,19 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         var rows = new List<WatchedRecord>();
         foreach (var record in _incidents)
         {
-            if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, record.Location, userId, watched, groupName, cities))
+            if (AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel) && InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, record.Location, userId, watched, groupName, cities))
                 rows.Add(Describe(DeskSection.Incidents, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, record.Location, record.UpdatedAtDisplay, record.Caller, record.AssignedTo, record.Priority, record.PriorityLabel));
         }
 
         foreach (var record in _items)
         {
-            if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
+            if (AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel) && InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
                 rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo, record.Priority, record.PriorityLabel));
         }
 
         foreach (var record in _interactions)
         {
-            if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
+            if (AlertClassifier.IsStillOpen(DeskSection.WalkUps, record.State, record.StateLabel) && InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
                 rows.Add(Describe(DeskSection.WalkUps, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, record.OpenedFor, record.AssignedTo));
         }
 
@@ -1590,6 +1591,34 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Active = true
         });
         _signals["inc-outside"] = new SampleAlertSignals { SlaBreached = true, UpdatedBy = "sam.patel" };
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-resolved-today",
+            Number = "INC0010015",
+            ShortDescription = "Resolved today and still marked active",
+            Description = "This incident was resolved today. It stays out of the queues.",
+            State = "6",
+            StateLabel = "Resolved",
+            Priority = "1",
+            PriorityLabel = "1 - Critical",
+            Impact = "1",
+            ImpactLabel = "1 - High",
+            Urgency = "1",
+            UrgencyLabel = "1 - High",
+            Category = "software",
+            CategoryLabel = "Software",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = Alex,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2026-10-06 08:00",
+            UpdatedAtDisplay = "2026-10-06 09:00",
+            UpdatedAtValue = "2026-10-06 09:00:00",
+            Active = true
+        });
+        _signals["inc-resolved-today"] = new SampleAlertSignals { SlaBreached = true, UpdatedBy = "alex.rivera" };
     }
 
     private sealed class SampleAlertSignals

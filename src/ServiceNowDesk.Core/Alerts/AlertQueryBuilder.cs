@@ -1,14 +1,27 @@
+using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
 
 namespace ServiceNowDesk.Alerts;
 
 public static class AlertQueryBuilder
 {
-    public static string AssignedToMe(string userSysId)
+    public static string AssignedToMe(string userSysId, DeskSection section = DeskSection.Incidents)
     {
         var id = EncodedQuery.SafeToken(userSysId, "user id");
-        return "assigned_to=" + id + "^active=true^ORDERBYDESCsys_updated_on";
+        return "assigned_to=" + id + "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on";
     }
+
+    /// <summary>
+    /// Active, and not resolved, closed, or cancelled. On hold stays.
+    /// Incident 6, 7, and 8 are Resolved, Closed, and Canceled. Request-item 3, 4, and 7 are the closed states.
+    /// </summary>
+    public static string StillWorking(DeskSection section) => section switch
+    {
+        DeskSection.RequestedItems => "active=true^stateNOT IN3,4,7",
+        DeskSection.Requests => "active=true^request_stateNOT LIKEclosed^request_stateNOT LIKEcancel",
+        DeskSection.WalkUps => "active=true^stateNOT LIKEclosed^stateNOT LIKEcancel",
+        _ => "active=true^stateNOT IN6,7,8"
+    };
 
     /// <summary>
     /// Encoded query for open incidents in the watched group whose location name is one of the cities.
@@ -17,27 +30,28 @@ public static class AlertQueryBuilder
     public static string? WatchedGroup(string? groupName, IEnumerable<string>? locations)
     {
         var scope = WatchedScope(groupName, locations);
-        return scope is null ? null : scope + "^active=true^ORDERBYDESCsys_updated_on";
+        return scope is null ? null : scope + "^" + StillWorking(DeskSection.Incidents) + "^ORDERBYDESCsys_updated_on";
     }
 
     /// <summary>
     /// Open records assigned to the user, in the user's groups, or in the watched group at the office locations.
     /// Each segment is its own query so a location filter cannot leak onto the other populations.
     /// </summary>
-    public static string Population(string userSysId, IReadOnlyList<string>? groupIds, string? groupName, IEnumerable<string>? locations)
+    public static string Population(string userSysId, IReadOnlyList<string>? groupIds, string? groupName, IEnumerable<string>? locations, DeskSection section = DeskSection.Incidents)
     {
+        var open = StillWorking(section);
         var user = EncodedQuery.SafeToken(userSysId, "user id");
-        var segments = new List<string> { "assigned_to=" + user + "^active=true" };
+        var segments = new List<string> { "assigned_to=" + user + "^" + open };
         var groups = (groupIds ?? [])
             .Select(id => EncodedQuery.SafeToken(id, "group id"))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (groups.Length > 0)
-            segments.Add("assignment_groupIN" + string.Join(",", groups) + "^active=true");
+            segments.Add("assignment_groupIN" + string.Join(",", groups) + "^" + open);
 
         var watched = WatchedScope(groupName, locations);
         if (watched is not null)
-            segments.Add(watched + "^active=true");
+            segments.Add(watched + "^" + open);
         return string.Join("^NQ", segments);
     }
 
@@ -45,12 +59,13 @@ public static class AlertQueryBuilder
     /// Open tickets in the watched group, plus open tickets assigned to the selected team.
     /// Null when both scopes are blank, so the caller sends no request.
     /// </summary>
-    public static string? LeadPopulation(string? groupName, IEnumerable<string>? memberIds)
+    public static string? LeadPopulation(string? groupName, IEnumerable<string>? memberIds, DeskSection section = DeskSection.Incidents)
     {
+        var open = StillWorking(section);
         var segments = new List<string>();
         var group = Quote(groupName);
         if (group.Length > 0)
-            segments.Add("assignment_group.name=" + group + "^active=true");
+            segments.Add("assignment_group.name=" + group + "^" + open);
 
         var ids = new List<string>();
         foreach (var id in memberIds ?? [])
@@ -67,7 +82,7 @@ public static class AlertQueryBuilder
         }
         var distinctIds = ids.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (distinctIds.Length > 0)
-            segments.Add("assigned_toIN" + string.Join(",", distinctIds) + "^active=true");
+            segments.Add("assigned_toIN" + string.Join(",", distinctIds) + "^" + open);
 
         return segments.Count == 0 ? null : string.Join("^NQ", segments);
     }

@@ -280,10 +280,9 @@ public sealed class ServiceNowClient : IServiceNowClient
     public async Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(search);
-        var assignedQuery = AlertQueryBuilder.AssignedToMe(search.UserSysId);
-        var incidents = await QueryAlertsAsync("incident", AlertIncidentFields, assignedQuery, AlertKind.AssignedToMe, DeskSection.Incidents, includeLocation: true, cancellationToken).ConfigureAwait(false);
-        var requests = await QueryAlertsAsync("sc_request", AlertRequestFields, assignedQuery, AlertKind.AssignedToMe, DeskSection.Requests, includeLocation: false, cancellationToken).ConfigureAwait(false);
-        var items = await QueryAlertsAsync("sc_req_item", AlertItemFields, assignedQuery, AlertKind.AssignedToMe, DeskSection.RequestedItems, includeLocation: false, cancellationToken).ConfigureAwait(false);
+        var incidents = await QueryAlertsAsync("incident", AlertIncidentFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.Incidents), AlertKind.AssignedToMe, DeskSection.Incidents, includeLocation: true, cancellationToken).ConfigureAwait(false);
+        var requests = await QueryAlertsAsync("sc_request", AlertRequestFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.Requests), AlertKind.AssignedToMe, DeskSection.Requests, includeLocation: false, cancellationToken).ConfigureAwait(false);
+        var items = await QueryAlertsAsync("sc_req_item", AlertItemFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.RequestedItems), AlertKind.AssignedToMe, DeskSection.RequestedItems, includeLocation: false, cancellationToken).ConfigureAwait(false);
 
         var groupQuery = AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations);
         var group = groupQuery is null
@@ -318,11 +317,12 @@ public sealed class ServiceNowClient : IServiceNowClient
         var result = await GetListAsync(table, fields, query, AlertLimit, 0, cancellationToken).ConfigureAwait(false);
         using (result)
         {
-            var rows = RequireArray(result.Document)
+            var mapped = RequireArray(result.Document)
                 .EnumerateArray()
                 .Select(row => MapAlert(row, kind, section, includeLocation))
                 .ToArray();
-            var total = result.TotalCount ?? rows.Length;
+            var rows = mapped.Where(row => AlertClassifier.IsStillOpen(row.Section, row.State, row.State)).ToArray();
+            var total = rows.Length == mapped.Length ? result.TotalCount ?? rows.Length : rows.Length;
             return new AlertBucket(rows, total);
         }
     }
@@ -347,6 +347,15 @@ public sealed class ServiceNowClient : IServiceNowClient
             updatedText);
     }
 
+    private static string OrderedPopulation(AlertSearch search, IReadOnlyList<string> groupIds, DeskSection section) =>
+        AlertQueryBuilder.Population(search.UserSysId, groupIds, search.GroupName, search.Locations, section) + "^ORDERBYDESCsys_updated_on";
+
+    private static string OrderedLead(AlertSearch search, DeskSection section)
+    {
+        var query = AlertQueryBuilder.LeadPopulation(search.GroupName, search.TeamMemberIds, section);
+        return query is null ? "active=false" : query + "^ORDERBYDESCsys_updated_on";
+    }
+
     private async Task<CategoryLoad> LoadCategoryBucketsAsync(AlertSearch search, CancellationToken cancellationToken)
     {
         var notes = new List<string>();
@@ -362,15 +371,14 @@ public sealed class ServiceNowClient : IServiceNowClient
             notes.Add("Group membership was skipped: " + ex.Message);
         }
 
-        var population = AlertQueryBuilder.Population(search.UserSysId, groupIds, search.GroupName, search.Locations) + "^ORDERBYDESCsys_updated_on";
         var watched = new List<WatchedRecord>();
-        watched.AddRange(await TryPopulationAsync("incident", PopulationIncidentFields, population, DeskSection.Incidents, "Incidents were skipped: ", notes, cancellationToken).ConfigureAwait(false));
-        watched.AddRange(await TryPopulationAsync("sc_req_item", PopulationItemFields, population, DeskSection.RequestedItems, "Request items were skipped: ", notes, cancellationToken).ConfigureAwait(false));
+        watched.AddRange(await TryPopulationAsync("incident", PopulationIncidentFields, OrderedPopulation(search, groupIds, DeskSection.Incidents), DeskSection.Incidents, "Incidents were skipped: ", notes, cancellationToken).ConfigureAwait(false));
+        watched.AddRange(await TryPopulationAsync("sc_req_item", PopulationItemFields, OrderedPopulation(search, groupIds, DeskSection.RequestedItems), DeskSection.RequestedItems, "Request items were skipped: ", notes, cancellationToken).ConfigureAwait(false));
 
         var skipInteractionHold = false;
         try
         {
-            watched.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFields, population, DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
+            watched.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFields, OrderedPopulation(search, groupIds, DeskSection.WalkUps), DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
         }
         catch (ServiceNowException ex)
         {
@@ -378,7 +386,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             holdNotes.Add("Walk-up follow-up was skipped: " + ex.Message);
             try
             {
-                watched.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFieldsWithoutFollowUp, population, DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
+                watched.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFieldsWithoutFollowUp, OrderedPopulation(search, groupIds, DeskSection.WalkUps), DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
             }
             catch (ServiceNowException retry)
             {
@@ -388,21 +396,19 @@ public sealed class ServiceNowClient : IServiceNowClient
 
         var leadNotes = new List<string>();
         var lead = new List<WatchedRecord>();
-        var leadQuery = AlertQueryBuilder.LeadPopulation(search.GroupName, search.TeamMemberIds);
-        if (leadQuery is not null)
+        if (AlertQueryBuilder.LeadPopulation(search.GroupName, search.TeamMemberIds) is not null)
         {
-            var ordered = leadQuery + "^ORDERBYDESCsys_updated_on";
-            lead.AddRange(await TryPopulationAsync("incident", PopulationIncidentFields, ordered, DeskSection.Incidents, "Lead incidents were skipped: ", leadNotes, cancellationToken).ConfigureAwait(false));
-            lead.AddRange(await TryPopulationAsync("sc_req_item", PopulationItemFields, ordered, DeskSection.RequestedItems, "Lead request items were skipped: ", leadNotes, cancellationToken).ConfigureAwait(false));
+            lead.AddRange(await TryPopulationAsync("incident", PopulationIncidentFields, OrderedLead(search, DeskSection.Incidents), DeskSection.Incidents, "Lead incidents were skipped: ", leadNotes, cancellationToken).ConfigureAwait(false));
+            lead.AddRange(await TryPopulationAsync("sc_req_item", PopulationItemFields, OrderedLead(search, DeskSection.RequestedItems), DeskSection.RequestedItems, "Lead request items were skipped: ", leadNotes, cancellationToken).ConfigureAwait(false));
             try
             {
-                lead.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFields, ordered, DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
+                lead.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFields, OrderedLead(search, DeskSection.WalkUps), DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
             }
             catch (ServiceNowException)
             {
                 try
                 {
-                    lead.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFieldsWithoutFollowUp, ordered, DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
+                    lead.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFieldsWithoutFollowUp, OrderedLead(search, DeskSection.WalkUps), DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
                 }
                 catch (ServiceNowException retry)
                 {
@@ -511,7 +517,7 @@ public sealed class ServiceNowClient : IServiceNowClient
                 if (active.Value.Length > 0 && !SnowField.IsTrue(active))
                     continue;
                 var mapped = MapWatched(row, section);
-                if (mapped.SysId.Length > 0)
+                if (mapped.SysId.Length > 0 && AlertClassifier.IsStillOpen(mapped))
                     rows.Add(mapped);
             }
 

@@ -71,7 +71,11 @@ public class AlertTests
         Assert.Contains("active=true", query);
         Assert.DoesNotContain("^active=false", query);
         Assert.DoesNotContain("^ORpriority=1", query);
-        Assert.Equal("assigned_to=sample-user^active=true^ORDERBYDESCsys_updated_on", AlertQueryBuilder.AssignedToMe("sample-user"));
+        Assert.Equal("assigned_to=sample-user^active=true^stateNOT IN6,7,8^ORDERBYDESCsys_updated_on", AlertQueryBuilder.AssignedToMe("sample-user"));
+        Assert.Contains("stateNOT IN3,4,7", AlertQueryBuilder.AssignedToMe("sample-user", DeskSection.RequestedItems));
+        Assert.Contains("request_stateNOT LIKEclosed", AlertQueryBuilder.AssignedToMe("sample-user", DeskSection.Requests));
+        Assert.Contains("stateNOT LIKEclosed", AlertQueryBuilder.AssignedToMe("sample-user", DeskSection.WalkUps));
+        Assert.DoesNotContain("<", AlertQueryBuilder.AssignedToMe("sample-user"));
         Assert.Throws<InvalidOperationException>(() => AlertQueryBuilder.AssignedToMe("user^active=false"));
     }
 
@@ -102,6 +106,8 @@ public class AlertTests
         Assert.Contains(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "REQ0010001" && row.Section == DeskSection.Requests);
         Assert.Contains(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "RITM0010001" && row.Section == DeskSection.RequestedItems);
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "INC0010003");
+        Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "INC0010015");
+        Assert.DoesNotContain(snapshot.Bucket(AlertKind.SlaBreaching).Rows, row => row.Number == "INC0010015");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "RITM0010004");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Section == DeskSection.Knowledge);
         Assert.Equal(5, snapshot.Count(AlertKind.AssignedToMe));

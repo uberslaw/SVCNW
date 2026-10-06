@@ -73,7 +73,7 @@ public sealed class LeadBoard
     private static AlertBucket CallerUpdates(IReadOnlyList<WatchedRecord> records)
     {
         var rows = records
-            .Where(AlertClassifier.CallerMadeTheLatestUpdate)
+            .Where(record => AlertClassifier.IsStillOpen(record) && AlertClassifier.CallerMadeTheLatestUpdate(record))
             .Select(record => AlertClassifier.ToRecord(record, AlertKind.UpdatedByCaller))
             .ToArray();
         return new AlertBucket(rows, rows.Length);
