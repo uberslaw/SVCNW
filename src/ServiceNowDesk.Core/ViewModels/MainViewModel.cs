@@ -500,8 +500,7 @@ public partial class MainViewModel : ObservableObject
             or DeskSection.WalkUps
             or DeskSection.Search
             or DeskSection.Notifications
-            or DeskSection.Leads
-            or DeskSection.DailyWork;
+            or DeskSection.Leads;
         UpdateBack();
         if (IsConnected && !_openingRecord && !_preserveNavigation && !_startupGate)
             _ = EnsureSectionAsync();
