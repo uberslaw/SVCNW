@@ -25,6 +25,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -39,7 +40,109 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+        <Border Grid.Row="1" Grid.ColumnSpan="2" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1"
+                AutomationProperties.Name="Notifications">
+            <StackPanel>
+                <Border>
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{StaticResource CardBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Notifications.WidgetHasUnread}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <Button Command="{Binding Notifications.ToggleWidgetCommand}"
+                            Cursor="Hand"
+                            HorizontalContentAlignment="Stretch"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="16,8"
+                            AutomationProperties.Name="Open or close notifications">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <DockPanel LastChildFill="True">
+                            <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="16,0,0,0" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Setter Property="Text" Value="Open"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Notifications.IsWidgetOpen}" Value="True">
+                                                <Setter Property="Text" Value="Close"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="{StaticResource AccentBrush}" Text="&#xEA8F;"/>
+                            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold" Text="Notifications"/>
+                            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold" Text="{Binding Notifications.WidgetSummary}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Notifications.WidgetHasUnread}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{StaticResource MutedBrush}"
+                                       Text="{Binding Notifications.NewestTitle}"
+                                       Visibility="{Binding Notifications.NewestTitle, Converter={StaticResource StringVis}}"/>
+                        </DockPanel>
+                    </Button>
+                </Border>
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0"
+                        Visibility="{Binding Notifications.IsWidgetOpen, Converter={StaticResource BoolVis}}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Margin="16,8" Foreground="{StaticResource MutedBrush}" Text="No notifications"
+                                   Visibility="{Binding Notifications.HasWidgetItems, Converter={StaticResource InverseBoolVis}}"/>
+                        <ListBox x:Name="NotificationWidgetList"
+                                 ItemsSource="{Binding Notifications.WidgetItems}"
+                                 Style="{StaticResource DeskList}"
+                                 ItemContainerStyle="{StaticResource DeskListItem}"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 MaxHeight="240"
+                                 MouseDoubleClick="NotificationWidgetList_MouseDoubleClick"
+                                 PreviewKeyDown="NotificationWidgetList_PreviewKeyDown"
+                                 AutomationProperties.Name="Notification list"
+                                 Visibility="{Binding Notifications.HasWidgetItems, Converter={StaticResource BoolVis}}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="150"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Updated}" FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="2" Grid.ColumnSpan="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
             <Menu Background="Transparent" Foreground="{StaticResource TextBrush}">
                 <MenuItem Header="Help" Padding="12,6">
                     <MenuItem Header="Documentation" Padding="12,8" Click="Documentation_Click"/>
@@ -47,7 +150,7 @@
             </Menu>
         </Border>
 
-        <Border Grid.Row="2" Grid.RowSpan="2" Background="{StaticResource NavBrush}">
+        <Border Grid.Row="3" Grid.RowSpan="2" Background="{StaticResource NavBrush}">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="20,18,16,12">
                     <TextBlock Text="ServiceNow" Foreground="{StaticResource NavMutedBrush}" FontSize="12"/>
@@ -70,7 +173,7 @@
             </DockPanel>
         </Border>
 
-        <DockPanel Grid.Row="2" Grid.Column="1">
+        <DockPanel Grid.Row="3" Grid.Column="1">
             <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,12">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -141,7 +244,7 @@
             </Grid>
         </DockPanel>
 
-        <Border Grid.Column="1" Grid.Row="3" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
+        <Border Grid.Column="1" Grid.Row="4" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
             <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource MutedBrush}"/>
         </Border>
         </Grid>

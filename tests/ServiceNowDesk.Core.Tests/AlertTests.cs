@@ -217,6 +217,110 @@ public class AlertTests
         Assert.Contains("previous value", notifications.SettingsMessage, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void WidgetSummaryUpdatesWhenANotificationIsAddedAndTheListToggleKeepsThem()
+    {
+        var notifications = new NotificationWorkspaceViewModel();
+        var watch = new AlertWatchState();
+
+        Assert.Equal("No notifications", notifications.WidgetSummary);
+        Assert.Equal("", notifications.NewestTitle);
+        Assert.False(notifications.IsWidgetOpen);
+        Assert.False(notifications.HasWidgetItems);
+        Assert.Empty(notifications.WidgetItems);
+
+        notifications.Apply(BannerSnapshot(
+            BannerRow("inc9", "VPN is down", "2026-09-01 09:00:00", AlertKind.AssignedToMe)), watch);
+
+        Assert.Equal("1 unread", notifications.WidgetSummary);
+        Assert.Equal("VPN is down", notifications.NewestTitle);
+        Assert.False(notifications.IsWidgetOpen);
+        Assert.Equal("VPN is down", Assert.Single(notifications.WidgetItems).Title);
+        Assert.Equal("VPN is down", Assert.Single(notifications.Sections.Single(section => section.Kind == AlertKind.AssignedToMe).Rows).Title);
+
+        notifications.ToggleWidgetCommand.Execute(null);
+        Assert.True(notifications.IsWidgetOpen);
+        Assert.Equal("VPN is down", Assert.Single(notifications.WidgetItems).Title);
+        Assert.Equal("1 unread", notifications.WidgetSummary);
+
+        notifications.ToggleWidgetCommand.Execute(null);
+        Assert.False(notifications.IsWidgetOpen);
+        Assert.Equal("VPN is down", Assert.Single(notifications.WidgetItems).Title);
+        Assert.Equal("VPN is down", Assert.Single(notifications.Sections.Single(section => section.Kind == AlertKind.AssignedToMe).Rows).Title);
+
+        notifications.Apply(BannerSnapshot(
+            BannerRow("inc9", "VPN is down", "2026-09-01 09:00:00", AlertKind.AssignedToMe),
+            BannerRow("inc2", "Badge printer is down", "2026-10-02 11:25:00", AlertKind.WatchedGroup)), watch);
+
+        Assert.False(notifications.IsWidgetOpen);
+        Assert.Equal("2 unread", notifications.WidgetSummary);
+        Assert.Equal("Badge printer is down", notifications.NewestTitle);
+        Assert.Collection(
+            notifications.WidgetItems,
+            item => Assert.Equal("Badge printer is down", item.Title),
+            item => Assert.Equal("VPN is down", item.Title));
+        Assert.Collection(
+            notifications.Sections.SelectMany(section => section.Rows),
+            item => Assert.Equal("VPN is down", item.Title),
+            item => Assert.Equal("Badge printer is down", item.Title));
+
+        notifications.ToggleWidgetCommand.Execute(null);
+        notifications.Apply(BannerSnapshot(
+            BannerRow("inc9", "VPN is down", "2026-09-01 09:00:00", AlertKind.AssignedToMe),
+            BannerRow("inc2", "Badge printer is down", "2026-10-02 11:25:00", AlertKind.WatchedGroup),
+            BannerRow("inc1", "Lobby door is stuck", "2026-10-03 08:15:00", AlertKind.AssignedToMe)), watch);
+
+        Assert.True(notifications.IsWidgetOpen);
+        Assert.Equal("3 unread", notifications.WidgetSummary);
+        Assert.Equal("Lobby door is stuck", notifications.NewestTitle);
+        Assert.Collection(
+            notifications.WidgetItems,
+            item => Assert.Equal("Lobby door is stuck", item.Title),
+            item => Assert.Equal("Badge printer is down", item.Title),
+            item => Assert.Equal("VPN is down", item.Title));
+
+        notifications.ToggleWidgetCommand.Execute(null);
+        watch.Acknowledge();
+        notifications.RefreshAcknowledgement(watch);
+
+        Assert.False(notifications.IsWidgetOpen);
+        Assert.Equal("3 active", notifications.WidgetSummary);
+        Assert.False(notifications.WidgetHasUnread);
+        Assert.Equal("Lobby door is stuck", notifications.NewestTitle);
+        Assert.Collection(
+            notifications.WidgetItems,
+            item => Assert.Equal("Lobby door is stuck", item.Title),
+            item => Assert.Equal("Badge printer is down", item.Title),
+            item => Assert.Equal("VPN is down", item.Title));
+        Assert.Collection(
+            notifications.Sections.SelectMany(section => section.Rows),
+            item => Assert.Equal("VPN is down", item.Title),
+            item => Assert.Equal("Lobby door is stuck", item.Title),
+            item => Assert.Equal("Badge printer is down", item.Title));
+    }
+
+    private static AlertSnapshot BannerSnapshot(params AlertRecord[] rows)
+    {
+        var assigned = rows.Where(row => row.Kind == AlertKind.AssignedToMe).ToArray();
+        var group = rows.Where(row => row.Kind == AlertKind.WatchedGroup).ToArray();
+        return new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
+        {
+            [AlertKind.AssignedToMe] = new(assigned, assigned.Length),
+            [AlertKind.WatchedGroup] = new(group, group.Length)
+        });
+    }
+
+    private static AlertRecord BannerRow(string id, string title, string updated, AlertKind kind) => new(
+        kind,
+        DeskSection.Incidents,
+        id,
+        id.ToUpperInvariant(),
+        title,
+        "New",
+        "Aus DT - Client Services",
+        "Brisbane",
+        updated);
+
     private static Dictionary<AlertKind, int> Counts(int assigned, int group) => new()
     {
         [AlertKind.AssignedToMe] = assigned,

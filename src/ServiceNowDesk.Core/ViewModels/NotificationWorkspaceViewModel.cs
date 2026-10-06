@@ -24,6 +24,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
 
     public ObservableCollection<AlertSectionModel> Sections { get; } = [];
     public ObservableCollection<AlertCircleModel> Circles { get; } = [];
+    public ObservableCollection<AlertRow> WidgetItems { get; } = [];
 
     public NotificationPreferences Committed => _committed.Copy();
 
@@ -50,6 +51,11 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool activePlaySoundWhenJiggling;
     [ObservableProperty] private bool activePlaySoundOnAlertMetric = true;
     [ObservableProperty] private string activeSoundPath = "";
+    [ObservableProperty] private string widgetSummary = "No notifications";
+    [ObservableProperty] private string newestTitle = "";
+    [ObservableProperty] private bool isWidgetOpen;
+    [ObservableProperty] private bool hasWidgetItems;
+    [ObservableProperty] private bool widgetHasUnread;
 
     public TimeSpan ActiveJiggleInterval =>
         NotificationPreferences.TryParseFrequency(ActiveFrequency, out var frequency)
@@ -96,6 +102,8 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
                 PlaySound = _committed.PlaySoundOnAlertMetric
             });
         }
+
+        RefreshWidget();
     }
 
     public void RefreshAcknowledgement(AlertWatchState watch)
@@ -106,6 +114,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         foreach (var circle in Circles)
             circle.IsUnacknowledged = watch.IsUnacknowledged(circle.Kind);
         AnyUnacknowledged = watch.AnyUnacknowledged;
+        RefreshWidget();
     }
 
     public void Clear()
@@ -126,6 +135,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         AnyUnacknowledged = false;
         PollError = "";
         LastChecked = "Not checked yet.";
+        RefreshWidget();
     }
 
     public void NotePollError(string message) => PollError = message;
@@ -137,6 +147,9 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
             return;
         OpenRequested?.Invoke(this, row);
     }
+
+    [RelayCommand]
+    private void ToggleWidget() => IsWidgetOpen = !IsWidgetOpen;
 
     [RelayCommand]
     private void SaveSettings()
@@ -185,6 +198,55 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     public void SetSoundPath(string? path)
     {
         SoundPath = path?.Trim() ?? "";
+    }
+
+    private void RefreshWidget()
+    {
+        var rows = new List<AlertRow>();
+        var active = 0;
+        var unread = 0;
+        foreach (var section in Sections)
+        {
+            active += section.Count;
+            if (section.IsUnacknowledged)
+                unread += section.Count;
+            foreach (var row in section.Rows)
+                rows.Add(row);
+        }
+
+        rows.Sort(static (left, right) =>
+        {
+            var byTime = UpdatedStamp(right.Updated).CompareTo(UpdatedStamp(left.Updated));
+            return byTime != 0
+                ? byTime
+                : string.Compare(right.Number, left.Number, StringComparison.Ordinal);
+        });
+
+        WidgetItems.Clear();
+        foreach (var row in rows)
+            WidgetItems.Add(row);
+
+        if (active == 0)
+            active = rows.Count;
+        NewestTitle = rows.Count == 0
+            ? ""
+            : string.IsNullOrWhiteSpace(rows[0].Title) ? rows[0].Number : rows[0].Title;
+        WidgetHasUnread = unread > 0;
+        WidgetSummary = active == 0
+            ? "No notifications"
+            : unread > 0
+                ? unread.ToString(CultureInfo.InvariantCulture) + " unread"
+                : active.ToString(CultureInfo.InvariantCulture) + " active";
+        HasWidgetItems = rows.Count > 0;
+    }
+
+    private static DateTime UpdatedStamp(string updated)
+    {
+        if (DateTime.TryParse(updated, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var parsed))
+            return parsed;
+        if (DateTime.TryParse(updated, CultureInfo.CurrentCulture, DateTimeStyles.AllowWhiteSpaces, out parsed))
+            return parsed;
+        return DateTime.MinValue;
     }
 
     private void CopyCommittedToDraft()

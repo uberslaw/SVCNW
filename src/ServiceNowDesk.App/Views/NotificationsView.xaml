@@ -5,7 +5,7 @@
         <StackPanel MaxWidth="880" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Notifications" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                       Text="While the desk is minimized, a circle for each alert sits at the top of the screen. The number is how many open records match right now. Click a circle to open this page."/>
+                       Text="The bar at the top of the desk stays visible while this window is open. It shows how many notifications are unread or still active, and the newest title. Open that bar to list them, and close it when you are done. A new notification updates the bar and leaves the list closed until you open it. While the desk is minimized, a circle for each alert sits at the top of the screen. Click a circle to open this page."/>
             <TextBlock Text="{Binding LastChecked}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
             <TextBlock Text="{Binding PollError}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                        Visibility="{Binding PollError, Converter={StaticResource StringVis}}"/>

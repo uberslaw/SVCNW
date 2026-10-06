@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.ViewModels;
@@ -121,6 +122,36 @@ public partial class MainWindow : Window
         Activate();
         if (DataContext is MainViewModel model)
             model.SelectedSection = DeskSection.Notifications;
+    }
+
+    private void NotificationWidgetList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (TryOpenWidgetRow(sender, e.OriginalSource as DependencyObject))
+            e.Handled = true;
+    }
+
+    private void NotificationWidgetList_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None)
+            return;
+        if (sender is not ListBox list || list.SelectedItem is not AlertRow row || Model is null)
+            return;
+
+        Model.Notifications.OpenCommand.Execute(row);
+        e.Handled = true;
+    }
+
+    private bool TryOpenWidgetRow(object sender, DependencyObject? source)
+    {
+        if (Model is null || sender is not ListBox list)
+            return false;
+        if (ItemsControl.ContainerFromElement(list, source) is not ListBoxItem item)
+            return false;
+        if (item.DataContext is not AlertRow row)
+            return false;
+
+        Model.Notifications.OpenCommand.Execute(row);
+        return true;
     }
 
     private void Documentation_Click(object sender, RoutedEventArgs e)
