@@ -54,27 +54,12 @@
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
-                    <Button Command="{Binding Notifications.ToggleWidgetCommand}"
-                            Cursor="Hand"
-                            HorizontalContentAlignment="Stretch"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            Padding="16,8"
-                            AutomationProperties.Name="Open or close notifications">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
-                                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Button.Template>
-                        <DockPanel LastChildFill="True">
-                            <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="16,0,0,0" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}">
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Command="{Binding Notifications.ToggleWidgetCommand}"
+                                Cursor="Hand" Margin="8,6,12,6" Padding="8,4"
+                                AutomationProperties.Name="Open or close notifications"
+                                Style="{StaticResource QuietButton}">
+                            <TextBlock FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                                         <Setter Property="Text" Value="Open"/>
@@ -86,44 +71,89 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
-                            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="{StaticResource AccentBrush}" Text="&#xEA8F;"/>
-                            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold" Text="Notifications"/>
-                            <ItemsControl DockPanel.Dock="Left" ItemsSource="{Binding Notifications.Circles}" Focusable="False" IsHitTestVisible="False" VerticalAlignment="Center" Margin="0,0,8,0">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
-                                            <Grid Width="22" Height="22" Margin="0,0,6,0">
-                                                <Ellipse Fill="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
-                                                <TextBlock Text="{Binding Count}" Foreground="White" FontWeight="Bold" FontSize="11"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Grid>
-                                            <TextBlock Text="{Binding StatusLabel}" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold" Text="{Binding Notifications.WidgetSummary}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                                        <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Notifications.WidgetHasUnread}" Value="True">
-                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                            <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{StaticResource MutedBrush}"
-                                       Text="{Binding Notifications.NewestTitle}"
-                                       Visibility="{Binding Notifications.NewestTitle, Converter={StaticResource StringVis}}"/>
-                        </DockPanel>
-                    </Button>
+                        </Button>
+                        <ItemsControl DockPanel.Dock="Left" ItemsSource="{Binding Notifications.Circles}" Focusable="False" VerticalAlignment="Center" Margin="12,0,4,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Command="{Binding DataContext.Notifications.SelectQueueCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding Kind}"
+                                            Cursor="Hand"
+                                            Focusable="False"
+                                            Margin="0,6,8,6"
+                                            Padding="8,4"
+                                            AutomationProperties.Name="{Binding StatusLabel}"
+                                            ToolTip="{Binding StatusLabel}">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Grid Width="22" Height="22" Margin="0,0,6,0">
+                                                            <Ellipse Fill="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
+                                                            <TextBlock Text="{Binding Count}" Foreground="White" FontWeight="Bold" FontSize="11"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Grid>
+                                                        <TextBlock Text="{Binding StatusLabel}" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                                    </DataTrigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Command="{Binding Notifications.ToggleWidgetCommand}"
+                                Cursor="Hand"
+                                HorizontalContentAlignment="Stretch"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="4,8"
+                                AutomationProperties.Name="Notification summary">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                            <DockPanel LastChildFill="True">
+                                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="{StaticResource AccentBrush}" Text="&#xEA8F;"/>
+                                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold" Text="Notifications"/>
+                                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold" Text="{Binding Notifications.WidgetSummary}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Notifications.WidgetHasUnread}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{StaticResource MutedBrush}"
+                                           Text="{Binding Notifications.NewestTitle}"
+                                           Visibility="{Binding Notifications.NewestTitle, Converter={StaticResource StringVis}}"/>
+                            </DockPanel>
+                        </Button>
+                    </DockPanel>
                 </Border>
                 <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0"
                         Visibility="{Binding Notifications.IsWidgetOpen, Converter={StaticResource BoolVis}}">

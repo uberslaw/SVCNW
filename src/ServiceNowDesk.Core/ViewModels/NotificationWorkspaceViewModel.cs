@@ -20,15 +20,18 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         }
 
         Load(_committed);
+        MarkSelectedQueue();
     }
 
     public ObservableCollection<AlertSectionModel> Sections { get; } = [];
     public ObservableCollection<AlertCircleModel> Circles { get; } = [];
     public ObservableCollection<AlertRow> WidgetItems { get; } = [];
+    public ObservableCollection<AlertRow> DashboardRows { get; } = [];
 
     public NotificationPreferences Committed => _committed.Copy();
 
     public event EventHandler<AlertRow>? OpenRequested;
+    public event EventHandler<AlertKind>? QueueSelected;
     public event EventHandler? SettingsChanged;
     public event EventHandler<AlertAttention>? Attention;
 
@@ -55,7 +58,9 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string newestTitle = "";
     [ObservableProperty] private bool isWidgetOpen;
     [ObservableProperty] private bool hasWidgetItems;
+    [ObservableProperty] private bool hasDashboardRows;
     [ObservableProperty] private bool widgetHasUnread;
+    [ObservableProperty] private AlertKind selectedQueue = AlertKind.AssignedToMe;
 
     public TimeSpan ActiveJiggleInterval =>
         NotificationPreferences.TryParseFrequency(ActiveFrequency, out var frequency)
@@ -143,9 +148,34 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     [RelayCommand]
     private void Open(AlertRow? row)
     {
-        if (row is null || row.Section == DeskSection.Knowledge)
+        if (Resolve(row) is null)
             return;
-        OpenRequested?.Invoke(this, row);
+        OpenRequested?.Invoke(this, row!);
+    }
+
+    [RelayCommand]
+    private void SelectQueue(AlertKind? kind)
+    {
+        if (kind is not AlertKind queue)
+            return;
+        if (SelectedQueue != queue)
+            SelectedQueue = queue;
+        else
+        {
+            MarkSelectedQueue();
+            RefreshDashboard();
+        }
+
+        QueueSelected?.Invoke(this, queue);
+    }
+
+    public NotificationTarget? Resolve(AlertRow? row)
+    {
+        if (row is null || string.IsNullOrWhiteSpace(row.SysId))
+            return null;
+        if (row.Section is not (DeskSection.Incidents or DeskSection.Requests or DeskSection.RequestedItems or DeskSection.WalkUps))
+            return null;
+        return new NotificationTarget(row.Section, row.SysId);
     }
 
     [RelayCommand]
@@ -238,6 +268,33 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
                 ? unread.ToString(CultureInfo.InvariantCulture) + " unread"
                 : active.ToString(CultureInfo.InvariantCulture) + " active";
         HasWidgetItems = rows.Count > 0;
+        RefreshDashboard();
+    }
+
+    partial void OnSelectedQueueChanged(AlertKind value)
+    {
+        MarkSelectedQueue();
+        RefreshDashboard();
+    }
+
+    private void MarkSelectedQueue()
+    {
+        foreach (var circle in Circles)
+            circle.IsSelected = circle.Kind == SelectedQueue;
+    }
+
+    private void RefreshDashboard()
+    {
+        DashboardRows.Clear();
+        foreach (var section in Sections)
+        {
+            if (section.Kind != SelectedQueue)
+                continue;
+            foreach (var row in section.Rows)
+                DashboardRows.Add(row);
+        }
+
+        HasDashboardRows = DashboardRows.Count > 0;
     }
 
     private static DateTime UpdatedStamp(string updated)
@@ -324,6 +381,7 @@ public partial class AlertCircleModel : ObservableObject
 
     [ObservableProperty] private int count;
     [ObservableProperty] private bool isUnacknowledged;
+    [ObservableProperty] private bool isSelected;
     [ObservableProperty] private string automationName;
 
     public bool IsVisible => Count > 0;
@@ -350,11 +408,14 @@ public sealed class AlertRow
     public required string Location { get; init; }
     public required string Updated { get; init; }
 
+    public string QueueLabel => AlertCatalog.Title(Kind);
+
     public string TableLabel => Section switch
     {
         DeskSection.Incidents => "Incident",
         DeskSection.Requests => "Request",
         DeskSection.RequestedItems => "Request item",
+        DeskSection.WalkUps => "Walk-up",
         _ => "Record"
     };
 
@@ -386,3 +447,5 @@ public sealed class AlertRow
         Updated = record.Updated
     };
 }
+
+public readonly record struct NotificationTarget(DeskSection Section, string SysId);

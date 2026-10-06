@@ -303,6 +303,51 @@ public class AlertTests
             item => Assert.Equal("Badge printer is down", item.Title));
     }
 
+    [Fact]
+    public void SelectingAQueueFiltersTheDashboardAndARowKeepsItsTarget()
+    {
+        var notifications = new NotificationWorkspaceViewModel();
+        var watch = new AlertWatchState();
+        notifications.Apply(BannerSnapshot(
+            BannerRow("inc9", "VPN is down", "2026-09-01 09:00:00", AlertKind.AssignedToMe, DeskSection.Incidents),
+            BannerRow("ritm1", "New laptop", "2026-09-02 09:00:00", AlertKind.AssignedToMe, DeskSection.RequestedItems),
+            BannerRow("ims1", "Lobby visitor", "2026-09-03 09:00:00", AlertKind.AssignedToMe, DeskSection.WalkUps),
+            BannerRow("inc2", "Badge printer is down", "2026-10-02 11:25:00", AlertKind.WatchedGroup, DeskSection.Incidents)), watch);
+
+        notifications.SelectQueueCommand.Execute(AlertKind.AssignedToMe);
+        Assert.Equal(AlertKind.AssignedToMe, notifications.SelectedQueue);
+        Assert.Collection(
+            notifications.DashboardRows,
+            row => AssertDashboardRow(row, "inc9", "VPN is down", "Assigned to me", DeskSection.Incidents),
+            row => AssertDashboardRow(row, "ritm1", "New laptop", "Assigned to me", DeskSection.RequestedItems),
+            row => AssertDashboardRow(row, "ims1", "Lobby visitor", "Assigned to me", DeskSection.WalkUps));
+        Assert.DoesNotContain(notifications.DashboardRows, row => row.Kind == AlertKind.WatchedGroup);
+
+        notifications.SelectQueueCommand.Execute(AlertKind.WatchedGroup);
+        Assert.Equal(AlertKind.WatchedGroup, notifications.SelectedQueue);
+        var group = Assert.Single(notifications.DashboardRows);
+        AssertDashboardRow(group, "inc2", "Badge printer is down", "Group queue", DeskSection.Incidents);
+        Assert.Collection(
+            notifications.Sections.Single(section => section.Kind == AlertKind.AssignedToMe).Rows,
+            row => Assert.Equal("inc9", row.SysId),
+            row => Assert.Equal("ritm1", row.SysId),
+            row => Assert.Equal("ims1", row.SysId));
+    }
+
+    private static void AssertDashboardRow(AlertRow row, string sysId, string title, string queue, DeskSection section)
+    {
+        Assert.Equal(sysId, row.SysId);
+        Assert.Equal(title, row.Title);
+        Assert.Equal("New", row.State);
+        Assert.Equal("Aus DT - Client Services", row.Group);
+        Assert.Equal(queue, row.QueueLabel);
+        var notifications = new NotificationWorkspaceViewModel();
+        var target = notifications.Resolve(row);
+        Assert.NotNull(target);
+        Assert.Equal(section, target.Value.Section);
+        Assert.Equal(sysId, target.Value.SysId);
+    }
+
     private static AlertSnapshot BannerSnapshot(params AlertRecord[] rows)
     {
         var assigned = rows.Where(row => row.Kind == AlertKind.AssignedToMe).ToArray();
@@ -314,9 +359,9 @@ public class AlertTests
         });
     }
 
-    private static AlertRecord BannerRow(string id, string title, string updated, AlertKind kind) => new(
+    private static AlertRecord BannerRow(string id, string title, string updated, AlertKind kind, DeskSection section = DeskSection.Incidents) => new(
         kind,
-        DeskSection.Incidents,
+        section,
         id,
         id.ToUpperInvariant(),
         title,

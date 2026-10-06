@@ -44,7 +44,7 @@ public partial class AlertWidgetWindow : Window
         };
     }
 
-    public event EventHandler? Opened;
+    public event EventHandler<AlertKind>? Opened;
 
     public void Attach(NotificationWorkspaceViewModel model)
     {
@@ -251,16 +251,17 @@ public partial class AlertWidgetWindow : Window
 
     private void Circle_Click(object sender, RoutedEventArgs e)
     {
-        OpenFromCircle();
+        if (sender is FrameworkElement { DataContext: AlertCircleModel circle })
+            OpenFromCircle(circle.Kind);
         e.Handled = true;
     }
 
-    private void OpenFromCircle()
+    private void OpenFromCircle(AlertKind kind)
     {
         if (_opening)
             return;
         _opening = true;
-        Opened?.Invoke(this, EventArgs.Empty);
+        Opened?.Invoke(this, kind);
         Dispatcher.BeginInvoke(() => _opening = false, DispatcherPriority.Background);
     }
 

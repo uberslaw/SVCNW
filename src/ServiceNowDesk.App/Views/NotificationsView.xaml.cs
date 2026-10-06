@@ -14,7 +14,7 @@ public partial class NotificationsView
         InitializeComponent();
     }
 
-    private void Rows_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private void Rows_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (DataContext is not NotificationWorkspaceViewModel notifications)
             return;

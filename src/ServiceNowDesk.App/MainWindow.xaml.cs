@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.ViewModels;
 using ServiceNowDesk.Views;
@@ -14,7 +15,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _alerts.Opened += (_, _) => OpenFromAlerts();
+        _alerts.Opened += (_, kind) => OpenQueue(kind);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainViewModel main)
@@ -132,16 +133,14 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void OpenFromAlerts()
+    private void OpenQueue(AlertKind kind)
     {
-        if (DataContext is MainViewModel main)
-            main.AcknowledgeNotifications();
-
+        if (DataContext is not MainViewModel main)
+            return;
         if (WindowState == WindowState.Minimized)
             WindowState = WindowState.Normal;
         Activate();
-        if (DataContext is MainViewModel model)
-            model.SelectedSection = DeskSection.Notifications;
+        main.Notifications.SelectQueueCommand.Execute(kind);
     }
 
     private void NotificationWidgetList_MouseDoubleClick(object sender, MouseButtonEventArgs e)

@@ -77,6 +77,11 @@ public partial class MainViewModel : ObservableObject
         Search.OpenRequested += (_, hit) => SearchOpenTask = OpenSearchResultAsync(hit);
         Catalog.RequestOrdered += (_, result) => _ = OpenOrderedRequestAsync(result);
         Notifications.OpenRequested += (_, row) => _ = OpenNotificationAsync(row);
+        Notifications.QueueSelected += (_, _) =>
+        {
+            AcknowledgeNotifications();
+            SelectedSection = DeskSection.Notifications;
+        };
         Notifications.SettingsChanged += (_, _) =>
         {
             Connection.RememberNotifications(Notifications.Committed);
