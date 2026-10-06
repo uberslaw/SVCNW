@@ -39,7 +39,8 @@ public enum DeskSection
     Knowledge,
     Catalog,
     Connection,
-    Notifications
+    Notifications,
+    Settings
 }
 
 public sealed record Choice(string Value, string Label);

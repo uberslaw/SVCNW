@@ -16,6 +16,12 @@ internal sealed class StubHandler : HttpMessageHandler
 
     public List<CapturedCall> Calls { get; } = [];
 
+    public CapturedCall[] Snapshot()
+    {
+        lock (_gate)
+            return Calls.ToArray();
+    }
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);

@@ -36,6 +36,12 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
 
     public override Task EnsureChoicesAsync() => LoadChoiceListsAsync();
 
+    public Task ReloadChoiceListsAsync()
+    {
+        _choicesReady = false;
+        return LoadChoiceListsAsync();
+    }
+
     public async Task LoadChoiceListsAsync()
     {
         if (_choicesReady || Client is null)

@@ -33,7 +33,8 @@ public class AssignmentDirectoryTests
             var startedOrGaveUp = await Task.WhenAny(started.Task, Task.Delay(TimeSpan.FromSeconds(20)));
             Assert.Same(started.Task, startedOrGaveUp);
             Assert.False(connect.IsCompleted);
-            Assert.True(main.Startup.IsOpen);
+            Assert.True(main.Startup.ShowScreen);
+            Assert.False(main.Startup.ShowBar);
             Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment groups");
             Assert.Contains("Downloading data", main.Startup.Title);
         }
@@ -44,8 +45,9 @@ public class AssignmentDirectoryTests
 
         await connect;
         await main.AssignmentDirectoryRefresh;
-        Assert.True(main.Startup.IsOpen);
-        Assert.Equal("Data ready", main.Startup.Title);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.ShowBar);
+        Assert.False(main.Startup.IsRunning);
         Assert.True(main.Incidents.HasLoaded);
         Assert.Equal("", main.ErrorMessage);
         Assert.Contains(main.Incidents.Assignment.Groups, group => group.Value == "group-cs" && group.Label == "Client Services");
@@ -87,13 +89,14 @@ public class AssignmentDirectoryTests
             var startedOrGaveUp = await Task.WhenAny(started.Task, Task.Delay(TimeSpan.FromSeconds(20)));
             Assert.Same(started.Task, startedOrGaveUp);
             Assert.False(connect.IsCompleted);
-            Assert.True(main.Startup.IsOpen);
+            Assert.True(main.Startup.ShowScreen);
             Assert.True(main.Startup.IsRunning);
             Assert.Contains("Downloading data", main.Startup.Title);
 
-            main.ToggleDownloadLogCommand.Execute(null);
+            main.CloseStartupCommand.Execute(null);
 
-            Assert.False(main.Startup.IsOpen);
+            Assert.False(main.Startup.ShowScreen);
+            Assert.True(main.Startup.ShowBar);
             Assert.True(main.Startup.IsRunning);
             Assert.False(connect.IsCompleted);
             Assert.Contains("Downloading data", main.Startup.Title);
@@ -107,9 +110,9 @@ public class AssignmentDirectoryTests
         await main.AssignmentDirectoryRefresh;
 
         Assert.True(main.IsConnected);
-        Assert.False(main.Startup.IsOpen);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
-        Assert.Equal("Data ready", main.Startup.Title);
         Assert.Equal("", main.ErrorMessage);
         Assert.True(main.Incidents.HasLoaded);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment groups" && line.Percent == 100);
@@ -319,8 +322,9 @@ public class AssignmentDirectoryTests
 
         await main.ConnectCommand.ExecuteAsync(null);
 
-        Assert.True(main.Startup.IsOpen);
-        Assert.Equal("Data ready", main.Startup.Title);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.ShowBar);
+        Assert.False(main.Startup.IsRunning);
         Assert.Equal("", main.ErrorMessage);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Choices" && line.Text.Contains("cached") && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment groups" && line.Text.Contains("cached"));

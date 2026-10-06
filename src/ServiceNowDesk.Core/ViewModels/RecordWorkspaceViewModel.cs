@@ -130,6 +130,27 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     public virtual Task EnsureChoicesAsync() => Task.CompletedTask;
 
+    public void ShowCachedRows(IReadOnlyList<TicketRow> rows, int totalCount)
+    {
+        _suppressSelection = true;
+        Items.Clear();
+        foreach (var row in rows)
+            Items.Add(row);
+        TotalCount = totalCount;
+        Selected = null;
+        _boundRow = null;
+        _suppressSelection = false;
+        ErrorMessage = "";
+        HasLoaded = true;
+    }
+
+    public async Task<bool> ReloadAsync()
+    {
+        ErrorMessage = "";
+        await RefreshAsync();
+        return HasLoaded && string.IsNullOrEmpty(ErrorMessage);
+    }
+
     [RelayCommand]
     public async Task RefreshAsync()
     {

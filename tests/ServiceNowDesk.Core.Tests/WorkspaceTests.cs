@@ -398,8 +398,8 @@ public class WorkspaceTests
         Assert.NotEmpty(main.Incidents.Items);
         Assert.True(main.Requests.HasLoaded);
         Assert.True(main.WalkUps.HasLoaded);
-        Assert.True(main.Startup.IsOpen);
-        Assert.Equal("Data ready", main.Startup.Title);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
         Assert.Equal(6, main.Startup.Lines.Count);
         Assert.All(main.Startup.Lines, line => Assert.Equal(100, line.Percent));
@@ -524,7 +524,8 @@ public class WorkspaceTests
         var splash = new StartupDownloadModel();
         splash.Begin(6);
         Assert.Equal("Downloading data 0/6", splash.Title);
-        Assert.True(splash.IsOpen);
+        Assert.True(splash.ShowScreen);
+        Assert.False(splash.ShowBar);
 
         splash.Start("Choices");
         Assert.Equal("Downloading data 0/6 — Choices", splash.Title);
@@ -552,72 +553,99 @@ public class WorkspaceTests
         Assert.Equal("Assignment group members    Could not reach the ServiceNow instance.", splash.Lines[2].Text);
         Assert.Equal("Choices    100%", splash.Lines[0].Text);
         splash.Close();
-        Assert.False(splash.IsOpen);
+        Assert.False(splash.ShowScreen);
+        Assert.True(splash.ShowBar);
+        Assert.Equal("3/6", splash.CountText);
+        Assert.Equal("50%", splash.PercentText);
         Assert.Equal(20, splash.Lines[2].Percent);
         Assert.True(splash.IsRunning);
     }
 
     [Fact]
-    public void LogOpensWhenADownloadStartsAndCanCloseWithoutStoppingIt()
+    public void StartupScreenClosesWhenTheDownloadFinishes()
     {
         var splash = new StartupDownloadModel();
-        Assert.Equal("Data ready", splash.Title);
-        Assert.False(splash.IsOpen);
+        Assert.False(splash.ShowScreen);
+        Assert.False(splash.ShowBar);
         Assert.False(splash.IsRunning);
 
         splash.Begin(2);
-        Assert.True(splash.IsOpen);
+        Assert.True(splash.ShowScreen);
+        Assert.False(splash.ShowBar);
+        splash.Start("Choices");
+        splash.Report(10);
+        splash.Complete();
+        Assert.True(splash.ShowScreen);
+        Assert.Equal("Downloading data 1/2", splash.Title);
+
+        splash.Start("Incidents");
+        splash.Report(40);
+        splash.Complete();
+
+        Assert.False(splash.ShowScreen);
+        Assert.False(splash.ShowBar);
+        Assert.False(splash.IsRunning);
+        Assert.Equal("2/2", splash.CountText);
+        Assert.Equal("100%", splash.PercentText);
+        Assert.Equal(100, splash.Lines[0].Percent);
+        Assert.Equal("Incidents    100%", splash.Lines[1].Text);
+    }
+
+    [Fact]
+    public void ClosingTheStartupScreenEarlyLeavesTheCompactBar()
+    {
+        var splash = new StartupDownloadModel();
+        splash.Begin(2);
         splash.Start("Choices");
         splash.Report(10);
         splash.Close();
-        Assert.False(splash.IsOpen);
+
+        Assert.False(splash.ShowScreen);
+        Assert.True(splash.ShowBar);
         Assert.True(splash.IsRunning);
+        Assert.Equal("0/2", splash.CountText);
+        Assert.Equal("0%", splash.PercentText);
         Assert.Equal("Downloading data 0/2 — Choices", splash.Title);
 
         splash.Report(55);
         Assert.Equal(55, splash.Lines[0].Percent);
-        Assert.Equal("Choices    55%", splash.Lines[0].Text);
         splash.Complete();
+        Assert.Equal("1/2", splash.CountText);
+        Assert.Equal("50%", splash.PercentText);
+        Assert.True(splash.ShowBar);
+        Assert.False(splash.ShowScreen);
+
         splash.Start("Assignment groups");
         splash.Report(5);
-        Assert.False(splash.IsOpen);
-        Assert.Contains("Assignment groups", splash.Title);
         splash.Complete();
 
-        Assert.False(splash.IsOpen);
+        Assert.False(splash.ShowScreen);
+        Assert.False(splash.ShowBar);
         Assert.False(splash.IsRunning);
-        Assert.Equal("Data ready", splash.Title);
         Assert.Equal(100, splash.Lines[0].Percent);
         Assert.Equal("Assignment groups    100%", splash.Lines[1].Text);
-
-        splash.Toggle();
-        Assert.True(splash.IsOpen);
-        splash.Toggle();
-        Assert.False(splash.IsOpen);
-        Assert.Equal("Data ready", splash.Title);
     }
 
     [Fact]
-    public async Task PracticeOpensTheLogAndALaterRefreshOpensItAgain()
+    public async Task RefreshingAListDoesNotOpenTheStartupScreen()
     {
         var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices());
         main.Connection.UseSampleData = true;
         await main.ConnectCommand.ExecuteAsync(null);
 
-        Assert.True(main.Startup.IsOpen);
-        Assert.Equal("Data ready", main.Startup.Title);
-        main.ToggleDownloadLogCommand.Execute(null);
-        Assert.False(main.Startup.IsOpen);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.ShowBar);
+        Assert.False(main.Startup.IsRunning);
         Assert.True(main.IsConnected);
+        var before = main.Incidents.Items.Count;
 
         await main.RefreshActiveCommand.ExecuteAsync(null);
 
         Assert.True(main.IsConnected);
-        Assert.True(main.Startup.IsOpen);
-        Assert.Equal("Data ready", main.Startup.Title);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
-        Assert.Equal(6, main.Startup.Lines.Count);
-        Assert.All(main.Startup.Lines, line => Assert.Equal(100, line.Percent));
+        Assert.Equal(before, main.Incidents.Items.Count);
         Assert.NotEmpty(main.Incidents.Items);
     }
 

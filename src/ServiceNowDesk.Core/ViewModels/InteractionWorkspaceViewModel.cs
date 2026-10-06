@@ -46,6 +46,12 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
         await Assignment.LoadGroupsAsync();
     }
 
+    public Task ReloadChoiceListsAsync()
+    {
+        _choicesReady = false;
+        return LoadChoiceListsAsync();
+    }
+
     public async Task LoadChoiceListsAsync()
     {
         if (_choicesReady || Client is null)
