@@ -173,16 +173,23 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private void Documentation_Click(object sender, RoutedEventArgs e)
+    private void Documentation_Click(object sender, RoutedEventArgs e) =>
+        OpenHelp(HelpTopic.Authentication);
+
+    private void NotificationsHelp_Click(object sender, RoutedEventArgs e) =>
+        OpenHelp(HelpTopic.Notifications);
+
+    private void OpenHelp(HelpTopic topic)
     {
         foreach (Window window in OwnedWindows)
         {
             if (window is not HelpWindow help)
                 continue;
+            help.ShowTopic(topic);
             help.Activate();
             return;
         }
 
-        new HelpWindow { Owner = this }.Show();
+        new HelpWindow(topic) { Owner = this }.Show();
     }
 }

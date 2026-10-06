@@ -405,6 +405,9 @@ public sealed class AlertRow : INotifyPropertyChanged
 
     public string AssigneeLabel => string.IsNullOrWhiteSpace(Assignee) ? "Unassigned" : Assignee;
 
+    /// <summary>Short line for the shared notification row. Blank when nobody is assigned.</summary>
+    public string AssignedLine => string.IsNullOrWhiteSpace(Assignee) ? "" : "Assigned to " + Assignee.Trim();
+
     public string HighlightHex
     {
         get => _highlightHex;

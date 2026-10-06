@@ -23,6 +23,17 @@ public partial class DailyWorkView
 
     private void Arrived_PreviewKeyDown(object sender, KeyEventArgs e) => OpenFromEnter(sender, e);
 
+    private void NoteText_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None)
+            return;
+        if (DataContext is not DailyWorkViewModel daily)
+            return;
+
+        daily.AddNoteCommand.Execute(null);
+        e.Handled = true;
+    }
+
     private void OpenFromClick(object sender, MouseButtonEventArgs e)
     {
         if (DataContext is not DailyWorkViewModel daily)

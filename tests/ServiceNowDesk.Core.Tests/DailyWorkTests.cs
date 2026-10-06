@@ -26,6 +26,8 @@ public class DailyWorkTests
 
         Assert.True(AlertClassifier.IsUnattended(quiet, Now));
         Assert.False(AlertClassifier.IsUnattended(recent, Now));
+        Assert.True(AlertClassifier.IsUnattended(quiet with { UpdatedBy = "alex.rivera" }, Now));
+        Assert.False(AlertClassifier.IsUnattended(quiet with { UpdatedBy = "alex.rivera", UpdatedAt = Now.AddHours(-1) }, Now));
         Assert.True(AlertClassifier.IsStillOpen(onHold));
         Assert.True(AlertClassifier.IsUnattended(onHold, Now));
         Assert.False(AlertClassifier.IsStillOpen(resolved));

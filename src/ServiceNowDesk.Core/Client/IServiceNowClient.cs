@@ -28,6 +28,7 @@ public interface IServiceNowClient : IDisposable
 
     Task<PagedResult<RequestedItemRecord>> SearchRequestedItemsAsync(TicketQuery query, CancellationToken cancellationToken);
     Task<RequestedItemRecord> GetRequestedItemAsync(string sysId, CancellationToken cancellationToken);
+    Task<RequestedItemRecord> CreateRequestedItemAsync(RequestedItemChanges changes, CancellationToken cancellationToken);
     Task<RequestedItemRecord> UpdateRequestedItemAsync(string sysId, RequestedItemChanges changes, CancellationToken cancellationToken);
     Task<RequestedItemRecord> ResolveRequestedItemAsync(string sysId, string state, string closeNotes, CancellationToken cancellationToken);
 

@@ -285,7 +285,8 @@ public static class ChangeJson
             ["assignment_group"] = changes.ClearAssignmentGroup ? "" : changes.AssignmentGroupId,
             ["close_notes"] = changes.CloseNotes,
             ["service_offering"] = changes.ClearServiceOffering ? "" : changes.ServiceOfferingId,
-            ["cmdb_ci"] = changes.ClearConfigurationItem ? "" : changes.ConfigurationItemId
+            ["cmdb_ci"] = changes.ClearConfigurationItem ? "" : changes.ConfigurationItemId,
+            ["requested_for"] = changes.RequestedForId
         });
     }
 }

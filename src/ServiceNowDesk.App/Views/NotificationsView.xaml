@@ -13,7 +13,11 @@
                     <ColumnDefinition Width="140"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding AssignedLine}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"
+                               Visibility="{Binding AssignedLine, Converter={StaticResource StringVis}}"/>
+                </StackPanel>
                 <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="4" Text="{Binding QueueLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
@@ -44,8 +48,6 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel MaxWidth="980" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Notifications" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
-            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                       Text="Click a colored portion to show that queue, then click a row to open the incident, request item, or walk-up. Green is Assigned to me. Amber is Group queue. Crimson is SLA breaching. Blue is On hold past follow-up, and that queue is only tickets assigned to you. Violet is Updated by caller. Cyan is Returned with notes. Slate is Unattended tickets: still open, including on hold, assigned to you, and not updated by anyone for 24 hours. Resolved, closed, and cancelled tickets stay out of these queues. Search still finds them. A thin strip at the top center of the screen is the desktop widget. Rest the pointer on it to drop the bar. The bar also drops when a jiggle fires, and the portion that caused it is highlighted. Settings chooses whether the strip is there while this window is open, and whether a jiggle repeats on a timer or only for a new alert. Daily Work ranks what you should attend to. Leads repeats these work queues for your team and for the whole watched group."/>
             <TextBlock Text="{Binding LastChecked}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
             <TextBlock Text="{Binding PollError}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                        Visibility="{Binding PollError, Converter={StaticResource StringVis}}"/>

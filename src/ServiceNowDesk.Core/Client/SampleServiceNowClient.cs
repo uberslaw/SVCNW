@@ -265,7 +265,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         record.StateLabel,
         record.AssignmentGroup.Display,
         record.Location,
-        record.UpdatedAtDisplay);
+        record.UpdatedAtDisplay,
+        record.AssignedTo.Display?.Trim() ?? "",
+        record.AssignedTo.SysId ?? "");
 
     private static AlertRecord ToAlert(RequestRecord record, AlertKind kind) => new(
         kind,
@@ -276,7 +278,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         record.RequestStateLabel,
         record.AssignmentGroup.Display,
         "",
-        record.UpdatedAtDisplay);
+        record.UpdatedAtDisplay,
+        record.AssignedTo.Display?.Trim() ?? "",
+        record.AssignedTo.SysId ?? "");
 
     private static AlertRecord ToAlert(RequestedItemRecord record, AlertKind kind) => new(
         kind,
@@ -287,7 +291,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         record.StateLabel,
         record.AssignmentGroup.Display,
         "",
-        record.UpdatedAtDisplay);
+        record.UpdatedAtDisplay,
+        record.AssignedTo.Display?.Trim() ?? "",
+        record.AssignedTo.SysId ?? "");
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken)
     {
@@ -524,6 +530,42 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     public Task<RequestedItemRecord> GetRequestedItemAsync(string sysId, CancellationToken cancellationToken) =>
         Task.FromResult(Find(_items, sysId, "requested item"));
+
+    public Task<RequestedItemRecord> CreateRequestedItemAsync(RequestedItemChanges changes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
+        if (string.IsNullOrWhiteSpace(changes.ShortDescription))
+            throw new ArgumentException("Enter a short description.");
+
+        var now = Stamp();
+        var state = string.IsNullOrWhiteSpace(changes.State) ? "1" : changes.State.Trim();
+        var record = new RequestedItemRecord
+        {
+            SysId = NextId("ritm"),
+            Number = NextNumber("RITM"),
+            ShortDescription = changes.ShortDescription.Trim(),
+            Description = changes.Description?.Trim() ?? "",
+            State = state,
+            StateLabel = Label(DefaultChoices.ItemStates, state, "Open"),
+            Priority = changes.Priority ?? "",
+            PriorityLabel = Label(DefaultChoices.Priorities, changes.Priority, ""),
+            Quantity = "",
+            Request = ReferenceValue.Empty,
+            CatalogItem = ReferenceValue.Empty,
+            AssignedTo = UserRef(changes.AssignedToId),
+            AssignmentGroup = changes.AssignmentGroupId is null ? ReferenceValue.Empty : GroupRef(changes.AssignmentGroupId),
+            ServiceOffering = changes.ServiceOfferingId is null ? ReferenceValue.Empty : NamedRef(changes.ServiceOfferingId, SampleOfferings),
+            ConfigurationItem = changes.ConfigurationItemId is null ? ReferenceValue.Empty : NamedRef(changes.ConfigurationItemId, AllConfigurationItems),
+            OpenedAtDisplay = now,
+            UpdatedAtDisplay = now,
+            UpdatedAtValue = now,
+            Active = state != "3" && state != "4" && state != "7",
+            StageLabel = ""
+        };
+        _items.Insert(0, record);
+        Record("POST", "api/now/table/sc_req_item");
+        return Task.FromResult(record);
+    }
 
     public Task<RequestedItemRecord> UpdateRequestedItemAsync(string sysId, RequestedItemChanges changes, CancellationToken cancellationToken)
     {
