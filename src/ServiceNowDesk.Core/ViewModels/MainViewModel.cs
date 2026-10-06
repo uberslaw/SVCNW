@@ -40,11 +40,13 @@ public partial class MainViewModel : ObservableObject
         new CacheRowModel("walk-ups", "Walk-ups"),
         new CacheRowModel("choices", "Choices (menus)"),
         new CacheRowModel("groups", "Assignment groups"),
-        new CacheRowModel("members", "Assignment group members")
+        new CacheRowModel("members", "Assignment group members"),
+        new CacheRowModel("service-offerings", "Service offerings"),
+        new CacheRowModel("configuration-items", "Configuration items")
     ]);
     private bool _startupGate;
     private int _downloadBusy;
-    private static readonly string[] StartupCacheKeys = ["choices", "groups", "members", "incidents", "requests", "walk-ups"];
+    private static readonly string[] StartupCacheKeys = ["choices", "groups", "members", "service-offerings", "configuration-items", "incidents", "requests", "walk-ups"];
 
     public MainViewModel(
         ISettingsStore store,

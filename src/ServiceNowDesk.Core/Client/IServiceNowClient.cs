@@ -49,6 +49,9 @@ public interface IServiceNowClient : IDisposable
     Task<byte[]> DownloadAttachmentAsync(string attachmentSysId, CancellationToken cancellationToken);
     Task<IReadOnlyList<Choice>> ListAssignmentGroupsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<Choice>> ListGroupMembersAsync(string groupSysId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<Choice>> ListServiceOfferingsAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<Choice>> ListConfigurationItemsAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<ReferenceSuggestion>> SearchConfigurationItemsAsync(string text, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<CatalogItemSummary>> SearchCatalogItemsAsync(string text, CancellationToken cancellationToken);
     Task<IReadOnlyList<CatalogVariableDefinition>> GetCatalogVariablesAsync(string itemSysId, CancellationToken cancellationToken);

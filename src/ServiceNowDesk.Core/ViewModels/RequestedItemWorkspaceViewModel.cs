@@ -15,11 +15,17 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         : base(desktop, "sc_req_item", "request item", false, PresetCatalog.RequestedItems, attachments: true)
     {
         Assignment = new AssignmentFields(recentGroups);
+        ServiceOffering = new ReferenceChoiceField((client, token) => client.ListServiceOfferingsAsync(token));
+        ConfigurationItem = new ReferenceChoiceField((client, token) => client.ListConfigurationItemsAsync(token), searchRemote: true);
         Assignment.Changed += (_, _) => Touch();
+        ServiceOffering.Changed += (_, _) => Touch();
+        ConfigurationItem.Changed += (_, _) => Touch();
         ResolveChoiceLabel = "Outcome";
     }
 
     public AssignmentFields Assignment { get; }
+    public ReferenceChoiceField ServiceOffering { get; }
+    public ReferenceChoiceField ConfigurationItem { get; }
     public ObservableCollection<Choice> StateChoices { get; } = [];
     public ObservableCollection<Choice> PriorityChoices { get; } = [];
 
@@ -34,6 +40,7 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     public override async Task EnsureChoicesAsync()
     {
         await LoadChoiceListsAsync();
+        await LoadReferenceChoicesAsync();
         if (Client is null || Assignment.GroupsLoaded)
             return;
         Assignment.Use(Client);
@@ -69,6 +76,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         var record = await Client!.GetRequestedItemAsync(sysId, cancellationToken);
         Apply(record);
         await Assignment.ShowAsync(record.AssignmentGroup.SysId, record.AssignmentGroup.Display, record.AssignedTo.SysId, record.AssignedTo.Display);
+        ServiceOffering.Show(record.ServiceOffering.SysId, record.ServiceOffering.Display);
+        ConfigurationItem.Show(record.ConfigurationItem.SysId, record.ConfigurationItem.Display);
         UpsertRow(TicketRow.FromItem(record));
     }
 
@@ -86,7 +95,9 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             || Priority != record.Priority
             || CloseNotes != record.CloseNotes
             || Assignment.MemberId != record.AssignedTo.SysId
-            || Assignment.GroupId != record.AssignmentGroup.SysId;
+            || Assignment.GroupId != record.AssignmentGroup.SysId
+            || !SameId(ServiceOffering.Id, record.ServiceOffering.SysId)
+            || !SameId(ConfigurationItem.Id, record.ConfigurationItem.SysId);
     }
 
     protected override void OnStartNew()
@@ -99,6 +110,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             return;
         Apply(_loaded);
         _ = Assignment.ShowAsync(_loaded.AssignmentGroup.SysId, _loaded.AssignmentGroup.Display, _loaded.AssignedTo.SysId, _loaded.AssignedTo.Display);
+        ServiceOffering.Show(_loaded.ServiceOffering.SysId, _loaded.ServiceOffering.Display);
+        ConfigurationItem.Show(_loaded.ConfigurationItem.SysId, _loaded.ConfigurationItem.Display);
     }
 
     protected override bool TryValidate(out string message)
@@ -129,7 +142,11 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             AssignedToId = !string.IsNullOrEmpty(Assignment.MemberId) && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
             ClearAssignedTo = string.IsNullOrEmpty(Assignment.MemberId) && !record.AssignedTo.IsEmpty,
             AssignmentGroupId = !string.IsNullOrEmpty(Assignment.GroupId) && Assignment.GroupId != record.AssignmentGroup.SysId ? Assignment.GroupId : null,
-            ClearAssignmentGroup = string.IsNullOrEmpty(Assignment.GroupId) && !record.AssignmentGroup.IsEmpty
+            ClearAssignmentGroup = string.IsNullOrEmpty(Assignment.GroupId) && !record.AssignmentGroup.IsEmpty,
+            ServiceOfferingId = !string.IsNullOrEmpty(ServiceOffering.Id) && !SameId(ServiceOffering.Id, record.ServiceOffering.SysId) ? ServiceOffering.Id : null,
+            ClearServiceOffering = string.IsNullOrEmpty(ServiceOffering.Id) && !record.ServiceOffering.IsEmpty,
+            ConfigurationItemId = !string.IsNullOrEmpty(ConfigurationItem.Id) && !SameId(ConfigurationItem.Id, record.ConfigurationItem.SysId) ? ConfigurationItem.Id : null,
+            ClearConfigurationItem = string.IsNullOrEmpty(ConfigurationItem.Id) && !record.ConfigurationItem.IsEmpty
         };
         if (!changes.HasChanges || string.IsNullOrEmpty(EditorSysId))
             return;
@@ -151,6 +168,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         _choicesReady = false;
         _loaded = null;
         Assignment.Clear();
+        ServiceOffering.Clear();
+        ConfigurationItem.Clear();
         StateChoices.Clear();
         PriorityChoices.Clear();
         ResolveChoices.Clear();
@@ -174,6 +193,19 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     partial void OnPriorityChanged(string value) => Touch();
     partial void OnCloseNotesChanged(string value) => Touch();
 
+    private static bool SameId(string? left, string? right) =>
+        string.Equals(left ?? "", right ?? "", StringComparison.Ordinal);
+
+    private async Task LoadReferenceChoicesAsync()
+    {
+        if (Client is null)
+            return;
+        ServiceOffering.Use(Client);
+        ConfigurationItem.Use(Client);
+        await ServiceOffering.LoadAsync();
+        await ConfigurationItem.LoadAsync();
+    }
+
     private void Apply(RequestedItemRecord record)
     {
         _loaded = record;
@@ -191,6 +223,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         Quantity = record.Quantity;
         RequestNumber = record.Request.Display;
         CatalogItem = record.CatalogItem.Display;
+        ServiceOffering.Show(record.ServiceOffering.SysId, record.ServiceOffering.Display);
+        ConfigurationItem.Show(record.ConfigurationItem.SysId, record.ConfigurationItem.Display);
         HasEditor = true;
     }
 }

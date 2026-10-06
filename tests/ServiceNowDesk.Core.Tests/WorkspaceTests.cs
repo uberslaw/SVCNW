@@ -54,6 +54,7 @@ public class WorkspaceTests
         Assert.Contains("short description", workspace.ErrorMessage, StringComparison.OrdinalIgnoreCase);
 
         workspace.ShortDescription = "Headset failed";
+        workspace.ServiceOffering.Show("offering-print", "Printing");
         await workspace.SaveCommand.ExecuteAsync(null);
         Assert.StartsWith("INC", workspace.Number);
         Assert.False(workspace.IsNew);
@@ -401,7 +402,9 @@ public class WorkspaceTests
         Assert.False(main.Startup.ShowScreen);
         Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
-        Assert.Equal(6, main.Startup.Lines.Count);
+        Assert.Equal(8, main.Startup.Lines.Count);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Service offerings");
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Configuration items");
         Assert.All(main.Startup.Lines, line => Assert.Equal(100, line.Percent));
         Assert.Contains(main.Startup.Lines, line => line.Name == "Walk-ups");
         Assert.Contains(main.Incidents.Assignment.Groups, group => group.Value == "group-aus" && group.Label == "Aus DT - Client Services");
@@ -449,6 +452,43 @@ public class WorkspaceTests
         Assert.Equal("user-jordan", workspace.Caller.SysId);
         Assert.False(workspace.IsNew);
         Assert.StartsWith("INC", workspace.Number);
+    }
+
+    [Fact]
+    public async Task ServiceOfferingIsOptionalOnCreateAndRequiredOnUpdate()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenIncidentsAsync(client);
+        workspace.NewRecordCommand.Execute(null);
+        workspace.ShortDescription = "Headset failed";
+        workspace.Caller.Set("user-jordan", "Jordan Lee");
+
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("", workspace.ErrorMessage);
+        Assert.False(workspace.IsNew);
+        Assert.Equal("", workspace.ServiceOffering.Id);
+        var created = await client.GetIncidentAsync(workspace.Items.First(row => row.Number == workspace.Number).SysId, CancellationToken.None);
+        Assert.True(created.ServiceOffering.IsEmpty);
+
+        workspace.ShortDescription = "Headset failed again";
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        Assert.Contains("service offering", workspace.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Headset failed", created.ShortDescription);
+
+        workspace.ServiceOffering.Show("offering-print", "Printing");
+        workspace.ConfigurationItem.Show("ci-printer", "HQ-PRINTER-01");
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("", workspace.ErrorMessage);
+        var updated = await client.GetIncidentAsync(workspace.Items.First(row => row.Number == workspace.Number).SysId, CancellationToken.None);
+        Assert.Equal("Headset failed again", updated.ShortDescription);
+        Assert.Equal("offering-print", updated.ServiceOffering.SysId);
+        Assert.Equal("Printing", updated.ServiceOffering.Display);
+        Assert.Equal("HQ-PRINTER-01", updated.ConfigurationItem.Display);
+        Assert.Equal("Printing", workspace.ServiceOffering.SelectedLabel);
+        Assert.DoesNotContain("offering-print", workspace.ServiceOffering.SelectedLabel, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

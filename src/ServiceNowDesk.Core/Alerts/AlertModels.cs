@@ -90,6 +90,8 @@ public sealed record WatchedRecord
     public string UpdatedBy { get; init; } = "";
     public string CallerUserName { get; init; } = "";
     public string AssigneeUserName { get; init; } = "";
+    public string AssignedToSysId { get; init; } = "";
+    public string AssignmentGroupSysId { get; init; } = "";
     public DateTime? FollowUp { get; init; }
     public bool SlaHasBreached { get; init; }
     public string SlaStage { get; init; } = "";

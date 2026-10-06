@@ -73,13 +73,14 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         Record("GET", "api/now/table/sc_req_item");
         var watched = WatchedPopulation(search);
         var now = DateTime.Now;
+        var callerScope = new CallerUpdateScope(userId, ["group-cs"], search.GroupName);
         return Task.FromResult(new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
         {
             [AlertKind.AssignedToMe] = new(assigned, assigned.Count),
             [AlertKind.WatchedGroup] = new(group, group.Count),
             [AlertKind.SlaBreaching] = AlertClassifier.Bucket(AlertKind.SlaBreaching, watched, now),
             [AlertKind.OnHoldPastFollowUp] = AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, watched, now),
-            [AlertKind.UpdatedByCaller] = AlertClassifier.Bucket(AlertKind.UpdatedByCaller, watched, now),
+            [AlertKind.UpdatedByCaller] = AlertClassifier.Bucket(AlertKind.UpdatedByCaller, watched, now, callerScope),
             [AlertKind.ReturnedWithNotes] = AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, watched, now)
         }));
     }
@@ -97,19 +98,19 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         foreach (var record in _incidents)
         {
             if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, record.Location, userId, watched, groupName, cities))
-                rows.Add(Describe(DeskSection.Incidents, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup.Display, record.Location, record.UpdatedAtDisplay, record.Caller, record.AssignedTo));
+                rows.Add(Describe(DeskSection.Incidents, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, record.Location, record.UpdatedAtDisplay, record.Caller, record.AssignedTo));
         }
 
         foreach (var record in _items)
         {
             if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
-                rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup.Display, "", record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo));
+                rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo));
         }
 
         foreach (var record in _interactions)
         {
             if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
-                rows.Add(Describe(DeskSection.WalkUps, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup.Display, "", record.UpdatedAtDisplay, record.OpenedFor, record.AssignedTo));
+                rows.Add(Describe(DeskSection.WalkUps, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, record.OpenedFor, record.AssignedTo));
         }
 
         return rows;
@@ -143,7 +144,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         string title,
         string stateValue,
         string stateLabel,
-        string group,
+        ReferenceValue group,
         string location,
         string updated,
         ReferenceValue caller,
@@ -160,12 +161,14 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Title = title,
             State = stateLabel,
             StateValue = stateValue,
-            Group = group,
+            Group = group.Display,
             Location = location,
             Updated = updated,
             UpdatedBy = signals?.UpdatedBy ?? "",
             CallerUserName = UserNameOf(caller),
             AssigneeUserName = UserNameOf(assignee),
+            AssignedToSysId = assignee.SysId,
+            AssignmentGroupSysId = group.SysId,
             FollowUp = AlertClassifier.TryParseInstant(followUp, out var followUpAt) ? followUpAt : null,
             SlaHasBreached = signals?.SlaBreached ?? false,
             SlaStage = signals?.SlaStage ?? "",
@@ -274,6 +277,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Caller = UserRef(changes.CallerId),
             AssignedTo = UserRef(changes.AssignedToId),
             AssignmentGroup = GroupRef(changes.AssignmentGroupId),
+            ServiceOffering = NamedRef(changes.ServiceOfferingId, SampleOfferings),
+            ConfigurationItem = NamedRef(changes.ConfigurationItemId, AllConfigurationItems),
             OpenedAtDisplay = now,
             UpdatedAtDisplay = now,
             UpdatedAtValue = now,
@@ -316,6 +321,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Caller = changes.CallerId is null ? current.Caller : UserRef(changes.CallerId),
             AssignedTo = changes.ClearAssignedTo ? ReferenceValue.Empty : changes.AssignedToId is null ? current.AssignedTo : UserRef(changes.AssignedToId),
             AssignmentGroup = changes.ClearAssignmentGroup ? ReferenceValue.Empty : changes.AssignmentGroupId is null ? current.AssignmentGroup : GroupRef(changes.AssignmentGroupId),
+            ServiceOffering = changes.ClearServiceOffering ? ReferenceValue.Empty : changes.ServiceOfferingId is null ? current.ServiceOffering : NamedRef(changes.ServiceOfferingId, SampleOfferings),
+            ConfigurationItem = changes.ClearConfigurationItem ? ReferenceValue.Empty : changes.ConfigurationItemId is null ? current.ConfigurationItem : NamedRef(changes.ConfigurationItemId, AllConfigurationItems),
             Active = (changes.State ?? current.State) is "6" or "7" or "8" ? false : current.Active,
             UpdatedAtDisplay = Stamp(),
             UpdatedAtValue = Stamp()
@@ -469,6 +476,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             PriorityLabel = changes.Priority is null ? current.PriorityLabel : Label(DefaultChoices.Priorities, changes.Priority, changes.Priority),
             AssignedTo = changes.ClearAssignedTo ? ReferenceValue.Empty : changes.AssignedToId is null ? current.AssignedTo : UserRef(changes.AssignedToId),
             AssignmentGroup = changes.ClearAssignmentGroup ? ReferenceValue.Empty : changes.AssignmentGroupId is null ? current.AssignmentGroup : GroupRef(changes.AssignmentGroupId),
+            ServiceOffering = changes.ClearServiceOffering ? ReferenceValue.Empty : changes.ServiceOfferingId is null ? current.ServiceOffering : NamedRef(changes.ServiceOfferingId, SampleOfferings),
+            ConfigurationItem = changes.ClearConfigurationItem ? ReferenceValue.Empty : changes.ConfigurationItemId is null ? current.ConfigurationItem : NamedRef(changes.ConfigurationItemId, AllConfigurationItems),
             CloseNotes = changes.CloseNotes ?? current.CloseNotes,
             Active = state is "3" or "4" or "7" ? false : current.Active,
             UpdatedAtDisplay = Stamp(),
@@ -568,6 +577,27 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     public Task<IReadOnlyList<Choice>> ListAssignmentGroupsAsync(CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<Choice>>(Groups.Select(group => new Choice(group.SysId, group.Display)).ToArray());
+
+    public Task<IReadOnlyList<Choice>> ListServiceOfferingsAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Choice>>(SampleOfferings);
+
+    public Task<IReadOnlyList<Choice>> ListConfigurationItemsAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Choice>>(SampleConfigurationItems);
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> SearchConfigurationItemsAsync(string text, CancellationToken cancellationToken)
+    {
+        var term = (text ?? "").Trim();
+        if (term.Length < 2)
+            return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
+
+        var matches = SampleConfigurationItems
+            .Concat(ExtraConfigurationItems)
+            .Where(choice => choice.Label.Contains(term, StringComparison.OrdinalIgnoreCase))
+            .Select(choice => new ReferenceSuggestion(choice.Value, choice.Label, "Configuration item"))
+            .ToArray();
+        Record("GET", "api/now/table/cmdb_ci");
+        return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>(matches);
+    }
 
     public Task<IReadOnlyList<Choice>> ListGroupMembersAsync(string groupSysId, CancellationToken cancellationToken)
     {
@@ -805,6 +835,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Caller = Jordan,
             AssignedTo = Alex,
             AssignmentGroup = ClientServices,
+            ServiceOffering = new ReferenceValue("offering-print", "Printing"),
+            ConfigurationItem = new ReferenceValue("ci-printer", "HQ-PRINTER-01"),
             OpenedAtDisplay = "2026-09-28 09:15",
             UpdatedAtDisplay = "2026-09-28 10:40",
             UpdatedAtValue = "2026-09-28 10:40:00",
@@ -1119,6 +1151,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 CatalogItem = new ReferenceValue("cat-laptop", "Standard laptop"),
                 AssignedTo = Alex,
                 AssignmentGroup = ClientServices,
+                ServiceOffering = new ReferenceValue("offering-euc", "End-user computing"),
+                ConfigurationItem = new ReferenceValue("ci-laptop", "LAPTOP-FIN-014"),
                 OpenedAtDisplay = "2026-09-24 09:00",
                 UpdatedAtDisplay = "2026-09-28 09:00",
                 UpdatedAtValue = "2026-09-28 09:00:00",
@@ -1540,6 +1574,27 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         new("group-net", "Network", "Network operations")
     ];
 
+    private static readonly Choice[] SampleOfferings =
+    [
+        new("offering-euc", "End-user computing"),
+        new("offering-network", "Network access"),
+        new("offering-print", "Printing")
+    ];
+
+    private static readonly Choice[] SampleConfigurationItems =
+    [
+        new("ci-printer", "HQ-PRINTER-01"),
+        new("ci-laptop", "LAPTOP-FIN-014"),
+        new("ci-vpn", "VPN-GATEWAY")
+    ];
+
+    private static readonly Choice[] ExtraConfigurationItems =
+    [
+        new("ci-switch", "CORE-SWITCH-02")
+    ];
+
+    private static Choice[] AllConfigurationItems => SampleConfigurationItems.Concat(ExtraConfigurationItems).ToArray();
+
     private static readonly CatalogItemSummary[] Catalog =
     [
         new("cat-laptop", "Standard laptop", "Windows or macOS laptop with a dock"),
@@ -1664,6 +1719,14 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         null or "" => ReferenceValue.Empty,
         _ => new ReferenceValue(sysId, sysId)
     };
+
+    private static ReferenceValue NamedRef(string? sysId, IReadOnlyList<Choice> known)
+    {
+        if (string.IsNullOrWhiteSpace(sysId))
+            return ReferenceValue.Empty;
+        var match = known.FirstOrDefault(choice => choice.Value.Equals(sysId, StringComparison.OrdinalIgnoreCase));
+        return match is null ? new ReferenceValue(sysId, sysId) : new ReferenceValue(match.Value, match.Label);
+    }
 
     private static ReferenceValue GroupRef(string? sysId) => sysId switch
     {

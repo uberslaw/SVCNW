@@ -333,13 +333,32 @@ public class AssignmentDirectoryTests
         Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Requests" && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Walk-ups" && line.Percent == 100);
-        Assert.Equal(6, main.Startup.Lines.Count);
+        Assert.Equal(8, main.Startup.Lines.Count);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Service offerings" && line.Text.Contains("cached"));
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Configuration items" && line.Text.Contains("cached"));
         main.Incidents.NewRecordCommand.Execute(null);
         main.Incidents.Assignment.GroupId = "aus dt - client services";
         await main.Incidents.Assignment.WhenReady;
         Assert.Equal("group-aus", main.Incidents.Assignment.GroupId);
         Assert.Contains(main.Incidents.Assignment.Members, member => member.Value == "user-jordan" && member.Label == "Jordan Lee");
         Assert.Contains(main.Incidents.Assignment.Members, member => member.Label == "Unassigned");
+    }
+
+    [Fact]
+    public async Task ChoosingAMemberWithAGuidSysIdLeavesTheNameVisible()
+    {
+        const string guid = "6ba7b8109dad11d180b400c04fd430c8";
+        var fields = new AssignmentFields();
+        fields.Members.Add(new Choice(guid, "Alex Rivera"));
+        fields.MemberId = guid;
+
+        Assert.Equal("Alex Rivera", fields.SelectedMemberLabel);
+        Assert.DoesNotContain(guid, fields.SelectedMemberLabel, StringComparison.OrdinalIgnoreCase);
+        var chosen = Assert.Single(fields.Members, choice => choice.Value.Equals(guid, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("Alex Rivera", chosen.ToString());
+        Assert.DoesNotContain(guid, chosen.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Choice {", chosen.ToString(), StringComparison.Ordinal);
+        await Task.CompletedTask;
     }
 
     private static FormCatalogSnapshot Directory(DateTimeOffset capturedAt, string sysId, string name) => new()
@@ -352,7 +371,11 @@ public class AssignmentDirectoryTests
         Members =
         [
             new CachedGroupMember { GroupSysId = sysId, UserSysId = "user-alex", Name = "Alex Rivera" }
-        ]
+        ],
+        ServiceOfferingsCapturedAt = capturedAt,
+        ConfigurationItemsCapturedAt = capturedAt,
+        ServiceOfferings = [new CachedNamedRecord { SysId = "offering-print", Name = "Printing" }],
+        ConfigurationItems = [new CachedNamedRecord { SysId = "ci-printer", Name = "HQ-PRINTER-01" }]
     };
 
     private static HttpResponseMessage Groups() =>

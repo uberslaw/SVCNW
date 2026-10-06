@@ -28,6 +28,8 @@ public sealed record IncidentRecord
     public ReferenceValue Caller { get; init; }
     public ReferenceValue AssignedTo { get; init; }
     public ReferenceValue AssignmentGroup { get; init; }
+    public ReferenceValue ServiceOffering { get; init; }
+    public ReferenceValue ConfigurationItem { get; init; }
     public string Location { get; init; } = "";
     public string OpenedAtDisplay { get; init; } = "";
     public string UpdatedAtDisplay { get; init; } = "";
@@ -76,6 +78,8 @@ public sealed record RequestedItemRecord
     public ReferenceValue CatalogItem { get; init; }
     public ReferenceValue AssignedTo { get; init; }
     public ReferenceValue AssignmentGroup { get; init; }
+    public ReferenceValue ServiceOffering { get; init; }
+    public ReferenceValue ConfigurationItem { get; init; }
     public string OpenedAtDisplay { get; init; } = "";
     public string UpdatedAtDisplay { get; init; } = "";
     public string UpdatedAtValue { get; init; } = "";
@@ -151,6 +155,10 @@ public sealed class IncidentChanges
     public string? CloseCode { get; init; }
     public string? CloseNotes { get; init; }
     public string? HoldReason { get; init; }
+    public string? ServiceOfferingId { get; init; }
+    public bool ClearServiceOffering { get; init; }
+    public string? ConfigurationItemId { get; init; }
+    public bool ClearConfigurationItem { get; init; }
 
     public bool HasChanges =>
         ShortDescription is not null
@@ -169,7 +177,11 @@ public sealed class IncidentChanges
         || ContactType is not null
         || CloseCode is not null
         || CloseNotes is not null
-        || HoldReason is not null;
+        || HoldReason is not null
+        || ServiceOfferingId is not null
+        || ClearServiceOffering
+        || ConfigurationItemId is not null
+        || ClearConfigurationItem;
 }
 
 public sealed class InteractionChanges
@@ -227,6 +239,10 @@ public sealed class RequestedItemChanges
     public string? AssignmentGroupId { get; init; }
     public bool ClearAssignmentGroup { get; init; }
     public string? CloseNotes { get; init; }
+    public string? ServiceOfferingId { get; init; }
+    public bool ClearServiceOffering { get; init; }
+    public string? ConfigurationItemId { get; init; }
+    public bool ClearConfigurationItem { get; init; }
 
     public bool HasChanges =>
         ShortDescription is not null
@@ -237,5 +253,9 @@ public sealed class RequestedItemChanges
         || ClearAssignedTo
         || AssignmentGroupId is not null
         || ClearAssignmentGroup
-        || CloseNotes is not null;
+        || CloseNotes is not null
+        || ServiceOfferingId is not null
+        || ClearServiceOffering
+        || ConfigurationItemId is not null
+        || ClearConfigurationItem;
 }

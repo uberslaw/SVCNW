@@ -45,6 +45,8 @@ public static class RecordMapper
             Caller = Reference(record, "caller_id"),
             AssignedTo = Reference(record, "assigned_to"),
             AssignmentGroup = Reference(record, "assignment_group"),
+            ServiceOffering = Reference(record, "service_offering"),
+            ConfigurationItem = Reference(record, "cmdb_ci"),
             OpenedAtDisplay = SnowField.Read(record, "opened_at").Display,
             UpdatedAtDisplay = updated.Display,
             UpdatedAtValue = updated.Value,
@@ -102,6 +104,8 @@ public static class RecordMapper
             CatalogItem = Reference(record, "cat_item"),
             AssignedTo = Reference(record, "assigned_to"),
             AssignmentGroup = Reference(record, "assignment_group"),
+            ServiceOffering = Reference(record, "service_offering"),
+            ConfigurationItem = Reference(record, "cmdb_ci"),
             OpenedAtDisplay = SnowField.Read(record, "opened_at").Display,
             UpdatedAtDisplay = updated.Display,
             UpdatedAtValue = updated.Value,
@@ -232,7 +236,9 @@ public static class ChangeJson
             ["contact_type"] = changes.ContactType,
             ["close_code"] = changes.CloseCode,
             ["close_notes"] = changes.CloseNotes,
-            ["hold_reason"] = changes.HoldReason
+            ["hold_reason"] = changes.HoldReason,
+            ["service_offering"] = changes.ClearServiceOffering ? "" : changes.ServiceOfferingId,
+            ["cmdb_ci"] = changes.ClearConfigurationItem ? "" : changes.ConfigurationItemId
         });
     }
 
@@ -277,7 +283,9 @@ public static class ChangeJson
             ["priority"] = changes.Priority,
             ["assigned_to"] = changes.ClearAssignedTo ? "" : changes.AssignedToId,
             ["assignment_group"] = changes.ClearAssignmentGroup ? "" : changes.AssignmentGroupId,
-            ["close_notes"] = changes.CloseNotes
+            ["close_notes"] = changes.CloseNotes,
+            ["service_offering"] = changes.ClearServiceOffering ? "" : changes.ServiceOfferingId,
+            ["cmdb_ci"] = changes.ClearConfigurationItem ? "" : changes.ConfigurationItemId
         });
     }
 }

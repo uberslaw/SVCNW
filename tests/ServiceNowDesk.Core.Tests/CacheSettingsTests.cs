@@ -189,6 +189,8 @@ public class CacheSettingsTests
         Assert.Contains(main.Caches, row => row.Name == "Choices (menus)");
         Assert.Contains(main.Caches, row => row.Name == "Assignment groups");
         Assert.Contains(main.Caches, row => row.Name == "Assignment group members");
+        Assert.Contains(main.Caches, row => row.Name == "Service offerings");
+        Assert.Contains(main.Caches, row => row.Name == "Configuration items");
         Assert.Contains(main.Caches, row => row.Name == "Walk-ups");
         Assert.DoesNotContain(main.Caches, row => row.Name.Contains("SLA", StringComparison.OrdinalIgnoreCase));
     }
@@ -230,7 +232,11 @@ public class CacheSettingsTests
                 Choices = [new Choice("1", "One")]
             }).ToList(),
             Groups = [new CachedAssignmentGroup { SysId = "group-aus", Name = "AUS DT - Client Services" }],
-            Members = [new CachedGroupMember { GroupSysId = "group-aus", UserSysId = "user-jordan", Name = "Jordan Lee" }]
+            Members = [new CachedGroupMember { GroupSysId = "group-aus", UserSysId = "user-jordan", Name = "Jordan Lee" }],
+            ServiceOfferingsCapturedAt = now,
+            ConfigurationItemsCapturedAt = now,
+            ServiceOfferings = [new CachedNamedRecord { SysId = "offering-print", Name = "Printing" }],
+            ConfigurationItems = [new CachedNamedRecord { SysId = "ci-printer", Name = "HQ-PRINTER-01" }]
         };
     }
 

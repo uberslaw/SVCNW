@@ -43,7 +43,13 @@ public enum DeskSection
     Settings
 }
 
-public sealed record Choice(string Value, string Label);
+public sealed record Choice(string Value, string Label)
+{
+    /// <summary>
+    /// Closed dropdowns show this text: the name, never the sys_id.
+    /// </summary>
+    public override string ToString() => string.IsNullOrWhiteSpace(Label) ? "" : Label.Trim();
+}
 
 public sealed record PresetOption(AssignmentScope Assignment, ActivityFilter Activity, string Label, string? AssignmentClause = null);
 

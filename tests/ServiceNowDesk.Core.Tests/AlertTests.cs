@@ -459,11 +459,15 @@ public class AlertTests
         Assert.True(AlertClassifier.IsOnHoldPastFollowUp(hold with { Section = DeskSection.WalkUps, StateValue = "on_hold", State = "On Hold" }, now));
         Assert.False(AlertClassifier.IsOnHold(DeskSection.RequestedItems, "3", "Closed Complete"));
 
-        var updated = SampleRecord() with { UpdatedBy = "jordan.lee", CallerUserName = "Jordan.Lee" };
-        Assert.True(AlertClassifier.IsUpdatedByCaller(updated));
-        Assert.False(AlertClassifier.IsUpdatedByCaller(updated with { UpdatedBy = "alex.rivera" }));
-        Assert.False(AlertClassifier.IsUpdatedByCaller(updated with { UpdatedBy = "" }));
-        Assert.False(AlertClassifier.IsUpdatedByCaller(updated with { CallerUserName = "" }));
+        var scope = new CallerUpdateScope("sample-user", ["group-cs"], "Aus DT - Client Services");
+        var updated = SampleRecord() with { UpdatedBy = "jordan.lee", CallerUserName = "Jordan.Lee", AssignedToSysId = "sample-user" };
+        Assert.True(AlertClassifier.IsUpdatedByCaller(updated, scope));
+        Assert.False(AlertClassifier.IsUpdatedByCaller(updated with { UpdatedBy = "alex.rivera" }, scope));
+        Assert.False(AlertClassifier.IsUpdatedByCaller(updated with { UpdatedBy = "" }, scope));
+        Assert.False(AlertClassifier.IsUpdatedByCaller(updated with { CallerUserName = "" }, scope));
+        Assert.False(AlertClassifier.IsUpdatedByCaller(
+            updated with { AssignedToSysId = "user-sam", AssignmentGroupSysId = "group-net", Group = "Network" },
+            scope));
 
         var returned = SampleRecord() with
         {
@@ -476,6 +480,43 @@ public class AlertTests
         Assert.False(AlertClassifier.IsReturnedWithNotes(returned with { LatestJournalAuthor = "jordan.lee" }));
         Assert.False(AlertClassifier.IsReturnedWithNotes(returned with { LatestJournalAuthor = "alex.rivera", AssigneeUserName = "alex.rivera" }));
         Assert.False(AlertClassifier.IsReturnedWithNotes(returned with { LatestJournalAuthor = "" }));
+    }
+
+    [Fact]
+    public void UpdatedByCallerSkipsTicketsAssignedOutsideTheUsersGroups()
+    {
+        var scope = new CallerUpdateScope("sample-user", ["group-cs"], "Aus DT - Client Services");
+        var callerUpdate = SampleRecord() with
+        {
+            UpdatedBy = "jordan.lee",
+            CallerUserName = "jordan.lee",
+            AssignedToSysId = "user-sam",
+            AssignmentGroupSysId = "group-cs",
+            Group = "Client Services"
+        };
+        Assert.True(AlertClassifier.IsUpdatedByCaller(callerUpdate, scope));
+        Assert.True(AlertClassifier.IsUpdatedByCaller(callerUpdate with
+        {
+            AssignedToSysId = "sample-user",
+            AssignmentGroupSysId = "group-net",
+            Group = "Network"
+        }, scope));
+        Assert.True(AlertClassifier.IsUpdatedByCaller(callerUpdate with
+        {
+            AssignedToSysId = "user-sam",
+            AssignmentGroupSysId = "group-aus",
+            Group = "Aus DT - Client Services"
+        }, scope));
+
+        var otherGroup = callerUpdate with
+        {
+            AssignedToSysId = "user-sam",
+            AssignmentGroupSysId = "group-net",
+            Group = "Network"
+        };
+        Assert.False(AlertClassifier.IsUpdatedByCaller(otherGroup, scope));
+        var bucket = AlertClassifier.Bucket(AlertKind.UpdatedByCaller, [callerUpdate, otherGroup], DateTime.Now, scope);
+        Assert.Equal("INC0091001", Assert.Single(bucket.Rows).Number);
     }
 
     [Fact]

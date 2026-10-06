@@ -30,10 +30,11 @@ public static class AlertClassifier
             && followUp < now;
     }
 
-    public static bool IsUpdatedByCaller(WatchedRecord record)
+    public static bool IsUpdatedByCaller(WatchedRecord record, CallerUpdateScope scope)
     {
         ArgumentNullException.ThrowIfNull(record);
-        return SameUser(record.UpdatedBy, record.CallerUserName);
+        ArgumentNullException.ThrowIfNull(scope);
+        return SameUser(record.UpdatedBy, record.CallerUserName) && scope.Includes(record);
     }
 
     /// <summary>
@@ -60,20 +61,23 @@ public static class AlertClassifier
         return normalized.Equals("in_progress", StringComparison.OrdinalIgnoreCase);
     }
 
-    public static bool Matches(AlertKind kind, WatchedRecord record, DateTime now) => kind switch
+    public static bool Matches(AlertKind kind, WatchedRecord record, DateTime now, CallerUpdateScope? callerScope = null) => kind switch
     {
         AlertKind.SlaBreaching => IsSlaBreaching(record, now),
         AlertKind.OnHoldPastFollowUp => IsOnHoldPastFollowUp(record, now),
-        AlertKind.UpdatedByCaller => IsUpdatedByCaller(record),
+        AlertKind.UpdatedByCaller => callerScope is not null && IsUpdatedByCaller(record, callerScope),
         AlertKind.ReturnedWithNotes => IsReturnedWithNotes(record),
         _ => false
     };
 
-    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, string? status = null)
+    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, string? status = null) =>
+        Bucket(kind, records, now, null, status);
+
+    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope? callerScope, string? status = null)
     {
         ArgumentNullException.ThrowIfNull(records);
         var rows = records
-            .Where(record => Matches(kind, record, now))
+            .Where(record => Matches(kind, record, now, callerScope))
             .Select(record => ToRecord(record, kind))
             .ToArray();
         return new AlertBucket(rows, rows.Length, status ?? "");
@@ -122,4 +126,40 @@ public static class AlertClassifier
         !string.IsNullOrWhiteSpace(left)
         && !string.IsNullOrWhiteSpace(right)
         && left.Trim().Equals(right.Trim(), StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Updated by caller includes a record only when it is assigned to the signed-in user,
+/// to one of that user's groups, or to the watched group when one is configured.
+/// </summary>
+public sealed class CallerUpdateScope
+{
+    public CallerUpdateScope(string? userSysId, IEnumerable<string>? groupIds, string? watchedGroupName)
+    {
+        UserSysId = userSysId?.Trim() ?? "";
+        GroupIds = new HashSet<string>(
+            (groupIds ?? []).Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+        WatchedGroupName = watchedGroupName?.Trim() ?? "";
+    }
+
+    public string UserSysId { get; }
+
+    public IReadOnlySet<string> GroupIds { get; }
+
+    public string WatchedGroupName { get; }
+
+    public bool Includes(WatchedRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        if (UserSysId.Length > 0 && record.AssignedToSysId.Trim().Equals(UserSysId, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var groupId = record.AssignmentGroupSysId.Trim();
+        if (groupId.Length > 0 && GroupIds.Contains(groupId))
+            return true;
+
+        return WatchedGroupName.Length > 0
+            && record.Group.Trim().Equals(WatchedGroupName, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -13,9 +13,9 @@ namespace ServiceNowDesk.Client;
 
 public sealed class ServiceNowClient : IServiceNowClient
 {
-    private const string IncidentFields = "sys_id,number,short_description,description,state,priority,impact,urgency,category,subcategory,contact_type,caller_id,assigned_to,assignment_group,opened_at,sys_updated_on,active,close_code,close_notes,hold_reason";
+    private const string IncidentFields = "sys_id,number,short_description,description,state,priority,impact,urgency,category,subcategory,contact_type,caller_id,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,close_code,close_notes,hold_reason";
     private const string RequestFields = "sys_id,number,short_description,description,request_state,requested_for,opened_by,opened_at,due_date,priority,special_instructions,approval,stage,active,sys_updated_on";
-    private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,opened_at,sys_updated_on,active,priority,close_notes";
+    private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,priority,close_notes";
     private const string KnowledgeFields = "sys_id,number,short_description,text,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
     private const string AlertIncidentFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
     private const string AlertRequestFields = "sys_id,number,short_description,request_state,assigned_to,assignment_group,sys_updated_on,active";
@@ -41,6 +41,8 @@ public sealed class ServiceNowClient : IServiceNowClient
     private readonly HashSet<string> _completeMemberGroups = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _persistGate = new();
     private List<Choice> _groups = [];
+    private List<Choice> _serviceOfferings = [];
+    private List<Choice> _configurationItems = [];
     private string[]? _groupIds;
     private Task? _directoryRefresh;
 
@@ -97,6 +99,24 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
+    public bool ServiceOfferingsAreStale
+    {
+        get
+        {
+            lock (_cacheGate)
+                return FormCatalogPolicy.IsStale(_snapshot.ServiceOfferingsCapturedAt, DateTimeOffset.UtcNow);
+        }
+    }
+
+    public bool ConfigurationItemsAreStale
+    {
+        get
+        {
+            lock (_cacheGate)
+                return FormCatalogPolicy.IsStale(_snapshot.ConfigurationItemsCapturedAt, DateTimeOffset.UtcNow);
+        }
+    }
+
     public FormCatalogSnapshot ExportCatalog()
     {
         lock (_cacheGate)
@@ -122,6 +142,32 @@ public sealed class ServiceNowClient : IServiceNowClient
             _groups = [];
             _groupIds = null;
             _snapshot.Groups = [];
+        }
+
+        PersistCatalog();
+    }
+
+    public void ClearServiceOfferingCache()
+    {
+        lock (_cacheGate)
+        {
+            _serviceOfferings = [];
+            _snapshot.ServiceOfferings = [];
+            _snapshot.ServiceOfferingsCapturedAt = default;
+            _snapshot.ServiceOfferingsTruncated = false;
+        }
+
+        PersistCatalog();
+    }
+
+    public void ClearConfigurationItemCache()
+    {
+        lock (_cacheGate)
+        {
+            _configurationItems = [];
+            _snapshot.ConfigurationItems = [];
+            _snapshot.ConfigurationItemsCapturedAt = default;
+            _snapshot.ConfigurationItemsTruncated = false;
         }
 
         PersistCatalog();
@@ -155,11 +201,19 @@ public sealed class ServiceNowClient : IServiceNowClient
             _groupsWithMemberList.Clear();
             _completeMemberGroups.Clear();
             _groups = [];
+            _serviceOfferings = [];
+            _configurationItems = [];
             _groupIds = null;
             _snapshot.Choices = [];
             _snapshot.CatalogItems = [];
             _snapshot.Groups = [];
             _snapshot.Members = [];
+            _snapshot.ServiceOfferings = [];
+            _snapshot.ConfigurationItems = [];
+            _snapshot.ServiceOfferingsCapturedAt = default;
+            _snapshot.ConfigurationItemsCapturedAt = default;
+            _snapshot.ServiceOfferingsTruncated = false;
+            _snapshot.ConfigurationItemsTruncated = false;
             _snapshot.CapturedAt = default;
             _snapshot.DirectoryCapturedAt = default;
             _snapshot.DirectoryComplete = false;
@@ -365,7 +419,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         return new CategoryBuckets(
             AlertClassifier.Bucket(AlertKind.SlaBreaching, folded, now, JoinNotes(slaStatus, shared)),
             AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, holdSource, now, JoinNotes(holdNotes, shared)),
-            AlertClassifier.Bucket(AlertKind.UpdatedByCaller, folded, now, shared),
+            AlertClassifier.Bucket(AlertKind.UpdatedByCaller, folded, now, new CallerUpdateScope(search.UserSysId, groupIds, search.GroupName), shared),
             AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, folded, now, JoinNotes(journalStatus, shared)));
     }
 
@@ -440,6 +494,8 @@ public sealed class ServiceNowClient : IServiceNowClient
             UpdatedBy = FirstText(row, "sys_updated_by"),
             CallerUserName = FirstText(row, "caller_id.user_name", "opened_for.user_name", "requested_for.user_name", "request.requested_for.user_name"),
             AssigneeUserName = FirstText(row, "assigned_to.user_name"),
+            AssignedToSysId = SnowField.Read(row, "assigned_to").Value,
+            AssignmentGroupSysId = SnowField.Read(row, "assignment_group").Value,
             FollowUp = hasFollowUp ? followUpAt : null
         };
     }
@@ -966,6 +1022,36 @@ public sealed class ServiceNowClient : IServiceNowClient
             .ToList();
         RememberGroupMembers(id, choices, complete: !fetched.Truncated);
         return choices;
+    }
+
+    public Task<ReferenceDownload> DownloadServiceOfferingsAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken) =>
+        DownloadNamedReferencesAsync("service_offering", FormCatalogPolicy.MaxServiceOfferings, StoreServiceOfferings, progress, cancellationToken);
+
+    public Task<ReferenceDownload> DownloadConfigurationItemsAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken) =>
+        DownloadConfigurationItemsAsync(FormCatalogPolicy.MaxConfigurationItems, progress, cancellationToken);
+
+    public Task<ReferenceDownload> DownloadConfigurationItemsAsync(int maxRows, IProgress<DownloadTick>? progress, CancellationToken cancellationToken) =>
+        DownloadNamedReferencesAsync("cmdb_ci", Math.Clamp(maxRows, 1, FormCatalogPolicy.MaxConfigurationItems), StoreConfigurationItems, progress, cancellationToken);
+
+    public Task<IReadOnlyList<Choice>> ListServiceOfferingsAsync(CancellationToken cancellationToken)
+    {
+        lock (_cacheGate)
+            return Task.FromResult<IReadOnlyList<Choice>>(_serviceOfferings.ToArray());
+    }
+
+    public Task<IReadOnlyList<Choice>> ListConfigurationItemsAsync(CancellationToken cancellationToken)
+    {
+        lock (_cacheGate)
+            return Task.FromResult<IReadOnlyList<Choice>>(_configurationItems.ToArray());
+    }
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> SearchConfigurationItemsAsync(string text, CancellationToken cancellationToken)
+    {
+        var term = EncodedQuery.Sanitize(text);
+        if (term.Length < 2)
+            return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
+
+        return SearchReferencesAsync("cmdb_ci", "sys_id,name,sys_class_name", "active=true^nameLIKE" + term, false, 20, cancellationToken);
     }
 
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchGroupsAsync(string text, CancellationToken cancellationToken)
@@ -1505,6 +1591,14 @@ public sealed class ServiceNowClient : IServiceNowClient
             _snapshot.VerifiedMemberGroups = snapshot.VerifiedMemberGroups ?? [];
             _snapshot.Groups = snapshot.Groups ?? [];
             _snapshot.Members = snapshot.Members ?? [];
+            _snapshot.ServiceOfferingsCapturedAt = snapshot.ServiceOfferingsCapturedAt;
+            _snapshot.ServiceOfferingsTruncated = snapshot.ServiceOfferingsTruncated;
+            _snapshot.ServiceOfferings = CopyNamed(snapshot.ServiceOfferings);
+            _snapshot.ConfigurationItemsCapturedAt = snapshot.ConfigurationItemsCapturedAt;
+            _snapshot.ConfigurationItemsTruncated = snapshot.ConfigurationItemsTruncated;
+            _snapshot.ConfigurationItems = CopyNamed(snapshot.ConfigurationItems);
+            _serviceOfferings = ToChoices(_snapshot.ServiceOfferings);
+            _configurationItems = ToChoices(_snapshot.ConfigurationItems);
             _groups = _snapshot.Groups
                 .Where(group => !string.IsNullOrWhiteSpace(group.SysId) && !string.IsNullOrWhiteSpace(group.Name))
                 .Select(group => new Choice(group.SysId, group.Name))
@@ -1616,7 +1710,13 @@ public sealed class ServiceNowClient : IServiceNowClient
             GroupSysId = member.GroupSysId,
             UserSysId = member.UserSysId,
             Name = member.Name
-        }).ToList()
+        }).ToList(),
+        ServiceOfferingsCapturedAt = _snapshot.ServiceOfferingsCapturedAt,
+        ServiceOfferingsTruncated = _snapshot.ServiceOfferingsTruncated,
+        ServiceOfferings = CopyNamed(_snapshot.ServiceOfferings),
+        ConfigurationItemsCapturedAt = _snapshot.ConfigurationItemsCapturedAt,
+        ConfigurationItemsTruncated = _snapshot.ConfigurationItemsTruncated,
+        ConfigurationItems = CopyNamed(_snapshot.ConfigurationItems)
     };
 
     private void PersistCatalog()
@@ -1747,6 +1847,83 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
 
         PersistCatalog();
+    }
+
+    private async Task<ReferenceDownload> DownloadNamedReferencesAsync(
+        string table,
+        int maxRows,
+        Action<List<Choice>, bool> store,
+        IProgress<DownloadTick>? progress,
+        CancellationToken cancellationToken)
+    {
+        var rows = new List<Choice>();
+        var seen = 0;
+        await PageRowsAsync(
+            table,
+            "sys_id,name",
+            "active=true^ORDERBYname",
+            maxRows,
+            progress,
+            row =>
+            {
+                seen++;
+                var id = SnowField.Read(row, "sys_id").Value;
+                var name = SnowField.Read(row, "name").Display.Trim();
+                if (id.Length == 0 || name.Length == 0)
+                    return;
+                if (rows.Any(choice => choice.Value.Equals(id, StringComparison.OrdinalIgnoreCase)))
+                    return;
+                rows.Add(new Choice(id, name));
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var capped = seen >= maxRows;
+        store(rows, capped);
+        PersistCatalog();
+        return new ReferenceDownload(rows.Count, capped);
+    }
+
+    private void StoreServiceOfferings(List<Choice> rows, bool truncated)
+    {
+        lock (_cacheGate)
+        {
+            _serviceOfferings = rows;
+            _snapshot.ServiceOfferings = rows.Select(ToNamed).ToList();
+            _snapshot.ServiceOfferingsCapturedAt = DateTimeOffset.UtcNow;
+            _snapshot.ServiceOfferingsTruncated = truncated;
+        }
+    }
+
+    private void StoreConfigurationItems(List<Choice> rows, bool truncated)
+    {
+        lock (_cacheGate)
+        {
+            _configurationItems = rows;
+            _snapshot.ConfigurationItems = rows.Select(ToNamed).ToList();
+            _snapshot.ConfigurationItemsCapturedAt = DateTimeOffset.UtcNow;
+            _snapshot.ConfigurationItemsTruncated = truncated;
+        }
+    }
+
+    private static CachedNamedRecord ToNamed(Choice choice) => new() { SysId = choice.Value, Name = choice.Label };
+
+    private static List<CachedNamedRecord> CopyNamed(IEnumerable<CachedNamedRecord>? rows) =>
+        (rows ?? []).Select(row => new CachedNamedRecord { SysId = row.SysId ?? "", Name = row.Name ?? "" }).ToList();
+
+    private static List<Choice> ToChoices(IEnumerable<CachedNamedRecord> rows)
+    {
+        var choices = new List<Choice>();
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrWhiteSpace(row.SysId) || string.IsNullOrWhiteSpace(row.Name))
+                continue;
+            if (choices.Any(choice => choice.Value.Equals(row.SysId, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            choices.Add(new Choice(row.SysId, row.Name));
+        }
+
+        choices.Sort((left, right) => string.Compare(left.Label, right.Label, StringComparison.OrdinalIgnoreCase));
+        return choices;
     }
 
     private async Task<List<Choice>> FetchGroupsAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken)

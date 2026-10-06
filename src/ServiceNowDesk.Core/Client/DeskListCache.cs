@@ -39,6 +39,8 @@ public sealed class DeskListSnapshot
     public DateTimeOffset ChoicesCapturedAt { get; set; }
     public DateTimeOffset GroupsCapturedAt { get; set; }
     public DateTimeOffset MembersCapturedAt { get; set; }
+    public DateTimeOffset ServiceOfferingsCapturedAt { get; set; }
+    public DateTimeOffset ConfigurationItemsCapturedAt { get; set; }
     public CachedTicketList? Incidents { get; set; }
     public CachedTicketList? Requests { get; set; }
     public CachedTicketList? RequestItems { get; set; }
