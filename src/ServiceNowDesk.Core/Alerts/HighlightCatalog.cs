@@ -36,6 +36,7 @@ public static class HighlightCatalog
     public const string OnHoldPastFollowUp = "on-hold-past-follow-up";
     public const string UpdatedByCaller = "updated-by-caller";
     public const string ReturnedWithNotes = "returned-with-notes";
+    public const string Unattended = "unattended";
 
     public const string UnassignedRowHex = "#FDECEC";
     public const string UnassignedSwatchHex = "#8E2F2F";
@@ -63,7 +64,7 @@ public static class HighlightCatalog
                 OnHoldPastFollowUp,
                 AlertKind.OnHoldPastFollowUp,
                 "On hold past follow-up",
-                "Light blue is the same hue as the On hold past follow-up circle. The ticket is on hold and the follow-up time has passed.",
+                "Light blue is the same hue as the On hold past follow-up circle. The ticket is on hold, the follow-up time has passed, and it is assigned to you.",
                 true),
             Alert(
                 UpdatedByCaller,
@@ -76,6 +77,12 @@ public static class HighlightCatalog
                 AlertKind.ReturnedWithNotes,
                 "Returned with notes",
                 "Light cyan is the same hue as the Returned with notes circle. The latest journal note is from someone other than the caller and the assignee.",
+                true),
+            Alert(
+                Unattended,
+                AlertKind.Unattended,
+                "Unattended tickets",
+                "Light slate is the same hue as the Unattended tickets circle. The ticket is still open, including when it is on hold, and nobody has updated it for 24 hours. In Notifications that queue is only tickets assigned to you.",
                 true),
             new HighlightEntry(
                 Unassigned,

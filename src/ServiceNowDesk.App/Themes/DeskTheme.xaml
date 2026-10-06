@@ -46,6 +46,7 @@
     <SolidColorBrush x:Key="FollowUpBrush" Color="#1D4E89"/>
     <SolidColorBrush x:Key="CallerUpdateBrush" Color="#6D28D9"/>
     <SolidColorBrush x:Key="ReturnedBrush" Color="#0E7490"/>
+    <SolidColorBrush x:Key="UnattendedBrush" Color="#3F4C5A"/>
     <SolidColorBrush x:Key="WhiteBrush" Color="#FFFFFF"/>
 
     <Style TargetType="TextBlock">

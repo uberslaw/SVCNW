@@ -1,4 +1,5 @@
 using System.Windows;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Services;
 using ServiceNowDesk.ViewModels;
@@ -35,7 +36,8 @@ public partial class App : Application
             FileFormCatalogStore.InApplicationData(),
             FileIncidentTemplateStore.InApplicationData(),
             recentGroups: FileRecentAssignmentGroupStore.InApplicationData(),
-            lists: FileDeskListStore.InApplicationData());
+            lists: FileDeskListStore.InApplicationData(),
+            dailyWork: FileDailyWorkStore.InApplicationData());
         var window = new MainWindow { DataContext = main };
         MainWindow = window;
         window.Show();

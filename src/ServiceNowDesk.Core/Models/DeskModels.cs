@@ -62,7 +62,9 @@ public enum DeskSection
     Catalog,
     Connection,
     Notifications,
-    Settings
+    Settings,
+    Leads,
+    DailyWork
 }
 
 public sealed record Choice(string Value, string Label)
@@ -141,6 +143,9 @@ public sealed class DeskSettings
     ];
     public int NotificationPollSeconds { get; set; } = 60;
     public bool DownloadCacheOnLaunch { get; set; } = true;
+
+    /// <summary>People ticked on Leads, My team. Null and an empty list both mean nobody is selected.</summary>
+    public List<string>? LeadTeamMemberIds { get; set; }
 
     /// <summary>
     /// Legend keys that paint list rows. Null means the built-in defaults. An empty list means every highlight is off.

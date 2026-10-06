@@ -586,12 +586,12 @@ public class AlertTests
     public void CategoryLabelsAndColorsStayDistinct()
     {
         Assert.Equal(
-            ["Assigned to me", "Group queue", "SLA breaching", "On hold past follow-up", "Updated by caller", "Returned with notes"],
+            ["Assigned to me", "Group queue", "SLA breaching", "On hold past follow-up", "Updated by caller", "Returned with notes", "Unattended tickets"],
             AlertCatalog.All.Select(AlertCatalog.Title).ToArray());
         Assert.Equal(
-            ["Green", "Amber", "Crimson", "Blue", "Violet", "Cyan"],
+            ["Green", "Amber", "Crimson", "Blue", "Violet", "Cyan", "Slate"],
             AlertCatalog.All.Select(kind => AlertCatalog.Swatch(kind).Name).ToArray());
-        Assert.Equal(6, AlertCatalog.All.Select(kind => AlertCatalog.Swatch(kind).Hex).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Equal(7, AlertCatalog.All.Select(kind => AlertCatalog.Swatch(kind).Hex).Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
     [Fact]
@@ -733,10 +733,16 @@ public class AlertTests
         Assert.Contains(sla, row => row.Number == "IMS0010003" && row.Section == DeskSection.WalkUps);
         Assert.DoesNotContain(sla, row => row.Number == "INC0010014");
 
-        var hold = snapshot.Bucket(AlertKind.OnHoldPastFollowUp).Rows;
-        Assert.Contains(hold, row => row.Number == "INC0010011");
-        Assert.Contains(hold, row => row.Number == "RITM0010006");
-        Assert.Contains(hold, row => row.Number == "IMS0010004");
+        Assert.Empty(snapshot.Bucket(AlertKind.OnHoldPastFollowUp).Rows);
+
+        var unattended = snapshot.Bucket(AlertKind.Unattended).Rows.Select(row => row.Number).ToArray();
+        Assert.Contains("INC0010001", unattended);
+        Assert.Contains("INC0010002", unattended);
+        Assert.Contains("INC0010006", unattended);
+        Assert.Contains("RITM0010001", unattended);
+        Assert.Contains("IMS0010001", unattended);
+        Assert.DoesNotContain("INC0010011", unattended);
+        Assert.DoesNotContain("INC0010010", unattended);
 
         var caller = Assert.Single(snapshot.Bucket(AlertKind.UpdatedByCaller).Rows);
         Assert.Equal("INC0010007", caller.Number);

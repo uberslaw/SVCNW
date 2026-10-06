@@ -42,7 +42,13 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     public Task<CurrentUser> GetCurrentUserAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Me);
 
-    public Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken)
+    public Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken) =>
+        Task.FromResult(BuildReport(search, cancellationToken).Personal);
+
+    public Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken) =>
+        Task.FromResult(BuildReport(search, cancellationToken));
+
+    private AlertReport BuildReport(AlertSearch search, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(search);
         cancellationToken.ThrowIfCancellationRequested();
@@ -72,17 +78,61 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         Record("GET", "api/now/table/sc_request");
         Record("GET", "api/now/table/sc_req_item");
         var watched = WatchedPopulation(search);
+        var lead = LeadPopulation(search);
         var now = DateTime.Now;
         var callerScope = new CallerUpdateScope(userId, search.GroupName, search.Locations);
-        return Task.FromResult(new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
+        var viewer = new AssigneeScope(userId);
+        var personal = new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
         {
             [AlertKind.AssignedToMe] = new(assigned, assigned.Count),
             [AlertKind.WatchedGroup] = new(group, group.Count),
             [AlertKind.SlaBreaching] = AlertClassifier.Bucket(AlertKind.SlaBreaching, watched, now),
-            [AlertKind.OnHoldPastFollowUp] = AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, watched, now),
+            [AlertKind.OnHoldPastFollowUp] = AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, watched, now, viewer),
             [AlertKind.UpdatedByCaller] = AlertClassifier.Bucket(AlertKind.UpdatedByCaller, watched, now, callerScope),
-            [AlertKind.ReturnedWithNotes] = AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, watched, now)
-        }));
+            [AlertKind.ReturnedWithNotes] = AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, watched, now),
+            [AlertKind.Unattended] = AlertClassifier.Bucket(AlertKind.Unattended, watched, now, viewer)
+        });
+        return new AlertReport(
+            personal,
+            LeadBoard.Build(lead, now, search.TeamMemberIds, search.GroupName),
+            DailyWorkBoard.From(watched, lead, now, userId, search.TeamMemberIds));
+    }
+
+    private List<WatchedRecord> LeadPopulation(AlertSearch search)
+    {
+        var team = new HashSet<string>(
+            (search.TeamMemberIds ?? []).Select(id => id?.Trim() ?? "").Where(id => id.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
+        var group = search.GroupName?.Trim() ?? "";
+        bool Take(string? assigneeId, ReferenceValue assignmentGroup)
+        {
+            var name = assignmentGroup.Display?.Trim() ?? "";
+            if (group.Length > 0 && name.Equals(group, StringComparison.OrdinalIgnoreCase))
+                return true;
+            var id = assigneeId?.Trim() ?? "";
+            return id.Length > 0 && team.Contains(id);
+        }
+
+        var rows = new List<WatchedRecord>();
+        foreach (var record in _incidents)
+        {
+            if (record.Active && Take(record.AssignedTo.SysId, record.AssignmentGroup))
+                rows.Add(Describe(DeskSection.Incidents, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, record.Location, record.UpdatedAtDisplay, record.Caller, record.AssignedTo, record.Priority, record.PriorityLabel));
+        }
+
+        foreach (var record in _items)
+        {
+            if (record.Active && Take(record.AssignedTo.SysId, record.AssignmentGroup))
+                rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo, record.Priority, record.PriorityLabel));
+        }
+
+        foreach (var record in _interactions)
+        {
+            if (record.Active && Take(record.AssignedTo.SysId, record.AssignmentGroup))
+                rows.Add(Describe(DeskSection.WalkUps, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, record.OpenedFor, record.AssignedTo));
+        }
+
+        return rows;
     }
 
     private List<WatchedRecord> WatchedPopulation(AlertSearch search)
@@ -98,13 +148,13 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         foreach (var record in _incidents)
         {
             if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, record.Location, userId, watched, groupName, cities))
-                rows.Add(Describe(DeskSection.Incidents, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, record.Location, record.UpdatedAtDisplay, record.Caller, record.AssignedTo));
+                rows.Add(Describe(DeskSection.Incidents, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, record.Location, record.UpdatedAtDisplay, record.Caller, record.AssignedTo, record.Priority, record.PriorityLabel));
         }
 
         foreach (var record in _items)
         {
             if (InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
-                rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo));
+                rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo, record.Priority, record.PriorityLabel));
         }
 
         foreach (var record in _interactions)
@@ -148,7 +198,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         string location,
         string updated,
         ReferenceValue caller,
-        ReferenceValue assignee)
+        ReferenceValue assignee,
+        string priorityValue = "",
+        string priorityLabel = "")
     {
         _signals.TryGetValue(sysId, out var signals);
         var followUp = signals?.FollowUp ?? "";
@@ -164,6 +216,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Group = group.Display,
             Location = location,
             Updated = updated,
+            UpdatedAt = AlertClassifier.TryParseInstant(updated, out var updatedAt) ? updatedAt : null,
+            PriorityValue = priorityValue ?? "",
+            PriorityLabel = string.IsNullOrWhiteSpace(priorityLabel) ? priorityValue ?? "" : priorityLabel,
             UpdatedBy = signals?.UpdatedBy ?? "",
             CallerUserName = UserNameOf(caller),
             AssigneeUserName = UserNameOf(assignee),

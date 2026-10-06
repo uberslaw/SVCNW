@@ -5,6 +5,9 @@ namespace ServiceNowDesk.Alerts;
 
 public static class AlertClassifier
 {
+    /// <summary>An open ticket with no update for this long is unattended. On hold is included.</summary>
+    public static readonly TimeSpan UnattendedQuiet = TimeSpan.FromHours(24);
+
     public static bool IsSlaBreaching(WatchedRecord record, DateTime now)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -30,11 +33,38 @@ public static class AlertClassifier
             && followUp < now;
     }
 
+    public static bool IsStillOpen(WatchedRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        if (LooksClosed(record.State) || LooksClosed(record.StateValue))
+            return false;
+        var value = record.StateValue?.Trim() ?? "";
+        if (record.Section == DeskSection.Incidents && value is "6" or "7" or "8")
+            return false;
+        if (record.Section == DeskSection.RequestedItems && value is "3" or "4" or "7")
+            return false;
+        return true;
+    }
+
+    /// <summary>
+    /// Still open, including on hold, and nobody has updated the record within <see cref="UnattendedQuiet"/>.
+    /// A missing update time is not treated as unattended.
+    /// </summary>
+    public static bool IsUnattended(WatchedRecord record, DateTime now)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        if (!IsStillOpen(record))
+            return false;
+        if (!LastUpdate(record, out var updated))
+            return false;
+        return now - updated >= UnattendedQuiet;
+    }
+
     public static bool IsUpdatedByCaller(WatchedRecord record, CallerUpdateScope scope)
     {
         ArgumentNullException.ThrowIfNull(record);
         ArgumentNullException.ThrowIfNull(scope);
-        return SameUser(record.UpdatedBy, record.CallerUserName) && scope.Includes(record);
+        return CallerMadeTheLatestUpdate(record) && scope.Includes(record);
     }
 
     /// <summary>
@@ -61,23 +91,42 @@ public static class AlertClassifier
         return normalized.Equals("in_progress", StringComparison.OrdinalIgnoreCase);
     }
 
-    public static bool Matches(AlertKind kind, WatchedRecord record, DateTime now, CallerUpdateScope? callerScope = null) => kind switch
+    public static bool CallerMadeTheLatestUpdate(WatchedRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        return SameUser(record.UpdatedBy, record.CallerUserName);
+    }
+
+    public static bool Matches(AlertKind kind, WatchedRecord record, DateTime now, CallerUpdateScope? callerScope = null, AssigneeScope? holdScope = null) => kind switch
     {
         AlertKind.SlaBreaching => IsSlaBreaching(record, now),
-        AlertKind.OnHoldPastFollowUp => IsOnHoldPastFollowUp(record, now),
-        AlertKind.UpdatedByCaller => callerScope is not null && IsUpdatedByCaller(record, callerScope),
+        AlertKind.OnHoldPastFollowUp => IsOnHoldPastFollowUp(record, now) && (holdScope is null || holdScope.Includes(record)),
+        AlertKind.UpdatedByCaller => callerScope is not null && CallerMadeTheLatestUpdate(record) && callerScope.Includes(record),
         AlertKind.ReturnedWithNotes => IsReturnedWithNotes(record),
+        AlertKind.Unattended => IsUnattended(record, now) && (holdScope is null || holdScope.Includes(record)),
         _ => false
     };
 
     public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, string? status = null) =>
-        Bucket(kind, records, now, null, status);
+        Bucket(kind, records, now, (CallerUpdateScope?)null, status);
+
+    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, AssigneeScope holdScope, string? status = null)
+    {
+        ArgumentNullException.ThrowIfNull(holdScope);
+        return Bucket(kind, records, now, null, holdScope, status);
+    }
 
     public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope? callerScope, string? status = null)
     {
         ArgumentNullException.ThrowIfNull(records);
+        return Bucket(kind, records, now, callerScope, null, status);
+    }
+
+    private static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope? callerScope, AssigneeScope? holdScope, string? status)
+    {
+        ArgumentNullException.ThrowIfNull(records);
         var rows = records
-            .Where(record => Matches(kind, record, now, callerScope))
+            .Where(record => Matches(kind, record, now, callerScope, holdScope))
             .Select(record => ToRecord(record, kind))
             .ToArray();
         return new AlertBucket(rows, rows.Length, status ?? "");
@@ -121,6 +170,26 @@ public static class AlertClassifier
         return DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, styles, out value);
     }
 
+    private static bool LastUpdate(WatchedRecord record, out DateTime updated)
+    {
+        if (record.UpdatedAt is DateTime known)
+        {
+            updated = known;
+            return true;
+        }
+
+        return TryParseInstant(record.Updated, out updated);
+    }
+
+    private static bool LooksClosed(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+        return text.Contains("resolv", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("closed", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("cancel", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool ContainsHold(string? text) =>
         !string.IsNullOrWhiteSpace(text) && text.Contains("hold", StringComparison.OrdinalIgnoreCase);
 
@@ -128,6 +197,22 @@ public static class AlertClassifier
         !string.IsNullOrWhiteSpace(left)
         && !string.IsNullOrWhiteSpace(right)
         && left.Trim().Equals(right.Trim(), StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>On hold past follow-up in the personal notifications is limited to the signed-in user.</summary>
+public sealed class AssigneeScope
+{
+    public AssigneeScope(string? userSysId) => UserSysId = userSysId?.Trim() ?? "";
+
+    public string UserSysId { get; }
+
+    public bool Includes(WatchedRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        if (UserSysId.Length == 0)
+            return false;
+        return string.Equals(record.AssignedToSysId?.Trim(), UserSysId, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>

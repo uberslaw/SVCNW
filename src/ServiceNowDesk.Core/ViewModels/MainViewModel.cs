@@ -14,6 +14,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IBrowserSignIn? _browserSignIn;
     private readonly IFormCatalogStore? _formCatalog;
     private readonly IDeskListStore? _lists;
+    private readonly IDailyWorkStore _dailyWork;
     private readonly Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? _clientFactory;
     private readonly Stack<DeskSection> _returnStack = [];
     private IServiceNowClient? _client;
@@ -57,13 +58,15 @@ public partial class MainViewModel : ObservableObject
         IIncidentTemplateStore? templates = null,
         Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? clientFactory = null,
         IRecentAssignmentGroupStore? recentGroups = null,
-        IDeskListStore? lists = null)
+        IDeskListStore? lists = null,
+        IDailyWorkStore? dailyWork = null)
     {
         _store = store;
         _browserSignIn = browserSignIn;
         _formCatalog = formCatalog;
         _clientFactory = clientFactory;
         _lists = lists;
+        _dailyWork = dailyWork ?? new MemoryDailyWorkStore();
         Startup.Dismissed += (_, _) => _startupGate = false;
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
@@ -78,6 +81,17 @@ public partial class MainViewModel : ObservableObject
         Notifications = new NotificationWorkspaceViewModel();
         NotificationSettings = new NotificationSettingsViewModel();
         Legend = new LegendSettingsViewModel();
+        Leads = new LeadsViewModel();
+        DailyWork = new DailyWorkViewModel(_dailyWork);
+        Leads.Board.OpenRequested += (_, row) => _ = OpenNotificationAsync(row);
+        DailyWork.OpenRequested += (_, row) => _ = OpenDailyWorkAsync(row);
+        Leads.TeamChanged += (_, _) =>
+        {
+            Connection.RememberLeadTeam(Leads.SelectedMemberIds);
+            _store.Save(Connection.BuildSettings());
+            if (IsConnected)
+                RefreshAlerts();
+        };
         Incidents.PrepareRow = _rows.Paint;
         Requests.PrepareRow = _rows.Paint;
         RequestedItems.PrepareRow = _rows.Paint;
@@ -91,6 +105,7 @@ public partial class MainViewModel : ObservableObject
             _rows.Use(preferences);
             RepaintRows();
             Notifications.RememberViewer(_signedInUserId, preferences);
+            Leads.Board.RememberViewer(_signedInUserId, preferences);
             _store.Save(Connection.BuildSettings());
         };
         Requests.RelatedItemRequested += (_, sysId) => _ = OpenRequestedItemAsync(sysId);
@@ -106,8 +121,12 @@ public partial class MainViewModel : ObservableObject
         {
             Connection.RememberNotifications(NotificationSettings.Committed);
             _store.Save(Connection.BuildSettings());
+            Leads.SetGroupName(NotificationSettings.Committed.WatchedGroupName);
             if (IsConnected)
+            {
                 StartAlertLoop();
+                _ = LoadLeadRosterAsync();
+            }
         };
         Connection.DownloadCachePreferenceChanged += (_, _) => _store.Save(Connection.BuildSettings());
     }
@@ -124,6 +143,8 @@ public partial class MainViewModel : ObservableObject
     public NotificationWorkspaceViewModel Notifications { get; }
     public NotificationSettingsViewModel NotificationSettings { get; }
     public LegendSettingsViewModel Legend { get; }
+    public LeadsViewModel Leads { get; }
+    public DailyWorkViewModel DailyWork { get; }
     public Task SearchOpenTask { get; private set; } = Task.CompletedTask;
     public ObservableCollection<ApiActivity> Activity { get; } = [];
 
@@ -204,6 +225,7 @@ public partial class MainViewModel : ObservableObject
             IsConnected = true;
             _signedInUserId = user.SysId;
             Notifications.RememberViewer(_signedInUserId, Connection.Highlights);
+            Leads.Board.RememberViewer(_signedInUserId, Connection.Highlights);
             StatusMessage = settings.UseSampleData
                 ? "Practice data loaded. Nothing is sent to ServiceNow."
                 : "Connected as " + user.Name + ".";
@@ -222,6 +244,9 @@ public partial class MainViewModel : ObservableObject
             {
                 _startupGate = false;
             }
+
+            if (epoch == _sessionEpoch)
+                _ = LoadLeadRosterAsync();
 
             if (epoch != _sessionEpoch)
                 return;
@@ -340,6 +365,8 @@ public partial class MainViewModel : ObservableObject
                 AbandonIfRejected(Catalog.ErrorMessage);
                 break;
             case DeskSection.Notifications:
+            case DeskSection.Leads:
+            case DeskSection.DailyWork:
                 RefreshAlerts();
                 break;
             case DeskSection.Connection:
@@ -454,6 +481,8 @@ public partial class MainViewModel : ObservableObject
             DeskSection.Knowledge => "Open articles from Search",
             DeskSection.Catalog => "Search the catalog",
             DeskSection.Notifications => "Notifications",
+            DeskSection.Leads => "Leads",
+            DeskSection.DailyWork => "Daily work",
             DeskSection.Settings => "Settings",
             _ => "Search"
         };
@@ -529,6 +558,13 @@ public partial class MainViewModel : ObservableObject
             case DeskSection.Notifications:
                 RefreshAlerts();
                 break;
+            case DeskSection.Leads:
+                RefreshAlerts();
+                _ = LoadLeadRosterAsync();
+                break;
+            case DeskSection.DailyWork:
+                RefreshAlerts();
+                break;
             case DeskSection.Connection:
                 RefreshActivity();
                 break;
@@ -556,6 +592,32 @@ public partial class MainViewModel : ObservableObject
             Meta = row.Detail,
             When = row.Updated,
             SortKey = row.Updated
+        }, fromSearch: false);
+    }
+
+    private Task OpenDailyWorkAsync(DailyWorkRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        var table = row.Section switch
+        {
+            DeskSection.Incidents => "Incident",
+            DeskSection.Requests => "Request",
+            DeskSection.RequestedItems => "Request item",
+            DeskSection.WalkUps => "Walk-up",
+            _ => "Record"
+        };
+        return OpenHitAsync(new SearchHit
+        {
+            Section = row.Section,
+            TableLabel = table,
+            SysId = row.SysId,
+            Number = row.Number,
+            Title = row.Title,
+            StateLabel = row.State,
+            Tone = "open",
+            Meta = row.Reasons,
+            When = "",
+            SortKey = row.Number
         }, fromSearch: false);
     }
 
@@ -794,6 +856,9 @@ public partial class MainViewModel : ObservableObject
     {
         _signedInUserId = "";
         Notifications.RememberViewer("", Connection.Highlights);
+        Leads.Board.RememberViewer("", Connection.Highlights);
+        Leads.Clear();
+        DailyWork.Clear();
         ReplaceClient(null);
         IsConnected = false;
         IsSample = false;
@@ -914,13 +979,19 @@ public partial class MainViewModel : ObservableObject
             if (generation != _alertGeneration || !ReferenceEquals(client, _client))
                 return;
 
-            var snapshot = await client.GetOpenAlertsAsync(NotificationSettings.Committed.ToSearch(_signedInUserId), token).ConfigureAwait(false);
+            var search = NotificationSettings.Committed.ToSearch(_signedInUserId) with
+            {
+                TeamMemberIds = Connection.LeadTeamMemberIds
+            };
+            var report = await client.GetAlertReportAsync(search, token).ConfigureAwait(false);
             PostToUi(() =>
             {
                 if (generation != _alertGeneration || !ReferenceEquals(client, _client))
                     return;
-                Notifications.Apply(snapshot, _watch);
-                _rows.Use(snapshot);
+                Notifications.Apply(report.Personal, _watch);
+                Leads.Show(report.Leads);
+                DailyWork.Show(report.Daily, _signedInUserId, Connection.LeadTeamMemberIds);
+                _rows.Use(report.Personal);
                 RepaintRows();
             });
         }
@@ -957,6 +1028,45 @@ public partial class MainViewModel : ObservableObject
     {
         foreach (var row in rows)
             _rows.Paint(row);
+    }
+
+    private async Task LoadLeadRosterAsync()
+    {
+        var client = _client;
+        if (client is null)
+            return;
+
+        var name = NotificationSettings.Committed.WatchedGroupName;
+        try
+        {
+            var groups = await client.ListAssignmentGroupsAsync(CancellationToken.None).ConfigureAwait(false);
+            var group = groups.FirstOrDefault(choice =>
+                string.Equals(choice.Label, name, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(choice.Value, name, StringComparison.OrdinalIgnoreCase));
+            var members = group is null
+                ? Array.Empty<Choice>()
+                : await client.ListGroupMembersAsync(group.Value, CancellationToken.None).ConfigureAwait(false);
+            PostToUi(() =>
+            {
+                if (!ReferenceEquals(client, _client))
+                    return;
+                Leads.SetGroupName(name);
+                Leads.SetRoster(members, Connection.LeadTeamMemberIds);
+                Leads.RosterNote = group is null
+                    ? "No assignment group matches the watched group name."
+                    : members.Count == 0
+                        ? "That group has no cached members yet. Refresh assignment group members under Settings, Cache."
+                        : "";
+            });
+        }
+        catch (Exception ex)
+        {
+            PostToUi(() =>
+            {
+                if (ReferenceEquals(client, _client))
+                    Leads.RosterNote = WorkspaceMessages.Describe(ex);
+            });
+        }
     }
 
     private void PostToUi(Action action)

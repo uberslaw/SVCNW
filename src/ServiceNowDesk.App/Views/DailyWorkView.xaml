@@ -1,0 +1,133 @@
+<UserControl x:Class="ServiceNowDesk.Views.DailyWorkView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel MaxWidth="1040" HorizontalAlignment="Left" Margin="8">
+            <TextBlock Text="Daily Work" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                       Text="This is what to attend to from the notification queues: SLA breaching, updated by caller, follow-up passed, unattended, and returned with notes. Priority comes first, then SLA, then a caller update, then a passed follow-up. The report is saved once each local day, at the first check after midnight or the next time the desk opens. Later checks keep that report and show what left the list and what arrived. My team uses the people ticked under Leads. Click a row to open it."/>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <RadioButton GroupName="DailyWorkArea" Content="My work" Margin="0,0,18,0"
+                             IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=Mine}"
+                             AutomationProperties.Name="My work"/>
+                <RadioButton GroupName="DailyWorkArea" Content="My team"
+                             IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=Team}"
+                             AutomationProperties.Name="My team daily work"/>
+            </StackPanel>
+
+            <TextBlock Text="{Binding TeamPrompt}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                       Visibility="{Binding TeamPrompt, Converter={StaticResource StringVis}}"/>
+
+            <TextBlock Text="{Binding Headline}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <TextBlock Text="No tickets in these queues need attention." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                       Visibility="{Binding HasAttend, Converter={StaticResource InverseBoolVis}}"/>
+
+            <Grid Margin="10,0,10,4" Visibility="{Binding HasAttend, Converter={StaticResource BoolVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="210"/>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="140"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="1" Text="Priority" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="2" Text="Title" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="3" Text="Why" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="4" Text="State" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="5" Text="Assigned to" Style="{StaticResource FieldLabel}"/>
+            </Grid>
+            <ListBox ItemsSource="{Binding Attend}"
+                     Style="{StaticResource DeskList}"
+                     ItemContainerStyle="{StaticResource TicketListItem}"
+                     MaxHeight="420"
+                     MouseLeftButtonUp="Attend_MouseLeftButtonUp"
+                     PreviewKeyDown="Attend_PreviewKeyDown"
+                     AutomationProperties.Name="Daily work list"
+                     Visibility="{Binding HasAttend, Converter={StaticResource BoolVis}}"
+                     Margin="0,0,0,12">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="120"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="210"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="140"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding PriorityText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Reasons}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="5" Text="{Binding AssigneeText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <TextBlock Text="{Binding ReportNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                       Visibility="{Binding ReportNote, Converter={StaticResource StringVis}}"/>
+            <TextBlock Text="{Binding DifferenceNote}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,4,0,8"
+                       Visibility="{Binding DifferenceNote, Converter={StaticResource StringVis}}"/>
+
+            <TextBlock Text="Left today's report" FontWeight="SemiBold" Margin="0,0,0,4"
+                       Visibility="{Binding HasCleared, Converter={StaticResource BoolVis}}"/>
+            <ListBox ItemsSource="{Binding Cleared}"
+                     Style="{StaticResource DeskList}"
+                     ItemContainerStyle="{StaticResource TicketListItem}"
+                     MaxHeight="220"
+                     MouseLeftButtonUp="Cleared_MouseLeftButtonUp"
+                     PreviewKeyDown="Cleared_PreviewKeyDown"
+                     AutomationProperties.Name="Cleared since the report"
+                     Visibility="{Binding HasCleared, Converter={StaticResource BoolVis}}"
+                     Margin="0,0,0,12">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <TextBlock Text="New since today's report" FontWeight="SemiBold" Margin="0,0,0,4"
+                       Visibility="{Binding HasArrived, Converter={StaticResource BoolVis}}"/>
+            <ListBox ItemsSource="{Binding Arrived}"
+                     Style="{StaticResource DeskList}"
+                     ItemContainerStyle="{StaticResource TicketListItem}"
+                     MaxHeight="220"
+                     MouseLeftButtonUp="Arrived_MouseLeftButtonUp"
+                     PreviewKeyDown="Arrived_PreviewKeyDown"
+                     AutomationProperties.Name="New since the report"
+                     Visibility="{Binding HasArrived, Converter={StaticResource BoolVis}}"
+                     Margin="0,0,0,8">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="120"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="210"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding PriorityText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Reasons}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

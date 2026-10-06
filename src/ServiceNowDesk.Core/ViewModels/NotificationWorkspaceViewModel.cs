@@ -10,15 +10,24 @@ namespace ServiceNowDesk.ViewModels;
 
 public partial class NotificationWorkspaceViewModel : ObservableObject
 {
-    public NotificationWorkspaceViewModel()
+    private readonly bool _alwaysShowAssignee;
+
+    public NotificationWorkspaceViewModel(IEnumerable<AlertKind>? kinds = null, bool alwaysShowAssignee = false)
     {
-        foreach (var kind in AlertCatalog.All)
+        _alwaysShowAssignee = alwaysShowAssignee;
+        var shown = (kinds ?? AlertCatalog.All).Distinct().ToArray();
+        if (shown.Length == 0)
+            shown = AlertCatalog.All.ToArray();
+        foreach (var kind in shown)
         {
             Sections.Add(new AlertSectionModel(kind));
             Circles.Add(new AlertCircleModel(kind));
         }
 
-        MarkSelectedQueue();
+        if (SelectedQueue != shown[0])
+            SelectedQueue = shown[0];
+        else
+            MarkSelectedQueue();
     }
 
     public ObservableCollection<AlertSectionModel> Sections { get; } = [];
@@ -33,7 +42,34 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     private string _viewerSysId = "";
     private HighlightPreferences _highlights = HighlightPreferences.Default;
 
-    public bool ShowAssigneeColumn => SelectedQueue == AlertKind.SlaBreaching;
+    public bool ShowAssigneeColumn => _alwaysShowAssignee || SelectedQueue == AlertKind.SlaBreaching;
+
+    public void Show(AlertSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        foreach (var section in Sections)
+        {
+            var bucket = snapshot.Bucket(section.Kind);
+            section.Count = bucket.TotalCount;
+            section.Status = bucket.Status;
+            section.IsUnacknowledged = false;
+            section.Replace(bucket.Rows);
+        }
+
+        foreach (var circle in Circles)
+        {
+            var bucket = snapshot.Bucket(circle.Kind);
+            circle.Count = bucket.TotalCount;
+            circle.Status = bucket.Status;
+            circle.IsUnacknowledged = false;
+            circle.IsJiggleCause = false;
+        }
+
+        AnyUnacknowledged = false;
+        PollError = "";
+        LastChecked = "Last checked " + DateTime.Now.ToString("t", CultureInfo.CurrentCulture) + ".";
+        RefreshWidget();
+    }
 
     public void RememberViewer(string? userSysId, HighlightPreferences highlights)
     {

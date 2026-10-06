@@ -45,6 +45,8 @@ public partial class ConnectionViewModel : ObservableObject
 
     public HighlightPreferences Highlights { get; private set; } = HighlightPreferences.Default;
 
+    public List<string> LeadTeamMemberIds { get; private set; } = [];
+
     partial void OnAuthModeChanged(ServiceNowAuthMode value) => SyncFlags();
     partial void OnUseSampleDataChanged(bool value) => SyncFlags();
     partial void OnSessionCookieChanged(string value) => UpdateBrowserStatus();
@@ -75,6 +77,7 @@ public partial class ConnectionViewModel : ObservableObject
         };
         Notifications.ApplyTo(settings);
         Highlights.ApplyTo(settings);
+        settings.LeadTeamMemberIds = [.. LeadTeamMemberIds];
         return settings;
     }
 
@@ -89,6 +92,13 @@ public partial class ConnectionViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(preferences);
         Highlights = preferences;
     }
+
+    public void RememberLeadTeam(IEnumerable<string>? memberIds) =>
+        LeadTeamMemberIds = (memberIds ?? [])
+            .Select(id => id?.Trim() ?? "")
+            .Where(id => id.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     public void Load(DeskSettings settings)
     {
@@ -109,6 +119,9 @@ public partial class ConnectionViewModel : ObservableObject
         DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch;
         Notifications = NotificationPreferences.From(settings);
         Highlights = HighlightPreferences.From(settings);
+        LeadTeamMemberIds = settings.LeadTeamMemberIds is null
+            ? []
+            : settings.LeadTeamMemberIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         SyncFlags();
         _loadingSettings = false;
     }

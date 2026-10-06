@@ -41,6 +41,37 @@ public static class AlertQueryBuilder
         return string.Join("^NQ", segments);
     }
 
+    /// <summary>
+    /// Open tickets in the watched group, plus open tickets assigned to the selected team.
+    /// Null when both scopes are blank, so the caller sends no request.
+    /// </summary>
+    public static string? LeadPopulation(string? groupName, IEnumerable<string>? memberIds)
+    {
+        var segments = new List<string>();
+        var group = Quote(groupName);
+        if (group.Length > 0)
+            segments.Add("assignment_group.name=" + group + "^active=true");
+
+        var ids = new List<string>();
+        foreach (var id in memberIds ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+            try
+            {
+                ids.Add(EncodedQuery.SafeToken(id, "user id"));
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+        var distinctIds = ids.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (distinctIds.Length > 0)
+            segments.Add("assigned_toIN" + string.Join(",", distinctIds) + "^active=true");
+
+        return segments.Count == 0 ? null : string.Join("^NQ", segments);
+    }
+
     public const string SlaUnavailableStatus = "SLA data is not available to this user";
 
     /// <summary>

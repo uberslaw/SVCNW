@@ -17,6 +17,7 @@ public class HighlightTests
                 HighlightCatalog.OnHoldPastFollowUp,
                 HighlightCatalog.UpdatedByCaller,
                 HighlightCatalog.ReturnedWithNotes,
+                HighlightCatalog.Unattended,
                 HighlightCatalog.Unassigned,
                 HighlightCatalog.AssignedToMe,
                 HighlightCatalog.WatchedGroup

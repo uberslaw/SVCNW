@@ -12,6 +12,8 @@ public interface IServiceNowClient : IDisposable
 
     Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken);
 
+    Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken);
+
     Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken);
     Task<IncidentRecord> GetIncidentAsync(string sysId, CancellationToken cancellationToken);
     Task<IncidentRecord> CreateIncidentAsync(IncidentChanges changes, CancellationToken cancellationToken);

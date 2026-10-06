@@ -13,7 +13,8 @@ public enum AlertKind
     SlaBreaching,
     OnHoldPastFollowUp,
     UpdatedByCaller,
-    ReturnedWithNotes
+    ReturnedWithNotes,
+    Unattended
 }
 
 public readonly record struct AlertSwatch(string Name, string Hex, string ResourceKey);
@@ -27,7 +28,8 @@ public static class AlertCatalog
         AlertKind.SlaBreaching,
         AlertKind.OnHoldPastFollowUp,
         AlertKind.UpdatedByCaller,
-        AlertKind.ReturnedWithNotes
+        AlertKind.ReturnedWithNotes,
+        AlertKind.Unattended
     ];
 
     public static string Title(AlertKind kind) => kind switch
@@ -38,6 +40,7 @@ public static class AlertCatalog
         AlertKind.OnHoldPastFollowUp => "On hold past follow-up",
         AlertKind.UpdatedByCaller => "Updated by caller",
         AlertKind.ReturnedWithNotes => "Returned with notes",
+        AlertKind.Unattended => "Unattended tickets",
         _ => kind.ToString()
     };
 
@@ -48,6 +51,7 @@ public static class AlertCatalog
         AlertKind.OnHoldPastFollowUp => new("Blue", "#1D4E89", "FollowUpBrush"),
         AlertKind.UpdatedByCaller => new("Violet", "#6D28D9", "CallerUpdateBrush"),
         AlertKind.ReturnedWithNotes => new("Cyan", "#0E7490", "ReturnedBrush"),
+        AlertKind.Unattended => new("Slate", "#3F4C5A", "UnattendedBrush"),
         _ => new("Green", "#0F6E6B", "AccentBrush")
     };
 
@@ -95,6 +99,9 @@ public sealed record WatchedRecord
     public string AssigneeDisplay { get; init; } = "";
     public string AssignedToSysId { get; init; } = "";
     public string AssignmentGroupSysId { get; init; } = "";
+    public DateTime? UpdatedAt { get; init; }
+    public string PriorityValue { get; init; } = "";
+    public string PriorityLabel { get; init; } = "";
     public DateTime? FollowUp { get; init; }
     public bool SlaHasBreached { get; init; }
     public string SlaStage { get; init; } = "";
@@ -130,7 +137,29 @@ public sealed class AlertSnapshot
     }
 }
 
-public sealed record AlertSearch(string UserSysId, string? GroupName, IReadOnlyList<string> Locations);
+public sealed record AlertSearch(
+    string UserSysId,
+    string? GroupName,
+    IReadOnlyList<string> Locations,
+    IReadOnlyList<string>? TeamMemberIds = null);
+
+public sealed class AlertReport
+{
+    public AlertReport(AlertSnapshot personal, LeadBoard leads, DailyWorkBoard? daily = null)
+    {
+        ArgumentNullException.ThrowIfNull(personal);
+        ArgumentNullException.ThrowIfNull(leads);
+        Personal = personal;
+        Leads = leads;
+        Daily = daily ?? DailyWorkBoard.Empty;
+    }
+
+    public AlertSnapshot Personal { get; }
+
+    public LeadBoard Leads { get; }
+
+    public DailyWorkBoard Daily { get; }
+}
 
 public sealed class AlertAttention : EventArgs
 {

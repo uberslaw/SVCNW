@@ -242,6 +242,8 @@
                     <RadioButton Style="{StaticResource NavButton}" Content="Search" Tag="&#xE721;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Search}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Knowledge" Tag="&#xE82D;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Knowledge}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Notifications" Tag="&#xEA8F;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Notifications}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Daily Work" Tag="&#xE787;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=DailyWork}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Leads" Tag="&#xE902;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Leads}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Order catalog" Tag="&#xE719;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Catalog}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Settings" Tag="&#xE713;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Settings}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Connection" Tag="&#xE774;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Connection}"/>
@@ -307,6 +309,12 @@
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Notifications}">
                     <views:NotificationsView DataContext="{Binding Notifications}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Leads}">
+                    <views:LeadsView DataContext="{Binding Leads}"/>
+                </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=DailyWork}">
+                    <views:DailyWorkView DataContext="{Binding DailyWork}"/>
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Catalog}">
                     <views:CatalogView DataContext="{Binding Catalog}"/>

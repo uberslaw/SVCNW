@@ -53,7 +53,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
                 OfficeLocations = stored.OfficeLocations,
                 NotificationPollSeconds = stored.NotificationPollSeconds ?? 60,
                 DownloadCacheOnLaunch = stored.DownloadCacheOnLaunch ?? true,
-                EnabledHighlights = stored.EnabledHighlights is null ? null : [.. stored.EnabledHighlights]
+                EnabledHighlights = stored.EnabledHighlights is null ? null : [.. stored.EnabledHighlights],
+                LeadTeamMemberIds = stored.LeadTeamMemberIds is null ? [] : [.. stored.LeadTeamMemberIds]
             };
         }
         catch
@@ -91,7 +92,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
             OfficeLocations = settings.OfficeLocations is null ? null : [.. settings.OfficeLocations],
             NotificationPollSeconds = settings.NotificationPollSeconds,
             DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch,
-            EnabledHighlights = settings.EnabledHighlights is null ? null : [.. settings.EnabledHighlights]
+            EnabledHighlights = settings.EnabledHighlights is null ? null : [.. settings.EnabledHighlights],
+            LeadTeamMemberIds = settings.LeadTeamMemberIds is null ? [] : [.. settings.LeadTeamMemberIds]
         };
         File.WriteAllText(FilePath, JsonSerializer.Serialize(stored, JsonOptions));
     }
@@ -139,5 +141,6 @@ public sealed class DpapiSettingsStore : ISettingsStore
         public int? NotificationPollSeconds { get; set; }
         public bool? DownloadCacheOnLaunch { get; set; }
         public List<string>? EnabledHighlights { get; set; }
+        public List<string>? LeadTeamMemberIds { get; set; }
     }
 }

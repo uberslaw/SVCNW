@@ -20,10 +20,10 @@ public sealed class ServiceNowClient : IServiceNowClient
     private const string AlertIncidentFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
     private const string AlertRequestFields = "sys_id,number,short_description,request_state,assigned_to,assignment_group,sys_updated_on,active";
     private const string AlertItemFields = "sys_id,number,short_description,state,assigned_to,assignment_group,sys_updated_on,active";
-    private const string PopulationIncidentFields = "sys_id,number,short_description,state,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,caller_id,caller_id.user_name,follow_up";
-    private const string PopulationItemFields = "sys_id,number,short_description,state,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,requested_for,requested_for.user_name,request.requested_for,request.requested_for.user_name,follow_up";
-    private const string PopulationInteractionFields = "sys_id,number,short_description,state,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name,follow_up";
-    private const string PopulationInteractionFieldsWithoutFollowUp = "sys_id,number,short_description,state,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name";
+    private const string PopulationIncidentFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,caller_id,caller_id.user_name,follow_up";
+    private const string PopulationItemFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,requested_for,requested_for.user_name,request.requested_for,request.requested_for.user_name,follow_up";
+    private const string PopulationInteractionFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name,follow_up";
+    private const string PopulationInteractionFieldsWithoutFollowUp = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name";
     private const int AlertLimit = 100;
     private const string InteractionFields = "sys_id,number,short_description,description,state,type,opened_for,assigned_to,assignment_group,opened_at,sys_updated_on,active";
 
@@ -274,7 +274,10 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
-    public async Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken)
+    public async Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken) =>
+        (await GetAlertReportAsync(search, cancellationToken).ConfigureAwait(false)).Personal;
+
+    public async Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(search);
         var assignedQuery = AlertQueryBuilder.AssignedToMe(search.UserSysId);
@@ -290,15 +293,17 @@ public sealed class ServiceNowClient : IServiceNowClient
         var assignedRows = incidents.Rows.Concat(requests.Rows).Concat(items.Rows).ToArray();
         var assignedTotal = incidents.TotalCount + requests.TotalCount + items.TotalCount;
         var categories = await LoadCategoryBucketsAsync(search, cancellationToken).ConfigureAwait(false);
-        return new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
+        var personal = new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
         {
             [AlertKind.AssignedToMe] = new(assignedRows, assignedTotal),
             [AlertKind.WatchedGroup] = group,
-            [AlertKind.SlaBreaching] = categories.Sla,
-            [AlertKind.OnHoldPastFollowUp] = categories.OnHold,
-            [AlertKind.UpdatedByCaller] = categories.UpdatedByCaller,
-            [AlertKind.ReturnedWithNotes] = categories.Returned
+            [AlertKind.SlaBreaching] = categories.Personal.Sla,
+            [AlertKind.OnHoldPastFollowUp] = categories.Personal.OnHold,
+            [AlertKind.UpdatedByCaller] = categories.Personal.UpdatedByCaller,
+            [AlertKind.ReturnedWithNotes] = categories.Personal.Returned,
+            [AlertKind.Unattended] = categories.Personal.Unattended
         });
+        return new AlertReport(personal, categories.Leads, categories.Daily);
     }
 
     private async Task<AlertBucket> QueryAlertsAsync(
@@ -342,7 +347,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             updatedText);
     }
 
-    private async Task<CategoryBuckets> LoadCategoryBucketsAsync(AlertSearch search, CancellationToken cancellationToken)
+    private async Task<CategoryLoad> LoadCategoryBucketsAsync(AlertSearch search, CancellationToken cancellationToken)
     {
         var notes = new List<string>();
         var holdNotes = new List<string>();
@@ -381,11 +386,37 @@ public sealed class ServiceNowClient : IServiceNowClient
             }
         }
 
-        var distinct = watched
-            .GroupBy(record => record.SysId, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
+        var leadNotes = new List<string>();
+        var lead = new List<WatchedRecord>();
+        var leadQuery = AlertQueryBuilder.LeadPopulation(search.GroupName, search.TeamMemberIds);
+        if (leadQuery is not null)
+        {
+            var ordered = leadQuery + "^ORDERBYDESCsys_updated_on";
+            lead.AddRange(await TryPopulationAsync("incident", PopulationIncidentFields, ordered, DeskSection.Incidents, "Lead incidents were skipped: ", leadNotes, cancellationToken).ConfigureAwait(false));
+            lead.AddRange(await TryPopulationAsync("sc_req_item", PopulationItemFields, ordered, DeskSection.RequestedItems, "Lead request items were skipped: ", leadNotes, cancellationToken).ConfigureAwait(false));
+            try
+            {
+                lead.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFields, ordered, DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
+            }
+            catch (ServiceNowException)
+            {
+                try
+                {
+                    lead.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFieldsWithoutFollowUp, ordered, DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
+                }
+                catch (ServiceNowException retry)
+                {
+                    leadNotes.Add("Lead walk-ups were skipped: " + retry.Message);
+                }
+            }
+        }
+
+        var distinct = DistinctWatched(watched);
+        var leadDistinct = DistinctWatched(lead);
+        var ids = distinct.Select(record => record.SysId)
+            .Concat(leadDistinct.Select(record => record.SysId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var ids = distinct.Select(record => record.SysId).ToArray();
         var slaStatus = "";
         IReadOnlyDictionary<string, IReadOnlyList<SlaSignal>> sla;
         try
@@ -410,18 +441,32 @@ public sealed class ServiceNowClient : IServiceNowClient
             journalStatus = ex.Message;
         }
 
-        var folded = distinct.Select(record => FoldSignals(record, sla, authors)).ToArray();
+        var personalIds = new HashSet<string>(distinct.Select(record => record.SysId), StringComparer.OrdinalIgnoreCase);
+        var leadIds = new HashSet<string>(leadDistinct.Select(record => record.SysId), StringComparer.OrdinalIgnoreCase);
+        var folded = DistinctWatched(distinct.Concat(leadDistinct)).Select(record => FoldSignals(record, sla, authors)).ToArray();
+        var personalFolded = folded.Where(record => personalIds.Contains(record.SysId)).ToArray();
+        var leadFolded = folded.Where(record => leadIds.Contains(record.SysId)).ToArray();
         var shared = JoinNotes(notes);
         var now = DateTime.Now;
         var holdSource = skipInteractionHold
-            ? folded.Where(record => record.Section != DeskSection.WalkUps)
-            : folded;
-        return new CategoryBuckets(
-            AlertClassifier.Bucket(AlertKind.SlaBreaching, folded, now, JoinNotes(slaStatus, shared)),
-            AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, holdSource, now, JoinNotes(holdNotes, shared)),
-            AlertClassifier.Bucket(AlertKind.UpdatedByCaller, folded, now, new CallerUpdateScope(search.UserSysId, search.GroupName, search.Locations), shared),
-            AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, folded, now, JoinNotes(journalStatus, shared)));
+            ? personalFolded.Where(record => record.Section != DeskSection.WalkUps)
+            : personalFolded;
+        var viewer = new AssigneeScope(search.UserSysId);
+        var personal = new CategoryBuckets(
+            AlertClassifier.Bucket(AlertKind.SlaBreaching, personalFolded, now, JoinNotes(slaStatus, shared)),
+            AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, holdSource, now, viewer, JoinNotes(holdNotes, shared)),
+            AlertClassifier.Bucket(AlertKind.UpdatedByCaller, personalFolded, now, new CallerUpdateScope(search.UserSysId, search.GroupName, search.Locations), shared),
+            AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, personalFolded, now, JoinNotes(journalStatus, shared)),
+            AlertClassifier.Bucket(AlertKind.Unattended, personalFolded, now, viewer, shared));
+        var daily = DailyWorkBoard.From(personalFolded, leadFolded, now, search.UserSysId, search.TeamMemberIds);
+        return new CategoryLoad(personal, LeadBoard.Build(leadFolded, now, search.TeamMemberIds, search.GroupName), daily);
     }
+
+    private static WatchedRecord[] DistinctWatched(IEnumerable<WatchedRecord> records) =>
+        records
+            .GroupBy(record => record.SysId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
 
     private async Task<IReadOnlyList<string>> MemberGroupIdsAsync(CancellationToken cancellationToken)
     {
@@ -478,6 +523,8 @@ public sealed class ServiceNowClient : IServiceNowClient
     {
         var state = SnowField.Read(row, "state");
         var updated = SnowField.Read(row, "sys_updated_on");
+        var priority = SnowField.Read(row, "priority");
+        var updatedText = updated.Display.Length > 0 ? updated.Display : updated.Value;
         var followUp = FirstText(row, "follow_up");
         var hasFollowUp = AlertClassifier.TryParseInstant(followUp, out var followUpAt);
         return new WatchedRecord
@@ -490,7 +537,10 @@ public sealed class ServiceNowClient : IServiceNowClient
             StateValue = state.Value,
             Group = SnowField.Read(row, "assignment_group").Display,
             Location = SnowField.Read(row, "location").Display,
-            Updated = updated.Display.Length > 0 ? updated.Display : updated.Value,
+            Updated = updatedText,
+            UpdatedAt = AlertClassifier.TryParseInstant(updatedText, out var updatedAt) ? updatedAt : null,
+            PriorityValue = priority.Value,
+            PriorityLabel = priority.Display.Length > 0 ? priority.Display : priority.Value,
             UpdatedBy = FirstText(row, "sys_updated_by"),
             CallerUserName = FirstText(row, "caller_id.user_name", "opened_for.user_name", "requested_for.user_name", "request.requested_for.user_name"),
             AssigneeUserName = FirstText(row, "assigned_to.user_name"),
@@ -633,7 +683,9 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     private sealed record SlaSignal(bool HasBreached, string Stage, DateTime? PlannedEnd);
 
-    private readonly record struct CategoryBuckets(AlertBucket Sla, AlertBucket OnHold, AlertBucket UpdatedByCaller, AlertBucket Returned);
+    private readonly record struct CategoryBuckets(AlertBucket Sla, AlertBucket OnHold, AlertBucket UpdatedByCaller, AlertBucket Returned, AlertBucket Unattended);
+
+    private readonly record struct CategoryLoad(CategoryBuckets Personal, LeadBoard Leads, DailyWorkBoard Daily);
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken) =>
         SearchAsync("incident", IncidentFields, query, RecordMapper.Incident, cancellationToken);
