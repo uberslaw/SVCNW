@@ -130,6 +130,8 @@ public sealed record CatalogVariableDefinition(
 
 public sealed record CatalogOrderResult(string RequestSysId, string RequestNumber);
 
+public sealed record AttachmentSummary(string SysId, string FileName);
+
 public sealed class IncidentChanges
 {
     public string? ShortDescription { get; init; }

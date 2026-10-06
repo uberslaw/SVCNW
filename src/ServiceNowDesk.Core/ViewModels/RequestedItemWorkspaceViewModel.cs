@@ -11,14 +11,15 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     private RequestedItemRecord? _loaded;
     private bool _choicesReady;
 
-    public RequestedItemWorkspaceViewModel(IDesktopServices desktop)
-        : base(desktop, "sc_req_item", "request item", false, PresetCatalog.RequestedItems)
+    public RequestedItemWorkspaceViewModel(IDesktopServices desktop, IRecentAssignmentGroupStore? recentGroups = null)
+        : base(desktop, "sc_req_item", "request item", false, PresetCatalog.RequestedItems, attachments: true)
     {
+        Assignment = new AssignmentFields(recentGroups);
         Assignment.Changed += (_, _) => Touch();
         ResolveChoiceLabel = "Outcome";
     }
 
-    public AssignmentFields Assignment { get; } = new();
+    public AssignmentFields Assignment { get; }
     public ObservableCollection<Choice> StateChoices { get; } = [];
     public ObservableCollection<Choice> PriorityChoices { get; } = [];
 

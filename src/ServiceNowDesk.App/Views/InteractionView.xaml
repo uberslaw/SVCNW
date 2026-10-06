@@ -20,7 +20,7 @@
             <ListBox ItemsSource="{Binding Items}"
                      SelectedItem="{Binding Selected}"
                      ItemTemplate="{StaticResource TicketRowTemplate}"
-                     ItemContainerStyle="{StaticResource DeskListItem}"
+                     ItemContainerStyle="{StaticResource TicketListItem}"
                      Style="{StaticResource DeskList}"/>
         </DockPanel>
 

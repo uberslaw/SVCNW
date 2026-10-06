@@ -18,7 +18,7 @@ Practice data is built in, so the team can learn the layout before an instance i
 
 | Shortcut | Action |
 | --- | --- |
-| Ctrl+1 … Ctrl+6 | Incidents, Requests, Request items, Search, Order catalog, Connection |
+| Ctrl+1 … Ctrl+6 | Incidents, Request items, Request items, Search, Order catalog, Connection |
 | Ctrl+7 | Knowledge |
 | Ctrl+8 | Walk-up |
 | Ctrl+9 | Notifications |
@@ -30,7 +30,13 @@ Practice data is built in, so the team can learn the layout before an instance i
 | F5 | Refresh the current list |
 | Esc | Close the resolve panel |
 
-Type a person's name in Caller or Requested for. The match list opens under the field. Enter accepts the highlighted person. Assignment group and Assigned to are dropdowns.
+Type a person's name in Caller or Requested for. After two characters the desk searches active users by name, email, and user id, and lists the name and email under the field. Enter accepts the highlighted person. If the typed text matches one person, Save uses that person even when you did not click the row. Assignment group and Assigned to are dropdowns. The last five groups you pick, or save on an incident, stay at the top of the group dropdown in alphabetical order. That list is on this PC in `%AppData%\ServiceNowDesk\recent-assignment-groups.json`. It is not a secret, and practice mode uses the same file. Choosing a group lists every member of that group. If ServiceNow returns only one page, the desk follows the rest.
+
+Requests stay out of the left navigation. Request items stay. Ctrl+2 opens Request items. Opening a request item can still show the parent request.
+
+Lists of incidents, request items, and walk-ups use a light red row when nobody is assigned. A group with no person is red. A person with no group is not.
+
+A saved incident or request item lists its attachment file names. Click a name to download it and open it with the usual Windows app. A new incident has no attachments until you save it. Practice data includes one sample attachment on the printer incident and the laptop request item.
 
 ## Connect to your instance
 
@@ -51,7 +57,7 @@ A download bar stays at the top of the desk. While data is coming in it reads "D
 
 The log is a panel under that bar, not a screen over the desk, so the rest of the window still takes clicks. Each section is its own line with a percent that climbs from 0% to 100%. Finished lines stay at 100%. The sections are menu choices, assignment groups, assignment group members, open incidents, open requests, and open walk-ups. A saved copy newer than a day shows as cached and is not downloaded again. If one section fails, the others still finish. A failed assignment-group refresh keeps the lists already saved on this PC.
 
-Type a caller's name, user id, or email. If that text matches one person, Save uses that person. If several people match, choose the row from the list.
+Type a caller's name, user id, or email. The desk searches ServiceNow as you type. If that text matches one person, Save uses that person. If several people match, choose the row from the list.
 
 Incident templates are stored in `%AppData%\ServiceNowDesk\incident-templates.json`. They are local to this PC, including practice mode, and they are not secrets. Saving a template does not create an incident in ServiceNow.
 
@@ -66,6 +72,7 @@ The signed-in user needs the same rights they already use in the web UI, typical
 - read and write `incident`, `sc_request`, `sc_req_item`, and `interaction`
 - create `interaction_related_record` rows when converting a walk-up to an incident
 - read `sys_user`, `sys_user_group`, `sys_choice`, and `sys_journal_field`
+- read attachments on incidents and request items (`/api/now/attachment`)
 - order from the service catalog if you use **Order catalog**
 
 If an update is blocked, the red banner shows the message ServiceNow returned.
@@ -80,6 +87,7 @@ The app uses the Table API:
 - `GET/POST/PATCH /api/now/table/interaction` for walk-up IMS records (`type=walkup`)
 - `GET/POST /api/now/table/interaction_related_record` to link an interaction to the incident created from it (`interaction`, `document_table=incident`, `document_id`)
 - journal notes are `work_notes` or `comments` on that record, including walk-up interactions
+- attachments are `GET /api/now/attachment?sysparm_query=table_name={incident|sc_req_item}^table_sys_id={sys_id}` and `GET /api/now/attachment/{sys_id}/file`
 - choices, users, and groups come from the matching tables
 
 Catalog ordering uses `POST /api/sn_sc/servicecatalog/items/{sys_id}/order_now`.

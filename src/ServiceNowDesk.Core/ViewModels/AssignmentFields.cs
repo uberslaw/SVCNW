@@ -2,17 +2,30 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.Services;
 
 namespace ServiceNowDesk.ViewModels;
 
 public sealed class AssignmentFields : ObservableObject
 {
+    private readonly IRecentAssignmentGroupStore _recent;
     private IServiceNowClient? _client;
     private bool _applying;
     private int _version;
     private int _groupVersion;
     private string _groupId = "";
     private string _memberId = "";
+
+    public AssignmentFields(IRecentAssignmentGroupStore? recentGroups = null)
+    {
+        _recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
+        _recent.Changed += (_, _) =>
+        {
+            if (_applying || !GroupsLoaded)
+                return;
+            ReorderGroups();
+        };
+    }
 
     public ObservableCollection<Choice> Groups { get; } = [];
     public ObservableCollection<Choice> Members { get; } = [new Choice("", "Unassigned")];
@@ -41,6 +54,15 @@ public sealed class AssignmentFields : ObservableObject
 
     public void Use(IServiceNowClient? client) => _client = client;
 
+    public void RememberSelectedGroup()
+    {
+        if (_applying || string.IsNullOrEmpty(GroupId))
+            return;
+
+        var label = Groups.FirstOrDefault(choice => choice.Value.Equals(GroupId, StringComparison.OrdinalIgnoreCase))?.Label;
+        _recent.Remember(GroupId, string.IsNullOrWhiteSpace(label) ? GroupId : label);
+    }
+
     public async Task LoadGroupsAsync()
     {
         if (_client is null)
@@ -67,20 +89,11 @@ public sealed class AssignmentFields : ObservableObject
         _applying = true;
         try
         {
-            Groups.Clear();
-            Groups.Add(new Choice("", "Unassigned"));
-            foreach (var group in groups.OrderBy(choice => choice.Label, StringComparer.OrdinalIgnoreCase))
-            {
-                if (string.IsNullOrEmpty(group.Value) || Groups.Any(choice => choice.Value == group.Value))
-                    continue;
-                Groups.Add(group);
-            }
-
-            var resolved = ResolveGroup(selected);
-            if (resolved.Length == 0)
-                resolved = selected;
-            Ensure(Groups, resolved, selectedLabel);
-            GroupId = resolved;
+            var available = groups.Where(choice => !string.IsNullOrEmpty(choice.Value)).ToList();
+            if (!string.IsNullOrEmpty(selected) && available.All(choice => !choice.Value.Equals(selected, StringComparison.OrdinalIgnoreCase)))
+                available.Add(new Choice(selected, string.IsNullOrWhiteSpace(selectedLabel) ? selected : selectedLabel));
+            WriteGroups(available);
+            GroupId = selected;
             MemberId = selectedMember;
             OnPropertyChanged(nameof(GroupId));
             OnPropertyChanged(nameof(MemberId));
@@ -157,6 +170,7 @@ public sealed class AssignmentFields : ObservableObject
             OnPropertyChanged(nameof(GroupId));
         }
 
+        RememberSelectedGroup();
         Changed?.Invoke(this, EventArgs.Empty);
         _ = LoadMembersAsync(resolved, "", "", keepMissing: false);
     }
@@ -245,6 +259,65 @@ public sealed class AssignmentFields : ObservableObject
         {
             _applying = false;
         }
+    }
+
+    private void ReorderGroups()
+    {
+        var selected = GroupId;
+        var selectedMember = MemberId;
+        var selectedLabel = Groups.FirstOrDefault(choice => choice.Value.Equals(selected, StringComparison.OrdinalIgnoreCase))?.Label ?? selected;
+        var available = Groups.Where(choice => !string.IsNullOrEmpty(choice.Value)).ToList();
+        if (!string.IsNullOrEmpty(selected) && available.All(choice => !choice.Value.Equals(selected, StringComparison.OrdinalIgnoreCase)))
+            available.Add(new Choice(selected, string.IsNullOrWhiteSpace(selectedLabel) ? selected : selectedLabel));
+
+        _applying = true;
+        try
+        {
+            WriteGroups(available);
+            GroupId = selected;
+            MemberId = selectedMember;
+            OnPropertyChanged(nameof(GroupId));
+            OnPropertyChanged(nameof(MemberId));
+        }
+        finally
+        {
+            _applying = false;
+        }
+    }
+
+    private void WriteGroups(IReadOnlyList<Choice> groups)
+    {
+        var available = new List<Choice>();
+        foreach (var group in groups)
+        {
+            if (string.IsNullOrEmpty(group.Value) || available.Any(choice => choice.Value.Equals(group.Value, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            available.Add(group);
+        }
+
+        var pinned = new List<Choice>();
+        foreach (var saved in _recent.Load())
+        {
+            var match = available.FirstOrDefault(choice => choice.Value.Equals(saved.Value, StringComparison.OrdinalIgnoreCase));
+            if (match is null || pinned.Count == RecentAssignmentGroups.Limit)
+                continue;
+            if (pinned.Any(choice => choice.Value.Equals(match.Value, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            pinned.Add(match);
+        }
+
+        pinned.Sort((left, right) => string.Compare(left.Label, right.Label, StringComparison.OrdinalIgnoreCase));
+        var pinnedIds = new HashSet<string>(pinned.Select(choice => choice.Value), StringComparer.OrdinalIgnoreCase);
+        var rest = available
+            .Where(choice => !pinnedIds.Contains(choice.Value))
+            .OrderBy(choice => choice.Label, StringComparer.OrdinalIgnoreCase);
+
+        Groups.Clear();
+        Groups.Add(new Choice("", "Unassigned"));
+        foreach (var group in pinned)
+            Groups.Add(group);
+        foreach (var group in rest)
+            Groups.Add(group);
     }
 
     private string ResolveGroup(string value)

@@ -13,11 +13,12 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     private IncidentRecord? _loaded;
     private bool _choicesReady;
 
-    public IncidentWorkspaceViewModel(IDesktopServices desktop, IIncidentTemplateStore? templates = null)
-        : base(desktop, "incident", "incident", true, PresetCatalog.Incidents)
+    public IncidentWorkspaceViewModel(IDesktopServices desktop, IIncidentTemplateStore? templates = null, IRecentAssignmentGroupStore? recentGroups = null)
+        : base(desktop, "incident", "incident", true, PresetCatalog.Incidents, attachments: true)
     {
         _templates = templates ?? new MemoryIncidentTemplateStore();
-        Caller = new ReferenceFieldModel(SearchUsersAsync);
+        Assignment = new AssignmentFields(recentGroups);
+        Caller = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
         Caller.Changed += (_, _) => Touch();
         Assignment.Changed += (_, _) => Touch();
         Templates.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTemplates));
@@ -26,7 +27,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     }
 
     public ReferenceFieldModel Caller { get; }
-    public AssignmentFields Assignment { get; } = new();
+    public AssignmentFields Assignment { get; }
     public ObservableCollection<IncidentTemplate> Templates { get; } = [];
     public bool HasTemplates => Templates.Count > 0;
 
@@ -174,6 +175,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
 
     protected override async Task SaveNewAsync(CancellationToken cancellationToken)
     {
+        Assignment.RememberSelectedGroup();
         var created = await Client!.CreateIncidentAsync(new IncidentChanges
         {
             ShortDescription = ShortDescription.Trim(),
@@ -197,6 +199,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
 
     protected override async Task SaveExistingAsync(CancellationToken cancellationToken)
     {
+        Assignment.RememberSelectedGroup();
         var changes = BuildChanges();
         if (!changes.HasChanges || string.IsNullOrEmpty(EditorSysId))
             return;
@@ -472,4 +475,9 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         Client is null
             ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
             : Client.SearchUsersAsync(text, cancellationToken);
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken) =>
+        Client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : Client.MatchUsersAsync(text, cancellationToken);
 }

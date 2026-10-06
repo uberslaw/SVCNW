@@ -43,7 +43,10 @@ public interface IServiceNowClient : IDisposable
 
     Task<IReadOnlyList<Choice>> GetChoicesAsync(string table, string element, string? dependentValue, CancellationToken cancellationToken);
     Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken);
     Task<IReadOnlyList<ReferenceSuggestion>> SearchGroupsAsync(string text, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AttachmentSummary>> ListAttachmentsAsync(string tableName, string recordSysId, CancellationToken cancellationToken);
+    Task<byte[]> DownloadAttachmentAsync(string attachmentSysId, CancellationToken cancellationToken);
     Task<IReadOnlyList<Choice>> ListAssignmentGroupsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<Choice>> ListGroupMembersAsync(string groupSysId, CancellationToken cancellationToken);
 

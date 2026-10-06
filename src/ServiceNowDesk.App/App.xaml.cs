@@ -33,7 +33,8 @@ public partial class App : Application
             new WindowsDesktopServices(),
             new WebViewBrowserSignIn(),
             FileFormCatalogStore.InApplicationData(),
-            FileIncidentTemplateStore.InApplicationData());
+            FileIncidentTemplateStore.InApplicationData(),
+            recentGroups: FileRecentAssignmentGroupStore.InApplicationData());
         var window = new MainWindow { DataContext = main };
         MainWindow = window;
         window.Show();

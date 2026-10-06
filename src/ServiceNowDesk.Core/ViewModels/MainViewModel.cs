@@ -40,17 +40,19 @@ public partial class MainViewModel : ObservableObject
         IBrowserSignIn? browserSignIn = null,
         IFormCatalogStore? formCatalog = null,
         IIncidentTemplateStore? templates = null,
-        Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? clientFactory = null)
+        Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? clientFactory = null,
+        IRecentAssignmentGroupStore? recentGroups = null)
     {
         _store = store;
         _browserSignIn = browserSignIn;
         _formCatalog = formCatalog;
         _clientFactory = clientFactory;
+        var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
-        Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore());
+        Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
         Requests = new RequestWorkspaceViewModel(desktop);
-        RequestedItems = new RequestedItemWorkspaceViewModel(desktop);
-        WalkUps = new InteractionWorkspaceViewModel(desktop);
+        RequestedItems = new RequestedItemWorkspaceViewModel(desktop, recent);
+        WalkUps = new InteractionWorkspaceViewModel(desktop, recent);
         WalkUps.IncidentRequested += (_, conversion) => ConvertOpenTask = OpenConvertedIncidentAsync(conversion);
         Search = new SearchWorkspaceViewModel();
         Knowledge = new KnowledgeWorkspaceViewModel();

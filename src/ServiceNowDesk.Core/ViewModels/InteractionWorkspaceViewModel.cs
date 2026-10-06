@@ -12,10 +12,11 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
     private InteractionRecord? _loaded;
     private bool _choicesReady;
 
-    public InteractionWorkspaceViewModel(IDesktopServices desktop)
+    public InteractionWorkspaceViewModel(IDesktopServices desktop, IRecentAssignmentGroupStore? recentGroups = null)
         : base(desktop, "interaction", "walk-up", true, PresetCatalog.WalkUps)
     {
-        Caller = new ReferenceFieldModel(SearchUsersAsync);
+        Assignment = new AssignmentFields(recentGroups);
+        Caller = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
         Caller.Changed += (_, _) => Touch();
         Assignment.Changed += (_, _) => Touch();
         PropertyChanged += (_, args) =>
@@ -27,7 +28,7 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
     }
 
     public ReferenceFieldModel Caller { get; }
-    public AssignmentFields Assignment { get; } = new();
+    public AssignmentFields Assignment { get; }
     public ObservableCollection<Choice> StateChoices { get; } = [];
     public ObservableCollection<Choice> TypeChoices { get; } = [];
 
@@ -307,4 +308,9 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
         Client is null
             ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
             : Client.SearchUsersAsync(text, cancellationToken);
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken) =>
+        Client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : Client.MatchUsersAsync(text, cancellationToken);
 }

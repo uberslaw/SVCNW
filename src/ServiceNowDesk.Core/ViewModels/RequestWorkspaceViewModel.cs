@@ -15,7 +15,7 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
     public RequestWorkspaceViewModel(IDesktopServices desktop)
         : base(desktop, "sc_request", "request", true, PresetCatalog.Requests)
     {
-        RequestedFor = new ReferenceFieldModel(SearchUsersAsync);
+        RequestedFor = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
         RequestedFor.Changed += (_, _) => Touch();
         ResolveChoiceLabel = "Outcome";
     }
@@ -278,4 +278,9 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
         Client is null
             ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
             : Client.SearchUsersAsync(text, cancellationToken);
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken) =>
+        Client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : Client.MatchUsersAsync(text, cancellationToken);
 }

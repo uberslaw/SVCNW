@@ -6,6 +6,7 @@ public interface IDesktopServices
 {
     void OpenUrl(string url);
     void CopyText(string text);
+    void OpenFile(string path);
 }
 
 public interface ISettingsStore
@@ -33,9 +34,11 @@ public sealed class RecordingDesktopServices : IDesktopServices
 {
     public List<string> OpenedUrls { get; } = [];
     public List<string> CopiedText { get; } = [];
+    public List<string> OpenedFiles { get; } = [];
 
     public void OpenUrl(string url) => OpenedUrls.Add(url);
     public void CopyText(string text) => CopiedText.Add(text);
+    public void OpenFile(string path) => OpenedFiles.Add(path);
 }
 
 public sealed class MemorySettingsStore : ISettingsStore

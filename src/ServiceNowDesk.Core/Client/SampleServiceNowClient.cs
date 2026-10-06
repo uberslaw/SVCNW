@@ -1,3 +1,4 @@
+using System.Text;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
@@ -419,6 +420,30 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
         Task.FromResult(SearchPeople(text, Users));
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken) =>
+        SearchUsersAsync(text, cancellationToken);
+
+    public Task<IReadOnlyList<AttachmentSummary>> ListAttachmentsAsync(string tableName, string recordSysId, CancellationToken cancellationToken)
+    {
+        Record("GET", "api/now/attachment");
+        var table = (tableName ?? "").Trim();
+        var id = (recordSysId ?? "").Trim();
+        IReadOnlyList<AttachmentSummary> files = (table, id) switch
+        {
+            ("incident", "inc-printer") or ("sc_req_item", "ritm-laptop") => [new AttachmentSummary("att-practice", "practice-attachment.txt")],
+            _ => []
+        };
+        return Task.FromResult(files);
+    }
+
+    public Task<byte[]> DownloadAttachmentAsync(string attachmentSysId, CancellationToken cancellationToken)
+    {
+        Record("GET", "api/now/attachment/" + (attachmentSysId ?? "").Trim() + "/file");
+        if (string.Equals(attachmentSysId?.Trim(), "att-practice", StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult(Encoding.UTF8.GetBytes("Practice attachment for the printer incident."));
+        throw new ServiceNowException(404, "ServiceNow could not find that attachment.", null);
+    }
 
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchGroupsAsync(string text, CancellationToken cancellationToken) =>
         Task.FromResult(SearchPeople(text, Groups));
@@ -1149,11 +1174,11 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     private static readonly ReferenceSuggestion[] Users =
     [
-        new("sample-user", "Alex Rivera", "alex.rivera · alex.rivera@example.com") { UserName = "alex.rivera", Email = "alex.rivera@example.com" },
-        new("user-jordan", "Jordan Lee", "jordan.lee · jordan.lee@example.com") { UserName = "jordan.lee", Email = "jordan.lee@example.com" },
-        new("user-sam", "Sam Patel", "sam.patel · sam.patel@example.com") { UserName = "sam.patel", Email = "sam.patel@example.com" },
-        new("user-casey", "Casey Ng", "casey.ng · casey.ng@example.com") { UserName = "casey.ng", Email = "casey.ng@example.com" },
-        new("user-casey2", "Casey Ng", "casey.ng2 · casey.ng2@example.com") { UserName = "casey.ng2", Email = "casey.ng2@example.com" }
+        new("sample-user", "Alex Rivera", "alex.rivera@example.com") { UserName = "alex.rivera", Email = "alex.rivera@example.com" },
+        new("user-jordan", "Jordan Lee", "jordan.lee@example.com") { UserName = "jordan.lee", Email = "jordan.lee@example.com" },
+        new("user-sam", "Sam Patel", "sam.patel@example.com") { UserName = "sam.patel", Email = "sam.patel@example.com" },
+        new("user-casey", "Casey Ng", "casey.ng@example.com") { UserName = "casey.ng", Email = "casey.ng@example.com" },
+        new("user-casey2", "Casey Ng", "casey.ng2@example.com") { UserName = "casey.ng2", Email = "casey.ng2@example.com" }
     ];
 
     private static readonly ReferenceSuggestion[] Groups =

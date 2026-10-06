@@ -34,6 +34,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     private readonly Dictionary<string, IReadOnlyList<CatalogVariableDefinition>> _catalogForms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Choice>> _membersByGroup = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _groupsWithMemberList = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _completeMemberGroups = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _persistGate = new();
     private List<Choice> _groups = [];
     private string[]? _groupIds;
@@ -547,8 +548,25 @@ public sealed class ServiceNowClient : IServiceNowClient
         if (term.Length < 2)
             return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
 
-        var query = "active=true^nameLIKE" + term + "^ORactive=true^user_nameLIKE" + term + "^ORactive=true^emailLIKE" + term;
-        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", query, true, cancellationToken);
+        var query = "active=true^nameLIKE" + term
+            + "^ORactive=true^emailLIKE" + term
+            + "^ORactive=true^user_nameLIKE" + term;
+        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", query, true, 20, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken)
+    {
+        var term = EncodedQuery.Sanitize(text);
+        if (term.Length < 2)
+            return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
+
+        var query = "active=true^name=" + term
+            + "^ORactive=true^email=" + term
+            + "^ORactive=true^user_name=" + term
+            + "^ORactive=true^nameSTARTSWITH" + term + "^nameENDSWITH" + term
+            + "^ORactive=true^emailSTARTSWITH" + term + "^emailENDSWITH" + term
+            + "^ORactive=true^user_nameSTARTSWITH" + term + "^user_nameENDSWITH" + term;
+        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", query, true, 20, cancellationToken);
     }
 
     public async Task<IReadOnlyList<Choice>> ListAssignmentGroupsAsync(CancellationToken cancellationToken)
@@ -580,22 +598,24 @@ public sealed class ServiceNowClient : IServiceNowClient
         lock (_cacheGate)
         {
             id = ResolveMemberGroupId(token, token);
-            if (_membersByGroup.TryGetValue(id, out var cached) && cached.Count > 0)
-                return cached.ToArray();
-            if (_groupsWithMemberList.Contains(id))
+            if (MembersAreComplete(id))
+            {
+                if (_membersByGroup.TryGetValue(id, out var cached))
+                    return cached.ToArray();
                 return [];
+            }
         }
 
         if (!IsGroupToken(id))
             return [];
 
-        var fetched = await FetchMembersAsync("group=" + EncodedQuery.Sanitize(id) + "^ORDERBYuser", FormCatalogPolicy.MaxGroupMembers, null, cancellationToken).ConfigureAwait(false);
+        var fetched = await FetchMembersAsync("group=" + EncodedQuery.Sanitize(id) + "^ORDERBYuser", CompleteGroupMemberCap, null, cancellationToken).ConfigureAwait(false);
         var choices = fetched.Members
             .Where(member => member.UserId.Length > 0)
             .Select(member => new Choice(member.UserId, member.UserName))
             .OrderBy(choice => choice.Label, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        RememberGroupMembers(id, choices);
+        RememberGroupMembers(id, choices, complete: !fetched.Truncated);
         return choices;
     }
 
@@ -606,7 +626,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
 
         var query = "active=true^nameLIKE" + term;
-        return SearchReferencesAsync("sys_user_group", "sys_id,name,description", query, false, cancellationToken);
+        return SearchReferencesAsync("sys_user_group", "sys_id,name,description", query, false, 15, cancellationToken);
     }
 
     public async Task<IReadOnlyList<CatalogItemSummary>> SearchCatalogItemsAsync(string text, CancellationToken cancellationToken)
@@ -860,9 +880,10 @@ public sealed class ServiceNowClient : IServiceNowClient
         string fields,
         string query,
         bool user,
+        int limit,
         CancellationToken cancellationToken)
     {
-        var result = await GetListAsync(table, fields, query + "^ORDERBYname", 15, 0, cancellationToken).ConfigureAwait(false);
+        var result = await GetListAsync(table, fields, query + "^ORDERBYname", limit, 0, cancellationToken).ConfigureAwait(false);
         using (result)
         {
             var suggestions = new List<ReferenceSuggestion>();
@@ -875,13 +896,78 @@ public sealed class ServiceNowClient : IServiceNowClient
                 var userName = user ? SnowField.Read(row, "user_name").Display : "";
                 var email = user ? SnowField.Read(row, "email").Display : "";
                 var detail = user
-                    ? JoinDetail(userName, email)
+                    ? (email.Length > 0 ? email : userName)
                     : SnowField.Read(row, "description").Display;
                 suggestions.Add(new ReferenceSuggestion(sysId, name, detail) { UserName = userName, Email = email });
             }
 
             return suggestions;
         }
+    }
+
+    public async Task<IReadOnlyList<AttachmentSummary>> ListAttachmentsAsync(string tableName, string recordSysId, CancellationToken cancellationToken)
+    {
+        var table = AttachmentTable(tableName);
+        var id = EncodedQuery.SafeToken(recordSysId, "record id");
+        var query = "table_name=" + table + "^table_sys_id=" + id;
+        var items = new List<AttachmentSummary>();
+        var offset = 0;
+        const int pageSize = 100;
+        for (var page = 0; page < 50; page++)
+        {
+            var url = "api/now/attachment?sysparm_limit=" + pageSize
+                + "&sysparm_offset=" + offset
+                + "&sysparm_query=" + Uri.EscapeDataString(query);
+            var result = await SendAsync(HttpMethod.Get, url, null, cancellationToken).ConfigureAwait(false);
+            using (result)
+            {
+                var rows = RequireArray(result.Document);
+                var count = rows.GetArrayLength();
+                foreach (var row in rows.EnumerateArray())
+                {
+                    var sysId = SnowField.Read(row, "sys_id").Value;
+                    if (sysId.Length == 0)
+                        continue;
+                    var name = SnowField.Read(row, "file_name").Display;
+                    if (name.Length == 0)
+                        name = SnowField.Read(row, "file_name").Value;
+                    if (name.Length == 0)
+                        name = "attachment";
+                    if (items.Any(item => item.SysId.Equals(sysId, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+                    items.Add(new AttachmentSummary(sysId, name));
+                }
+
+                offset += count;
+                var expected = result.TotalCount;
+                if (count == 0)
+                    break;
+                if (expected is > 0 && offset >= expected.Value)
+                    break;
+                if (expected is > 0 && offset < expected.Value)
+                    continue;
+                if (!string.IsNullOrEmpty(result.NextLink))
+                    continue;
+                if (count < pageSize)
+                    break;
+            }
+        }
+
+        return items;
+    }
+
+    public async Task<byte[]> DownloadAttachmentAsync(string attachmentSysId, CancellationToken cancellationToken)
+    {
+        var id = EncodedQuery.SafeToken(attachmentSysId, "attachment id");
+        return await GetBytesAsync("api/now/attachment/" + Uri.EscapeDataString(id) + "/file", cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string AttachmentTable(string tableName)
+    {
+        var table = (tableName ?? "").Trim();
+        if (table is "incident" or "sc_req_item")
+            return table;
+        throw new ArgumentException("Attachments are available on incidents and request items.");
     }
 
     private static IncidentChanges IncidentFromInteraction(InteractionRecord interaction) => new()
@@ -970,7 +1056,7 @@ public sealed class ServiceNowClient : IServiceNowClient
                 throw DescribeFailure((int)response.StatusCode, body);
 
             if (string.IsNullOrWhiteSpace(body))
-                return new ApiPayload(JsonDocument.Parse("""{"result":{}}"""), ReadTotal(response));
+                return new ApiPayload(JsonDocument.Parse("""{"result":{}}"""), ReadTotal(response), ReadNextLink(response));
 
             if (body.TrimStart().StartsWith('<'))
             {
@@ -992,7 +1078,7 @@ public sealed class ServiceNowClient : IServiceNowClient
                     throw error;
                 }
 
-                return new ApiPayload(document, ReadTotal(response));
+                return new ApiPayload(document, ReadTotal(response), ReadNextLink(response));
             }
             catch (JsonException)
             {
@@ -1360,11 +1446,12 @@ public sealed class ServiceNowClient : IServiceNowClient
         const int pageSize = 200;
         var offset = 0;
         var kept = 0;
+        var received = 0;
         var truncated = false;
         progress?.Report(new DownloadTick(0, 0));
         while (kept < maxRows)
         {
-            var limit = Math.Min(pageSize, maxRows - kept);
+            var limit = Math.Min(pageSize, Math.Max(1, maxRows - kept));
             var result = await GetListAsync(table, fields, query, limit, offset, cancellationToken).ConfigureAwait(false);
             using (result)
             {
@@ -1372,34 +1459,86 @@ public sealed class ServiceNowClient : IServiceNowClient
                 var count = rows.GetArrayLength();
                 foreach (var row in rows.EnumerateArray())
                 {
-                    accept(row);
-                    kept++;
                     if (kept >= maxRows)
                         break;
+                    accept(row);
+                    kept++;
                 }
 
-                var fetched = offset + count;
+                received += count;
                 var expected = result.TotalCount;
                 if (expected is > 0)
-                    progress?.Report(new DownloadTick(Math.Min(fetched, expected.Value), expected.Value));
+                    progress?.Report(new DownloadTick(Math.Min(received, expected.Value), expected.Value));
                 else if (count < limit)
-                    progress?.Report(new DownloadTick(Math.Max(fetched, 1), Math.Max(fetched, 1)));
+                    progress?.Report(new DownloadTick(Math.Max(received, 1), Math.Max(received, 1)));
                 else
-                    progress?.Report(new DownloadTick(fetched, fetched + limit));
+                    progress?.Report(new DownloadTick(received, received + limit));
 
-                if (count < limit)
+                var more = expected is > 0 && received < expected.Value;
+                var linkOffset = TryReadOffset(result.NextLink);
+                if (count == 0)
+                {
+                    truncated = more || linkOffset > received;
                     break;
-                if (kept >= maxRows)
+                }
+
+                if (kept >= maxRows && (more || linkOffset > offset || count >= limit))
                 {
                     truncated = true;
                     break;
                 }
 
-                offset += count;
+                var nextOffset = linkOffset > offset ? linkOffset : offset + count;
+                if ((more || linkOffset > offset || count >= limit) && nextOffset > offset && kept < maxRows)
+                {
+                    offset = nextOffset;
+                    continue;
+                }
+
+                break;
             }
         }
 
         return truncated;
+    }
+
+    private async Task<byte[]> GetBytesAsync(string relativeUrl, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, relativeUrl);
+        var watch = Stopwatch.StartNew();
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            Record(HttpMethod.Get.Method, relativeUrl, 0, watch.ElapsedMilliseconds);
+            throw new ServiceNowException(0, "The ServiceNow instance did not respond in time.", null);
+        }
+        catch (HttpRequestException exception)
+        {
+            Record(HttpMethod.Get.Method, relativeUrl, 0, watch.ElapsedMilliseconds);
+            throw new ServiceNowException(0, "Could not reach the ServiceNow instance. Check the URL and your network.", exception.Message);
+        }
+
+        using (response)
+        {
+            Record(HttpMethod.Get.Method, relativeUrl, (int)response.StatusCode, watch.ElapsedMilliseconds);
+            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                throw DescribeFailure((int)response.StatusCode, Encoding.UTF8.GetString(bytes));
+
+            var mediaType = response.Content.Headers.ContentType?.MediaType ?? "";
+            if (mediaType.Contains("json", StringComparison.OrdinalIgnoreCase) && bytes.Length > 0)
+            {
+                var text = Encoding.UTF8.GetString(bytes);
+                if (text.Contains("\"failure\"", StringComparison.OrdinalIgnoreCase) && text.Contains("\"error\"", StringComparison.OrdinalIgnoreCase))
+                    throw DescribeFailure((int)response.StatusCode, text);
+            }
+
+            return bytes;
+        }
     }
 
     private List<RawMember> ExportMembers()
@@ -1418,6 +1557,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     {
         _membersByGroup.Clear();
         _groupsWithMemberList.Clear();
+        _completeMemberGroups.Clear();
         foreach (var member in members)
         {
             if (string.IsNullOrWhiteSpace(member.UserId))
@@ -1500,18 +1640,30 @@ public sealed class ServiceNowClient : IServiceNowClient
     }
 
     private const string MemberDirectoryQuery = "userISNOTEMPTY^groupISNOTEMPTY^ORDERBYsys_id";
+    private const int CompleteGroupMemberCap = 50000;
 
     private readonly record struct RawMember(string GroupValue, string GroupDisplay, string UserId, string UserName);
 
     private readonly record struct MemberFetch(List<RawMember> Members, bool Truncated);
 
-    private void RememberGroupMembers(string groupId, IReadOnlyList<Choice> members)
+    private bool MembersAreComplete(string id)
+    {
+        if (_completeMemberGroups.Contains(id))
+            return true;
+        return _snapshot.DirectoryComplete && _groupsWithMemberList.Contains(id);
+    }
+
+    private void RememberGroupMembers(string groupId, IReadOnlyList<Choice> members, bool complete)
     {
         lock (_cacheGate)
         {
             var list = members.OrderBy(choice => choice.Label, StringComparer.OrdinalIgnoreCase).ToList();
             _membersByGroup[groupId] = list;
             _groupsWithMemberList.Add(groupId);
+            if (complete)
+                _completeMemberGroups.Add(groupId);
+            else
+                _completeMemberGroups.Remove(groupId);
             _snapshot.Members.RemoveAll(member => member.GroupSysId.Equals(groupId, StringComparison.OrdinalIgnoreCase));
             foreach (var member in list)
                 _snapshot.Members.Add(new CachedGroupMember { GroupSysId = groupId, UserSysId = member.Value, Name = member.Label });
@@ -1556,13 +1708,49 @@ public sealed class ServiceNowClient : IServiceNowClient
         return null;
     }
 
-    private static string JoinDetail(string left, string right)
+    private static string? ReadNextLink(HttpResponseMessage response)
     {
-        if (string.IsNullOrWhiteSpace(left))
-            return right;
-        if (string.IsNullOrWhiteSpace(right))
-            return left;
-        return left + " · " + right;
+        if (!TryLinkValues(response.Headers, out var values) && (response.Content is null || !TryLinkValues(response.Content.Headers, out values)))
+            return null;
+
+        foreach (var header in values!)
+        {
+            foreach (var part in header.Split(','))
+            {
+                var rel = part.IndexOf("rel=", StringComparison.OrdinalIgnoreCase);
+                if (rel < 0 || !part[rel..].Contains("next", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var start = part.IndexOf('<');
+                var end = part.IndexOf('>');
+                if (start < 0 || end <= start)
+                    continue;
+                var url = part[(start + 1)..end].Trim();
+                if (url.Length > 0)
+                    return url;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryLinkValues(HttpHeaders headers, out IEnumerable<string>? values) =>
+        headers.TryGetValues("Link", out values);
+
+    private static int TryReadOffset(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return 0;
+        const string marker = "sysparm_offset=";
+        var index = url.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+            return 0;
+        var start = index + marker.Length;
+        var end = start;
+        while (end < url.Length && char.IsDigit(url[end]))
+            end++;
+        return end > start && int.TryParse(url[start..end], NumberStyles.Integer, CultureInfo.InvariantCulture, out var offset)
+            ? offset
+            : 0;
     }
 
     private static bool IsLayoutVariable(string type)
@@ -1635,14 +1823,16 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     private sealed class ApiPayload : IDisposable
     {
-        public ApiPayload(JsonDocument document, int? totalCount)
+        public ApiPayload(JsonDocument document, int? totalCount, string? nextLink = null)
         {
             Document = document;
             TotalCount = totalCount;
+            NextLink = nextLink;
         }
 
         public JsonDocument Document { get; }
         public int? TotalCount { get; }
+        public string? NextLink { get; }
         public void Dispose() => Document.Dispose();
     }
 }

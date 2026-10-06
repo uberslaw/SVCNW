@@ -16,7 +16,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     private int _loadVersion;
     private int _openVersion;
 
-    protected RecordWorkspaceViewModel(IDesktopServices desktop, string tableName, string recordLabel, bool allowCreate, IReadOnlyList<PresetOption> presets)
+    protected RecordWorkspaceViewModel(IDesktopServices desktop, string tableName, string recordLabel, bool allowCreate, IReadOnlyList<PresetOption> presets, bool attachments = false)
     {
         Desktop = desktop;
         TableName = tableName;
@@ -25,6 +25,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         Presets = presets;
         Preset = presets[0];
         ResolveChoiceLabel = "Outcome";
+        SupportsAttachments = attachments;
     }
 
     protected IDesktopServices Desktop { get; }
@@ -35,6 +36,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     public string TableName { get; }
     public string RecordLabel { get; }
     public bool AllowCreate { get; }
+    public bool SupportsAttachments { get; }
+    public ObservableCollection<AttachmentSummary> Attachments { get; } = [];
     public IReadOnlyList<PresetOption> Presets { get; }
     public ObservableCollection<TicketRow> Items { get; } = [];
     public ObservableCollection<JournalEntry> Journal { get; } = [];
@@ -68,6 +71,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string resolveChoiceLabel = "";
     [ObservableProperty] private string resolveCode = "";
     [ObservableProperty] private string resolveNotes = "";
+    [ObservableProperty] private string attachmentNote = "";
 
     public bool HasJournalText => !string.IsNullOrWhiteSpace(JournalText);
 
@@ -105,6 +109,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         ErrorMessage = "";
         EditorMessage = "";
         TotalCount = 0;
+        Attachments.Clear();
+        AttachmentNote = "";
         OnDetached();
         _suppressSelection = false;
         Applying = false;
@@ -214,6 +220,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             IsNew = false;
             ShowUnsavedBanner = false;
             EditorMessage = "Saved " + Number + ".";
+            await RefreshAttachmentsAsync(CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -361,6 +368,36 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task OpenAttachmentAsync(AttachmentSummary? attachment)
+    {
+        if (attachment is null || Client is null)
+            return;
+        if (IsNew || string.IsNullOrEmpty(EditorSysId))
+        {
+            AttachmentNote = "Save the record before it can have attachments.";
+            return;
+        }
+
+        try
+        {
+            IsEditorBusy = true;
+            ErrorMessage = "";
+            var bytes = await Client.DownloadAttachmentAsync(attachment.SysId, CancellationToken.None);
+            var path = AttachmentStorage.Write(attachment.FileName, bytes);
+            Desktop.OpenFile(path);
+            EditorMessage = "Opened " + attachment.FileName + ".";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+        }
+        finally
+        {
+            IsEditorBusy = false;
+        }
+    }
+
+    [RelayCommand]
     private void ApplyPreset(PresetOption? option)
     {
         if (option is null || option == Preset)
@@ -395,6 +432,11 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             IsNew = true;
             HasEditor = true;
             OnStartNew();
+            if (SupportsAttachments)
+            {
+                Attachments.Clear();
+                AttachmentNote = "Save the record before it can have attachments.";
+            }
         }
         finally
         {
@@ -513,6 +555,28 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     {
     }
 
+    private async Task RefreshAttachmentsAsync(CancellationToken cancellationToken)
+    {
+        if (!SupportsAttachments)
+            return;
+
+        if (IsNew || string.IsNullOrEmpty(EditorSysId) || Client is null)
+        {
+            Attachments.Clear();
+            AttachmentNote = "Save the record before it can have attachments.";
+            return;
+        }
+
+        var files = await Client.ListAttachmentsAsync(TableName, EditorSysId, cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        Attachments.Clear();
+        foreach (var file in files)
+            Attachments.Add(file);
+        AttachmentNote = Attachments.Count == 0 ? "No attachments." : "";
+    }
+
     protected async Task PostPendingJournalAsync(CancellationToken cancellationToken)
     {
         if (Client is null || string.IsNullOrWhiteSpace(JournalText) || string.IsNullOrEmpty(EditorSysId))
@@ -556,6 +620,9 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             Journal.Clear();
             foreach (var note in notes)
                 Journal.Add(note);
+            await RefreshAttachmentsAsync(cancellationToken);
+            if (version != _openVersion)
+                return;
             _boundRow = Items.FirstOrDefault(row => row.SysId == sysId);
             _suppressSelection = true;
             if (_boundRow is not null)
