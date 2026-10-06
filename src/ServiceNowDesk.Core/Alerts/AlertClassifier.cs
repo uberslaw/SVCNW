@@ -5,14 +5,32 @@ namespace ServiceNowDesk.Alerts;
 
 public static class AlertClassifier
 {
-    public static bool IsSlaBreaching(WatchedRecord record, DateTime now)
+    public static bool IsSlaBreaching(WatchedRecord record, DateTime now, SlaBreachScope scope)
     {
         ArgumentNullException.ThrowIfNull(record);
+        ArgumentNullException.ThrowIfNull(scope);
+        if (!IsStillOpen(record) || !scope.Includes(record))
+            return false;
         if (record.SlaHasBreached)
             return true;
         return StageIsInProgress(record.SlaStage)
             && record.SlaPlannedEnd is DateTime planned
             && planned < now;
+    }
+
+    /// <summary>
+    /// Resolved, closed, and cancelled records are finished. A breach flag stays true after
+    /// that, so the ticket state is what keeps them out of the queue.
+    /// </summary>
+    public static bool IsStillOpen(WatchedRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        if (ContainsFinished(record.State) || ContainsFinished(record.StateValue))
+            return false;
+        var value = record.StateValue.Trim();
+        if (record.Section == DeskSection.Incidents && value is "6" or "7" or "8")
+            return false;
+        return record.Section != DeskSection.RequestedItems || value is not ("3" or "4" or "7");
     }
 
     public static bool IsOnHold(DeskSection section, string? stateValue, string? stateLabel)
@@ -61,9 +79,9 @@ public static class AlertClassifier
         return normalized.Equals("in_progress", StringComparison.OrdinalIgnoreCase);
     }
 
-    public static bool Matches(AlertKind kind, WatchedRecord record, DateTime now, CallerUpdateScope? callerScope = null) => kind switch
+    public static bool Matches(AlertKind kind, WatchedRecord record, DateTime now, CallerUpdateScope? callerScope = null, SlaBreachScope? slaScope = null) => kind switch
     {
-        AlertKind.SlaBreaching => IsSlaBreaching(record, now),
+        AlertKind.SlaBreaching => slaScope is not null && IsSlaBreaching(record, now, slaScope),
         AlertKind.OnHoldPastFollowUp => IsOnHoldPastFollowUp(record, now),
         AlertKind.UpdatedByCaller => callerScope is not null && IsUpdatedByCaller(record, callerScope),
         AlertKind.ReturnedWithNotes => IsReturnedWithNotes(record),
@@ -71,13 +89,19 @@ public static class AlertClassifier
     };
 
     public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, string? status = null) =>
-        Bucket(kind, records, now, null, status);
+        Bucket(kind, records, now, null, null, status);
 
-    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope? callerScope, string? status = null)
+    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope? callerScope, string? status = null) =>
+        Bucket(kind, records, now, callerScope, null, status);
+
+    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, SlaBreachScope slaScope, string? status = null) =>
+        Bucket(kind, records, now, null, slaScope, status);
+
+    public static AlertBucket Bucket(AlertKind kind, IEnumerable<WatchedRecord> records, DateTime now, CallerUpdateScope? callerScope, SlaBreachScope? slaScope, string? status = null)
     {
         ArgumentNullException.ThrowIfNull(records);
         var rows = records
-            .Where(record => Matches(kind, record, now, callerScope))
+            .Where(record => Matches(kind, record, now, callerScope, slaScope))
             .Select(record => ToRecord(record, kind))
             .ToArray();
         return new AlertBucket(rows, rows.Length, status ?? "");
@@ -121,6 +145,15 @@ public static class AlertClassifier
 
     private static bool ContainsHold(string? text) =>
         !string.IsNullOrWhiteSpace(text) && text.Contains("hold", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ContainsFinished(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+        return text.Contains("resolv", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("closed", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("cancel", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool SameUser(string? left, string? right) =>
         !string.IsNullOrWhiteSpace(left)
@@ -189,4 +222,45 @@ public sealed class CallerUpdateScope
 
     private static bool HasGroup(WatchedRecord record) =>
         !string.IsNullOrWhiteSpace(record.AssignmentGroupSysId) || !string.IsNullOrWhiteSpace(record.Group);
+}
+
+/// <summary>
+/// SLA breaches are rebuilt on every poll. A ticket counts only when it is still open and
+/// assigned to the signed-in user, or unassigned in one of that user's groups or the watched group.
+/// </summary>
+public sealed class SlaBreachScope
+{
+    public SlaBreachScope(string? userSysId, IEnumerable<string>? groupIds, string? watchedGroupName)
+    {
+        UserSysId = userSysId?.Trim() ?? "";
+        GroupIds = new HashSet<string>(
+            (groupIds ?? []).Select(id => id?.Trim() ?? "").Where(id => id.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
+        WatchedGroupName = watchedGroupName?.Trim() ?? "";
+    }
+
+    public string UserSysId { get; }
+
+    public IReadOnlySet<string> GroupIds { get; }
+
+    public string WatchedGroupName { get; }
+
+    public bool Includes(WatchedRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        var assignee = record.AssignedToSysId?.Trim() ?? "";
+        var groupId = record.AssignmentGroupSysId?.Trim() ?? "";
+        var group = record.Group?.Trim() ?? "";
+        if (UserSysId.Length > 0 && assignee.Equals(UserSysId, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (assignee.Length > 0)
+            return false;
+        if (GroupIds.Contains(groupId))
+            return true;
+        if (WatchedGroupName.Length == 0)
+            return false;
+        if (group.Equals(WatchedGroupName, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return groupId.Equals(WatchedGroupName, StringComparison.OrdinalIgnoreCase);
+    }
 }

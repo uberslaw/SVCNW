@@ -104,7 +104,7 @@ public class AlertTests
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "INC0010003");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "RITM0010004");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Section == DeskSection.Knowledge);
-        Assert.Equal(5, snapshot.Count(AlertKind.AssignedToMe));
+        Assert.Equal(6, snapshot.Count(AlertKind.AssignedToMe));
 
         var group = snapshot.Bucket(AlertKind.WatchedGroup).Rows;
         var brisbane = Assert.Single(group);
@@ -598,13 +598,15 @@ public class AlertTests
     public void EachNewCategoryIsClassifiedFromASampleRecord()
     {
         var now = new DateTime(2026, 10, 6, 12, 0, 0);
-        var slaBreached = SampleRecord() with { SlaHasBreached = true, SlaStage = "completed" };
-        var slaInProgress = SampleRecord() with { SlaStage = "in_progress", SlaPlannedEnd = now.AddMinutes(-1) };
-        var slaStillOpen = SampleRecord() with { SlaStage = "in_progress", SlaPlannedEnd = now.AddHours(1) };
-        Assert.True(AlertClassifier.IsSlaBreaching(slaBreached, now));
-        Assert.True(AlertClassifier.IsSlaBreaching(slaInProgress, now));
-        Assert.False(AlertClassifier.IsSlaBreaching(slaStillOpen, now));
-        Assert.False(AlertClassifier.IsSlaBreaching(SampleRecord() with { SlaStage = "paused", SlaPlannedEnd = now.AddMinutes(-5) }, now));
+        var slaScope = new SlaBreachScope("sample-user", ["group-cs"], "Client Services");
+        var mine = SampleRecord() with { AssignedToSysId = "sample-user" };
+        var slaBreached = mine with { SlaHasBreached = true, SlaStage = "completed" };
+        var slaInProgress = mine with { SlaStage = "in_progress", SlaPlannedEnd = now.AddMinutes(-1) };
+        var slaStillOpen = mine with { SlaStage = "in_progress", SlaPlannedEnd = now.AddHours(1) };
+        Assert.True(AlertClassifier.IsSlaBreaching(slaBreached, now, slaScope));
+        Assert.True(AlertClassifier.IsSlaBreaching(slaInProgress, now, slaScope));
+        Assert.False(AlertClassifier.IsSlaBreaching(slaStillOpen, now, slaScope));
+        Assert.False(AlertClassifier.IsSlaBreaching(mine with { SlaStage = "paused", SlaPlannedEnd = now.AddMinutes(-5) }, now, slaScope));
 
         var hold = SampleRecord() with { StateValue = "3", State = "On Hold", FollowUp = now.AddHours(-2) };
         Assert.True(AlertClassifier.IsOnHoldPastFollowUp(hold, now));
@@ -637,6 +639,70 @@ public class AlertTests
         Assert.False(AlertClassifier.IsReturnedWithNotes(returned with { LatestJournalAuthor = "jordan.lee" }));
         Assert.False(AlertClassifier.IsReturnedWithNotes(returned with { LatestJournalAuthor = "alex.rivera", AssigneeUserName = "alex.rivera" }));
         Assert.False(AlertClassifier.IsReturnedWithNotes(returned with { LatestJournalAuthor = "" }));
+    }
+
+    [Fact]
+    public void SlaBreachesAreRebuiltForTheAssigneeOrAnUnassignedGroupTicket()
+    {
+        var now = new DateTime(2026, 10, 6, 12, 0, 0);
+        var scope = new SlaBreachScope("sample-user", ["group-cs"], "Aus DT - Client Services");
+        var breached = SampleRecord() with { SlaHasBreached = true, SlaStage = "completed" };
+
+        var assignedToMe = breached with { AssignedToSysId = "sample-user", AssignmentGroupSysId = "group-net", Group = "Network" };
+        var unassignedInMyGroup = breached with
+        {
+            Number = "INC0091002",
+            AssignedToSysId = "",
+            AssigneeUserName = "",
+            AssignmentGroupSysId = "group-cs",
+            Group = "Client Services"
+        };
+        var unassignedInWatchedGroup = breached with
+        {
+            Number = "INC0091003",
+            AssignedToSysId = "",
+            AssigneeUserName = "",
+            AssignmentGroupSysId = "group-aus",
+            Group = "Aus DT - Client Services"
+        };
+        var colleague = breached with
+        {
+            Number = "INC0091004",
+            AssignedToSysId = "user-jordan",
+            AssigneeUserName = "jordan.lee",
+            AssignmentGroupSysId = "group-cs",
+            Group = "Client Services"
+        };
+        var resolved = breached with
+        {
+            Number = "INC0091005",
+            AssignedToSysId = "sample-user",
+            State = "Resolved",
+            StateValue = "6"
+        };
+        var unassignedNowhere = breached with
+        {
+            Number = "INC0091006",
+            AssignedToSysId = "",
+            AssigneeUserName = "",
+            AssignmentGroupSysId = "",
+            Group = ""
+        };
+
+        Assert.True(AlertClassifier.IsSlaBreaching(assignedToMe, now, scope));
+        Assert.True(AlertClassifier.IsSlaBreaching(unassignedInMyGroup, now, scope));
+        Assert.True(AlertClassifier.IsSlaBreaching(unassignedInWatchedGroup, now, scope));
+        Assert.False(AlertClassifier.IsSlaBreaching(colleague, now, scope));
+        Assert.False(AlertClassifier.IsSlaBreaching(resolved, now, scope));
+        Assert.False(AlertClassifier.IsStillOpen(resolved));
+        Assert.False(AlertClassifier.IsSlaBreaching(unassignedNowhere, now, scope));
+
+        var bucket = AlertClassifier.Bucket(
+            AlertKind.SlaBreaching,
+            [assignedToMe, unassignedInMyGroup, colleague, resolved, unassignedNowhere],
+            now,
+            scope);
+        Assert.Equal(["INC0091001", "INC0091002"], bucket.Rows.Select(row => row.Number).ToArray());
     }
 
     [Fact]
@@ -732,6 +798,8 @@ public class AlertTests
         Assert.Contains(sla, row => row.Number == "RITM0010005" && row.Section == DeskSection.RequestedItems);
         Assert.Contains(sla, row => row.Number == "IMS0010003" && row.Section == DeskSection.WalkUps);
         Assert.DoesNotContain(sla, row => row.Number == "INC0010014");
+        Assert.DoesNotContain(sla, row => row.Number == "INC0010015");
+        Assert.DoesNotContain(sla, row => row.Number == "INC0010016");
 
         var hold = snapshot.Bucket(AlertKind.OnHoldPastFollowUp).Rows;
         Assert.Contains(hold, row => row.Number == "INC0010011");
@@ -743,7 +811,7 @@ public class AlertTests
 
         var returned = Assert.Single(snapshot.Bucket(AlertKind.ReturnedWithNotes).Rows);
         Assert.Equal("INC0010013", returned.Number);
-        Assert.Equal(5, snapshot.Count(AlertKind.AssignedToMe));
+        Assert.Equal(6, snapshot.Count(AlertKind.AssignedToMe));
         Assert.Equal("INC0010007", Assert.Single(snapshot.Bucket(AlertKind.WatchedGroup).Rows).Number);
     }
 
