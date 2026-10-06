@@ -14,26 +14,20 @@
             <Button DockPanel.Dock="Top" Content="Create new" Style="{StaticResource PrimaryButton}" Command="{Binding NewRecordCommand}" HorizontalAlignment="Left" Margin="0,0,0,8"/>
             <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                 <TextBlock Text="Templates" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Background="{StaticResource CardBrush}" MaxHeight="132" Margin="0,0,0,6" Visibility="{Binding HasTemplates, Converter={StaticResource BoolVis}}">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Templates}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <DockPanel Margin="2,1">
-                                        <Button DockPanel.Dock="Right" Content="Delete" Style="{StaticResource QuietButton}" Padding="6,2"
-                                                Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding}" ToolTip="Delete this template"/>
-                                        <Button Style="{StaticResource QuietButton}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="6,2"
-                                                Command="{Binding DataContext.ApplyTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding}" ToolTip="Start a new incident from this template">
-                                            <TextBlock Text="{Binding Name}" TextWrapping="Wrap"/>
-                                        </Button>
-                                    </DockPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                </Border>
+                <DockPanel Margin="0,0,0,6" Visibility="{Binding HasTemplates, Converter={StaticResource BoolVis}}">
+                    <Button DockPanel.Dock="Right" Content="Delete" Style="{StaticResource QuietButton}" Padding="8,4" Margin="8,0,0,0"
+                            Command="{Binding DeleteTemplateCommand}"
+                            CommandParameter="{Binding SelectedTemplate}" ToolTip="Delete the selected template"/>
+                    <ComboBox ItemsSource="{Binding Templates}"
+                              SelectedItem="{Binding SelectedTemplate}"
+                              ToolTip="Choose a template to start a new incident. Names are alphabetical.">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </DockPanel>
                 <TextBlock Text="No templates yet. Save the open incident to reuse it." Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6" Visibility="{Binding HasTemplates, Converter={StaticResource InverseBoolVis}}"/>
                 <Grid>
                     <Grid.ColumnDefinitions>

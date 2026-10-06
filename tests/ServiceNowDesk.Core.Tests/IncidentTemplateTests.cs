@@ -161,6 +161,42 @@ public class IncidentTemplateTests
     }
 
     [Fact]
+    public async Task TemplatesAreAlphabeticalAndTheDropdownAppliesTheSelection()
+    {
+        using var client = new SampleServiceNowClient();
+        var store = new MemoryIncidentTemplateStore();
+        var workspace = await OpenAsync(client, store);
+        workspace.NewRecordCommand.Execute(null);
+        workspace.ShortDescription = "Zebra item";
+        workspace.TemplateName = "Zebra";
+        workspace.SaveTemplateCommand.Execute(null);
+        workspace.ShortDescription = "Alpha item";
+        workspace.TemplateName = "alpha";
+        workspace.SaveTemplateCommand.Execute(null);
+        workspace.ShortDescription = "Beta item";
+        workspace.TemplateName = "Beta";
+        workspace.SaveTemplateCommand.Execute(null);
+
+        Assert.Equal(["alpha", "Beta", "Zebra"], workspace.Templates.Select(template => template.Name).ToArray());
+
+        var merged = IncidentTemplate.Merge(
+            [new IncidentTemplate { Name = "Zebra", ShortDescription = "local" }, new IncidentTemplate { Name = "" }],
+            [new IncidentTemplate { Name = "alpha", ShortDescription = "remote" }, new IncidentTemplate { Name = "  ", ShortDescription = "blank" }]);
+        Assert.Equal(["alpha", "Zebra"], merged.Take(2).Select(template => template.Name).ToArray());
+        Assert.All(merged.Skip(2), template => Assert.True(string.IsNullOrWhiteSpace(template.Name)));
+
+        var clean = await OpenAsync(client, store);
+        Assert.Equal(["alpha", "Beta", "Zebra"], clean.Templates.Select(template => template.Name).ToArray());
+        var alpha = clean.Templates.Single(template => template.Name == "alpha");
+        clean.SelectedTemplate = alpha;
+        await clean.SelectedTemplateApplied;
+
+        Assert.Equal("Alpha item", clean.ShortDescription);
+        Assert.True(clean.IsNew);
+        Assert.Equal(alpha, clean.SelectedTemplate);
+    }
+
+    [Fact]
     public void CorruptTemplateFileIsIgnored()
     {
         var folder = NewFolder();

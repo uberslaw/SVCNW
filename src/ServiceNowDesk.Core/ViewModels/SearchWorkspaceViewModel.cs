@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
@@ -11,8 +12,13 @@ namespace ServiceNowDesk.ViewModels;
 
 public sealed partial class SearchWorkspaceViewModel : ObservableObject
 {
+    public const string KnowledgeHiddenSummary = "Knowledge is hidden while assignment or opened-date filters are set.";
+
+    private IServiceNowClient? _client;
     private int _runVersion;
     private bool _resultsCurrent;
+    private bool _suppressFilter;
+    private string _signature = "";
 
     [ObservableProperty] private SearchHit? selected;
     [ObservableProperty] private bool includeIncidents = true;
@@ -23,12 +29,29 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool isLoading;
     [ObservableProperty] private string summary = "Search incidents, requests, items, walk-ups, and knowledge articles.";
     [ObservableProperty] private string errorMessage = "";
+    [ObservableProperty] private string filterMessage = "";
+    [ObservableProperty] private DateTime? openedFrom;
+    [ObservableProperty] private DateTime? openedTo;
 
     public ObservableCollection<SearchHit> Results { get; } = [];
+    public ReferenceFieldModel AssignmentGroup { get; }
+    public ReferenceFieldModel Assignee { get; }
+
+    public event EventHandler? SearchFiltersChanged;
+
+    public SearchWorkspaceViewModel()
+    {
+        AssignmentGroup = new ReferenceFieldModel(SearchGroupsAsync);
+        Assignee = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
+        AssignmentGroup.PropertyChanged += OnReferenceChanged;
+        Assignee.PropertyChanged += OnReferenceChanged;
+    }
 
     public Action<SearchHit>? PrepareHit { get; set; }
 
     public string Query { get; private set; } = "";
+
+    public void Attach(IServiceNowClient? client) => _client = client;
 
     public event EventHandler<SearchHit>? OpenRequested;
 
@@ -36,25 +59,34 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     public event EventHandler? KnowledgeSearchRequested;
 
     public bool HasCurrentResultsFor(string? text) =>
-        _resultsCurrent && string.Equals(Query, (text ?? "").Trim(), StringComparison.Ordinal);
+        _resultsCurrent && string.Equals(_signature, Signature((text ?? "").Trim()), StringComparison.Ordinal);
 
     public void MarkStale() => _resultsCurrent = false;
 
     public void Reset()
     {
         _runVersion++;
+        _suppressFilter = true;
         _resultsCurrent = false;
+        _signature = "";
         Query = "";
+        AssignmentGroup.Clear();
+        Assignee.Clear();
+        OpenedFrom = null;
+        OpenedTo = null;
+        FilterMessage = "";
         Results.Clear();
         Selected = null;
         Summary = "Search incidents, requests, items, walk-ups, and knowledge articles.";
         ErrorMessage = "";
         IsLoading = false;
+        _suppressFilter = false;
     }
 
     public async Task RunAsync(IServiceNowClient? client, string? text)
     {
         var version = ++_runVersion;
+        _client = client;
         if (client is null)
         {
             Summary = "Connect to ServiceNow to search.";
@@ -62,7 +94,23 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         }
 
         var trimmed = (text ?? "").Trim();
-        if (trimmed.Length < 2 && !EncodedQuery.IsNumberQuery(trimmed))
+        if (!TryOpenedRange(out var openedFrom, out var openedTo))
+        {
+            if (version != _runVersion)
+                return;
+            Query = trimmed;
+            Results.Clear();
+            Selected = null;
+            ErrorMessage = "";
+            Summary = FilterMessage;
+            Remember(trimmed);
+            return;
+        }
+
+        var groupId = AssignmentGroup.SysId;
+        var assigneeId = Assignee.SysId;
+        var filtersActive = EncodedQuery.HasRecordFilter(groupId, assigneeId, openedFrom, openedTo);
+        if (trimmed.Length < 2 && !EncodedQuery.IsNumberQuery(trimmed) && !filtersActive)
         {
             if (version != _runVersion)
                 return;
@@ -70,7 +118,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             Results.Clear();
             Selected = null;
             Summary = "Type at least 2 characters. Numbers such as INC0010001, IMS0010001, or KB0001001 can be shorter.";
-            _resultsCurrent = true;
+            Remember(trimmed);
             return;
         }
 
@@ -82,7 +130,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             Results.Clear();
             Selected = null;
             Summary = "Choose at least one record type.";
-            _resultsCurrent = true;
+            Remember(trimmed);
             return;
         }
 
@@ -96,6 +144,10 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 Text = trimmed,
                 Activity = ActivityFilter.Any,
                 Assignment = AssignmentScope.Any,
+                AssignmentGroupId = groupId,
+                AssignedToId = assigneeId,
+                OpenedFrom = openedFrom,
+                OpenedTo = openedTo,
                 Limit = 25
             };
 
@@ -108,7 +160,8 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             var items = (kind is null or DeskSection.RequestedItems) && IncludeItems
                 ? client.SearchRequestedItemsAsync(query, CancellationToken.None)
                 : Task.FromResult(new PagedResult<RequestedItemRecord>([], 0));
-            var includeArticles = (kind is null or DeskSection.Knowledge) && IncludeKnowledge;
+            var hideKnowledge = filtersActive && IncludeKnowledge && kind is null or DeskSection.Knowledge;
+            var includeArticles = (kind is null or DeskSection.Knowledge) && IncludeKnowledge && !hideKnowledge;
             if (includeArticles)
                 KnowledgeSearchRequested?.Invoke(this, EventArgs.Empty);
             var articles = includeArticles
@@ -202,7 +255,9 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             Selected = previous is null ? null : Results.FirstOrDefault(hit => hit.SysId == previous);
             Query = trimmed;
             Summary = Results.Count == 1 ? "1 match" : Results.Count + " matches";
-            _resultsCurrent = true;
+            if (hideKnowledge)
+                Summary += ". " + KnowledgeHiddenSummary;
+            Remember(trimmed);
         }
         catch (Exception ex)
         {
@@ -225,6 +280,66 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         if (Selected is not null)
             OpenRequested?.Invoke(this, Selected);
     }
+
+    partial void OnOpenedFromChanged(DateTime? value) => NotifyFilters();
+
+    partial void OnOpenedToChanged(DateTime? value) => NotifyFilters();
+
+    private void OnReferenceChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ReferenceFieldModel.SysId))
+            NotifyFilters();
+    }
+
+    private void NotifyFilters()
+    {
+        if (_suppressFilter)
+            return;
+        SearchFiltersChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private bool TryOpenedRange(out string? from, out string? to)
+    {
+        from = OpenedFrom is DateTime start ? start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null;
+        to = OpenedTo is DateTime end ? end.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null;
+        if (OpenedFrom is DateTime openedFrom && OpenedTo is DateTime openedTo && openedFrom.Date > openedTo.Date)
+        {
+            FilterMessage = "Opened from is after opened to.";
+            return false;
+        }
+
+        FilterMessage = "";
+        return true;
+    }
+
+    private void Remember(string text)
+    {
+        _signature = Signature(text);
+        _resultsCurrent = true;
+    }
+
+    private string Signature(string text) =>
+        text
+        + "\n" + (AssignmentGroup.SysId ?? "")
+        + "\n" + (Assignee.SysId ?? "")
+        + "\n" + (OpenedFrom?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "")
+        + "\n" + (OpenedTo?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "")
+        + "\n" + IncludeIncidents + IncludeRequests + IncludeItems + IncludeKnowledge + IncludeWalkUps;
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> SearchGroupsAsync(string text, CancellationToken cancellationToken) =>
+        _client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : _client.SearchGroupsAsync(text, cancellationToken);
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
+        _client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : _client.SearchUsersAsync(text, cancellationToken);
+
+    private Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken) =>
+        _client is null
+            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
+            : _client.MatchUsersAsync(text, cancellationToken);
 
     private static string JoinMeta(params string[] parts) =>
         string.Join(" · ", parts.Where(part => !string.IsNullOrWhiteSpace(part)));

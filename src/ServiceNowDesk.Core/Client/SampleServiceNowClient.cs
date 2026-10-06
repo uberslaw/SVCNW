@@ -1,5 +1,6 @@
 using System.Text;
 using ServiceNowDesk.Alerts;
+using ServiceNowDesk.Mapping;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
 
@@ -299,8 +300,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     {
         var matches = _incidents.Where(record => Passes(
             query,
-            record.AssignedTo.SysId,
-            record.AssignmentGroup.SysId,
+            IdOf(record.AssignedTo),
+            IdOf(record.AssignmentGroup),
             "",
             "",
             record.Active,
@@ -308,7 +309,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Texts(record.ShortDescription, record.Description, record.CloseNotes, record.Number, JournalText(record.SysId)),
             DeskSection.Incidents,
             record.State,
-            record.StateLabel));
+            record.StateLabel,
+            record.OpenedAtDisplay));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -421,8 +423,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     {
         var matches = _requests.Where(record => Passes(
             query,
-            "",
-            "",
+            IdOf(record.AssignedTo),
+            IdOf(record.AssignmentGroup),
             record.RequestedFor.SysId,
             record.OpenedBy.SysId,
             record.Active,
@@ -430,7 +432,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Texts(record.ShortDescription, record.Description, record.SpecialInstructions, record.Number, JournalText(record.SysId)),
             DeskSection.Requests,
             record.RequestState,
-            record.RequestStateLabel));
+            record.RequestStateLabel,
+            record.OpenedAtDisplay));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -515,8 +518,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             (string.IsNullOrWhiteSpace(query.ParentRequestId) || record.Request.SysId == query.ParentRequestId)
             && Passes(
                 query,
-                record.AssignedTo.SysId,
-                record.AssignmentGroup.SysId,
+                IdOf(record.AssignedTo),
+                IdOf(record.AssignmentGroup),
                 "",
                 "",
                 record.Active,
@@ -524,7 +527,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 Texts(record.ShortDescription, record.Description, record.CloseNotes, record.Number, record.CatalogItem.Display, JournalText(record.SysId)),
                 DeskSection.RequestedItems,
                 record.State,
-                record.StateLabel));
+                record.StateLabel,
+                record.OpenedAtDisplay));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -812,7 +816,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             "",
             article.WorkflowState.Length == 0 || article.WorkflowState.Equals("published", StringComparison.OrdinalIgnoreCase),
             article.Number,
-            Texts(article.ShortDescription, article.Text, article.Topic, article.Category, article.KnowledgeBase, article.Number)));
+            Texts(article.ShortDescription, article.Text, article.Topic, article.Category, article.KnowledgeBase, article.Number),
+            honorRecordFilters: false));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -834,8 +839,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             string.Equals(record.Type, DefaultChoices.WalkUpType, StringComparison.OrdinalIgnoreCase)
             && Passes(
                 query,
-                record.AssignedTo.SysId,
-                record.AssignmentGroup.SysId,
+                IdOf(record.AssignedTo),
+                IdOf(record.AssignmentGroup),
                 "",
                 "",
                 record.Active,
@@ -843,7 +848,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 Texts(record.ShortDescription, record.Description, record.Number, record.OpenedFor.Display, JournalText(record.SysId)),
                 DeskSection.WalkUps,
                 record.State,
-                record.StateLabel));
+                record.StateLabel,
+                record.OpenedAtDisplay));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -1366,7 +1372,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 SysId = "kb-zephyr",
                 Number = "KB0001001",
                 ShortDescription = "Outlook shows a blank folder list",
-                Text = "<p>Use <strong>zephyrmail</strong> when Outlook shows a blank folder list.</p><script>alert('xss')</script><style>body{color:red}</style><p>Close Outlook, then start it again.</p>",
+                Text = "<p>Use <strong>zephyrmail</strong> when Outlook shows a blank folder list.</p><img src=\"sys_attachment.do?sys_id=outlook-folder\"><script>alert('xss')</script><style>body{color:red}</style><p>Close Outlook, then start it again.</p>",
                 Topic = "Email",
                 WorkflowState = "published",
                 WorkflowStateLabel = "Published",
@@ -1816,7 +1822,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         IEnumerable<string> haystack,
         DeskSection? section = null,
         string? stateValue = null,
-        string? stateLabel = null)
+        string? stateLabel = null,
+        string? openedAt = null,
+        bool honorRecordFilters = true)
     {
         if (query.Activity == ActivityFilter.Open)
         {
@@ -1827,6 +1835,16 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         }
         if (query.Activity == ActivityFilter.Closed && active)
             return false;
+
+        if (honorRecordFilters)
+        {
+            if (!EncodedQuery.SameReference(query.AssignmentGroupId, groupId))
+                return false;
+            if (!EncodedQuery.SameReference(query.AssignedToId, assignedTo))
+                return false;
+            if (!EncodedQuery.OpenedInRange(query.OpenedFrom, query.OpenedTo, openedAt))
+                return false;
+        }
 
         if (!string.IsNullOrWhiteSpace(query.AssignmentClause))
         {
@@ -1848,25 +1866,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             }
         }
 
-        return PassesText(query.Text, number, haystack);
+        return EncodedQuery.Matches(query.Text, number, haystack);
     }
 
-    private static bool PassesText(string? text, string number, IEnumerable<string> haystack)
-    {
-        var clause = EncodedQuery.TextSearch(text);
-        if (clause.Length == 0)
-            return true;
-        if (clause.StartsWith("number=", StringComparison.Ordinal))
-            return number.Equals(clause["number=".Length..], StringComparison.OrdinalIgnoreCase);
-        if (clause.StartsWith("numberSTARTSWITH", StringComparison.Ordinal))
-            return number.StartsWith(clause["numberSTARTSWITH".Length..], StringComparison.OrdinalIgnoreCase);
-        if (clause.StartsWith("numberLIKE", StringComparison.Ordinal))
-            return number.Contains(clause["numberLIKE".Length..], StringComparison.OrdinalIgnoreCase);
-
-        const string marker = "123TEXTQUERY321=";
-        var needle = clause.StartsWith(marker, StringComparison.Ordinal) ? clause[marker.Length..] : clause;
-        return string.Join('\n', haystack).Contains(needle, StringComparison.OrdinalIgnoreCase);
-    }
+    private static string IdOf(ReferenceValue value) => value.SysId ?? "";
 
     private string JournalText(string sysId) =>
         _journal.TryGetValue(sysId, out var notes) ? string.Join('\n', notes.Select(note => note.Text)) : "";

@@ -879,7 +879,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     }
 
     public Task<PagedResult<KnowledgeArticle>> SearchKnowledgeAsync(TicketQuery query, CancellationToken cancellationToken) =>
-        SearchAsync("kb_knowledge", KnowledgeFields, query, RecordMapper.Knowledge, cancellationToken);
+        SearchAsync("kb_knowledge", KnowledgeFields, query, RecordMapper.Knowledge, cancellationToken, SearchFieldSet.Knowledge);
 
     public Task<KnowledgeArticle> GetKnowledgeAsync(string sysId, CancellationToken cancellationToken) =>
         GetOneAsync("kb_knowledge", sysId, KnowledgeFields, RecordMapper.Knowledge, cancellationToken);
@@ -1386,10 +1386,11 @@ public sealed class ServiceNowClient : IServiceNowClient
         string fields,
         TicketQuery query,
         Func<JsonElement, T> map,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SearchFieldSet textFields = SearchFieldSet.Task)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var clause = await BuildClauseAsync(query, cancellationToken).ConfigureAwait(false);
+        var clause = await BuildClauseAsync(query, textFields, cancellationToken).ConfigureAwait(false);
         var limit = Math.Clamp(query.Limit, 1, 100);
         var offset = Math.Max(0, query.Offset);
         var result = await GetListAsync(table, fields, clause, limit, offset, cancellationToken).ConfigureAwait(false);
@@ -1400,7 +1401,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
-    private async Task<string> BuildClauseAsync(TicketQuery query, CancellationToken cancellationToken)
+    private async Task<string> BuildClauseAsync(TicketQuery query, SearchFieldSet textFields, CancellationToken cancellationToken)
     {
         var assignment = query.AssignmentClause;
         if (string.IsNullOrWhiteSpace(assignment))
@@ -1419,8 +1420,21 @@ public sealed class ServiceNowClient : IServiceNowClient
             : "request=" + EncodedQuery.SafeToken(query.ParentRequestId, "request id");
         if (!string.IsNullOrWhiteSpace(query.ExtraClause))
             extra = extra.Length == 0 ? query.ExtraClause : extra + "^" + query.ExtraClause;
+        // Knowledge articles have no assignment group, assignee, or opened_at. The search
+        // page hides them while those filters are set instead of dropping every article.
+        if (textFields != SearchFieldSet.Knowledge)
+        {
+            var recordFilters = EncodedQuery.RecordFilters(
+                query.AssignmentGroupId,
+                query.AssignedToId,
+                query.OpenedFrom,
+                query.OpenedTo);
+            if (recordFilters.Length > 0)
+                extra = extra.Length == 0 ? recordFilters : extra + "^" + recordFilters;
+        }
+
         return EncodedQuery.Build(
-            EncodedQuery.TextSearch(query.Text),
+            EncodedQuery.TextSearch(query.Text, textFields),
             assignment,
             OpenListClause(query),
             extra);

@@ -38,6 +38,36 @@ public class ServiceNowClientTests
     }
 
     [Fact]
+    public async Task SearchFiltersAndWildcardsStayInTheEncodedQuery()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""{"result":[]}"""));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        await client.SearchIncidentsAsync(new TicketQuery
+        {
+            Text = "vpn + printer*",
+            Activity = ActivityFilter.Any,
+            Assignment = AssignmentScope.Any,
+            AssignmentGroupId = "group-cs",
+            AssignedToId = "sample-user^ORpriority=1",
+            OpenedFrom = "2026-09-01",
+            OpenedTo = "2026-09-30"
+        }, CancellationToken.None);
+
+        var call = handler.Calls.Single();
+        Assert.DoesNotContain("<", call.PathAndQuery);
+        Assert.Contains("opened_at%3C%3D", call.PathAndQuery);
+        var query = QueryOf(call.PathAndQuery);
+        Assert.Contains("123TEXTQUERY321=vpn", query);
+        Assert.Contains("(short_descriptionLIKEprinter*^ORdescriptionLIKEprinter*^ORwork_notesLIKEprinter*^ORcommentsLIKEprinter*)", query);
+        Assert.Contains("assignment_group=group-cs", query);
+        Assert.Contains("opened_at>=2026-09-01@00:00:00", query);
+        Assert.Contains("opened_at<=2026-09-30@23:59:59", query);
+        Assert.DoesNotContain("priority=1", query);
+        Assert.DoesNotContain("assigned_to=", query);
+    }
+
+    [Fact]
     public async Task CreateAndResolveSendOnlyTheFieldsTheAgentChanged()
     {
         var handler = new StubHandler((request, _) =>

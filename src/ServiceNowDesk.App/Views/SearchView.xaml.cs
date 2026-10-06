@@ -8,12 +8,28 @@ namespace ServiceNowDesk.Views;
 
 public partial class SearchView
 {
+    private SearchWorkspaceViewModel? _search;
+
     public SearchView()
     {
         InitializeComponent();
+        DataContextChanged += (_, _) => HookSearch();
     }
 
-    private void FilterChanged(object sender, RoutedEventArgs e)
+    private void HookSearch()
+    {
+        if (_search is not null)
+            _search.SearchFiltersChanged -= SearchFiltersChanged;
+        _search = DataContext as SearchWorkspaceViewModel;
+        if (_search is not null)
+            _search.SearchFiltersChanged += SearchFiltersChanged;
+    }
+
+    private void FilterChanged(object sender, RoutedEventArgs e) => RefreshSearch();
+
+    private void SearchFiltersChanged(object? sender, EventArgs e) => RefreshSearch();
+
+    private void RefreshSearch()
     {
         if (!IsLoaded)
             return;

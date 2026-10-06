@@ -22,6 +22,25 @@ public sealed class IncidentTemplate
     public string AssignedToDisplay { get; set; } = "";
     public string CallerId { get; set; } = "";
     public string CallerDisplay { get; set; } = "";
+
+    public override string ToString() => string.IsNullOrWhiteSpace(Name) ? "" : Name.Trim();
+
+    /// <summary>
+    /// Local templates and ServiceNow <c>sys_template</c> rows, sorted A–Z by name.
+    /// A blank name sorts last.
+    /// </summary>
+    public static IReadOnlyList<IncidentTemplate> Merge(IEnumerable<IncidentTemplate>? local, IEnumerable<IncidentTemplate>? serviceNow)
+    {
+        var combined = new List<IncidentTemplate>();
+        if (local is not null)
+            combined.AddRange(local);
+        if (serviceNow is not null)
+            combined.AddRange(serviceNow);
+        return combined
+            .OrderBy(template => string.IsNullOrWhiteSpace(template.Name) ? 1 : 0)
+            .ThenBy(template => template.Name?.Trim() ?? "", StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
 }
 
 public interface IIncidentTemplateStore
@@ -35,8 +54,7 @@ public sealed class MemoryIncidentTemplateStore : IIncidentTemplateStore
 {
     private readonly List<IncidentTemplate> _items = [];
 
-    public IReadOnlyList<IncidentTemplate> List() =>
-        _items.Select(Clone).OrderBy(template => template.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+    public IReadOnlyList<IncidentTemplate> List() => IncidentTemplate.Merge(_items.Select(Clone), null);
 
     public void Save(IncidentTemplate template)
     {
@@ -114,15 +132,15 @@ public sealed class FileIncidentTemplateStore : IIncidentTemplateStore
             if (!File.Exists(path))
                 return [];
             var templates = JsonSerializer.Deserialize<List<IncidentTemplate>>(File.ReadAllText(path)) ?? [];
-            return templates
-                .Where(template => !string.IsNullOrWhiteSpace(template.Name))
-                .Select(template =>
-                {
-                    template.Name = template.Name.Trim();
-                    return template;
-                })
-                .OrderBy(template => template.Name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            return IncidentTemplate.Merge(
+                templates
+                    .Where(template => !string.IsNullOrWhiteSpace(template.Name))
+                    .Select(template =>
+                    {
+                        template.Name = template.Name.Trim();
+                        return template;
+                    }),
+                null);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {

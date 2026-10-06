@@ -84,6 +84,10 @@ public sealed record TicketQuery
     public AssignmentScope Assignment { get; init; } = AssignmentScope.Any;
     public ActivityFilter Activity { get; init; } = ActivityFilter.Open;
     public string? AssignmentClause { get; init; }
+    public string? AssignmentGroupId { get; init; }
+    public string? AssignedToId { get; init; }
+    public string? OpenedFrom { get; init; }
+    public string? OpenedTo { get; init; }
     public string? ParentRequestId { get; init; }
     public string? ExtraClause { get; init; }
     public int Limit { get; init; } = 50;

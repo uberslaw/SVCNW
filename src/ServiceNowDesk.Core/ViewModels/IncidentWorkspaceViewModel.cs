@@ -37,8 +37,13 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     public ObservableCollection<IncidentTemplate> Templates { get; } = [];
     public bool HasTemplates => Templates.Count > 0;
 
+    [ObservableProperty] private IncidentTemplate? selectedTemplate;
     [ObservableProperty] private string templateName = "";
     [ObservableProperty] private string templateMessage = "";
+
+    public Task SelectedTemplateApplied { get; private set; } = Task.CompletedTask;
+
+    private bool _suppressTemplate;
     public ObservableCollection<Choice> StateChoices { get; } = [];
     public ObservableCollection<Choice> ImpactChoices { get; } = [];
     public ObservableCollection<Choice> UrgencyChoices { get; } = [];
@@ -357,6 +362,13 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         };
     }
 
+    partial void OnSelectedTemplateChanged(IncidentTemplate? value)
+    {
+        if (_suppressTemplate || value is null)
+            return;
+        SelectedTemplateApplied = ApplyTemplateAsync(value);
+    }
+
     [RelayCommand]
     private async Task ApplyTemplateAsync(IncidentTemplate? template)
     {
@@ -454,9 +466,12 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
 
     private void ReloadTemplates()
     {
+        _suppressTemplate = true;
+        SelectedTemplate = null;
         Templates.Clear();
-        foreach (var template in _templates.List())
+        foreach (var template in IncidentTemplate.Merge(_templates.List(), null))
             Templates.Add(template);
+        _suppressTemplate = false;
     }
 
     private IncidentTemplate CaptureTemplate()

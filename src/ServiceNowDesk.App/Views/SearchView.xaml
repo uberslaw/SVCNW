@@ -1,16 +1,28 @@
 <UserControl x:Class="ServiceNowDesk.Views.SearchView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:ServiceNowDesk.Controls">
     <DockPanel Margin="16">
-        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,4">
             <CheckBox Content="Incidents" IsChecked="{Binding IncludeIncidents}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <CheckBox Content="Requests" IsChecked="{Binding IncludeRequests}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <CheckBox Content="Request items" IsChecked="{Binding IncludeItems}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <CheckBox Content="Walk-up" IsChecked="{Binding IncludeWalkUps}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <CheckBox Content="Knowledge" IsChecked="{Binding IncludeKnowledge}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
-            <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,12,6"/>
+            <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,12,6" TextWrapping="Wrap"/>
             <TextBlock Text="Loading…" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
         </WrapPanel>
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8" ToolTip="Leave a box empty to skip that filter. + requires every term. * is a wildcard. Quotes are optional.">
+            <TextBlock Text="Group" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+            <controls:ReferenceEditor DataContext="{Binding AssignmentGroup}" Width="200" Margin="0,0,14,6" ToolTip="Assignment group. Empty means any group."/>
+            <TextBlock Text="Assignee" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+            <controls:ReferenceEditor DataContext="{Binding Assignee}" Width="200" Margin="0,0,14,6" ToolTip="Assignee. Empty means anyone."/>
+            <TextBlock Text="Opened" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+            <DatePicker SelectedDate="{Binding OpenedFrom}" Width="130" Margin="0,0,6,6" ToolTip="Opened on or after"/>
+            <TextBlock Text="to" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+            <DatePicker SelectedDate="{Binding OpenedTo}" Width="130" Margin="0,0,0,6" ToolTip="Opened on or before"/>
+        </WrapPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding FilterMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding FilterMessage, Converter={StaticResource StringVis}}"/>
         <TextBlock DockPanel.Dock="Top" Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}"/>
         <TextBlock DockPanel.Dock="Bottom" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="Double-click a row, or press Enter, to open it. Back on the record returns to this list."/>
         <ListBox x:Name="Results"

@@ -1002,6 +1002,7 @@ public partial class MainViewModel : ObservableObject
         WalkUps.Detach();
         Catalog.Attach(null);
         Search.Reset();
+        Search.Attach(null);
         Knowledge.Clear();
         _returnStack.Clear();
         UpdateBack();
@@ -1015,6 +1016,7 @@ public partial class MainViewModel : ObservableObject
         RequestedItems.Attach(client);
         WalkUps.Attach(client);
         Catalog.Attach(client);
+        Search.Attach(client);
         Knowledge.Attach(client);
     }
 
