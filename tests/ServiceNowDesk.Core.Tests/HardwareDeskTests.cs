@@ -94,13 +94,18 @@ public class HardwareDeskTests
         workspace.ScanText = "5CG6245F8S";
         await workspace.ReceiveScanCommand.ExecuteAsync(null);
         Assert.Equal("", workspace.ScanText);
+        var exact = Assert.Single(workspace.Batch);
+        Assert.Equal("5CG6245F8S", exact.Text);
+        Assert.Equal("", exact.Status);
+        Assert.Equal(0, HardwarePatches(client));
+        Assert.Equal(HardwareCatalog.InTransit, (await client.GetHardwareAsync("hw-transit", CancellationToken.None)).InstallStatus);
 
+        await workspace.LookupRowCommand.ExecuteAsync(exact);
         var received = await client.GetHardwareAsync("hw-transit", CancellationToken.None);
         Assert.Equal(HardwareCatalog.InStock, received.InstallStatus);
         Assert.Equal(HardwareCatalog.Available, received.Substatus);
         Assert.Equal("stock-bne", received.Stockroom.SysId);
         Assert.Equal("For testing by Mark Lindsay", received.Comments);
-        var exact = Assert.Single(workspace.Batch);
         Assert.Equal("5CG6245F8S", exact.Text);
         Assert.Equal("Received", exact.Status);
         Assert.Equal(HardwareCatalog.InTransit, exact.OldState);
@@ -114,8 +119,13 @@ public class HardwareDeskTests
         Assert.Equal(patches, HardwarePatches(client));
         var junk = workspace.Batch[0];
         Assert.Equal("35CG6245F8S", junk.Text);
-        Assert.Equal("Unmatched", junk.Status);
+        Assert.Equal("", junk.Status);
         Assert.Equal(HardwareSerial.HpPrefixHint, junk.Hint);
+
+        await workspace.LookupRowCommand.ExecuteAsync(junk);
+        Assert.Equal("35CG6245F8S", junk.Text);
+        Assert.Equal("Unmatched", junk.Status);
+        Assert.Equal(patches, HardwarePatches(client));
         Assert.Equal(5, client.HardwareCount);
 
         junk.Text = "5CG6245F8S";
@@ -140,6 +150,10 @@ public class HardwareDeskTests
         await workspace.ReceiveScanCommand.ExecuteAsync(null);
         var hp = Assert.Single(workspace.Batch);
         Assert.Equal("5cd6220GYW", hp.Text);
+        Assert.Equal("", hp.Status);
+        Assert.Equal(0, HardwarePatches(client));
+        await workspace.LookupRowCommand.ExecuteAsync(hp);
+        Assert.Equal("5cd6220GYW", hp.Text);
         Assert.Equal("Received", hp.Status);
         Assert.Equal("5CD6220GYW", hp.MatchedSerial);
         var stored = await client.GetHardwareAsync("hw-hp-case", CancellationToken.None);
@@ -149,6 +163,10 @@ public class HardwareDeskTests
         workspace.ScanText = "ABCDEFG";
         await workspace.ReceiveScanCommand.ExecuteAsync(null);
         var dell = workspace.Batch[0];
+        Assert.Equal("ABCDEFG", dell.Text);
+        Assert.Equal("", dell.Hint);
+        Assert.Equal("", dell.Status);
+        await workspace.LookupRowCommand.ExecuteAsync(dell);
         Assert.Equal("ABCDEFG", dell.Text);
         Assert.Equal("", dell.Hint);
         Assert.Equal("Received", dell.Status);
@@ -169,8 +187,12 @@ public class HardwareDeskTests
 
         var row = Assert.Single(workspace.Batch);
         Assert.Equal("SN:5cd6220GYW", row.Text);
-        Assert.Equal("Unmatched", row.Status);
+        Assert.Equal("", row.Status);
         Assert.Equal(HardwareSerial.HpPrefixHint, row.Hint);
+        Assert.Equal(0, HardwarePatches(client));
+        await workspace.LookupRowCommand.ExecuteAsync(row);
+        Assert.Equal("SN:5cd6220GYW", row.Text);
+        Assert.Equal("Unmatched", row.Status);
         Assert.Equal(0, HardwarePatches(client));
         Assert.Equal(HardwareCatalog.InTransit, (await client.GetHardwareAsync("hw-hp-case", CancellationToken.None)).InstallStatus);
 
@@ -194,6 +216,10 @@ public class HardwareDeskTests
 
         var row = Assert.Single(workspace.Batch);
         Assert.Equal("ZZZNOTREAL1", row.Text);
+        Assert.Equal("", row.Status);
+        Assert.Equal(0, HardwarePatches(client));
+        await workspace.LookupRowCommand.ExecuteAsync(row);
+        Assert.Equal("ZZZNOTREAL1", row.Text);
         Assert.Equal("Unmatched", row.Status);
         Assert.Equal("", row.Hint);
         Assert.Equal(5, client.HardwareCount);
@@ -210,6 +236,9 @@ public class HardwareDeskTests
 
         var row = Assert.Single(workspace.Batch);
         Assert.Equal("5CG6245F8S", row.Text);
+        Assert.Equal("", row.Status);
+        Assert.Equal(0, HardwarePatches(client));
+        await workspace.LookupRowCommand.ExecuteAsync(row);
         Assert.Equal("Needs stockroom", row.Status);
         Assert.Contains("stockroom", workspace.ReceiveMessage, StringComparison.OrdinalIgnoreCase);
         var asset = await client.GetHardwareAsync("hw-transit", CancellationToken.None);

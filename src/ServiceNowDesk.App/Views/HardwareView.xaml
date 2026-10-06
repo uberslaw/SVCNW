@@ -11,7 +11,7 @@
         <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="12" Margin="0,0,0,12">
             <StackPanel>
                 <TextBlock Text="Receive laptops" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                <TextBlock Text="Choose one stockroom for the batch. Type a serial or let the scanner type it, then press Enter. Edit a row if the scan has extra characters, then Look up." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                <TextBlock Text="Choose one stockroom for the batch. Type a serial or let the scanner type it, then press Enter. That adds the exact text as a row and clears this box. Look up, press Enter on the row, or leave the field to match that text. Extra characters in front of 5C are only a hint." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                 <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="280"/>

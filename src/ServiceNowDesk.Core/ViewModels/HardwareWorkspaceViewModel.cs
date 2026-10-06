@@ -136,16 +136,17 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task ReceiveScanAsync()
+    private Task ReceiveScanAsync()
     {
         var scan = ScanText ?? "";
         if (string.IsNullOrWhiteSpace(scan) || _client is null)
-            return;
+            return Task.CompletedTask;
 
+        // The scanner's Enter only queues the exact text. Lookup waits until
+        // Look up, Enter on the row, or leaving the field.
         ScanText = "";
-        var row = new HardwareScanRow { Text = scan };
-        Batch.Insert(0, row);
-        await LookupCoreAsync(row);
+        Batch.Insert(0, new HardwareScanRow { Text = scan });
+        return Task.CompletedTask;
     }
 
     [RelayCommand]
