@@ -61,6 +61,23 @@ public static partial class EncodedQuery
         return null;
     }
 
+    public static string ActiveUserSearch(string term) =>
+        "nameLIKE" + term + "^ORemailLIKE" + term + "^ORuser_nameLIKE" + term + "^active=true";
+
+    public static string ActiveUserExact(string term)
+    {
+        static string Group(string clause) => clause + "^active=true";
+        return string.Join("^NQ",
+        [
+            Group("name=" + term),
+            Group("email=" + term),
+            Group("user_name=" + term),
+            Group("nameSTARTSWITH" + term + "^nameENDSWITH" + term),
+            Group("emailSTARTSWITH" + term + "^emailENDSWITH" + term),
+            Group("user_nameSTARTSWITH" + term + "^user_nameENDSWITH" + term)
+        ]);
+    }
+
     public static string ActivityClause(ActivityFilter activity) => activity switch
     {
         ActivityFilter.Open => "active=true",

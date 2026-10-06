@@ -622,10 +622,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         if (term.Length < 2)
             return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
 
-        var query = "active=true^nameLIKE" + term
-            + "^ORactive=true^emailLIKE" + term
-            + "^ORactive=true^user_nameLIKE" + term;
-        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", query, true, 20, cancellationToken);
+        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", EncodedQuery.ActiveUserSearch(term), true, 20, cancellationToken);
     }
 
     public Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken)
@@ -634,13 +631,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         if (term.Length < 2)
             return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
 
-        var query = "active=true^name=" + term
-            + "^ORactive=true^email=" + term
-            + "^ORactive=true^user_name=" + term
-            + "^ORactive=true^nameSTARTSWITH" + term + "^nameENDSWITH" + term
-            + "^ORactive=true^emailSTARTSWITH" + term + "^emailENDSWITH" + term
-            + "^ORactive=true^user_nameSTARTSWITH" + term + "^user_nameENDSWITH" + term;
-        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", query, true, 20, cancellationToken);
+        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", EncodedQuery.ActiveUserExact(term), true, 20, cancellationToken);
     }
 
     public async Task<IReadOnlyList<Choice>> ListAssignmentGroupsAsync(CancellationToken cancellationToken)
@@ -964,11 +955,15 @@ public sealed class ServiceNowClient : IServiceNowClient
             foreach (var row in RequireArray(result.Document).EnumerateArray())
             {
                 var sysId = SnowField.Read(row, "sys_id").Value;
-                var name = SnowField.Read(row, "name").Display;
-                if (sysId.Length == 0 || name.Length == 0)
+                if (sysId.Length == 0)
                     continue;
-                var userName = user ? SnowField.Read(row, "user_name").Display : "";
-                var email = user ? SnowField.Read(row, "email").Display : "";
+                var name = SnowField.Read(row, "name").Display.Trim();
+                var userName = user ? SnowField.Read(row, "user_name").Display.Trim() : "";
+                var email = user ? SnowField.Read(row, "email").Display.Trim() : "";
+                if (name.Length == 0)
+                    name = userName.Length > 0 ? userName : email;
+                if (name.Length == 0)
+                    continue;
                 var detail = user
                     ? (email.Length > 0 ? email : userName)
                     : SnowField.Read(row, "description").Display;

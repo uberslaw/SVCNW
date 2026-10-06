@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.ViewModels;
 
@@ -64,11 +65,24 @@ public partial class ReferenceEditor
 
     private void SuggestionList_Click(object sender, MouseButtonEventArgs e)
     {
-        if (SuggestionList.SelectedItem is ReferenceSuggestion suggestion)
+        var suggestion = SuggestionAt(e.OriginalSource) ?? SuggestionList.SelectedItem as ReferenceSuggestion;
+        if (suggestion is null)
+            return;
+        Model?.Choose(suggestion);
+        Input.Focus();
+        e.Handled = true;
+    }
+
+    private static ReferenceSuggestion? SuggestionAt(object? source)
+    {
+        var node = source as DependencyObject;
+        while (node is not null && node is not ListBox)
         {
-            Model?.Choose(suggestion);
-            Input.Focus();
-            e.Handled = true;
+            if (node is ListBoxItem item && item.DataContext is ReferenceSuggestion suggestion)
+                return suggestion;
+            node = VisualTreeHelper.GetParent(node);
         }
+
+        return null;
     }
 }
