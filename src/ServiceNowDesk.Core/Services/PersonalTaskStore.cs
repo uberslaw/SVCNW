@@ -107,7 +107,7 @@ public sealed class FilePersonalTaskStore : IPersonalTaskStore
                 var created = DateTime.TryParse(
                     stored.CreatedUtc,
                     CultureInfo.InvariantCulture,
-                    DateTimeStyles.RoundtripKind | DateTimeStyles.AdjustToUniversal,
+                    DateTimeStyles.RoundtripKind,
                     out var parsedUtc)
                     ? DateTime.SpecifyKind(parsedUtc.ToUniversalTime(), DateTimeKind.Utc)
                     : DateTime.UnixEpoch;
