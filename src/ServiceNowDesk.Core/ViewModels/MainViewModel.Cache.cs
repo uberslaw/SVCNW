@@ -1,3 +1,4 @@
+using System.Globalization;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 
@@ -30,11 +31,11 @@ public partial class MainViewModel
             Startup.Begin(1);
             if (_ui is not null)
                 await Task.Yield();
-            var error = await RunKeyedSectionAsync(live, row.Key, force: true);
-            if (error is null)
-                row.ReportSuccess();
+            var run = await RunKeyedSectionAsync(live, row.Key, force: true);
+            if (run.Error is null)
+                row.ReportSuccess(run.Note);
             else
-                row.ReportFailure(error);
+                row.ReportFailure(run.Error);
         }
         finally
         {
@@ -75,11 +76,11 @@ public partial class MainViewModel
                 await Task.Yield();
             foreach (var row in Caches)
             {
-                var error = await RunKeyedSectionAsync(live, row.Key, force: true);
-                if (error is null)
-                    row.ReportSuccess();
+                var run = await RunKeyedSectionAsync(live, row.Key, force: true);
+                if (run.Error is null)
+                    row.ReportSuccess(run.Note);
                 else
-                    row.ReportFailure(error);
+                    row.ReportFailure(run.Error);
                 row.IsBusy = false;
             }
         }
@@ -118,7 +119,7 @@ public partial class MainViewModel
         }
     }
 
-    private async Task<string?> RunKeyedSectionAsync(ServiceNowClient? live, string key, bool force)
+    private async Task<SectionRun> RunKeyedSectionAsync(ServiceNowClient? live, string key, bool force)
     {
         Startup.Start(LineName(key));
         if (_ui is not null)
@@ -130,34 +131,39 @@ public partial class MainViewModel
 
         try
         {
-            var cached = await RunKeyAsync(live, key, force);
-            if (cached)
+            var outcome = await RunKeyAsync(live, key, force);
+            if (outcome.Note is not null)
+                Startup.CompleteNoted(outcome.Note);
+            else if (outcome.Cached)
                 Startup.CompleteCached();
             else
                 Startup.Complete();
-            return null;
+            return new SectionRun(null, outcome.Note);
         }
         catch (Exception ex)
         {
             var message = WorkspaceMessages.Describe(ex);
             Startup.Fail(message);
-            return message;
+            return new SectionRun(message, null);
         }
     }
 
-    private Task<bool> RunKeyAsync(ServiceNowClient? live, string key, bool force) => key switch
+    private Task<SectionOutcome> RunKeyAsync(ServiceNowClient? live, string key, bool force) => key switch
     {
         "choices" => DownloadChoicesAsync(live, force),
         "groups" => DownloadGroupsAsync(live, force),
         "members" => DownloadMembersAsync(live, force),
+        "service-offerings" => DownloadServiceOfferingsAsync(live, force),
+        "configuration-items" => DownloadConfigurationItemsAsync(live, force),
         "incidents" or "requests" or "request-items" or "walk-ups" => DownloadListAsync(key, force),
-        _ => Task.FromResult(false)
+        _ => Task.FromResult(new SectionOutcome(false, null))
     };
 
     private async Task ApplyFreshCachesAsync(ServiceNowClient? live)
     {
         await LoadChoiceListsAsync();
         await BindGroupsAsync();
+        await BindReferenceChoicesAsync();
         var snapshot = LoadLists();
         ApplyFreshList("incidents", snapshot);
         ApplyFreshList("requests", snapshot);
@@ -180,11 +186,17 @@ public partial class MainViewModel
                 : FormCatalogPolicy.IsStale(
                     key == "groups" ? snapshot?.GroupsCapturedAt ?? default : snapshot?.MembersCapturedAt ?? default,
                     DateTimeOffset.UtcNow),
+            "service-offerings" => live is not null
+                ? live.ServiceOfferingsAreStale
+                : FormCatalogPolicy.IsStale(snapshot?.ServiceOfferingsCapturedAt ?? default, DateTimeOffset.UtcNow),
+            "configuration-items" => live is not null
+                ? live.ConfigurationItemsAreStale
+                : FormCatalogPolicy.IsStale(snapshot?.ConfigurationItemsCapturedAt ?? default, DateTimeOffset.UtcNow),
             _ => ListIsStale(ListFor(snapshot, key))
         };
     }
 
-    private async Task<bool> DownloadChoicesAsync(ServiceNowClient? live, bool force)
+    private async Task<SectionOutcome> DownloadChoicesAsync(ServiceNowClient? live, bool force)
     {
         var cached = !force && !NeedsDownload(live, "choices");
         FormCatalogSnapshot? backup = null;
@@ -230,10 +242,10 @@ public partial class MainViewModel
             throw failure;
         if (live is null && !cached)
             RememberPracticeStamp("choices");
-        return cached;
+        return new SectionOutcome(cached, null);
     }
 
-    private async Task<bool> DownloadGroupsAsync(ServiceNowClient? live, bool force)
+    private async Task<SectionOutcome> DownloadGroupsAsync(ServiceNowClient? live, bool force)
     {
         var cached = !force && !NeedsDownload(live, "groups");
         FormCatalogSnapshot? backup = null;
@@ -264,14 +276,14 @@ public partial class MainViewModel
         await BindGroupsAsync();
         if (live is null && !cached)
             RememberPracticeStamp("groups");
-        return cached;
+        return new SectionOutcome(cached, null);
     }
 
-    private async Task<bool> DownloadMembersAsync(ServiceNowClient? live, bool force)
+    private async Task<SectionOutcome> DownloadMembersAsync(ServiceNowClient? live, bool force)
     {
         var cached = !force && !NeedsDownload(live, "members");
         if (cached)
-            return true;
+            return new SectionOutcome(true, null);
 
         FormCatalogSnapshot? backup = null;
         if (force && live is not null)
@@ -288,7 +300,7 @@ public partial class MainViewModel
             try
             {
                 await live.DownloadAssignmentMembersAsync(SplashProgress(), CancellationToken.None);
-                return false;
+                return new SectionOutcome(false, null);
             }
             catch (Exception)
             {
@@ -314,18 +326,96 @@ public partial class MainViewModel
         }
 
         RememberPracticeStamp("members");
-        return false;
+        return new SectionOutcome(false, null);
     }
 
-    private async Task<bool> DownloadListAsync(string key, bool force)
+    private Task<SectionOutcome> DownloadServiceOfferingsAsync(ServiceNowClient? live, bool force) =>
+        DownloadReferenceListAsync(
+            live,
+            force,
+            "service-offerings",
+            client => client.ClearServiceOfferingCache(),
+            (client, progress, token) => client.DownloadServiceOfferingsAsync(progress, token),
+            FormCatalogPolicy.MaxServiceOfferings);
+
+    private Task<SectionOutcome> DownloadConfigurationItemsAsync(ServiceNowClient? live, bool force) =>
+        DownloadReferenceListAsync(
+            live,
+            force,
+            "configuration-items",
+            client => client.ClearConfigurationItemCache(),
+            (client, progress, token) => client.DownloadConfigurationItemsAsync(progress, token),
+            FormCatalogPolicy.MaxConfigurationItems);
+
+    private async Task<SectionOutcome> DownloadReferenceListAsync(
+        ServiceNowClient? live,
+        bool force,
+        string key,
+        Action<ServiceNowClient> clear,
+        Func<ServiceNowClient, IProgress<DownloadTick>, CancellationToken, Task<ReferenceDownload>> download,
+        int cap)
+    {
+        var cached = !force && !NeedsDownload(live, key);
+        FormCatalogSnapshot? backup = null;
+        if (force && live is not null)
+        {
+            backup = live.ExportCatalog();
+            clear(live);
+        }
+
+        if (force && live is null)
+            ClearPracticeStamp(key);
+
+        string? note = null;
+        try
+        {
+            if (live is not null && !cached)
+            {
+                var downloaded = await download(live, SplashProgress(), CancellationToken.None);
+                if (downloaded.Truncated || downloaded.Count >= cap)
+                    note = downloaded.Count.ToString(CultureInfo.InvariantCulture)
+                        + " saved; stopped at the "
+                        + cap.ToString(CultureInfo.InvariantCulture)
+                        + " limit";
+            }
+        }
+        catch (Exception)
+        {
+            if (backup is not null)
+                live!.RestoreCatalog(backup);
+            await BindReferenceChoicesAsync();
+            throw;
+        }
+
+        await BindReferenceChoicesAsync();
+        if (live is null && !cached)
+            RememberPracticeStamp(key);
+        return new SectionOutcome(cached, note);
+    }
+
+    private async Task BindReferenceChoicesAsync()
     {
         if (_client is null)
-            return false;
+            return;
+        Incidents.ServiceOffering.Use(_client);
+        Incidents.ConfigurationItem.Use(_client);
+        RequestedItems.ServiceOffering.Use(_client);
+        RequestedItems.ConfigurationItem.Use(_client);
+        await Incidents.ServiceOffering.LoadAsync();
+        await Incidents.ConfigurationItem.LoadAsync();
+        await RequestedItems.ServiceOffering.LoadAsync();
+        await RequestedItems.ConfigurationItem.LoadAsync();
+    }
+
+    private async Task<SectionOutcome> DownloadListAsync(string key, bool force)
+    {
+        if (_client is null)
+            return new SectionOutcome(false, null);
 
         var section = SectionFor(key);
         var workspace = WorkspaceFor(key);
         if (!force && TryApplyFreshList(key))
-            return true;
+            return new SectionOutcome(true, null);
 
         CachedTicketList? previous = null;
         if (force)
@@ -343,7 +433,7 @@ public partial class MainViewModel
             _loadedFor[section] = workspace.SearchText;
             if (string.IsNullOrWhiteSpace(workspace.SearchText))
                 SaveWorkspaceList(section, workspace);
-            return false;
+            return new SectionOutcome(false, null);
         }
         catch
         {
@@ -374,6 +464,10 @@ public partial class MainViewModel
         ApplyList(key, list);
         return true;
     }
+
+    private readonly record struct SectionOutcome(bool Cached, string? Note);
+
+    private readonly record struct SectionRun(string? Error, string? Note);
 
     private void ApplyFreshList(string key, DeskListSnapshot? snapshot)
     {
@@ -442,6 +536,12 @@ public partial class MainViewModel
             case "members":
                 snapshot.MembersCapturedAt = now;
                 break;
+            case "service-offerings":
+                snapshot.ServiceOfferingsCapturedAt = now;
+                break;
+            case "configuration-items":
+                snapshot.ConfigurationItemsCapturedAt = now;
+                break;
         }
 
         _lists.Save(DeskListScope.Practice, snapshot);
@@ -462,6 +562,12 @@ public partial class MainViewModel
                 break;
             case "members":
                 snapshot.MembersCapturedAt = default;
+                break;
+            case "service-offerings":
+                snapshot.ServiceOfferingsCapturedAt = default;
+                break;
+            case "configuration-items":
+                snapshot.ConfigurationItemsCapturedAt = default;
                 break;
         }
 
@@ -514,6 +620,8 @@ public partial class MainViewModel
         "choices" => "Choices",
         "groups" => "Assignment groups",
         "members" => "Assignment group members",
+        "service-offerings" => "Service offerings",
+        "configuration-items" => "Configuration items",
         "incidents" => "Incidents",
         "requests" => "Requests",
         "request-items" => "Request items",

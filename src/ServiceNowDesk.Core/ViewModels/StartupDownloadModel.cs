@@ -77,6 +77,19 @@ public sealed partial class StartupDownloadModel : ObservableObject
         }
     }
 
+    public void CompleteNoted(string note)
+    {
+        lock (_gate)
+        {
+            if (_current < 0 || _current >= Lines.Count)
+                return;
+            Lines[_current].ShowPercent(100);
+            var text = string.IsNullOrWhiteSpace(note) ? "saved" : note.Trim();
+            Lines[_current].ShowNote(text);
+            FinishCurrent();
+        }
+    }
+
     public void CompleteCached()
     {
         lock (_gate)

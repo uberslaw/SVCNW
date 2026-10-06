@@ -17,9 +17,9 @@ public sealed partial class CacheRowModel : ObservableObject
     [ObservableProperty] private bool isFailed;
     [ObservableProperty] private bool isBusy;
 
-    public void ReportSuccess()
+    public void ReportSuccess(string? note = null)
     {
-        Status = "Refreshed.";
+        Status = string.IsNullOrWhiteSpace(note) ? "Refreshed." : note.Trim();
         IsFailed = false;
     }
 

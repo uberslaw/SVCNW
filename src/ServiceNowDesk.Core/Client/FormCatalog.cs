@@ -11,6 +11,18 @@ public static class FormCatalogPolicy
     public const int MaxAssignmentGroups = 500;
     public const int MaxGroupMembers = 8000;
 
+    /// <summary>
+    /// Active service offerings are paged until ServiceNow has no more rows.
+    /// This cap only stops a runaway download. The list is usually much smaller.
+    /// </summary>
+    public const int MaxServiceOfferings = 5000;
+
+    /// <summary>
+    /// Active configuration items are paged until this many rows are saved.
+    /// The CMDB can be larger. A download that reaches the cap keeps those rows.
+    /// </summary>
+    public const int MaxConfigurationItems = 5000;
+
     public static bool IsStale(DateTimeOffset capturedAt, DateTimeOffset now) =>
         capturedAt == default || now - capturedAt >= MaxAge;
 }
@@ -64,6 +76,14 @@ public sealed class CachedGroupMember
     public string Name { get; set; } = "";
 }
 
+public sealed class CachedNamedRecord
+{
+    public string SysId { get; set; } = "";
+    public string Name { get; set; } = "";
+}
+
+public readonly record struct ReferenceDownload(int Count, bool Truncated);
+
 public sealed class FormCatalogSnapshot
 {
     public DateTimeOffset CapturedAt { get; set; }
@@ -75,6 +95,12 @@ public sealed class FormCatalogSnapshot
     public List<CachedCatalogForm> CatalogItems { get; set; } = [];
     public List<CachedAssignmentGroup> Groups { get; set; } = [];
     public List<CachedGroupMember> Members { get; set; } = [];
+    public DateTimeOffset ServiceOfferingsCapturedAt { get; set; }
+    public bool ServiceOfferingsTruncated { get; set; }
+    public List<CachedNamedRecord> ServiceOfferings { get; set; } = [];
+    public DateTimeOffset ConfigurationItemsCapturedAt { get; set; }
+    public bool ConfigurationItemsTruncated { get; set; }
+    public List<CachedNamedRecord> ConfigurationItems { get; set; } = [];
 }
 
 public interface IFormCatalogStore

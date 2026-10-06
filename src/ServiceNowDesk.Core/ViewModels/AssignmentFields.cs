@@ -50,6 +50,11 @@ public sealed class AssignmentFields : ObservableObject
         ? "Choose a group to list its members."
         : Members.Count <= 1 ? "No members are saved for this group yet." : "";
 
+    /// <summary>
+    /// The name of the selected member. Empty when nobody is assigned. Never the sys_id.
+    /// </summary>
+    public string SelectedMemberLabel => VisibleMemberLabel(_memberId);
+
     public event EventHandler? Changed;
 
     public void Use(IServiceNowClient? client) => _client = client;
@@ -190,6 +195,19 @@ public sealed class AssignmentFields : ObservableObject
         field = next;
         changed(next);
         OnPropertyChanged(propertyName);
+        if (propertyName == nameof(MemberId))
+            OnPropertyChanged(nameof(SelectedMemberLabel));
+    }
+
+    private string VisibleMemberLabel(string id)
+    {
+        if (string.IsNullOrEmpty(id))
+            return "";
+        var match = Members.FirstOrDefault(choice => choice.Value.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+            return "";
+        var label = match.ToString() ?? "";
+        return label.Equals(id, StringComparison.OrdinalIgnoreCase) ? "" : label;
     }
 
     private void KeepBlankMember()
@@ -253,6 +271,7 @@ public sealed class AssignmentFields : ObservableObject
 
             MemberId = keep;
             OnPropertyChanged(nameof(MemberId));
+            OnPropertyChanged(nameof(SelectedMemberLabel));
             OnPropertyChanged(nameof(MemberHint));
         }
         finally

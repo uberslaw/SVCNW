@@ -4,7 +4,10 @@ using ServiceNowDesk.Models;
 
 namespace ServiceNowDesk.ViewModels;
 
-public sealed record AuthChoice(ServiceNowAuthMode Mode, string Label);
+public sealed record AuthChoice(ServiceNowAuthMode Mode, string Label)
+{
+    public override string ToString() => Label ?? "";
+}
 
 public partial class ConnectionViewModel : ObservableObject
 {
