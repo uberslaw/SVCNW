@@ -39,75 +39,192 @@
         <Style x:Key="HelpBullet" TargetType="TextBlock" BasedOn="{StaticResource HelpBody}">
             <Setter Property="Margin" Value="8,0,0,4"/>
         </Style>
+        <Style x:Key="HelpQueueName" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Margin" Value="0,0,0,2"/>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="24,20,24,20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Text="Authentication Setup" Style="{StaticResource SectionTitle}" Margin="0,0,0,14"/>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+            <Button x:Name="AuthTopicButton" Content="Authentication" Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" Click="AuthTopic_Click"/>
+            <Button x:Name="NotificationsTopicButton" Content="Notifications" Style="{StaticResource SecondaryButton}" Click="NotificationsTopic_Click"/>
+        </StackPanel>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel>
-                <TextBlock Style="{StaticResource HelpBody}" Margin="0,0,0,14"
-                           Text="Each person signs in as themselves, and ServiceNow applies that person's roles and groups. If the company uses single sign-on, use browser sign-in. OAuth is the other path, and one OAuth application covers every desk user."/>
+        <TextBlock x:Name="PageTitle" Grid.Row="1" Text="Authentication Setup" Style="{StaticResource SectionTitle}" Margin="0,0,0,14"/>
 
-                <Border Style="{StaticResource HelpCard}">
-                    <StackPanel>
-                        <TextBlock Text="Browser sign-in (SSO)" Style="{StaticResource HelpHeading}"/>
-                        <TextBlock Style="{StaticResource HelpBody}"
-                                   Text="On Connection, choose Browser sign-in (SSO), enter the instance URL, and click Sign in with browser. Finish the company sign-in in that window. It closes when ServiceNow accepts the session, and the desk then calls the APIs as that person."/>
-                        <TextBlock Style="{StaticResource HelpBody}"
-                                   Text="Username and password will fail on these instances. The banner says ServiceNow requires auth information. That is the single sign-on check, not a wrong password."/>
-                        <TextBlock Style="{StaticResource HelpBody}" Margin="0"
-                                   Text="The browser session is stored with Windows DPAPI for the current Windows user. It stays signed in for 24 hours from that sign-in, or less when the token expires sooner. When it expires, the app clears it and returns to Connection so you can sign in with the browser again. This window needs the Microsoft Edge WebView2 runtime, which current Windows 10 and 11 installs already include."/>
-                    </StackPanel>
-                </Border>
+        <ScrollViewer x:Name="HelpScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Grid>
+                <StackPanel x:Name="AuthenticationPanel">
+                    <TextBlock Style="{StaticResource HelpBody}" Margin="0,0,0,14"
+                               Text="Each person signs in as themselves, and ServiceNow applies that person's roles and groups. If the company uses single sign-on, use browser sign-in. OAuth is the other path, and one OAuth application covers every desk user."/>
 
-                <Border Style="{StaticResource HelpCard}">
-                    <StackPanel>
-                        <TextBlock Text="What you create once" Style="{StaticResource HelpHeading}"/>
-                        <TextBlock Style="{StaticResource HelpBody}" Margin="0"
-                                   Text="In ServiceNow, go to System OAuth &gt; Application Registry. Create one &quot;OAuth API endpoint for external clients&quot;. That gives one client ID and one client secret. Every copy of ServiceNow Desk uses that same pair. People do not each need their own OAuth application, and you do not create one registry record per person."/>
-                    </StackPanel>
-                </Border>
+                    <Border Style="{StaticResource HelpCard}">
+                        <StackPanel>
+                            <TextBlock Text="Browser sign-in (SSO)" Style="{StaticResource HelpHeading}"/>
+                            <TextBlock Style="{StaticResource HelpBody}"
+                                       Text="On Connection, choose Browser sign-in (SSO), enter the instance URL, and click Sign in with browser. Finish the company sign-in in that window. It closes when ServiceNow accepts the session, and the desk then calls the APIs as that person."/>
+                            <TextBlock Style="{StaticResource HelpBody}"
+                                       Text="Username and password will fail on these instances. The banner says ServiceNow requires auth information. That is the single sign-on check, not a wrong password."/>
+                            <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                       Text="The browser session is stored with Windows DPAPI for the current Windows user. It stays signed in for 24 hours from that sign-in, or less when the token expires sooner. When it expires, the app clears it and returns to Connection so you can sign in with the browser again. This window needs the Microsoft Edge WebView2 runtime, which current Windows 10 and 11 installs already include."/>
+                        </StackPanel>
+                    </Border>
 
-                <Border Style="{StaticResource HelpCard}">
-                    <StackPanel>
-                        <TextBlock Text="What each person enters" Style="{StaticResource HelpHeading}"/>
-                        <TextBlock Style="{StaticResource HelpBody}"
-                                   Text="On Connection, leave practice data off. Choose OAuth password grant and enter:"/>
-                        <TextBlock Style="{StaticResource HelpBullet}" Text="•  The instance URL, for example https://company.service-now.com"/>
-                        <TextBlock Style="{StaticResource HelpBullet}" Text="•  The shared client ID and client secret"/>
-                        <TextBlock Style="{StaticResource HelpBullet}" Margin="8,0,0,10" Text="•  Their own ServiceNow user name and password"/>
-                        <TextBlock Style="{StaticResource HelpBody}" Text="Click Connect."/>
-                        <TextBlock Style="{StaticResource HelpBody}" Margin="0"
-                                   Text="The app posts those to https://&lt;instance&gt;/oauth_token.do using the password grant. ServiceNow returns a token for that user. Ticket calls then run as that user, so ACLs, assignment groups, and My open / My groups match the web UI for the person at the keyboard. The password and client secret stay on that PC, encrypted with Windows DPAPI for the current Windows user, under %AppData%\ServiceNowDesk\settings.json. When the token expires, the app requests a new one with the same saved user name and password. There is no shared login session between machines."/>
-                    </StackPanel>
-                </Border>
+                    <Border Style="{StaticResource HelpCard}">
+                        <StackPanel>
+                            <TextBlock Text="What you create once" Style="{StaticResource HelpHeading}"/>
+                            <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                       Text="In ServiceNow, go to System OAuth &gt; Application Registry. Create one &quot;OAuth API endpoint for external clients&quot;. That gives one client ID and one client secret. Every copy of ServiceNow Desk uses that same pair. People do not each need their own OAuth application, and you do not create one registry record per person."/>
+                        </StackPanel>
+                    </Border>
 
-                <Border Style="{StaticResource HelpCard}">
-                    <StackPanel>
-                        <TextBlock Text="What not to use for agents" Style="{StaticResource HelpHeading}"/>
-                        <TextBlock Style="{StaticResource HelpBody}"
-                                   Text="OAuth client credentials is one integration account. On the registry record, set OAuth Application User to that account. Every API call then runs as that account. My open is that account, not the person at the keyboard. Use client credentials only for an unattended integration, not for the desk."/>
-                        <TextBlock Style="{StaticResource HelpBody}"
-                                   Text="Username and password (no OAuth) is also per person: each agent enters their own ServiceNow user name and password, and calls run as that user. Use it when the instance still allows basic authentication for the API."/>
-                        <TextBlock Style="{StaticResource HelpBody}" Margin="0"
-                                   Text="People only need the ServiceNow accounts they already have. Each app talks directly to the same instance URL."/>
-                    </StackPanel>
-                </Border>
+                    <Border Style="{StaticResource HelpCard}">
+                        <StackPanel>
+                            <TextBlock Text="What each person enters" Style="{StaticResource HelpHeading}"/>
+                            <TextBlock Style="{StaticResource HelpBody}"
+                                       Text="On Connection, leave practice data off. Choose OAuth password grant and enter:"/>
+                            <TextBlock Style="{StaticResource HelpBullet}" Text="•  The instance URL, for example https://company.service-now.com"/>
+                            <TextBlock Style="{StaticResource HelpBullet}" Text="•  The shared client ID and client secret"/>
+                            <TextBlock Style="{StaticResource HelpBullet}" Margin="8,0,0,10" Text="•  Their own ServiceNow user name and password"/>
+                            <TextBlock Style="{StaticResource HelpBody}" Text="Click Connect."/>
+                            <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                       Text="The app posts those to https://&lt;instance&gt;/oauth_token.do using the password grant. ServiceNow returns a token for that user. Ticket calls then run as that user, so ACLs, assignment groups, and My open / My groups match the web UI for the person at the keyboard. The password and client secret stay on that PC, encrypted with Windows DPAPI for the current Windows user, under %AppData%\ServiceNowDesk\settings.json. When the token expires, the app requests a new one with the same saved user name and password. There is no shared login session between machines."/>
+                        </StackPanel>
+                    </Border>
 
-                <Border Style="{StaticResource HelpCard}" Margin="0">
-                    <StackPanel>
-                        <TextBlock Text="Table access" Style="{StaticResource HelpHeading}"/>
-                        <TextBlock Style="{StaticResource HelpBody}" Margin="0"
-                                   Text="The signed-in user needs read and write on incident, sc_request, and sc_req_item. They also need read on sys_user, sys_user_group, sys_choice, and sys_journal_field. If they use Order catalog, they need catalog order rights."/>
-                    </StackPanel>
-                </Border>
-            </StackPanel>
+                    <Border Style="{StaticResource HelpCard}">
+                        <StackPanel>
+                            <TextBlock Text="What not to use for agents" Style="{StaticResource HelpHeading}"/>
+                            <TextBlock Style="{StaticResource HelpBody}"
+                                       Text="OAuth client credentials is one integration account. On the registry record, set OAuth Application User to that account. Every API call then runs as that account. My open is that account, not the person at the keyboard. Use client credentials only for an unattended integration, not for the desk."/>
+                            <TextBlock Style="{StaticResource HelpBody}"
+                                       Text="Username and password (no OAuth) is also per person: each agent enters their own ServiceNow user name and password, and calls run as that user. Use it when the instance still allows basic authentication for the API."/>
+                            <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                       Text="People only need the ServiceNow accounts they already have. Each app talks directly to the same instance URL."/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource HelpCard}" Margin="0">
+                        <StackPanel>
+                            <TextBlock Text="Table access" Style="{StaticResource HelpHeading}"/>
+                            <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                       Text="The signed-in user needs read and write on incident, sc_request, and sc_req_item. They also need read on sys_user, sys_user_group, sys_choice, and sys_journal_field. If they use Order catalog, they need catalog order rights."/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel x:Name="NotificationsPanel" Visibility="Collapsed">
+                    <TextBlock Style="{StaticResource HelpBody}" Margin="0,0,0,14"
+                               Text="Click a colored portion to show that queue, then click a row to open the incident, request, request item, or walk-up. Resolved, closed, and cancelled tickets stay out of these queues. Search still finds them."/>
+
+                    <Border Style="{StaticResource HelpCard}">
+                        <DockPanel>
+                            <Ellipse DockPanel.Dock="Left" Width="12" Height="12" Margin="0,5,10,0" VerticalAlignment="Top" Fill="{StaticResource AccentBrush}"/>
+                            <StackPanel>
+                                <TextBlock Text="Green · Assigned to me" Style="{StaticResource HelpQueueName}"/>
+                                <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                           Text="Open incidents, requests, and request items assigned to you."/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource HelpCard}">
+                        <DockPanel>
+                            <Ellipse DockPanel.Dock="Left" Width="12" Height="12" Margin="0,5,10,0" VerticalAlignment="Top" Fill="{StaticResource AmberBrush}"/>
+                            <StackPanel>
+                                <TextBlock Text="Amber · Group queue" Style="{StaticResource HelpQueueName}"/>
+                                <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                           Text="Open incidents in the watched group whose location is one of the office cities under Settings."/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource HelpCard}">
+                        <DockPanel>
+                            <Ellipse DockPanel.Dock="Left" Width="12" Height="12" Margin="0,5,10,0" VerticalAlignment="Top" Fill="{StaticResource SlaBrush}"/>
+                            <StackPanel>
+                                <TextBlock Text="Crimson · SLA breaching" Style="{StaticResource HelpQueueName}"/>
+                                <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                           Text="An open incident, request item, or walk-up that has breached, or is in progress past its planned end, and is assigned to you or unassigned in one of your groups or the watched group."/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource HelpCard}">
+                        <DockPanel>
+                            <Ellipse DockPanel.Dock="Left" Width="12" Height="12" Margin="0,5,10,0" VerticalAlignment="Top" Fill="{StaticResource FollowUpBrush}"/>
+                            <StackPanel>
+                                <TextBlock Text="Blue · On hold past follow-up" Style="{StaticResource HelpQueueName}"/>
+                                <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                           Text="The ticket is on hold, the follow-up time has passed, and it is assigned to you."/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource HelpCard}">
+                        <DockPanel>
+                            <Ellipse DockPanel.Dock="Left" Width="12" Height="12" Margin="0,5,10,0" VerticalAlignment="Top" Fill="{StaticResource CallerUpdateBrush}"/>
+                            <StackPanel>
+                                <TextBlock Text="Violet · Updated by caller" Style="{StaticResource HelpQueueName}"/>
+                                <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                           Text="The person who last updated the record is the caller, and the ticket is yours, in the watched group, or unassigned in that group or with no group, at a notification office when offices are set."/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource HelpCard}">
+                        <DockPanel>
+                            <Ellipse DockPanel.Dock="Left" Width="12" Height="12" Margin="0,5,10,0" VerticalAlignment="Top" Fill="{StaticResource ReturnedBrush}"/>
+                            <StackPanel>
+                                <TextBlock Text="Cyan · Returned with notes" Style="{StaticResource HelpQueueName}"/>
+                                <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                           Text="The newest comment or work note is from someone other than the caller and the assignee."/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource HelpCard}">
+                        <DockPanel>
+                            <Ellipse DockPanel.Dock="Left" Width="12" Height="12" Margin="0,5,10,0" VerticalAlignment="Top" Fill="{StaticResource UnattendedBrush}"/>
+                            <StackPanel>
+                                <TextBlock Text="Slate · Unattended tickets" Style="{StaticResource HelpQueueName}"/>
+                                <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                           Text="Still open, including on hold, assigned to you, with sys_updated_on at least 24 hours old; an update by anyone, including you, counts, and a missing update time does not."/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource HelpCard}">
+                        <StackPanel>
+                            <TextBlock Text="Widget" Style="{StaticResource HelpHeading}"/>
+                            <TextBlock Style="{StaticResource HelpBody}"
+                                       Text="A thin strip at the top center of the screen is the desktop widget. Rest the pointer on it to drop the bar."/>
+                            <TextBlock Style="{StaticResource HelpBody}"
+                                       Text="The bar also drops when a jiggle fires, and the portion that caused it is highlighted."/>
+                            <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                       Text="Settings chooses whether the strip is there while this window is open, and whether a jiggle repeats on a timer or only for a new alert."/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource HelpCard}" Margin="0">
+                        <StackPanel>
+                            <TextBlock Text="Also" Style="{StaticResource HelpHeading}"/>
+                            <TextBlock Style="{StaticResource HelpBody}"
+                                       Text="Daily Work ranks what you should attend to among tickets assigned to you: SLA breaching, updated by the caller, a follow-up that has passed, unattended, and returned with notes. My team uses the people ticked under Leads."/>
+                            <TextBlock Style="{StaticResource HelpBody}" Margin="0"
+                                       Text="Leads repeats SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets for the people you tick and for the whole watched group."/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
         </ScrollViewer>
     </Grid>
 </Window>

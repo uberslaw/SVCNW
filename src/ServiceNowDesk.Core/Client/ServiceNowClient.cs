@@ -348,7 +348,9 @@ public sealed class ServiceNowClient : IServiceNowClient
             stateText,
             SnowField.Read(row, "assignment_group").Display,
             includeLocation ? SnowField.Read(row, "location").Display : "",
-            updatedText);
+            updatedText,
+            AssigneeName(row),
+            SnowField.Read(row, "assigned_to").Value);
     }
 
     private static string OrderedPopulation(AlertSearch search, IReadOnlyList<string> groupIds, DeskSection section) =>

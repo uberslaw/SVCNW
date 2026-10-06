@@ -265,7 +265,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         record.StateLabel,
         record.AssignmentGroup.Display,
         record.Location,
-        record.UpdatedAtDisplay);
+        record.UpdatedAtDisplay,
+        record.AssignedTo.Display?.Trim() ?? "",
+        record.AssignedTo.SysId ?? "");
 
     private static AlertRecord ToAlert(RequestRecord record, AlertKind kind) => new(
         kind,
@@ -276,7 +278,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         record.RequestStateLabel,
         record.AssignmentGroup.Display,
         "",
-        record.UpdatedAtDisplay);
+        record.UpdatedAtDisplay,
+        record.AssignedTo.Display?.Trim() ?? "",
+        record.AssignedTo.SysId ?? "");
 
     private static AlertRecord ToAlert(RequestedItemRecord record, AlertKind kind) => new(
         kind,
@@ -287,7 +291,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         record.StateLabel,
         record.AssignmentGroup.Display,
         "",
-        record.UpdatedAtDisplay);
+        record.UpdatedAtDisplay,
+        record.AssignedTo.Display?.Trim() ?? "",
+        record.AssignedTo.SysId ?? "");
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken)
     {

@@ -809,7 +809,10 @@ public class AlertTests
 
         Assert.Empty(snapshot.Bucket(AlertKind.OnHoldPastFollowUp).Rows);
 
-        var unattended = snapshot.Bucket(AlertKind.Unattended).Rows.Select(row => row.Number).ToArray();
+        var unattendedRows = snapshot.Bucket(AlertKind.Unattended).Rows;
+        var unattended = unattendedRows.Select(row => row.Number).ToArray();
+        Assert.All(unattendedRows, row => Assert.False(string.IsNullOrWhiteSpace(row.Assignee)));
+        Assert.Equal("Alex Rivera", unattendedRows.Single(row => row.Number == "INC0010001").Assignee);
         Assert.Contains("INC0010001", unattended);
         Assert.Contains("INC0010002", unattended);
         Assert.Contains("INC0010006", unattended);

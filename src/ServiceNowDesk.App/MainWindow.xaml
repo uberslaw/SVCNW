@@ -240,6 +240,7 @@
             <Menu Background="Transparent" Foreground="{StaticResource TextBrush}">
                 <MenuItem Header="Help" Padding="12,6">
                     <MenuItem Header="Documentation" Padding="12,8" Click="Documentation_Click"/>
+                    <MenuItem Header="Notifications" Padding="12,8" Click="NotificationsHelp_Click"/>
                 </MenuItem>
             </Menu>
         </Border>

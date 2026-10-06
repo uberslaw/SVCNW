@@ -186,6 +186,33 @@ public class HighlightTests
     }
 
     [Fact]
+    public void SharedNotificationRowsNameTheAssignee()
+    {
+        var notifications = new NotificationWorkspaceViewModel();
+        notifications.Apply(new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
+        {
+            [AlertKind.Unattended] = new(
+            [
+                new AlertRecord(AlertKind.Unattended, DeskSection.Incidents, "inc-quiet", "INC1", "Quiet laptop", "In Progress", "Client Services", "", "2026-10-01", "Alex Rivera", "sample-user"),
+                new AlertRecord(AlertKind.Unattended, DeskSection.RequestedItems, "ritm-quiet", "RITM1", "Quiet dock", "Work in Progress", "Client Services", "", "2026-10-01", "Jordan Lee", "user-jordan"),
+                new AlertRecord(AlertKind.Unattended, DeskSection.Incidents, "inc-blank", "INC0", "No name", "In Progress", "Client Services", "", "2026-10-01")
+            ], 3),
+            [AlertKind.ReturnedWithNotes] = new(
+            [
+                new AlertRecord(AlertKind.ReturnedWithNotes, DeskSection.WalkUps, "ims-note", "IMS1", "Badge", "New", "Client Services", "", "2026-10-02", "Alex Rivera", "sample-user")
+            ], 1)
+        }), new AlertWatchState());
+
+        notifications.SelectQueueCommand.Execute(AlertKind.Unattended);
+        Assert.Equal("Assigned to Alex Rivera", notifications.DashboardRows.Single(row => row.Number == "INC1").AssignedLine);
+        Assert.Equal("Assigned to Jordan Lee", notifications.DashboardRows.Single(row => row.Number == "RITM1").AssignedLine);
+        Assert.Equal("", notifications.DashboardRows.Single(row => row.Number == "INC0").AssignedLine);
+
+        notifications.SelectQueueCommand.Execute(AlertKind.ReturnedWithNotes);
+        Assert.Equal("Assigned to Alex Rivera", Assert.Single(notifications.DashboardRows).AssignedLine);
+    }
+
+    [Fact]
     public void TheLegendSavesTheChoiceAndRepaintsAnOpenList()
     {
         var store = new MemorySettingsStore();
