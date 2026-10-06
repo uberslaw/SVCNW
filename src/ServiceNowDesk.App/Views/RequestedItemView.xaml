@@ -92,12 +92,11 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock Text="Service offering" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding ServiceOffering.Choices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ServiceOffering.Id}"/>
+                                <controls:CachedChoiceBox DataContext="{Binding ServiceOffering}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="Configuration item" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Text="{Binding ConfigurationItem.Filter, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4" ToolTip="Type a name to search for a configuration item that is not in the saved list."/>
-                                <ComboBox ItemsSource="{Binding ConfigurationItem.Choices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ConfigurationItem.Id}" VirtualizingPanel.IsVirtualizing="True" ScrollViewer.CanContentScroll="True"/>
+                                <controls:CachedChoiceBox DataContext="{Binding ConfigurationItem}"/>
                             </StackPanel>
                         </Grid>
                         <Grid Margin="0,0,0,10">
