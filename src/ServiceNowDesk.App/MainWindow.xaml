@@ -438,23 +438,7 @@
                         <ItemsControl ItemsSource="{Binding Startup.Lines}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Margin="0,2" MinHeight="24">
-                                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}"
-                                                     MinHeight="0" VerticalAlignment="Stretch"
-                                                     Background="#1A2124" Foreground="#3E464A"
-                                                     BorderThickness="0" IsHitTestVisible="False">
-                                            <ProgressBar.Template>
-                                                <ControlTemplate TargetType="ProgressBar">
-                                                    <Grid>
-                                                        <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="3"/>
-                                                        <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="3"/>
-                                                    </Grid>
-                                                </ControlTemplate>
-                                            </ProgressBar.Template>
-                                        </ProgressBar>
-                                        <TextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="13" Foreground="#E7F6F3"
-                                                   VerticalAlignment="Center" Margin="8,4" TextWrapping="Wrap" IsHitTestVisible="False"/>
-                                    </Grid>
+                                    <TextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="13" Foreground="#C9E6E1" TextWrapping="Wrap" Margin="0,3"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
