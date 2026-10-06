@@ -55,12 +55,24 @@ public class HighlightTests
     [Fact]
     public void LightTintsStayReadableAgainstAWhiteRow()
     {
-        Assert.Equal("#DDEBEA", HighlightCatalog.Lighten("#0F6E6B"));
-        Assert.Equal("#F7EDDD", HighlightCatalog.Lighten("#C47E09"));
-        Assert.Equal("#F5E0DF", HighlightCatalog.Lighten("#B42318"));
-        Assert.Equal("#DFE6EE", HighlightCatalog.Lighten("#1D4E89"));
-        Assert.Equal("#EBE1FA", HighlightCatalog.Lighten("#6D28D9"));
-        Assert.Equal("#DDECEF", HighlightCatalog.Lighten("#0E7490"));
+        Assert.Equal("#0A635C", AlertCatalog.Swatch(AlertKind.AssignedToMe).Hex);
+        Assert.Equal("#9A6408", AlertCatalog.Swatch(AlertKind.WatchedGroup).Hex);
+        Assert.Equal("#721612", AlertCatalog.Swatch(AlertKind.SlaBreaching).Hex);
+        Assert.Equal("#14386C", AlertCatalog.Swatch(AlertKind.OnHoldPastFollowUp).Hex);
+        Assert.Equal("#5B21B6", AlertCatalog.Swatch(AlertKind.UpdatedByCaller).Hex);
+        Assert.Equal("#1A90C0", AlertCatalog.Swatch(AlertKind.ReturnedWithNotes).Hex);
+        Assert.Equal("#2A333C", AlertCatalog.Swatch(AlertKind.Unattended).Hex);
+        Assert.Equal("#C56A62", HighlightCatalog.UnassignedSwatchHex);
+        Assert.Equal("#F3E1E0", HighlightCatalog.UnassignedRowHex);
+
+        Assert.Equal("#CEE0DE", HighlightCatalog.Lighten("#0A635C"));
+        Assert.Equal("#EBE0CE", HighlightCatalog.Lighten("#9A6408"));
+        Assert.Equal("#E3D0D0", HighlightCatalog.Lighten("#721612"));
+        Assert.Equal("#D0D7E2", HighlightCatalog.Lighten("#14386C"));
+        Assert.Equal("#DED3F0", HighlightCatalog.Lighten("#5B21B6"));
+        Assert.Equal("#D1E9F2", HighlightCatalog.Lighten("#1A90C0"));
+        Assert.Equal("#D4D6D8", HighlightCatalog.Lighten("#2A333C"));
+        Assert.Equal("#F3E1E0", HighlightCatalog.Lighten("#C56A62"));
     }
 
     [Fact]

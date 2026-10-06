@@ -38,8 +38,8 @@ public static class HighlightCatalog
     public const string ReturnedWithNotes = "returned-with-notes";
     public const string Unattended = "unattended";
 
-    public const string UnassignedRowHex = "#FDECEC";
-    public const string UnassignedSwatchHex = "#8E2F2F";
+    public const string UnassignedRowHex = "#F3E1E0";
+    public const string UnassignedSwatchHex = "#C56A62";
 
     static HighlightCatalog()
     {
@@ -137,7 +137,7 @@ public static class HighlightCatalog
     }
 
     private static byte Mix(byte channel) =>
-        (byte)Math.Round(channel * 0.14 + 255 * 0.86, MidpointRounding.AwayFromZero);
+        (byte)Math.Round(channel * 0.20 + 255 * 0.80, MidpointRounding.AwayFromZero);
 }
 
 /// <summary>

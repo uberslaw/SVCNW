@@ -46,13 +46,13 @@ public static class AlertCatalog
 
     public static AlertSwatch Swatch(AlertKind kind) => kind switch
     {
-        AlertKind.WatchedGroup => new("Amber", "#C47E09", "AmberBrush"),
-        AlertKind.SlaBreaching => new("Crimson", "#B42318", "SlaBrush"),
-        AlertKind.OnHoldPastFollowUp => new("Blue", "#1D4E89", "FollowUpBrush"),
-        AlertKind.UpdatedByCaller => new("Violet", "#6D28D9", "CallerUpdateBrush"),
-        AlertKind.ReturnedWithNotes => new("Cyan", "#0E7490", "ReturnedBrush"),
-        AlertKind.Unattended => new("Slate", "#3F4C5A", "UnattendedBrush"),
-        _ => new("Green", "#0F6E6B", "AccentBrush")
+        AlertKind.WatchedGroup => new("Amber", "#9A6408", "AmberBrush"),
+        AlertKind.SlaBreaching => new("Crimson", "#721612", "SlaBrush"),
+        AlertKind.OnHoldPastFollowUp => new("Blue", "#14386C", "FollowUpBrush"),
+        AlertKind.UpdatedByCaller => new("Violet", "#5B21B6", "CallerUpdateBrush"),
+        AlertKind.ReturnedWithNotes => new("Cyan", "#1A90C0", "ReturnedBrush"),
+        AlertKind.Unattended => new("Slate", "#2A333C", "UnattendedBrush"),
+        _ => new("Green", "#0A635C", "AccentBrush")
     };
 
     public static string AutomationName(AlertKind kind, int count) =>

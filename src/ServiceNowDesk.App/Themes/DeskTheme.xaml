@@ -15,8 +15,8 @@
 
     <Color x:Key="NavColor">#1B2B2E</Color>
     <Color x:Key="NavMutedColor">#B7C7C6</Color>
-    <Color x:Key="AccentColor">#0F6E6B</Color>
-    <Color x:Key="AccentSoftColor">#E5F4F2</Color>
+    <Color x:Key="AccentColor">#0A635C</Color>
+    <Color x:Key="AccentSoftColor">#CEE0DE</Color>
     <Color x:Key="AppColor">#F3F6F7</Color>
     <Color x:Key="CardColor">#FFFFFF</Color>
     <Color x:Key="LineColor">#D5DEE3</Color>
@@ -26,7 +26,7 @@
     <Color x:Key="ErrorSoftColor">#FDECEC</Color>
     <Color x:Key="WarningSoftColor">#FFF6E8</Color>
     <Color x:Key="CustomerColor">#8A4B08</Color>
-    <Color x:Key="AmberColor">#C47E09</Color>
+    <Color x:Key="AmberColor">#9A6408</Color>
     <Color x:Key="DownloadTrackColor">#F2F4F2</Color>
     <Color x:Key="DownloadFillColor">#B7E6B9</Color>
 
@@ -46,11 +46,11 @@
     <SolidColorBrush x:Key="AmberBrush" Color="{StaticResource AmberColor}"/>
     <SolidColorBrush x:Key="DownloadTrackBrush" Color="{StaticResource DownloadTrackColor}"/>
     <SolidColorBrush x:Key="DownloadFillBrush" Color="{StaticResource DownloadFillColor}"/>
-    <SolidColorBrush x:Key="SlaBrush" Color="#B42318"/>
-    <SolidColorBrush x:Key="FollowUpBrush" Color="#1D4E89"/>
-    <SolidColorBrush x:Key="CallerUpdateBrush" Color="#6D28D9"/>
-    <SolidColorBrush x:Key="ReturnedBrush" Color="#0E7490"/>
-    <SolidColorBrush x:Key="UnattendedBrush" Color="#3F4C5A"/>
+    <SolidColorBrush x:Key="SlaBrush" Color="#721612"/>
+    <SolidColorBrush x:Key="FollowUpBrush" Color="#14386C"/>
+    <SolidColorBrush x:Key="CallerUpdateBrush" Color="#5B21B6"/>
+    <SolidColorBrush x:Key="ReturnedBrush" Color="#1A90C0"/>
+    <SolidColorBrush x:Key="UnattendedBrush" Color="#2A333C"/>
     <SolidColorBrush x:Key="WhiteBrush" Color="#FFFFFF"/>
 
     <Style TargetType="TextBlock">
