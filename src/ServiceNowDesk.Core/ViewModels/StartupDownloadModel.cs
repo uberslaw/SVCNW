@@ -13,7 +13,8 @@ public sealed partial class StartupDownloadModel : ObservableObject
     public ObservableCollection<StartupDownloadLine> Lines { get; } = [];
 
     [ObservableProperty] private bool isOpen;
-    [ObservableProperty] private string title = "";
+    [ObservableProperty] private bool isRunning;
+    [ObservableProperty] private string title = "Data ready";
 
     public void Begin(int total)
     {
@@ -22,6 +23,7 @@ public sealed partial class StartupDownloadModel : ObservableObject
         _finished = 0;
         _current = -1;
         Title = Heading(null);
+        IsRunning = true;
         IsOpen = true;
     }
 
@@ -71,12 +73,21 @@ public sealed partial class StartupDownloadModel : ObservableObject
         FinishCurrent();
     }
 
+    public void Toggle() => IsOpen = !IsOpen;
+
     public void Close() => IsOpen = false;
 
     private void FinishCurrent()
     {
         _finished++;
         _current = -1;
+        if (_finished >= _total)
+        {
+            IsRunning = false;
+            Title = "Data ready";
+            return;
+        }
+
         Title = Heading(null);
     }
 

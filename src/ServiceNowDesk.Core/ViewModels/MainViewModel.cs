@@ -32,6 +32,7 @@ public partial class MainViewModel : ObservableObject
     public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
     public StartupDownloadModel Startup { get; } = new();
     private bool _startupGate;
+    private int _downloadBusy;
 
     public MainViewModel(
         ISettingsStore store,
@@ -172,7 +173,6 @@ public partial class MainViewModel : ObservableObject
             finally
             {
                 _startupGate = false;
-                Startup.Close();
             }
 
             RefreshActivity();
@@ -260,6 +260,11 @@ public partial class MainViewModel : ObservableObject
     {
         if (!IsConnected)
             return;
+
+        var ran = await DownloadStartupAsync(_client as ServiceNowClient);
+        if (!ran || !IsConnected)
+            return;
+
         if (SelectedSection == DeskSection.Search)
             Search.MarkStale();
         _loadedFor.Remove(SelectedSection);
@@ -312,6 +317,9 @@ public partial class MainViewModel : ObservableObject
         else
             workspace.BeginResolveCommand.Execute(null);
     }
+
+    [RelayCommand]
+    private void ToggleDownloadLog() => Startup.Toggle();
 
     [RelayCommand]
     private void DismissMainError() => ErrorMessage = "";
@@ -597,17 +605,28 @@ public partial class MainViewModel : ObservableObject
             : "Opened " + conversion.Incident.Number + ", already linked to this walk-up.";
     }
 
-    private async Task DownloadStartupAsync(ServiceNowClient? live)
+    private async Task<bool> DownloadStartupAsync(ServiceNowClient? live)
     {
-        Startup.Begin(6);
-        if (_ui is not null)
-            await Task.Yield();
-        await RunSectionAsync("Choices", () => DownloadChoicesAsync(live));
-        await RunSectionAsync("Assignment groups", () => DownloadGroupsAsync(live));
-        await RunSectionAsync("Assignment group members", () => DownloadMembersAsync(live));
-        await RunSectionAsync("Incidents", () => DownloadListAsync(DeskSection.Incidents, Incidents));
-        await RunSectionAsync("Requests", () => DownloadListAsync(DeskSection.Requests, Requests));
-        await RunSectionAsync("Walk-ups", () => DownloadListAsync(DeskSection.WalkUps, WalkUps));
+        if (Interlocked.CompareExchange(ref _downloadBusy, 1, 0) != 0)
+            return false;
+
+        try
+        {
+            Startup.Begin(6);
+            if (_ui is not null)
+                await Task.Yield();
+            await RunSectionAsync("Choices", () => DownloadChoicesAsync(live));
+            await RunSectionAsync("Assignment groups", () => DownloadGroupsAsync(live));
+            await RunSectionAsync("Assignment group members", () => DownloadMembersAsync(live));
+            await RunSectionAsync("Incidents", () => DownloadListAsync(DeskSection.Incidents, Incidents));
+            await RunSectionAsync("Requests", () => DownloadListAsync(DeskSection.Requests, Requests));
+            await RunSectionAsync("Walk-ups", () => DownloadListAsync(DeskSection.WalkUps, WalkUps));
+            return true;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _downloadBusy, 0);
+        }
     }
 
     private async Task RunSectionAsync(string name, Func<Task<bool>> action)
@@ -680,7 +699,7 @@ public partial class MainViewModel : ObservableObject
         catch (Exception)
         {
             await BindGroupsAsync();
-            if (live is not null && await HasSavedGroupsAsync(live))
+            if (IsConnected && live is not null && await HasSavedGroupsAsync(live))
                 StatusMessage = "Connected as " + ConnectedUser + ". Saved assignment lists are still in use.";
             throw;
         }
@@ -704,7 +723,7 @@ public partial class MainViewModel : ObservableObject
             }
             catch (Exception)
             {
-                if (await HasSavedGroupsAsync(live))
+                if (IsConnected && await HasSavedGroupsAsync(live))
                     StatusMessage = "Connected as " + ConnectedUser + ". Saved assignment lists are still in use.";
                 throw;
             }

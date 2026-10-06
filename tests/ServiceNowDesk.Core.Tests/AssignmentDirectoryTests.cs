@@ -44,7 +44,8 @@ public class AssignmentDirectoryTests
 
         await connect;
         await main.AssignmentDirectoryRefresh;
-        Assert.False(main.Startup.IsOpen);
+        Assert.True(main.Startup.IsOpen);
+        Assert.Equal("Data ready", main.Startup.Title);
         Assert.True(main.Incidents.HasLoaded);
         Assert.Equal("", main.ErrorMessage);
         Assert.Contains(main.Incidents.Assignment.Groups, group => group.Value == "group-cs" && group.Label == "Client Services");
@@ -60,6 +61,60 @@ public class AssignmentDirectoryTests
         Assert.Contains(groups, group => group.Value == "group-cs" && group.Label == "Client Services");
         Assert.Equal("Alex Rivera", Assert.Single(members).Label);
         Assert.Empty(offline.Calls);
+    }
+
+    [Fact]
+    public async Task ClosingTheLogDoesNotCancelTheDownload()
+    {
+        var folder = NewFolder();
+        var store = new FileFormCatalogStore(folder);
+        var release = new TaskCompletionSource();
+        var started = new TaskCompletionSource();
+        var handler = new GatedDirectoryHandler(started, release);
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            formCatalog: store,
+            clientFactory: (session, catalog) => ServiceNowClient.Create(session, handler, catalog));
+        main.Connection.InstanceUrl = "https://example.service-now.com";
+        main.Connection.Username = "alex";
+        main.Connection.Password = "secret";
+        main.Connection.UseSampleData = false;
+
+        var connect = main.ConnectCommand.ExecuteAsync(null);
+        try
+        {
+            var startedOrGaveUp = await Task.WhenAny(started.Task, Task.Delay(TimeSpan.FromSeconds(20)));
+            Assert.Same(started.Task, startedOrGaveUp);
+            Assert.False(connect.IsCompleted);
+            Assert.True(main.Startup.IsOpen);
+            Assert.True(main.Startup.IsRunning);
+            Assert.Contains("Downloading data", main.Startup.Title);
+
+            main.ToggleDownloadLogCommand.Execute(null);
+
+            Assert.False(main.Startup.IsOpen);
+            Assert.True(main.Startup.IsRunning);
+            Assert.False(connect.IsCompleted);
+            Assert.Contains("Downloading data", main.Startup.Title);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        await connect;
+        await main.AssignmentDirectoryRefresh;
+
+        Assert.True(main.IsConnected);
+        Assert.False(main.Startup.IsOpen);
+        Assert.False(main.Startup.IsRunning);
+        Assert.Equal("Data ready", main.Startup.Title);
+        Assert.Equal("", main.ErrorMessage);
+        Assert.True(main.Incidents.HasLoaded);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment groups" && line.Percent == 100);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Walk-ups" && line.Percent == 100);
+        Assert.Contains(main.Incidents.Assignment.Groups, group => group.Value == "group-cs" && group.Label == "Client Services");
     }
 
     [Fact]
@@ -264,7 +319,8 @@ public class AssignmentDirectoryTests
 
         await main.ConnectCommand.ExecuteAsync(null);
 
-        Assert.False(main.Startup.IsOpen);
+        Assert.True(main.Startup.IsOpen);
+        Assert.Equal("Data ready", main.Startup.Title);
         Assert.Equal("", main.ErrorMessage);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Choices" && line.Text.Contains("cached") && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment groups" && line.Text.Contains("cached"));

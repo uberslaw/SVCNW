@@ -22,11 +22,13 @@
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.ColumnSpan="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+        <Border Grid.Row="2" Grid.ColumnSpan="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
             <Menu Background="Transparent" Foreground="{StaticResource TextBrush}">
                 <MenuItem Header="Help" Padding="12,6">
                     <MenuItem Header="Documentation" Padding="12,8" Click="Documentation_Click"/>
@@ -34,7 +36,46 @@
             </Menu>
         </Border>
 
-        <Border Grid.Row="1" Grid.RowSpan="2" Background="{StaticResource NavBrush}">
+        <Button Grid.Row="0" Grid.ColumnSpan="2"
+                Command="{Binding ToggleDownloadLogCommand}"
+                HorizontalContentAlignment="Stretch"
+                AutomationProperties.Name="Download progress"
+                ToolTip="Show or hide the download log"
+                Cursor="Hand">
+            <Button.Template>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bar" Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,8">
+                        <DockPanel LastChildFill="True">
+                            <TextBlock DockPanel.Dock="Right" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"
+                                       Text="Hide log" Visibility="{Binding Startup.IsOpen, Converter={StaticResource BoolVis}}"/>
+                            <TextBlock DockPanel.Dock="Right" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"
+                                       Text="Show log" Visibility="{Binding Startup.IsOpen, Converter={StaticResource InverseBoolVis}}"/>
+                            <TextBlock Text="{Binding Startup.Title}" FontFamily="Consolas" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        </DockPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bar" Property="Background" Value="#D3EBE7"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Button.Template>
+        </Button>
+
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="#102226" BorderBrush="#1F6E6B" BorderThickness="0,0,0,1" Padding="16,8,16,12" MaxHeight="240"
+                Visibility="{Binding Startup.IsOpen, Converter={StaticResource BoolVis}}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding Startup.Lines}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="13" Foreground="#C9E6E1" TextWrapping="Wrap" Margin="0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <Border Grid.Row="3" Grid.RowSpan="2" Background="{StaticResource NavBrush}">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="20,18,16,12">
                     <TextBlock Text="ServiceNow" Foreground="{StaticResource NavMutedBrush}" FontSize="12"/>
@@ -56,7 +97,7 @@
             </DockPanel>
         </Border>
 
-        <DockPanel Grid.Row="1" Grid.Column="1">
+        <DockPanel Grid.Row="3" Grid.Column="1">
             <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,12">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -124,26 +165,8 @@
             </Grid>
         </DockPanel>
 
-        <Border Grid.Column="1" Grid.Row="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
+        <Border Grid.Column="1" Grid.Row="4" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
             <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource MutedBrush}"/>
         </Border>
-
-        <Grid Grid.RowSpan="3" Grid.ColumnSpan="2" Background="#E6121C1F" Visibility="{Binding Startup.IsOpen, Converter={StaticResource BoolVis}}" Panel.ZIndex="20">
-            <Border Width="720" MaxHeight="520" Margin="32" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Background="#102226" BorderBrush="#1F6E6B" BorderThickness="1" Padding="22,18">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="{Binding Startup.Title}" FontFamily="Consolas" FontSize="18" FontWeight="SemiBold" Foreground="#E7F7F4" TextWrapping="Wrap" Margin="0,0,0,14"/>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Startup.Lines}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="13" Foreground="#C9E6E1" TextWrapping="Wrap" Margin="0,3"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                </DockPanel>
-            </Border>
-        </Grid>
     </Grid>
 </Window>
