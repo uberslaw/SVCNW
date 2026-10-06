@@ -41,6 +41,7 @@ public interface IServiceNowClient : IDisposable
     Task<PagedResult<KnowledgeArticle>> SearchKnowledgeAsync(TicketQuery query, CancellationToken cancellationToken);
     Task<KnowledgeArticle> GetKnowledgeAsync(string sysId, CancellationToken cancellationToken);
     Task<KnowledgeDownload> DownloadKnowledgeAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken);
+    Task<int?> CountPublishedKnowledgeAsync(CancellationToken cancellationToken);
 
     Task AddJournalAsync(string table, string sysId, JournalKind kind, string text, CancellationToken cancellationToken);
     Task<IReadOnlyList<JournalEntry>> GetJournalAsync(string table, string sysId, CancellationToken cancellationToken);

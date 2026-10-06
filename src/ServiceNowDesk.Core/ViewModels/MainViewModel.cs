@@ -83,7 +83,7 @@ public partial class MainViewModel : ObservableObject
         WalkUps = new InteractionWorkspaceViewModel(desktop, recent);
         WalkUps.IncidentRequested += (_, conversion) => ConvertOpenTask = OpenConvertedIncidentAsync(conversion);
         Search = new SearchWorkspaceViewModel();
-        Knowledge = new KnowledgeWorkspaceViewModel();
+        Knowledge = new KnowledgeWorkspaceViewModel(desktop);
         Catalog = new CatalogWorkspaceViewModel();
         Notifications = new NotificationWorkspaceViewModel();
         NotificationSettings = new NotificationSettingsViewModel();
@@ -284,6 +284,7 @@ public partial class MainViewModel : ObservableObject
             if (epoch != _sessionEpoch)
                 return;
 
+            _ = Knowledge.RefreshPublishedCountAsync();
             RefreshActivity();
         }
         catch (Exception ex)

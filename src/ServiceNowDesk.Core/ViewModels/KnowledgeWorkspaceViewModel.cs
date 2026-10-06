@@ -1,17 +1,21 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Mapping;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.Services;
 
 namespace ServiceNowDesk.ViewModels;
 
 public sealed partial class KnowledgeWorkspaceViewModel : ObservableObject
 {
+    private readonly IDesktopServices _desktop;
     private readonly List<KnowledgeListRow> _all = [];
     private IServiceNowClient? _client;
     private bool _suppressSelection;
     private string _openSysId = "";
+    private int _countGeneration;
 
     [ObservableProperty] private bool hasArticle;
     [ObservableProperty] private bool isLoading;
@@ -20,11 +24,20 @@ public sealed partial class KnowledgeWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string meta = "";
     [ObservableProperty] private string body = "";
     [ObservableProperty] private string errorMessage = "";
+    [ObservableProperty] private string readerMessage = "";
+    [ObservableProperty] private string publishedCountText = "";
     [ObservableProperty] private string filterText = "";
     [ObservableProperty] private string listNote = "";
     [ObservableProperty] private KnowledgeListRow? selectedArticle;
 
+    public KnowledgeWorkspaceViewModel(IDesktopServices? desktop = null)
+    {
+        _desktop = desktop ?? new RecordingDesktopServices();
+    }
+
     public ObservableCollection<KnowledgeListRow> Articles { get; } = [];
+
+    public ObservableCollection<ArticleBlock> Blocks { get; } = [];
 
     public bool HasArticles => _all.Count > 0;
 
@@ -43,6 +56,35 @@ public sealed partial class KnowledgeWorkspaceViewModel : ObservableObject
     }
 
     public void Attach(IServiceNowClient? client) => _client = client;
+
+    public async Task RefreshPublishedCountAsync()
+    {
+        var generation = ++_countGeneration;
+        var client = _client;
+        if (client is null)
+        {
+            if (generation == _countGeneration)
+                PublishedCountText = "";
+            return;
+        }
+
+        int? count;
+        try
+        {
+            count = await client.CountPublishedKnowledgeAsync(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            count = null;
+        }
+
+        if (generation != _countGeneration)
+            return;
+
+        PublishedCountText = count is int value
+            ? KnowledgeStats.Caption(value, client.InstanceUri is null)
+            : "";
+    }
 
     public void ShowArticles(IEnumerable<KnowledgeListRow> rows)
     {
@@ -75,7 +117,10 @@ public sealed partial class KnowledgeWorkspaceViewModel : ObservableObject
                 string.IsNullOrWhiteSpace(article.UpdatedAtDisplay) ? "" : "Updated " + article.UpdatedAtDisplay
             };
             Meta = string.Join(" · ", details.Where(part => !string.IsNullOrWhiteSpace(part)));
-            Body = HtmlText.ToReadable(article.Text);
+            var blocks = HtmlText.ToBlocks(article.Text, _client.InstanceUri);
+            Body = HtmlText.ToReadable(article.Text, _client.InstanceUri);
+            ShowBlocks(blocks);
+            ReaderMessage = "";
             HasArticle = true;
             _openSysId = article.SysId;
             SelectWithoutOpening(article.SysId);
@@ -99,6 +144,7 @@ public sealed partial class KnowledgeWorkspaceViewModel : ObservableObject
         SelectedArticle = null;
         FilterText = "";
         _openSysId = "";
+        _countGeneration++;
         _suppressSelection = false;
         HasArticle = false;
         IsLoading = false;
@@ -107,7 +153,10 @@ public sealed partial class KnowledgeWorkspaceViewModel : ObservableObject
         Meta = "";
         Body = "";
         ErrorMessage = "";
+        ReaderMessage = "";
+        PublishedCountText = "";
         ListNote = "";
+        Blocks.Clear();
         OnPropertyChanged(nameof(HasArticles));
         OnPropertyChanged(nameof(ListCaption));
     }
@@ -115,6 +164,38 @@ public sealed partial class KnowledgeWorkspaceViewModel : ObservableObject
     public void NoteListFailure(string message)
     {
         ListNote = string.IsNullOrWhiteSpace(message) ? "Could not refresh knowledge articles." : message.Trim();
+    }
+
+    [RelayCommand]
+    private void CopyNumber()
+    {
+        if (Number.Length == 0)
+            return;
+        _desktop.CopyText(Number);
+        ReaderMessage = "Copied " + Number + ".";
+    }
+
+    [RelayCommand]
+    private void OpenInBrowser()
+    {
+        if (_client?.InstanceUri is null || string.IsNullOrEmpty(_openSysId))
+        {
+            ReaderMessage = "Connect to a live instance to open this record in the browser.";
+            return;
+        }
+
+        _desktop.OpenUrl(ServiceNowLinks.Knowledge(_client.InstanceUri, _openSysId));
+    }
+
+    [RelayCommand]
+    private void OpenArticleLink(string? url)
+    {
+        if (url is null)
+            return;
+        if (!url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            && !url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            return;
+        _desktop.OpenUrl(url);
     }
 
     partial void OnHasArticleChanged(bool value) => OnPropertyChanged(nameof(ShowPlaceholder));
@@ -169,6 +250,13 @@ public sealed partial class KnowledgeWorkspaceViewModel : ObservableObject
         || row.Title.Contains(term, StringComparison.OrdinalIgnoreCase)
         || row.Meta.Contains(term, StringComparison.OrdinalIgnoreCase)
         || row.StateLabel.Contains(term, StringComparison.OrdinalIgnoreCase);
+
+    private void ShowBlocks(IReadOnlyList<ArticleBlock> blocks)
+    {
+        Blocks.Clear();
+        foreach (var block in blocks)
+            Blocks.Add(block);
+    }
 
     private void SelectWithoutOpening(string sysId)
     {

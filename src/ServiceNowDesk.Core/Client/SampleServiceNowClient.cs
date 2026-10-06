@@ -833,6 +833,13 @@ public sealed class SampleServiceNowClient : IServiceNowClient
         return Task.FromResult(new KnowledgeDownload(articles, false));
     }
 
+    public Task<int?> CountPublishedKnowledgeAsync(CancellationToken cancellationToken)
+    {
+        Record("GET", "api/now/stats/kb_knowledge?sysparm_count=true&sysparm_query=" + Uri.EscapeDataString(KnowledgeStats.PublishedQuery));
+        var count = _articles.Count(article => article.WorkflowState.Equals("published", StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult<int?>(count);
+    }
+
     public Task<PagedResult<InteractionRecord>> SearchInteractionsAsync(TicketQuery query, CancellationToken cancellationToken)
     {
         var matches = _interactions.Where(record =>

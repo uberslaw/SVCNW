@@ -898,6 +898,22 @@ public sealed class ServiceNowClient : IServiceNowClient
         return new KnowledgeDownload(articles, truncated);
     }
 
+    public async Task<int?> CountPublishedKnowledgeAsync(CancellationToken cancellationToken)
+    {
+        var url = "api/now/stats/kb_knowledge?sysparm_count=true&sysparm_query="
+            + Uri.EscapeDataString(KnowledgeStats.PublishedQuery);
+        try
+        {
+            var result = await SendAsync(HttpMethod.Get, url, null, cancellationToken).ConfigureAwait(false);
+            using (result)
+                return KnowledgeStats.ReadCount(result.Document.RootElement);
+        }
+        catch (ServiceNowException)
+        {
+            return null;
+        }
+    }
+
     public async Task AddJournalAsync(string table, string sysId, JournalKind kind, string text, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(text))

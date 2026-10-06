@@ -184,6 +184,12 @@ public static class ServiceNowLinks
         var authority = instance.GetLeftPart(UriPartial.Authority);
         return $"{authority}/nav_to.do?uri={Uri.EscapeDataString(table + ".do?sys_id=" + sysId)}";
     }
+
+    public static string Knowledge(Uri instance, string sysId)
+    {
+        var authority = instance.GetLeftPart(UriPartial.Authority);
+        return authority + "/kb_view.do?sys_kb_id=" + Uri.EscapeDataString(sysId);
+    }
 }
 
 public static class StateTone
