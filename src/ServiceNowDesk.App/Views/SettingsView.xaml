@@ -10,10 +10,29 @@
                     DataContext="{Binding NotificationSettings}">
                 <StackPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                               Text="The desktop strip at the top center of the screen drops the notification bar on this interval, and whenever the pointer is over it. The watched group and office locations decide the group queue."/>
+                               Text="The desktop strip at the top center of the screen drops the notification bar when the pointer rests on it, and when a jiggle fires. The portion that caused a jiggle is highlighted. The watched group and office locations decide the group queue."/>
+
+                    <TextBlock Text="When the desktop widget appears" Style="{StaticResource FieldLabel}"/>
+                    <RadioButton GroupName="ShowDesktopWidget" Margin="0,0,0,4"
+                                 Content="While the desk is open, including maximized"
+                                 IsChecked="{Binding ShowDesktopWidget, Converter={StaticResource EnumEq}, ConverterParameter=WhileOpen}"/>
+                    <RadioButton GroupName="ShowDesktopWidget" Margin="0,0,0,12"
+                                 Content="Only while the desk is minimized"
+                                 IsChecked="{Binding ShowDesktopWidget, Converter={StaticResource EnumEq}, ConverterParameter=OnlyMinimized}"/>
+
+                    <TextBlock Text="When a jiggle fires" Style="{StaticResource FieldLabel}"/>
+                    <RadioButton GroupName="JiggleWhen" Margin="0,0,0,4"
+                                 Content="Persistent, every HH:MM:SS"
+                                 IsChecked="{Binding JiggleWhen, Converter={StaticResource EnumEq}, ConverterParameter=Persistent}"/>
+                    <RadioButton GroupName="JiggleWhen" Margin="0,0,0,12"
+                                 IsChecked="{Binding JiggleWhen, Converter={StaticResource EnumEq}, ConverterParameter=NewUntilAcknowledged}">
+                        <TextBlock Text="Only when there is a new alert, until that alert is acknowledged" TextWrapping="Wrap"/>
+                    </RadioButton>
 
                     <TextBlock Text="Jiggle frequency (HH:MM:SS)" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Text="{Binding FrequencyText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                    <TextBox Text="{Binding FrequencyText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,4"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"
+                               Text="Persistent mode drops the bar on this frequency while something is still unacknowledged. A new alert ignores this interval and does not repeat until that alert is acknowledged."/>
 
                     <TextBlock Text="Jiggle duration (seconds)" Style="{StaticResource FieldLabel}"/>
                     <TextBox Text="{Binding DurationText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"/>
@@ -28,7 +47,7 @@
                         <TextBox Text="{Binding SoundPath, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="True" ToolTip="Leave this empty to use the Windows exclamation sound."/>
                     </DockPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                               Text="Play sound when jiggling uses the repeating timer. Play sound on alert metric plays as soon as a number increases, even when the timer sound is off. Both use this file, or the Windows exclamation sound when no file is chosen."/>
+                               Text="Play sound when jiggling plays when the bar drops for a jiggle. Play sound on alert metric plays as soon as a number increases, even when the jiggle sound is off. Both use this file, or the Windows exclamation sound when no file is chosen."/>
 
                     <TextBlock Text="Watched group name" Style="{StaticResource FieldLabel}"/>
                     <TextBox Text="{Binding GroupNameText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>

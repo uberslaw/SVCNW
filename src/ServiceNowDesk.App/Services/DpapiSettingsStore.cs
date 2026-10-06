@@ -43,6 +43,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
                 UseSampleData = stored.UseSampleData,
                 JiggleFrequency = string.IsNullOrWhiteSpace(stored.JiggleFrequency) ? "00:01:00" : stored.JiggleFrequency,
                 JiggleDurationSeconds = stored.JiggleDurationSeconds ?? 2,
+                ShowDesktopWidget = stored.ShowDesktopWidget ?? DesktopWidgetWhen.WhileOpen,
+                JiggleWhen = stored.JiggleWhen ?? JiggleWhen.Persistent,
                 MaximizeWhenJiggling = stored.MaximizeWhenJiggling ?? true,
                 PlaySoundWhenJiggling = stored.PlaySoundWhenJiggling ?? false,
                 PlaySoundOnAlertMetric = stored.PlaySoundOnAlertMetric ?? true,
@@ -77,6 +79,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
             UseSampleData = settings.UseSampleData,
             JiggleFrequency = settings.JiggleFrequency,
             JiggleDurationSeconds = settings.JiggleDurationSeconds,
+            ShowDesktopWidget = settings.ShowDesktopWidget,
+            JiggleWhen = settings.JiggleWhen,
             MaximizeWhenJiggling = settings.MaximizeWhenJiggling,
             PlaySoundWhenJiggling = settings.PlaySoundWhenJiggling,
             PlaySoundOnAlertMetric = settings.PlaySoundOnAlertMetric,
@@ -120,6 +124,8 @@ public sealed class DpapiSettingsStore : ISettingsStore
         public bool UseSampleData { get; set; }
         public string? JiggleFrequency { get; set; }
         public int? JiggleDurationSeconds { get; set; }
+        public DesktopWidgetWhen? ShowDesktopWidget { get; set; }
+        public JiggleWhen? JiggleWhen { get; set; }
         public bool? MaximizeWhenJiggling { get; set; }
         public bool? PlaySoundWhenJiggling { get; set; }
         public bool? PlaySoundOnAlertMetric { get; set; }

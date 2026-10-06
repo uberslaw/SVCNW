@@ -166,6 +166,8 @@ public class AlertTests
         var defaults = NotificationPreferences.From(new DeskSettings());
         Assert.Equal("00:01:00", defaults.JiggleFrequency);
         Assert.Equal(2, defaults.JiggleDurationSeconds);
+        Assert.Equal(DesktopWidgetWhen.WhileOpen, defaults.ShowDesktopWidget);
+        Assert.Equal(JiggleWhen.Persistent, defaults.JiggleWhen);
         Assert.Equal(60, defaults.PollSeconds);
         Assert.True(defaults.MaximizeWhenJiggling);
         Assert.False(defaults.PlaySoundWhenJiggling);
@@ -429,6 +431,156 @@ public class AlertTests
     }
 
     [Fact]
+    public void OnlyMinimizedSuppressesTheDesktopWidgetWhileTheMainWindowIsOpen()
+    {
+        Assert.False(AlertJiggleRules.AllowsDesktopWidget(DesktopWidgetWhen.OnlyMinimized, mainWindowMinimized: false));
+        Assert.True(AlertJiggleRules.AllowsDesktopWidget(DesktopWidgetWhen.OnlyMinimized, mainWindowMinimized: true));
+    }
+
+    [Fact]
+    public void WhileOpenAllowsTheDesktopWidgetWhenTheDeskIsOpenOrMinimized()
+    {
+        Assert.True(AlertJiggleRules.AllowsDesktopWidget(DesktopWidgetWhen.WhileOpen, mainWindowMinimized: false));
+        Assert.True(AlertJiggleRules.AllowsDesktopWidget(DesktopWidgetWhen.WhileOpen, mainWindowMinimized: true));
+    }
+
+    [Fact]
+    public void PersistentModeIsDueOnTheIntervalWhileACountIsUnacknowledged()
+    {
+        var watch = new AlertWatchState();
+        watch.Observe(Counts(2, 1));
+
+        var due = AlertJiggleRules.IntervalDue(JiggleWhen.Persistent, Unacknowledged(watch));
+        Assert.True(due.Due);
+        Assert.Equal([AlertKind.AssignedToMe, AlertKind.WatchedGroup], due.Causes);
+
+        watch.Observe(Counts(2, 1));
+        Assert.True(AlertJiggleRules.IntervalDue(JiggleWhen.Persistent, Unacknowledged(watch)).Due);
+
+        watch.Acknowledge();
+        Assert.False(AlertJiggleRules.IntervalDue(JiggleWhen.Persistent, Unacknowledged(watch)).Due);
+    }
+
+    [Fact]
+    public void NewUntilAcknowledgedIsDueOnAnIncreaseAndNotAgainUntilAnother()
+    {
+        var watch = new AlertWatchState();
+        var first = watch.Observe(Counts(1, 0));
+        var due = AlertJiggleRules.IncreaseDue(JiggleWhen.NewUntilAcknowledged, first);
+        Assert.True(due.Due);
+        Assert.Equal(AlertKind.AssignedToMe, Assert.Single(due.Causes));
+        Assert.False(AlertJiggleRules.IntervalDue(JiggleWhen.NewUntilAcknowledged, Unacknowledged(watch)).Due);
+
+        var same = watch.Observe(Counts(1, 0));
+        Assert.False(AlertJiggleRules.IncreaseDue(JiggleWhen.NewUntilAcknowledged, same).Due);
+
+        watch.Acknowledge();
+        var held = watch.Observe(Counts(1, 0));
+        Assert.False(AlertJiggleRules.IncreaseDue(JiggleWhen.NewUntilAcknowledged, held).Due);
+        Assert.False(AlertJiggleRules.IntervalDue(JiggleWhen.NewUntilAcknowledged, Unacknowledged(watch)).Due);
+
+        var next = watch.Observe(Counts(2, 0));
+        Assert.True(AlertJiggleRules.IncreaseDue(JiggleWhen.NewUntilAcknowledged, next).Due);
+        Assert.Equal(AlertKind.AssignedToMe, Assert.Single(next.Increased));
+    }
+
+    [Fact]
+    public void HighlightedKindsAreExactlyTheKindsThatCausedTheJiggle()
+    {
+        var watch = new AlertWatchState();
+        watch.Observe(new Dictionary<AlertKind, int>
+        {
+            [AlertKind.AssignedToMe] = 1,
+            [AlertKind.WatchedGroup] = 2,
+            [AlertKind.SlaBreaching] = 3
+        });
+
+        var persistent = AlertJiggleRules.IntervalDue(JiggleWhen.Persistent, Unacknowledged(watch));
+        var highlighted = AlertJiggleRules.HighlightedKinds(persistent);
+        Assert.Equal(persistent.Causes, highlighted);
+        Assert.Equal(
+            [AlertKind.AssignedToMe, AlertKind.WatchedGroup, AlertKind.SlaBreaching],
+            highlighted);
+
+        var notifications = new NotificationWorkspaceViewModel();
+        notifications.ShowJiggle(highlighted);
+        Assert.Equal(highlighted, notifications.JiggleHighlight);
+        Assert.All(
+            notifications.Circles.Where(circle => !highlighted.Contains(circle.Kind)),
+            circle => Assert.False(circle.IsJiggleCause));
+
+        var increased = watch.Observe(new Dictionary<AlertKind, int>
+        {
+            [AlertKind.AssignedToMe] = 4,
+            [AlertKind.WatchedGroup] = 2,
+            [AlertKind.SlaBreaching] = 3
+        });
+        var fresh = AlertJiggleRules.IncreaseDue(JiggleWhen.NewUntilAcknowledged, increased);
+        var freshHighlight = AlertJiggleRules.HighlightedKinds(fresh);
+        Assert.Equal([AlertKind.AssignedToMe], freshHighlight);
+        notifications.ShowJiggle(freshHighlight);
+        Assert.Equal([AlertKind.AssignedToMe], notifications.JiggleHighlight);
+        Assert.False(notifications.Circles.Single(circle => circle.Kind == AlertKind.WatchedGroup).IsJiggleCause);
+        Assert.False(notifications.Circles.Single(circle => circle.Kind == AlertKind.SlaBreaching).IsJiggleCause);
+
+        Assert.Empty(AlertJiggleRules.HighlightedKinds(AlertJiggleDecision.NotDue));
+        var duringHover = notifications.JiggleHighlight.ToArray();
+        Assert.Equal([AlertKind.AssignedToMe], duringHover);
+
+        watch.Acknowledge();
+        notifications.RefreshAcknowledgement(watch);
+        Assert.Empty(notifications.JiggleHighlight);
+        Assert.Empty(AlertJiggleRules.HighlightedKinds(AlertJiggleDecision.NotDue));
+    }
+
+    [Fact]
+    public void JiggleChoicesPersistWithNotificationPreferences()
+    {
+        var defaults = NotificationPreferences.From(new DeskSettings());
+        Assert.Equal(DesktopWidgetWhen.WhileOpen, defaults.ShowDesktopWidget);
+        Assert.Equal(JiggleWhen.Persistent, defaults.JiggleWhen);
+
+        var broken = NotificationPreferences.From(new DeskSettings
+        {
+            ShowDesktopWidget = (DesktopWidgetWhen)42,
+            JiggleWhen = (JiggleWhen)42
+        });
+        Assert.Equal(DesktopWidgetWhen.WhileOpen, broken.ShowDesktopWidget);
+        Assert.Equal(JiggleWhen.Persistent, broken.JiggleWhen);
+
+        var chosen = new NotificationPreferences
+        {
+            ShowDesktopWidget = DesktopWidgetWhen.OnlyMinimized,
+            JiggleWhen = JiggleWhen.NewUntilAcknowledged,
+            JiggleFrequency = "00:00:10"
+        };
+        var practice = new ConnectionViewModel { UseSampleData = true };
+        practice.RememberNotifications(chosen);
+        var saved = practice.BuildSettings();
+        Assert.True(saved.UseSampleData);
+        Assert.Equal(DesktopWidgetWhen.OnlyMinimized, saved.ShowDesktopWidget);
+        Assert.Equal(JiggleWhen.NewUntilAcknowledged, saved.JiggleWhen);
+        Assert.Equal("00:00:10", saved.JiggleFrequency);
+
+        var settings = new NotificationSettingsViewModel();
+        settings.Load(saved);
+        Assert.Equal(DesktopWidgetWhen.OnlyMinimized, settings.ShowDesktopWidget);
+        Assert.Equal(JiggleWhen.NewUntilAcknowledged, settings.JiggleWhen);
+        Assert.Equal(DesktopWidgetWhen.OnlyMinimized, settings.ActiveShowDesktopWidget);
+        Assert.Equal(JiggleWhen.NewUntilAcknowledged, settings.ActiveJiggleWhen);
+        Assert.Equal("00:00:10", settings.FrequencyText);
+
+        settings.ShowDesktopWidget = DesktopWidgetWhen.WhileOpen;
+        settings.JiggleWhen = JiggleWhen.Persistent;
+        settings.SaveSettingsCommand.Execute(null);
+        Assert.Equal(DesktopWidgetWhen.WhileOpen, settings.Committed.ShowDesktopWidget);
+        Assert.Equal(JiggleWhen.Persistent, settings.Committed.JiggleWhen);
+        Assert.Equal(DesktopWidgetWhen.WhileOpen, settings.ActiveShowDesktopWidget);
+        Assert.Equal(JiggleWhen.Persistent, settings.ActiveJiggleWhen);
+        Assert.Equal("00:00:10", settings.Committed.JiggleFrequency);
+    }
+
+    [Fact]
     public void CategoryLabelsAndColorsStayDistinct()
     {
         Assert.Equal(
@@ -601,6 +753,9 @@ public class AlertTests
                 || query.Contains("element_idIN", StringComparison.Ordinal);
         Assert.True(scoped, pathAndQuery);
     }
+
+    private static IReadOnlyList<AlertKind> Unacknowledged(AlertWatchState watch) =>
+        AlertCatalog.All.Where(watch.IsUnacknowledged).ToArray();
 
     private static Dictionary<AlertKind, int> Counts(int assigned, int group) => new()
     {

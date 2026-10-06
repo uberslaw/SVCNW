@@ -5,7 +5,7 @@
         <StackPanel MaxWidth="880" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Notifications" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                       Text="Click a colored portion to show that queue, then click a row to open the incident, request item, or walk-up. Green is Assigned to me. Amber is Group queue. Crimson is SLA breaching. Blue is On hold past follow-up. Violet is Updated by caller. Cyan is Returned with notes. A thin strip at the top center of the screen is the desktop widget. Rest the pointer on it to drop the bar, whether this window is open or minimized. The bar also drops on the jiggle interval. Frequency, sound, the watched group, and office locations are in Settings."/>
+                       Text="Click a colored portion to show that queue, then click a row to open the incident, request item, or walk-up. Green is Assigned to me. Amber is Group queue. Crimson is SLA breaching. Blue is On hold past follow-up. Violet is Updated by caller. Cyan is Returned with notes. A thin strip at the top center of the screen is the desktop widget. Rest the pointer on it to drop the bar. The bar also drops when a jiggle fires, and the portion that caused it is highlighted. Settings chooses whether the strip is there while this window is open, and whether a jiggle repeats on a timer or only for a new alert."/>
             <TextBlock Text="{Binding LastChecked}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
             <TextBlock Text="{Binding PollError}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                        Visibility="{Binding PollError, Converter={StaticResource StringVis}}"/>
@@ -27,7 +27,32 @@
                                 <ControlTemplate TargetType="Button">
                                     <Border x:Name="Bd" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
                                         <StackPanel Orientation="Horizontal">
-                                            <Ellipse Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
+                                            <Grid Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center">
+                                                <Ellipse IsHitTestVisible="False">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Setter Property="Fill" Value="Transparent"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsJiggleCause}" Value="True">
+                                                                    <Setter Property="Fill" Value="#FFE08A"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+                                                <Ellipse IsHitTestVisible="False">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Setter Property="Fill" Value="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsJiggleCause}" Value="True">
+                                                                    <Setter Property="Margin" Value="2"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+                                            </Grid>
                                             <ContentPresenter/>
                                         </StackPanel>
                                     </Border>

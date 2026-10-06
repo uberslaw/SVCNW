@@ -5,6 +5,7 @@ using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ServiceNowDesk.Alerts;
+using ServiceNowDesk.Models;
 using ServiceNowDesk.Services;
 using ServiceNowDesk.ViewModels;
 
@@ -25,6 +26,8 @@ public partial class AlertWidgetWindow : Window
     private readonly AlertSound _sound = new();
     private NotificationWorkspaceViewModel? _model;
     private NotificationSettingsViewModel? _settings;
+    private bool _mainMinimized;
+    private IReadOnlyList<AlertKind>? _pendingCauses;
     private DispatcherTimer? _dropTimer;
     private bool _allowClose;
     private bool _opening;
@@ -36,7 +39,7 @@ public partial class AlertWidgetWindow : Window
     {
         InitializeComponent();
         _jiggleTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
-        _jiggleTimer.Tick += (_, _) => BeginScheduledDrop(_settings?.ActivePlaySoundWhenJiggling ?? false);
+        _jiggleTimer.Tick += (_, _) => BeginIntervalDrop();
     }
 
     public event EventHandler<AlertKind>? Opened;
@@ -55,23 +58,14 @@ public partial class AlertWidgetWindow : Window
         DataContext = model;
         model.Attention += OnAttention;
         settings.PropertyChanged += OnSettingsChanged;
-        if (!IsVisible)
-        {
-            Opacity = 0;
-            ShowActivated = false;
-            Show();
-            UpdateLayout();
-            Opacity = 1;
-        }
-
-        ApplyChrome();
         EnsureTimer();
+        ApplyPresence();
     }
 
     public void SetMainMinimized(bool minimized)
     {
-        // The strip stays at the top of the screen while the desk is open and while it is minimized.
-        _ = minimized;
+        _mainMinimized = minimized;
+        ApplyPresence();
     }
 
     public void Shutdown()
@@ -108,12 +102,94 @@ public partial class AlertWidgetWindow : Window
     {
         if (e.PropertyName == nameof(NotificationSettingsViewModel.ActiveFrequency))
             EnsureTimer();
+        if (e.PropertyName is nameof(NotificationSettingsViewModel.ActiveShowDesktopWidget)
+            or nameof(NotificationSettingsViewModel.ActiveJiggleWhen))
+            ApplyPresence();
     }
 
     private void OnAttention(object? sender, AlertAttention attention)
     {
         if (attention.PlaySound && _settings is { ActivePlaySoundOnAlertMetric: true })
             _sound.Play(_settings.ActiveSoundPath);
+
+        if (_settings is null || _model is null)
+            return;
+
+        var decision = AlertJiggleRules.IncreaseDue(
+            _settings.ActiveJiggleWhen,
+            new AlertPollDecision(attention.Increased));
+        Present(decision, _settings.ActivePlaySoundWhenJiggling);
+    }
+
+    private bool DesktopAllowed() =>
+        AlertJiggleRules.AllowsDesktopWidget(
+            _settings?.ActiveShowDesktopWidget ?? DesktopWidgetWhen.WhileOpen,
+            _mainMinimized);
+
+    private void ApplyPresence()
+    {
+        if (!DesktopAllowed())
+        {
+            _motion.SetPointerOver(false);
+            _motion.SetTimerDrop(false);
+            _dropTimer?.Stop();
+            if (IsVisible)
+                Hide();
+            return;
+        }
+
+        if (_model is null)
+            return;
+
+        if (!IsVisible)
+        {
+            Opacity = 0;
+            ShowActivated = false;
+            Show();
+            UpdateLayout();
+            Opacity = 1;
+        }
+
+        ApplyChrome();
+        FlushPending();
+    }
+
+    private void BeginIntervalDrop()
+    {
+        if (_settings is null || _model is null)
+            return;
+
+        var decision = AlertJiggleRules.IntervalDue(_settings.ActiveJiggleWhen, _model.UnacknowledgedKinds);
+        Present(decision, _settings.ActivePlaySoundWhenJiggling);
+    }
+
+    private void Present(AlertJiggleDecision decision, bool playSound)
+    {
+        var causes = AlertJiggleRules.HighlightedKinds(decision);
+        if (causes.Count == 0)
+            return;
+
+        if (!DesktopAllowed() || !IsVisible)
+        {
+            _pendingCauses = causes;
+            return;
+        }
+
+        _pendingCauses = null;
+        BeginDrop(decision, playSound);
+    }
+
+    private void FlushPending()
+    {
+        if (_pendingCauses is not { Count: > 0 } pending || _model is null || _settings is null || !DesktopAllowed())
+            return;
+
+        var still = pending.Where(kind => _model.UnacknowledgedKinds.Contains(kind)).ToArray();
+        _pendingCauses = null;
+        if (still.Length == 0)
+            return;
+
+        BeginDrop(new AlertJiggleDecision(still), _settings.ActivePlaySoundWhenJiggling);
     }
 
     private void EnsureTimer()
@@ -127,11 +203,13 @@ public partial class AlertWidgetWindow : Window
         _jiggleTimer.Start();
     }
 
-    private void BeginScheduledDrop(bool playSound)
+    private void BeginDrop(AlertJiggleDecision decision, bool playSound)
     {
-        if (_settings is null || !IsVisible)
+        var causes = AlertJiggleRules.HighlightedKinds(decision);
+        if (causes.Count == 0 || _settings is null || _model is null || !IsVisible)
             return;
 
+        _model.ShowJiggle(causes);
         if (playSound)
             _sound.Play(_settings.ActiveSoundPath);
 
@@ -225,12 +303,16 @@ public partial class AlertWidgetWindow : Window
 
     private void Window_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        if (!DesktopAllowed())
+            return;
         _motion.SetPointerOver(true);
         ApplyChrome();
     }
 
     private void Window_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        if (!DesktopAllowed())
+            return;
         _motion.SetPointerOver(false);
         ApplyChrome();
     }

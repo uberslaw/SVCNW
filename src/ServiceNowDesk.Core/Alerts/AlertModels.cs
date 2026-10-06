@@ -130,4 +130,6 @@ public sealed record AlertSearch(string UserSysId, string? GroupName, IReadOnlyL
 public sealed class AlertAttention : EventArgs
 {
     public bool PlaySound { get; init; }
+
+    public IReadOnlyList<AlertKind> Increased { get; init; } = [];
 }

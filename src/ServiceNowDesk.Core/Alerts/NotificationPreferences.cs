@@ -23,6 +23,8 @@ public sealed class NotificationPreferences
 
     public string JiggleFrequency { get; set; } = DefaultFrequency;
     public int JiggleDurationSeconds { get; set; } = DefaultDurationSeconds;
+    public DesktopWidgetWhen ShowDesktopWidget { get; set; } = DesktopWidgetWhen.WhileOpen;
+    public JiggleWhen JiggleWhen { get; set; } = JiggleWhen.Persistent;
     public bool MaximizeWhenJiggling { get; set; } = true;
     public bool PlaySoundWhenJiggling { get; set; }
     public bool PlaySoundOnAlertMetric { get; set; } = true;
@@ -80,6 +82,8 @@ public sealed class NotificationPreferences
             JiggleDurationSeconds = settings.JiggleDurationSeconds >= MinimumDurationSeconds
                 ? settings.JiggleDurationSeconds
                 : DefaultDurationSeconds,
+            ShowDesktopWidget = Normalize(settings.ShowDesktopWidget),
+            JiggleWhen = Normalize(settings.JiggleWhen),
             MaximizeWhenJiggling = settings.MaximizeWhenJiggling,
             PlaySoundWhenJiggling = settings.PlaySoundWhenJiggling,
             PlaySoundOnAlertMetric = settings.PlaySoundOnAlertMetric,
@@ -103,6 +107,8 @@ public sealed class NotificationPreferences
         ArgumentNullException.ThrowIfNull(settings);
         settings.JiggleFrequency = JiggleFrequency;
         settings.JiggleDurationSeconds = JiggleDurationSeconds;
+        settings.ShowDesktopWidget = ShowDesktopWidget;
+        settings.JiggleWhen = JiggleWhen;
         settings.MaximizeWhenJiggling = MaximizeWhenJiggling;
         settings.PlaySoundWhenJiggling = PlaySoundWhenJiggling;
         settings.PlaySoundOnAlertMetric = PlaySoundOnAlertMetric;
@@ -116,6 +122,8 @@ public sealed class NotificationPreferences
     {
         JiggleFrequency = JiggleFrequency,
         JiggleDurationSeconds = JiggleDurationSeconds,
+        ShowDesktopWidget = ShowDesktopWidget,
+        JiggleWhen = JiggleWhen,
         MaximizeWhenJiggling = MaximizeWhenJiggling,
         PlaySoundWhenJiggling = PlaySoundWhenJiggling,
         PlaySoundOnAlertMetric = PlaySoundOnAlertMetric,
@@ -127,6 +135,12 @@ public sealed class NotificationPreferences
 
     public AlertSearch ToSearch(string userSysId) =>
         new(userSysId, WatchedGroupName, OfficeLocations ?? []);
+
+    private static DesktopWidgetWhen Normalize(DesktopWidgetWhen value) =>
+        Enum.IsDefined(value) ? value : DesktopWidgetWhen.WhileOpen;
+
+    private static JiggleWhen Normalize(JiggleWhen value) =>
+        Enum.IsDefined(value) ? value : JiggleWhen.Persistent;
 
     private static bool TryParseMinimum(string? text, int minimum, out int seconds)
     {

@@ -61,13 +61,15 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
             circle.Count = bucket.TotalCount;
             circle.Status = bucket.Status;
             circle.IsUnacknowledged = watch.IsUnacknowledged(circle.Kind);
+            if (!circle.IsUnacknowledged)
+                circle.IsJiggleCause = false;
         }
 
         AnyUnacknowledged = watch.AnyUnacknowledged;
         PollError = "";
         LastChecked = "Last checked " + DateTime.Now.ToString("t", CultureInfo.CurrentCulture) + ".";
         if (decision.HasIncrease)
-            Attention?.Invoke(this, new AlertAttention { PlaySound = true });
+            Attention?.Invoke(this, new AlertAttention { PlaySound = true, Increased = decision.Increased });
 
         RefreshWidget();
     }
@@ -78,7 +80,11 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         foreach (var section in Sections)
             section.IsUnacknowledged = watch.IsUnacknowledged(section.Kind);
         foreach (var circle in Circles)
+        {
             circle.IsUnacknowledged = watch.IsUnacknowledged(circle.Kind);
+            circle.IsJiggleCause = false;
+        }
+
         AnyUnacknowledged = watch.AnyUnacknowledged;
         RefreshWidget();
     }
@@ -98,6 +104,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
             circle.Count = 0;
             circle.Status = "";
             circle.IsUnacknowledged = false;
+            circle.IsJiggleCause = false;
         }
 
         AnyUnacknowledged = false;
@@ -107,6 +114,20 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     }
 
     public void NotePollError(string message) => PollError = message;
+
+    public IReadOnlyList<AlertKind> UnacknowledgedKinds =>
+        Circles.Where(circle => circle.IsUnacknowledged).Select(circle => circle.Kind).ToArray();
+
+    public IReadOnlyList<AlertKind> JiggleHighlight =>
+        Circles.Where(circle => circle.IsJiggleCause).Select(circle => circle.Kind).ToArray();
+
+    public void ShowJiggle(IReadOnlyList<AlertKind> causes)
+    {
+        ArgumentNullException.ThrowIfNull(causes);
+        var causeSet = causes as IReadOnlySet<AlertKind> ?? causes.ToHashSet();
+        foreach (var circle in Circles)
+            circle.IsJiggleCause = causeSet.Contains(circle.Kind);
+    }
 
     [RelayCommand]
     private void Open(AlertRow? row)
@@ -275,6 +296,7 @@ public partial class AlertCircleModel : ObservableObject
     [ObservableProperty] private int count;
     [ObservableProperty] private string status = "";
     [ObservableProperty] private bool isUnacknowledged;
+    [ObservableProperty] private bool isJiggleCause;
     [ObservableProperty] private bool isSelected;
     [ObservableProperty] private string automationName;
 

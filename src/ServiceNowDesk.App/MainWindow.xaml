@@ -93,7 +93,30 @@
                                                 <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
                                                     <StackPanel Orientation="Horizontal">
                                                         <Grid Width="22" Height="22" Margin="0,0,6,0">
-                                                            <Ellipse Fill="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
+                                                            <Ellipse IsHitTestVisible="False">
+                                                                <Ellipse.Style>
+                                                                    <Style TargetType="Ellipse">
+                                                                        <Setter Property="Fill" Value="Transparent"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsJiggleCause}" Value="True">
+                                                                                <Setter Property="Fill" Value="#FFE08A"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Ellipse.Style>
+                                                            </Ellipse>
+                                                            <Ellipse IsHitTestVisible="False">
+                                                                <Ellipse.Style>
+                                                                    <Style TargetType="Ellipse">
+                                                                        <Setter Property="Fill" Value="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsJiggleCause}" Value="True">
+                                                                                <Setter Property="Margin" Value="2"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Ellipse.Style>
+                                                            </Ellipse>
                                                             <TextBlock Text="{Binding Count}" Foreground="White" FontWeight="Bold" FontSize="11"
                                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                         </Grid>
@@ -101,6 +124,10 @@
                                                     </StackPanel>
                                                 </Border>
                                                 <ControlTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsJiggleCause}" Value="True">
+                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#E0A100"/>
+                                                        <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+                                                    </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                         <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
                                                     </DataTrigger>

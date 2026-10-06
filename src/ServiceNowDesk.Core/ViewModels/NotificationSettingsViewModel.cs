@@ -23,6 +23,8 @@ public partial class NotificationSettingsViewModel : ObservableObject
     [ObservableProperty] private string frequencyText = NotificationPreferences.DefaultFrequency;
     [ObservableProperty] private string durationText = NotificationPreferences.DefaultDurationSeconds.ToString(CultureInfo.InvariantCulture);
     [ObservableProperty] private string pollSecondsText = NotificationPreferences.DefaultPollSeconds.ToString(CultureInfo.InvariantCulture);
+    [ObservableProperty] private DesktopWidgetWhen showDesktopWidget = DesktopWidgetWhen.WhileOpen;
+    [ObservableProperty] private JiggleWhen jiggleWhen = JiggleWhen.Persistent;
     [ObservableProperty] private bool maximizeWhenJiggling = true;
     [ObservableProperty] private bool playSoundWhenJiggling;
     [ObservableProperty] private bool playSoundOnAlertMetric = true;
@@ -31,6 +33,8 @@ public partial class NotificationSettingsViewModel : ObservableObject
     [ObservableProperty] private string locationsText = string.Join(Environment.NewLine, NotificationPreferences.DefaultLocations);
     [ObservableProperty] private string activeFrequency = NotificationPreferences.DefaultFrequency;
     [ObservableProperty] private int activeDurationSeconds = NotificationPreferences.DefaultDurationSeconds;
+    [ObservableProperty] private DesktopWidgetWhen activeShowDesktopWidget = DesktopWidgetWhen.WhileOpen;
+    [ObservableProperty] private JiggleWhen activeJiggleWhen = JiggleWhen.Persistent;
     [ObservableProperty] private bool activeMaximizeWhenJiggling = true;
     [ObservableProperty] private bool activePlaySoundWhenJiggling;
     [ObservableProperty] private bool activePlaySoundOnAlertMetric = true;
@@ -81,6 +85,8 @@ public partial class NotificationSettingsViewModel : ObservableObject
             PollSecondsText = _committed.PollSeconds.ToString(CultureInfo.InvariantCulture);
         }
 
+        next.ShowDesktopWidget = ShowDesktopWidget;
+        next.JiggleWhen = JiggleWhen;
         next.MaximizeWhenJiggling = MaximizeWhenJiggling;
         next.PlaySoundWhenJiggling = PlaySoundWhenJiggling;
         next.PlaySoundOnAlertMetric = PlaySoundOnAlertMetric;
@@ -103,6 +109,8 @@ public partial class NotificationSettingsViewModel : ObservableObject
         FrequencyText = _committed.JiggleFrequency;
         DurationText = _committed.JiggleDurationSeconds.ToString(CultureInfo.InvariantCulture);
         PollSecondsText = _committed.PollSeconds.ToString(CultureInfo.InvariantCulture);
+        ShowDesktopWidget = _committed.ShowDesktopWidget;
+        JiggleWhen = _committed.JiggleWhen;
         MaximizeWhenJiggling = _committed.MaximizeWhenJiggling;
         PlaySoundWhenJiggling = _committed.PlaySoundWhenJiggling;
         PlaySoundOnAlertMetric = _committed.PlaySoundOnAlertMetric;
@@ -115,6 +123,8 @@ public partial class NotificationSettingsViewModel : ObservableObject
     {
         ActiveFrequency = _committed.JiggleFrequency;
         ActiveDurationSeconds = _committed.JiggleDurationSeconds;
+        ActiveShowDesktopWidget = _committed.ShowDesktopWidget;
+        ActiveJiggleWhen = _committed.JiggleWhen;
         ActiveMaximizeWhenJiggling = _committed.MaximizeWhenJiggling;
         ActivePlaySoundWhenJiggling = _committed.PlaySoundWhenJiggling;
         ActivePlaySoundOnAlertMetric = _committed.PlaySoundOnAlertMetric;

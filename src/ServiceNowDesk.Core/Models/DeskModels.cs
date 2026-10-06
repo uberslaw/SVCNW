@@ -29,6 +29,28 @@ public enum JournalKind
     Comments
 }
 
+/// <summary>
+/// When the desktop notification strip is allowed on screen.
+/// WhileOpen keeps it while the desk is open and while it is minimized.
+/// OnlyMinimized keeps it only while the main window is minimized.
+/// </summary>
+public enum DesktopWidgetWhen
+{
+    WhileOpen,
+    OnlyMinimized
+}
+
+/// <summary>
+/// When a jiggle drops the notification bar.
+/// Persistent repeats on the saved frequency while a count is still unacknowledged.
+/// NewUntilAcknowledged drops when a count increases and does not repeat until a newer increase.
+/// </summary>
+public enum JiggleWhen
+{
+    Persistent,
+    NewUntilAcknowledged
+}
+
 public enum DeskSection
 {
     Incidents,
@@ -96,6 +118,8 @@ public sealed class DeskSettings
     public bool UseSampleData { get; set; }
     public string JiggleFrequency { get; set; } = "00:01:00";
     public int JiggleDurationSeconds { get; set; } = 2;
+    public DesktopWidgetWhen ShowDesktopWidget { get; set; } = DesktopWidgetWhen.WhileOpen;
+    public JiggleWhen JiggleWhen { get; set; } = JiggleWhen.Persistent;
     public bool MaximizeWhenJiggling { get; set; } = true;
     public bool PlaySoundWhenJiggling { get; set; }
     public bool PlaySoundOnAlertMetric { get; set; } = true;
