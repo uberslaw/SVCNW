@@ -132,6 +132,8 @@ public sealed class ServiceNowClient : IServiceNowClient
             _completeMemberGroups.Clear();
             _snapshot.Members = [];
             _snapshot.DirectoryComplete = false;
+            _snapshot.MembersVerified = false;
+            _snapshot.VerifiedMemberGroups = [];
             _snapshot.DirectoryCapturedAt = default;
         }
 
@@ -157,6 +159,8 @@ public sealed class ServiceNowClient : IServiceNowClient
             _snapshot.CapturedAt = default;
             _snapshot.DirectoryCapturedAt = default;
             _snapshot.DirectoryComplete = false;
+            _snapshot.MembersVerified = false;
+            _snapshot.VerifiedMemberGroups = [];
         }
 
         ApplyCatalog(snapshot);
@@ -594,7 +598,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         lock (_cacheGate)
         {
             RebuildMemberIndex(fetched.Members, markEmptyGroups: !fetched.Truncated);
-            _snapshot.DirectoryComplete = !fetched.Truncated;
+            NoteMemberDirectory(!fetched.Truncated);
             _snapshot.DirectoryCapturedAt = DateTimeOffset.UtcNow;
             _snapshot.Groups = _groups.Select(group => new CachedAssignmentGroup { SysId = group.Value, Name = group.Label }).ToList();
             CopyMembersToSnapshot();
@@ -618,10 +622,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         if (term.Length < 2)
             return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
 
-        var query = "active=true^nameLIKE" + term
-            + "^ORactive=true^emailLIKE" + term
-            + "^ORactive=true^user_nameLIKE" + term;
-        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", query, true, 20, cancellationToken);
+        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", EncodedQuery.ActiveUserSearch(term), true, 20, cancellationToken);
     }
 
     public Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken)
@@ -630,13 +631,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         if (term.Length < 2)
             return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
 
-        var query = "active=true^name=" + term
-            + "^ORactive=true^email=" + term
-            + "^ORactive=true^user_name=" + term
-            + "^ORactive=true^nameSTARTSWITH" + term + "^nameENDSWITH" + term
-            + "^ORactive=true^emailSTARTSWITH" + term + "^emailENDSWITH" + term
-            + "^ORactive=true^user_nameSTARTSWITH" + term + "^user_nameENDSWITH" + term;
-        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", query, true, 20, cancellationToken);
+        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", EncodedQuery.ActiveUserExact(term), true, 20, cancellationToken);
     }
 
     public async Task<IReadOnlyList<Choice>> ListAssignmentGroupsAsync(CancellationToken cancellationToken)
@@ -679,7 +674,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         if (!IsGroupToken(id))
             return [];
 
-        var fetched = await FetchMembersAsync("group=" + EncodedQuery.Sanitize(id) + "^ORDERBYuser", CompleteGroupMemberCap, null, cancellationToken).ConfigureAwait(false);
+        var fetched = await FetchMembersAsync("group=" + EncodedQuery.Sanitize(id) + "^ORDERBYsys_id", CompleteGroupMemberCap, null, cancellationToken).ConfigureAwait(false);
         var choices = fetched.Members
             .Where(member => member.UserId.Length > 0)
             .Select(member => new Choice(member.UserId, member.UserName))
@@ -960,11 +955,15 @@ public sealed class ServiceNowClient : IServiceNowClient
             foreach (var row in RequireArray(result.Document).EnumerateArray())
             {
                 var sysId = SnowField.Read(row, "sys_id").Value;
-                var name = SnowField.Read(row, "name").Display;
-                if (sysId.Length == 0 || name.Length == 0)
+                if (sysId.Length == 0)
                     continue;
-                var userName = user ? SnowField.Read(row, "user_name").Display : "";
-                var email = user ? SnowField.Read(row, "email").Display : "";
+                var name = SnowField.Read(row, "name").Display.Trim();
+                var userName = user ? SnowField.Read(row, "user_name").Display.Trim() : "";
+                var email = user ? SnowField.Read(row, "email").Display.Trim() : "";
+                if (name.Length == 0)
+                    name = userName.Length > 0 ? userName : email;
+                if (name.Length == 0)
+                    continue;
                 var detail = user
                     ? (email.Length > 0 ? email : userName)
                     : SnowField.Read(row, "description").Display;
@@ -1218,6 +1217,8 @@ public sealed class ServiceNowClient : IServiceNowClient
             _snapshot.Choices = snapshot.Choices ?? [];
             _snapshot.CatalogItems = snapshot.CatalogItems ?? [];
             _snapshot.DirectoryComplete = snapshot.DirectoryComplete;
+            _snapshot.MembersVerified = snapshot.MembersVerified;
+            _snapshot.VerifiedMemberGroups = snapshot.VerifiedMemberGroups ?? [];
             _snapshot.Groups = snapshot.Groups ?? [];
             _snapshot.Members = snapshot.Members ?? [];
             _groups = _snapshot.Groups
@@ -1227,7 +1228,13 @@ public sealed class ServiceNowClient : IServiceNowClient
             var savedMembers = (_snapshot.Members ?? [])
                 .Select(member => new RawMember(member.GroupSysId ?? "", member.GroupSysId ?? "", member.UserSysId ?? "", string.IsNullOrWhiteSpace(member.Name) ? member.UserSysId ?? "" : member.Name))
                 .ToList();
-            RebuildMemberIndex(savedMembers, markEmptyGroups: snapshot.DirectoryComplete);
+            RebuildMemberIndex(savedMembers, markEmptyGroups: snapshot.MembersVerified);
+            _completeMemberGroups.Clear();
+            foreach (var groupId in _snapshot.VerifiedMemberGroups)
+            {
+                if (!string.IsNullOrWhiteSpace(groupId))
+                    _completeMemberGroups.Add(groupId);
+            }
             foreach (var list in _snapshot.Choices)
             {
                 if (list.Choices is not { Count: > 0 } || string.IsNullOrWhiteSpace(list.Table) || string.IsNullOrWhiteSpace(list.Element))
@@ -1317,6 +1324,8 @@ public sealed class ServiceNowClient : IServiceNowClient
                 variable.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToArray())).ToList()
         }).ToList(),
         DirectoryComplete = _snapshot.DirectoryComplete,
+        MembersVerified = _snapshot.MembersVerified,
+        VerifiedMemberGroups = _snapshot.VerifiedMemberGroups.ToList(),
         Groups = _snapshot.Groups.Select(group => new CachedAssignmentGroup { SysId = group.SysId, Name = group.Name }).ToList(),
         Members = _snapshot.Members.Select(member => new CachedGroupMember
         {
@@ -1447,7 +1456,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         {
             _groups = groups;
             RebuildMemberIndex(fetched.Members, markEmptyGroups: !fetched.Truncated);
-            _snapshot.DirectoryComplete = !fetched.Truncated;
+            NoteMemberDirectory(!fetched.Truncated);
             _snapshot.DirectoryCapturedAt = DateTimeOffset.UtcNow;
             _snapshot.Groups = _groups.Select(group => new CachedAssignmentGroup { SysId = group.Value, Name = group.Label }).ToList();
             CopyMembersToSnapshot();
@@ -1482,7 +1491,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         var members = new List<RawMember>();
         var truncated = await PageRowsAsync(
             "sys_user_grmember",
-            "group,user",
+            "group,user,user.name,user.user_name,user.email",
             query,
             max,
             progress,
@@ -1494,13 +1503,42 @@ public sealed class ServiceNowClient : IServiceNowClient
                     return;
                 if (user.Value.Length == 0)
                     return;
-                var name = user.Display.Length > 0 ? user.Display : user.Value;
+                var name = MemberLabel(row, user);
                 if (members.Any(member => member.GroupValue.Equals(group.Value, StringComparison.OrdinalIgnoreCase) && member.UserId.Equals(user.Value, StringComparison.OrdinalIgnoreCase)))
                     return;
                 members.Add(new RawMember(group.Value, group.Display, user.Value, name));
             },
             cancellationToken).ConfigureAwait(false);
         return new MemberFetch(members, truncated);
+    }
+
+    private static string MemberLabel(JsonElement row, SnowField user)
+    {
+        foreach (var field in new[] { "user", "user.name", "user.user_name", "user.email" })
+        {
+            var display = DisplayOnly(row, field);
+            if (display.Length == 0 || display.Equals(user.Value, StringComparison.OrdinalIgnoreCase))
+                continue;
+            return display;
+        }
+
+        return user.Value;
+    }
+
+    private static string DisplayOnly(JsonElement row, string name)
+    {
+        if (row.ValueKind != JsonValueKind.Object || !row.TryGetProperty(name, out var element))
+            return "";
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (!element.TryGetProperty("display_value", out var shown))
+                return "";
+            return SnowField.AsString(shown).Trim();
+        }
+
+        if (element.ValueKind == JsonValueKind.String)
+            return (element.GetString() ?? "").Trim();
+        return "";
     }
 
     private async Task<bool> PageRowsAsync(
@@ -1516,6 +1554,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         var offset = 0;
         var kept = 0;
         var received = 0;
+        int? total = null;
         var truncated = false;
         progress?.Report(new DownloadTick(0, 0));
         while (kept < maxRows)
@@ -1535,39 +1574,47 @@ public sealed class ServiceNowClient : IServiceNowClient
                 }
 
                 received += count;
-                var expected = result.TotalCount;
-                if (expected is > 0)
-                    progress?.Report(new DownloadTick(Math.Min(received, expected.Value), expected.Value));
+                if (result.TotalCount is int reported)
+                    total = reported;
+                if (total is > 0)
+                    progress?.Report(new DownloadTick(Math.Min(received, total.Value), total.Value));
                 else if (count < limit)
                     progress?.Report(new DownloadTick(Math.Max(received, 1), Math.Max(received, 1)));
                 else
                     progress?.Report(new DownloadTick(received, received + limit));
 
-                var more = expected is > 0 && received < expected.Value;
+                var hasNext = !string.IsNullOrWhiteSpace(result.NextLink);
                 var linkOffset = TryReadOffset(result.NextLink);
+                var more = total is int expected && received < expected;
                 if (count == 0)
                 {
-                    truncated = more || linkOffset > received;
+                    truncated = more || hasNext;
                     break;
                 }
 
-                if (kept >= maxRows && (more || linkOffset > offset || count >= limit))
+                if (total is int done && received >= done)
+                    break;
+
+                if (!more && !hasNext && count < limit)
+                    break;
+
+                var step = offset + count;
+                var nextOffset = step;
+                if (linkOffset > offset && (count >= limit || linkOffset <= step))
+                    nextOffset = linkOffset;
+
+                if (nextOffset <= offset || kept >= maxRows)
                 {
-                    truncated = true;
+                    truncated = more || hasNext || count >= limit;
                     break;
                 }
 
-                var nextOffset = linkOffset > offset ? linkOffset : offset + count;
-                if ((more || linkOffset > offset || count >= limit) && nextOffset > offset && kept < maxRows)
-                {
-                    offset = nextOffset;
-                    continue;
-                }
-
-                break;
+                offset = nextOffset;
             }
         }
 
+        if (kept >= maxRows && total is int expectedTotal && received < expectedTotal)
+            truncated = true;
         return truncated;
     }
 
@@ -1715,11 +1762,20 @@ public sealed class ServiceNowClient : IServiceNowClient
 
     private readonly record struct MemberFetch(List<RawMember> Members, bool Truncated);
 
+    private void NoteMemberDirectory(bool complete)
+    {
+        _snapshot.DirectoryComplete = complete;
+        _snapshot.MembersVerified = complete;
+        if (!complete)
+            _completeMemberGroups.Clear();
+        _snapshot.VerifiedMemberGroups = _completeMemberGroups.ToList();
+    }
+
     private bool MembersAreComplete(string id)
     {
         if (_completeMemberGroups.Contains(id))
             return true;
-        return _snapshot.DirectoryComplete && _groupsWithMemberList.Contains(id);
+        return _snapshot.MembersVerified && _groupsWithMemberList.Contains(id);
     }
 
     private void RememberGroupMembers(string groupId, IReadOnlyList<Choice> members, bool complete)
@@ -1733,6 +1789,7 @@ public sealed class ServiceNowClient : IServiceNowClient
                 _completeMemberGroups.Add(groupId);
             else
                 _completeMemberGroups.Remove(groupId);
+            _snapshot.VerifiedMemberGroups = _completeMemberGroups.ToList();
             _snapshot.Members.RemoveAll(member => member.GroupSysId.Equals(groupId, StringComparison.OrdinalIgnoreCase));
             foreach (var member in list)
                 _snapshot.Members.Add(new CachedGroupMember { GroupSysId = groupId, UserSysId = member.Value, Name = member.Label });
@@ -1782,24 +1839,44 @@ public sealed class ServiceNowClient : IServiceNowClient
         if (!TryLinkValues(response.Headers, out var values) && (response.Content is null || !TryLinkValues(response.Content.Headers, out values)))
             return null;
 
-        foreach (var header in values!)
+        var headerText = string.Join(",", values!);
+        foreach (var part in SplitLinkParts(headerText))
         {
-            foreach (var part in header.Split(','))
-            {
-                var rel = part.IndexOf("rel=", StringComparison.OrdinalIgnoreCase);
-                if (rel < 0 || !part[rel..].Contains("next", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var start = part.IndexOf('<');
-                var end = part.IndexOf('>');
-                if (start < 0 || end <= start)
-                    continue;
-                var url = part[(start + 1)..end].Trim();
-                if (url.Length > 0)
-                    return url;
-            }
+            var rel = part.IndexOf("rel=", StringComparison.OrdinalIgnoreCase);
+            if (rel < 0 || !part[rel..].Contains("next", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var start = part.IndexOf('<');
+            var end = part.IndexOf('>');
+            if (start < 0 || end <= start)
+                continue;
+            var url = part[(start + 1)..end].Trim();
+            if (url.Length > 0)
+                return url;
         }
 
         return null;
+    }
+
+    private static IEnumerable<string> SplitLinkParts(string header)
+    {
+        var start = 0;
+        var depth = 0;
+        for (var index = 0; index < header.Length; index++)
+        {
+            var character = header[index];
+            if (character == '<')
+                depth++;
+            else if (character == '>' && depth > 0)
+                depth--;
+            else if (character == ',' && depth == 0)
+            {
+                yield return header[start..index];
+                start = index + 1;
+            }
+        }
+
+        if (start < header.Length)
+            yield return header[start..];
     }
 
     private static bool TryLinkValues(HttpHeaders headers, out IEnumerable<string>? values) =>
@@ -1809,15 +1886,16 @@ public sealed class ServiceNowClient : IServiceNowClient
     {
         if (string.IsNullOrWhiteSpace(url))
             return 0;
+        var text = Uri.UnescapeDataString(url);
         const string marker = "sysparm_offset=";
-        var index = url.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        var index = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
         if (index < 0)
             return 0;
         var start = index + marker.Length;
         var end = start;
-        while (end < url.Length && char.IsDigit(url[end]))
+        while (end < text.Length && char.IsDigit(text[end]))
             end++;
-        return end > start && int.TryParse(url[start..end], NumberStyles.Integer, CultureInfo.InvariantCulture, out var offset)
+        return end > start && int.TryParse(text[start..end], NumberStyles.Integer, CultureInfo.InvariantCulture, out var offset)
             ? offset
             : 0;
     }

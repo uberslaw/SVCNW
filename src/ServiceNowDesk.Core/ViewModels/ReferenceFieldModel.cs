@@ -10,6 +10,7 @@ public sealed partial class ReferenceFieldModel : ObservableObject
     private readonly Func<string, CancellationToken, Task<IReadOnlyList<ReferenceSuggestion>>> _match;
     private readonly TimeSpan _delay;
     private CancellationTokenSource? _searchCts;
+    private ReferenceSuggestion? _chosen;
     private bool _suppress;
 
     public ReferenceFieldModel(
@@ -41,11 +42,26 @@ public sealed partial class ReferenceFieldModel : ObservableObject
         if (_suppress)
             return;
 
-        if (!string.IsNullOrEmpty(SysId))
+        if (!string.IsNullOrEmpty(SysId) && !TextMatchesChosen(value))
             SysId = "";
+        if (string.IsNullOrEmpty(SysId))
+            _chosen = null;
         Changed?.Invoke(this, EventArgs.Empty);
         _ = SearchAsync(value);
     }
+
+    private bool TextMatchesChosen(string? value)
+    {
+        if (_chosen is null)
+            return false;
+        var typed = (value ?? "").Trim();
+        if (typed.Length == 0)
+            return false;
+        return Same(_chosen.Display, typed) || Same(_chosen.UserName, typed) || Same(_chosen.Email, typed);
+    }
+
+    private static bool Same(string? candidate, string typed) =>
+        string.Equals((candidate ?? "").Trim(), typed, StringComparison.OrdinalIgnoreCase);
 
     public async Task<bool> AcceptExactUserAsync()
     {
@@ -94,6 +110,7 @@ public sealed partial class ReferenceFieldModel : ObservableObject
         ArgumentNullException.ThrowIfNull(suggestion);
         _searchCts?.Cancel();
         _suppress = true;
+        _chosen = suggestion;
         SysId = suggestion.SysId;
         Text = suggestion.Display;
         Suggestions.Clear();
@@ -108,6 +125,7 @@ public sealed partial class ReferenceFieldModel : ObservableObject
         _suppress = true;
         SysId = sysId ?? "";
         Text = display ?? "";
+        _chosen = string.IsNullOrEmpty(SysId) ? null : new ReferenceSuggestion(SysId, Text, "");
         Suggestions.Clear();
         HighlightedIndex = -1;
         _suppress = false;

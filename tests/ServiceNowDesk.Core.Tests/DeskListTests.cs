@@ -73,6 +73,100 @@ public class DeskListTests
     }
 
     [Fact]
+    public async Task AssignedToListsEveryMemberWhenTheGroupIsServedInPagesOfSeven()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "snd-members-" + Guid.NewGuid().ToString("N"));
+        var store = new FileFormCatalogStore(folder);
+        var session = Api.BasicSession();
+        store.Save(session.InstanceUri, new FormCatalogSnapshot
+        {
+            DirectoryCapturedAt = DateTimeOffset.UtcNow,
+            DirectoryComplete = true,
+            Groups = [new CachedAssignmentGroup { SysId = "group-aus", Name = "AUS DT - Client Services" }],
+            Members = Enumerable.Range(1, 7).Select(index => new CachedGroupMember
+            {
+                GroupSysId = "group-aus",
+                UserSysId = "stale-" + index,
+                Name = "Stale " + index
+            }).ToList()
+        });
+        var offsets = new List<int>();
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            if (!path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+
+            var text = Uri.UnescapeDataString(path);
+            Assert.Contains("group=group-aus", text);
+            Assert.Contains("user.user_name", text);
+            Assert.DoesNotContain("user.active", text, StringComparison.OrdinalIgnoreCase);
+            var offset = QueryOffset(text);
+            lock (offsets)
+                offsets.Add(offset);
+
+            const int pageSize = 7;
+            const int total = 25;
+            var count = Math.Max(0, Math.Min(pageSize, total - offset));
+            var rows = new List<string>();
+            for (var index = 0; index < count; index++)
+            {
+                var number = offset + index + 1;
+                var id = "user-" + number.ToString("00");
+                if (number == 8)
+                {
+                    rows.Add(
+                        "{\"group\":{\"value\":\"group-aus\",\"display_value\":\"AUS DT - Client Services\"},\"user\":{\"value\":\""
+                        + id + "\",\"display_value\":\"\"},\"user.user_name\":{\"value\":\"person.08\",\"display_value\":\"person.08\"},\"user.email\":{\"value\":\"person.08@example.com\",\"display_value\":\"person.08@example.com\"}}");
+                }
+                else
+                {
+                    var label = "Person " + number.ToString("00");
+                    rows.Add(
+                        "{\"group\":{\"value\":\"group-aus\",\"display_value\":\"AUS DT - Client Services\"},\"user\":{\"value\":\""
+                        + id + "\",\"display_value\":\"" + label + "\"}}");
+                }
+            }
+
+            var response = Api.Json("{\"result\":[" + string.Join(",", rows) + "]}", total: total);
+            var next = offset + count;
+            if (next < total)
+            {
+                response.Headers.TryAddWithoutValidation(
+                    "Link",
+                    "</api/now/table/sys_user_grmember?sysparm_fields=group,user&sysparm_limit=200&sysparm_offset="
+                    + (offset + 200)
+                    + "&sysparm_query=group%3Dgroup-aus>;rel=\"next\"");
+            }
+
+            return response;
+        });
+        using var client = ServiceNowClient.Create(session, handler, store);
+        var fields = new AssignmentFields();
+        fields.Use(client);
+        fields.GroupId = "group-aus";
+        await fields.WhenReady;
+
+        Assert.Equal([0, 7, 14, 21], offsets);
+        Assert.Equal(26, fields.Members.Count);
+        Assert.Equal("Unassigned", fields.Members[0].Label);
+        Assert.Contains(fields.Members, member => member.Value == "" && member.Label == "Unassigned");
+        Assert.Contains(fields.Members, member => member.Value == "user-08" && member.Label == "person.08");
+        Assert.DoesNotContain(fields.Members, member => member.Label.StartsWith("Stale", StringComparison.Ordinal));
+        for (var number = 1; number <= 25; number++)
+        {
+            if (number == 8)
+                continue;
+            var id = "user-" + number.ToString("00");
+            var label = "Person " + number.ToString("00");
+            Assert.Contains(fields.Members, member => member.Value == id && member.Label == label);
+        }
+
+        await client.ListGroupMembersAsync("group-aus", CancellationToken.None);
+        Assert.Equal(4, handler.Calls.Count(call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void RecentGroupsKeepTheLastFiveOnDisk()
     {
         var folder = Path.Combine(Path.GetTempPath(), "snd-recent-" + Guid.NewGuid().ToString("N"));
@@ -199,10 +293,10 @@ public class DeskListTests
         workspace.Caller.Text = "jordan.lee@example.com";
         await WaitUntilAsync(() => workspace.Caller.HasSuggestions);
         var query = Uri.UnescapeDataString(handler.Calls.First(call => call.PathAndQuery.Contains("/sys_user", StringComparison.Ordinal)).PathAndQuery);
-        Assert.Contains("nameLIKE", query);
-        Assert.Contains("emailLIKE", query);
-        Assert.Contains("user_nameLIKE", query);
-        Assert.Contains("active=true", query);
+        Assert.Contains(
+            "nameLIKEjordan.lee@example.com^ORemailLIKEjordan.lee@example.com^ORuser_nameLIKEjordan.lee@example.com^active=true",
+            query);
+        Assert.DoesNotContain("^ORactive=true^", query);
         Assert.Contains("sysparm_limit=20", query);
         Assert.Equal("Jordan Lee", workspace.Caller.Suggestions[0].Display);
         Assert.Equal("jordan.lee@example.com", workspace.Caller.Suggestions[0].Detail);
@@ -213,6 +307,117 @@ public class DeskListTests
         Assert.Equal("user-jordan", workspace.Caller.SysId);
         Assert.False(workspace.IsNew);
         Assert.Contains(handler.Calls, call => call.Method == "POST" && call.Body.Contains("user-jordan", StringComparison.Ordinal));
+        var match = Uri.UnescapeDataString(handler.Calls.Last(call => call.PathAndQuery.Contains("/sys_user", StringComparison.Ordinal)).PathAndQuery);
+        Assert.Contains("email=jordan.lee@example.com^active=true", match);
+        Assert.Contains("emailSTARTSWITHjordan.lee@example.com^emailENDSWITHjordan.lee@example.com^active=true", match);
+        Assert.Contains("^NQ", match);
+    }
+
+    [Fact]
+    public async Task ChosenCallerKeepsTheSysIdWhenTheLabelIsNotTheEmail()
+    {
+        var handler = UserHandler(
+            OneUser("user-jordan", "Jordan Lee", "jordan.lee", "jordan.lee@example.com"),
+            OneUser("user-jordan2", "Jordan Leigh", "jordan.leigh", "jordan.lee@example.com"));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.Attach(client);
+        workspace.NewRecordCommand.Execute(null);
+        workspace.ShortDescription = "Badge printer";
+        workspace.Caller.Choose(new ReferenceSuggestion("user-jordan", "Jordan Lee", "jordan.lee@example.com")
+        {
+            UserName = "jordan.lee",
+            Email = "jordan.lee@example.com"
+        });
+        workspace.Caller.Text = "jordan.lee@example.com";
+
+        Assert.Equal("user-jordan", workspace.Caller.SysId);
+        Assert.Equal("jordan.lee@example.com", workspace.Caller.Text);
+
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("", workspace.ErrorMessage);
+        Assert.Equal("user-jordan", workspace.Caller.SysId);
+        Assert.False(workspace.IsNew);
+        Assert.Contains(handler.Calls, call => call.Method == "POST" && call.Body.Contains("user-jordan", StringComparison.Ordinal));
+        Assert.DoesNotContain(handler.Calls, call => call.Method == "POST" && call.Body.Contains("user-jordan2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WalkUpAndRequestAcceptOneTypedEmail()
+    {
+        var user = OneUser("user-jordan", "Jordan Lee", "jordan.lee", "jordan.lee@example.com");
+        var handler = new StubHandler((request, body) =>
+        {
+            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.Contains("interaction", StringComparison.Ordinal))
+            {
+                Assert.Contains("user-jordan", body);
+                return Api.Json("""
+                    {"result":{"sys_id":{"value":"ims-1","display_value":"ims-1"},"number":{"value":"IMS0001","display_value":"IMS0001"},"short_description":{"value":"Badge printer","display_value":"Badge printer"},"opened_for":{"value":"user-jordan","display_value":"Jordan Lee"}}}
+                    """);
+            }
+
+            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.Contains("sc_request", StringComparison.Ordinal))
+            {
+                Assert.Contains("user-jordan", body);
+                return Api.Json("""
+                    {"result":{"sys_id":{"value":"req-1","display_value":"req-1"},"number":{"value":"REQ0001","display_value":"REQ0001"},"short_description":{"value":"Badge printer","display_value":"Badge printer"},"requested_for":{"value":"user-jordan","display_value":"Jordan Lee"}}}
+                    """);
+            }
+
+            if (request.RequestUri!.AbsolutePath.Contains("/sys_user", StringComparison.Ordinal))
+                return Api.Json("{\"result\":[" + user + "]}");
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        var walkUp = new InteractionWorkspaceViewModel(new RecordingDesktopServices());
+        walkUp.Attach(client);
+        walkUp.NewRecordCommand.Execute(null);
+        walkUp.ShortDescription = "Badge printer";
+        walkUp.Caller.Text = "jordan.lee@example.com";
+        await walkUp.SaveCommand.ExecuteAsync(null);
+        Assert.Equal("", walkUp.ErrorMessage);
+        Assert.Equal("user-jordan", walkUp.Caller.SysId);
+        Assert.False(walkUp.IsNew);
+
+        var request = new RequestWorkspaceViewModel(new RecordingDesktopServices());
+        request.Attach(client);
+        request.NewRecordCommand.Execute(null);
+        request.ShortDescription = "Badge printer";
+        request.RequestedFor.Text = "jordan.lee@example.com";
+        await request.SaveCommand.ExecuteAsync(null);
+        Assert.Equal("", request.ErrorMessage);
+        Assert.Equal("user-jordan", request.RequestedFor.SysId);
+        Assert.False(request.IsNew);
+    }
+
+    [Fact]
+    public async Task UserSearchIncludesTheBrowserSessionCookie()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/sys_user", StringComparison.Ordinal))
+            {
+                var cookie = Assert.Single(request.Headers.GetValues("Cookie"));
+                Assert.Contains("glide_user_session=abc", cookie);
+                Assert.Equal("tok-ck", Assert.Single(request.Headers.GetValues("X-UserToken")));
+                var query = Uri.UnescapeDataString(request.RequestUri.Query);
+                Assert.Contains("nameLIKEjordan^ORemailLIKEjordan^ORuser_nameLIKEjordan^active=true", query);
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(ServiceNowSession.FromSettings(new DeskSettings
+        {
+            InstanceUrl = "https://example.service-now.com",
+            AuthMode = ServiceNowAuthMode.BrowserSession,
+            SessionCookie = "glide_user_session=abc; JSESSIONID=xyz",
+            UserToken = "tok-ck"
+        }), handler);
+
+        await client.SearchUsersAsync("jordan", CancellationToken.None);
+        Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("/sys_user", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -336,6 +541,19 @@ public class DeskListTests
 
     private static string OneUser(string sysId, string name, string userName, string email) =>
         "{\"sys_id\":{\"value\":\"" + sysId + "\",\"display_value\":\"" + sysId + "\"},\"name\":{\"value\":\"" + name + "\",\"display_value\":\"" + name + "\"},\"user_name\":{\"value\":\"" + userName + "\",\"display_value\":\"" + userName + "\"},\"email\":{\"value\":\"" + email + "\",\"display_value\":\"" + email + "\"}}";
+
+    private static int QueryOffset(string text)
+    {
+        const string marker = "sysparm_offset=";
+        var index = text.IndexOf(marker, StringComparison.Ordinal);
+        if (index < 0)
+            return 0;
+        var start = index + marker.Length;
+        var end = start;
+        while (end < text.Length && char.IsDigit(text[end]))
+            end++;
+        return end > start ? int.Parse(text[start..end], System.Globalization.CultureInfo.InvariantCulture) : 0;
+    }
 
     private static async Task WaitUntilAsync(Func<bool> ready)
     {
