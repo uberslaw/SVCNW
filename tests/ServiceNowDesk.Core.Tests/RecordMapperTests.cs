@@ -150,6 +150,86 @@ public class RecordMapperTests
     }
 
     [Fact]
+    public void JournalReadsTaskParentRowsWhenNameIsTask()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "result": [
+                {
+                  "sys_id": {"value":"journal-task-work","display_value":"journal-task-work"},
+                  "name": {"value":"task","display_value":"task"},
+                  "element": {"value":"work_notes","display_value":"Work notes"},
+                  "element_id": {"value":"inc-live","display_value":"INC0012345"},
+                  "value": {"value":"","display_value":"Replaced the fuser and the printer is back."},
+                  "sys_created_on": {"value":"2026-10-06 14:05:00","display_value":"2026-10-06 14:05:00"},
+                  "sys_created_by": {"value":"casey.ng","display_value":"Casey Ng"}
+                },
+                {
+                  "sys_id": {"value":"journal-task-comment","display_value":"journal-task-comment"},
+                  "name": {"value":"task","display_value":"task"},
+                  "element": {"value":"comments","display_value":"Additional comments"},
+                  "element_id": {"value":"inc-live","display_value":"INC0012345"},
+                  "value": {"value":"The queue is still paused. Please call me.","display_value":""},
+                  "sys_created_on": {"value":"2026-10-06 13:40:00","display_value":"2026-10-06 13:40:00"},
+                  "sys_created_by": {"value":"jordan.lee","display_value":"Jordan Lee"}
+                }
+              ]
+            }
+            """);
+
+        var rows = document.RootElement.GetProperty("result").EnumerateArray().Select(RecordMapper.Journal).ToArray();
+
+        var work = rows[0];
+        Assert.Equal("task", work.Table);
+        Assert.Equal("work_notes", work.Kind);
+        Assert.Equal("Work note", work.KindLabel);
+        Assert.False(work.IsCustomer);
+        Assert.Equal("Casey Ng", work.Author);
+        Assert.Equal("2026-10-06 14:05:00", work.CreatedDisplay);
+        Assert.Equal("Replaced the fuser and the printer is back.", work.Text);
+
+        var comment = rows[1];
+        Assert.Equal("task", comment.Table);
+        Assert.Equal("comments", comment.Kind);
+        Assert.Equal("Customer comment", comment.KindLabel);
+        Assert.True(comment.IsCustomer);
+        Assert.Equal("Jordan Lee", comment.Author);
+        Assert.Equal("2026-10-06 13:40:00", comment.CreatedDisplay);
+        Assert.Equal("The queue is still paused. Please call me.", comment.Text);
+    }
+
+    [Fact]
+    public void ActivityHistoryReadsDisplayValueWhenJournalValueIsEmpty()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "work_notes": {
+                "value": "",
+                "display_value": "2026-10-06 14:05:00 - Casey Ng (Work notes)\nReplaced the fuser and the printer is back.\n"
+              },
+              "comments": {
+                "value": "",
+                "display_value": "2026-10-06 13:40:00 - Jordan Lee (Additional comments)\nThe queue is still paused. Please call me.\n"
+              }
+            }
+            """);
+
+        var notes = RecordMapper.ActivityHistory(document.RootElement);
+
+        Assert.Equal(2, notes.Count);
+        Assert.Equal("work_notes", notes[0].Kind);
+        Assert.Equal("Work note", notes[0].KindLabel);
+        Assert.Equal("Casey Ng", notes[0].Author);
+        Assert.Equal("2026-10-06 14:05:00", notes[0].CreatedDisplay);
+        Assert.Equal("Replaced the fuser and the printer is back.", notes[0].Text);
+        Assert.Equal("comments", notes[1].Kind);
+        Assert.Equal("Customer comment", notes[1].KindLabel);
+        Assert.True(notes[1].IsCustomer);
+        Assert.Equal("Jordan Lee", notes[1].Author);
+        Assert.Contains("paused", notes[1].Text);
+    }
+
+    [Fact]
     public void ChangeJsonOmitsUnsetFieldsAndClearsReferences()
     {
         var json = ChangeJson.FromIncident(new IncidentChanges

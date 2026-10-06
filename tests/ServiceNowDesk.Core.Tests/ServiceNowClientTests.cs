@@ -286,8 +286,11 @@ public class ServiceNowClientTests
         var query = QueryOf(call.PathAndQuery);
         Assert.Contains("element_id=inc-printer", query);
         Assert.Contains("comments", query);
+        Assert.Contains("additional_comments", query);
         Assert.Contains("work_notes", query);
         Assert.Contains("ORDERBYDESCsys_created_on", query);
+        Assert.DoesNotContain("name=", query);
+        Assert.DoesNotContain("nameIN", query);
 
         Assert.Equal(2, notes.Count);
         Assert.Equal("work_notes", notes[0].Kind);
@@ -300,6 +303,94 @@ public class ServiceNowClientTests
         Assert.True(notes[1].IsCustomer);
         Assert.Equal("Jordan Lee", notes[1].Author);
         Assert.Equal("I added a comment first.", notes[1].Text);
+    }
+
+    [Fact]
+    public async Task JournalQueryKeepsTaskParentWorkNotesAndComments()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""
+            {
+              "result": [
+                {
+                  "sys_id": {"value":"journal-task-work","display_value":"journal-task-work"},
+                  "name": {"value":"task","display_value":"task"},
+                  "element": {"value":"work_notes","display_value":"Work notes"},
+                  "element_id": {"value":"inc-live","display_value":"INC0012345"},
+                  "value": {"value":"","display_value":"Replaced the fuser and the printer is back."},
+                  "sys_created_on": {"value":"2026-10-06 14:05:00","display_value":"2026-10-06 14:05:00"},
+                  "sys_created_by": {"value":"casey.ng","display_value":"Casey Ng"}
+                },
+                {
+                  "sys_id": {"value":"journal-task-comment","display_value":"journal-task-comment"},
+                  "name": {"value":"task","display_value":"task"},
+                  "element": {"value":"comments","display_value":"Additional comments"},
+                  "element_id": {"value":"inc-live","display_value":"INC0012345"},
+                  "value": {"value":"The queue is still paused. Please call me.","display_value":""},
+                  "sys_created_on": {"value":"2026-10-06 13:40:00","display_value":"2026-10-06 13:40:00"},
+                  "sys_created_by": {"value":"jordan.lee","display_value":"Jordan Lee"}
+                }
+              ]
+            }
+            """));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        var notes = await client.GetJournalAsync("incident", "inc-live", CancellationToken.None);
+
+        var call = handler.Calls.Single();
+        var query = QueryOf(call.PathAndQuery);
+        Assert.Contains("element_id=inc-live", query);
+        Assert.Contains("elementINcomments,additional_comments,work_notes", query);
+        Assert.DoesNotContain("name=incident", query);
+        Assert.DoesNotContain("name=sc_req_item", query);
+        Assert.Contains("value", FieldsOf(call.PathAndQuery));
+
+        Assert.Equal(2, notes.Count);
+        Assert.Equal("task", notes[0].Table);
+        Assert.Equal("work_notes", notes[0].Kind);
+        Assert.Equal("Casey Ng", notes[0].Author);
+        Assert.Equal("Replaced the fuser and the printer is back.", notes[0].Text);
+        Assert.Equal("task", notes[1].Table);
+        Assert.Equal("comments", notes[1].Kind);
+        Assert.True(notes[1].IsCustomer);
+        Assert.Equal("Jordan Lee", notes[1].Author);
+        Assert.Equal("The queue is still paused. Please call me.", notes[1].Text);
+    }
+
+    [Fact]
+    public async Task EmptyJournalTableUsesRecordActivityDisplayValues()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? "";
+            if (path.Contains("sys_journal_field", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+
+            return Api.Json("""
+                {
+                  "result": {
+                    "work_notes": {"value":"","display_value":"2026-10-06 14:05:00 - Casey Ng (Work notes)\nReplaced the fuser and the printer is back.\n"},
+                    "comments": {"value":"","display_value":"2026-10-06 13:40:00 - Jordan Lee (Additional comments)\nThe queue is still paused. Please call me.\n"}
+                  }
+                }
+                """);
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        var notes = await client.GetJournalAsync("sc_req_item", "ritm-live", CancellationToken.None);
+
+        Assert.Equal(2, handler.Calls.Count);
+        Assert.Contains("sys_journal_field", handler.Calls[0].PathAndQuery);
+        Assert.DoesNotContain("name=sc_req_item", QueryOf(handler.Calls[0].PathAndQuery));
+        Assert.Contains("/api/now/table/sc_req_item/ritm-live", handler.Calls[1].PathAndQuery);
+        Assert.Contains("work_notes", FieldsOf(handler.Calls[1].PathAndQuery));
+        Assert.Contains("comments", FieldsOf(handler.Calls[1].PathAndQuery));
+
+        Assert.Equal("work_notes", notes[0].Kind);
+        Assert.Equal("Casey Ng", notes[0].Author);
+        Assert.Equal("Replaced the fuser and the printer is back.", notes[0].Text);
+        Assert.Equal("comments", notes[1].Kind);
+        Assert.True(notes[1].IsCustomer);
+        Assert.Equal("The queue is still paused. Please call me.", notes[1].Text);
     }
 
     [Fact]

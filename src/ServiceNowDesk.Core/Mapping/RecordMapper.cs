@@ -1,4 +1,7 @@
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
 
 namespace ServiceNowDesk.Mapping;
@@ -177,12 +180,31 @@ public static class RecordMapper
             SnowField.Read(record, "sys_id").Value,
             kind,
             label,
-            JournalBody(SnowField.Read(record, "value")),
+            ReadJournalText(record, "value"),
             JournalBody(SnowField.Read(record, "sys_created_by")),
             JournalBody(SnowField.Read(record, "sys_created_on")))
         {
             Table = FirstFilled(table.Value, table.Display, "")
         };
+    }
+
+    /// <summary>
+    /// Work notes and customer comments as ServiceNow returns them on the parent record
+    /// when <c>sysparm_display_value=all</c>. The readable text is often only in
+    /// <c>display_value</c> while <c>value</c> is empty.
+    /// </summary>
+    public static IReadOnlyList<JournalEntry> ActivityHistory(JsonElement record)
+    {
+        var notes = new List<JournalEntry>();
+        notes.AddRange(ParseActivity(ReadJournalText(record, "work_notes"), "work_notes"));
+        var comments = ReadJournalText(record, "comments");
+        if (string.IsNullOrWhiteSpace(comments))
+            comments = ReadJournalText(record, "additional_comments");
+        notes.AddRange(ParseActivity(comments, "comments"));
+        return notes
+            .OrderByDescending(note => AlertClassifier.TryParseInstant(note.CreatedDisplay, out var created) ? created : DateTime.MinValue)
+            .ThenByDescending(note => note.SysId, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static string JournalElement(SnowField element)
@@ -212,6 +234,124 @@ public static class RecordMapper
     }
 
     private static string JournalBody(SnowField field) => FirstFilled(field.Display, field.Value, "");
+
+    /// <summary>
+    /// <c>sysparm_display_value=all</c> wraps each field as <c>{ value, display_value }</c>.
+    /// Journal text may be only under <c>value</c>, only under <c>display_value</c>, or nested again.
+    /// </summary>
+    private static string ReadJournalText(JsonElement record, string name)
+    {
+        if (record.ValueKind != JsonValueKind.Object || !record.TryGetProperty(name, out var element))
+            return "";
+        return ReadTextNode(element);
+    }
+
+    private static string ReadTextNode(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                return (element.GetString() ?? "").Trim();
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                return "";
+            case JsonValueKind.Object:
+                var display = element.TryGetProperty("display_value", out var shown) ? ReadTextNode(shown) : "";
+                if (!string.IsNullOrWhiteSpace(display))
+                    return display;
+                return element.TryGetProperty("value", out var raw) ? ReadTextNode(raw) : "";
+            default:
+                return SnowField.AsString(element).Trim();
+        }
+    }
+
+    private static IReadOnlyList<JournalEntry> ParseActivity(string text, string fallbackKind)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return [];
+
+        var found = new List<JournalEntry>();
+        string? when = null;
+        string? author = null;
+        string? kind = null;
+        var body = new StringBuilder();
+        var sawHeader = false;
+
+        void Flush()
+        {
+            if (!sawHeader || when is null || kind is null)
+                return;
+            var note = body.ToString().Trim();
+            body.Clear();
+            if (note.Length == 0)
+                return;
+            found.Add(new JournalEntry(
+                "activity-" + kind + "-" + found.Count + "-" + when,
+                kind,
+                kind == "comments" ? "Customer comment" : "Work note",
+                note,
+                author ?? "",
+                when));
+        }
+
+        foreach (var raw in text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            if (TryActivityHeader(raw.Trim(), out var parsedWhen, out var parsedAuthor, out var parsedKind))
+            {
+                Flush();
+                sawHeader = true;
+                when = parsedWhen;
+                author = parsedAuthor;
+                kind = parsedKind;
+                continue;
+            }
+
+            if (!sawHeader)
+                continue;
+            if (body.Length > 0)
+                body.Append('\n');
+            body.Append(raw.TrimEnd());
+        }
+
+        Flush();
+        if (found.Count > 0)
+            return found;
+
+        var plain = text.Trim();
+        if (plain.Length == 0)
+            return [];
+        return
+        [
+            new JournalEntry(
+                "activity-" + fallbackKind + "-plain",
+                fallbackKind,
+                fallbackKind == "comments" ? "Customer comment" : "Work note",
+                plain,
+                "",
+                "")
+        ];
+    }
+
+    private static readonly Regex ActivityHeaderPattern = new(
+        @"^(?<when>.+?) - (?<author>.+?) \((?<label>[^)]+)\)$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static bool TryActivityHeader(string line, out string when, out string author, out string kind)
+    {
+        when = "";
+        author = "";
+        kind = "";
+        var match = ActivityHeaderPattern.Match(line);
+        if (!match.Success)
+            return false;
+        var normalized = NormalizeJournalToken(match.Groups["label"].Value);
+        if (normalized.Length == 0)
+            return false;
+        when = match.Groups["when"].Value.Trim();
+        author = match.Groups["author"].Value.Trim();
+        kind = normalized;
+        return when.Length > 0 && author.Length > 0;
+    }
 
     private static string FirstFilled(string? first, string? second, string fallback)
     {

@@ -916,7 +916,40 @@ public sealed class ServiceNowClient : IServiceNowClient
     public async Task<IReadOnlyList<JournalEntry>> GetJournalAsync(string table, string sysId, CancellationToken cancellationToken)
     {
         var id = EncodedQuery.SafeToken(sysId, "record id");
-        EncodedQuery.SafeToken(table, "table");
+        var safeTable = EncodedQuery.SafeToken(table, "table");
+        ServiceNowException? blocked = null;
+        IReadOnlyList<JournalEntry> rows;
+        try
+        {
+            rows = await LoadJournalRowsAsync(id, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException ex) when (ex.StatusCode is 403 or 404)
+        {
+            blocked = ex;
+            rows = [];
+        }
+
+        if (rows.Any(note => !string.IsNullOrWhiteSpace(note.Text)))
+            return NewestFirst(rows);
+
+        // The browser activity stream still shows notes when sys_journal_field is empty
+        // (table ACL, or the text lives only on the parent journal fields).
+        var activity = await LoadRecordActivityAsync(safeTable, id, cancellationToken).ConfigureAwait(false);
+        if (activity.Count > 0)
+            return NewestFirst(activity);
+
+        if (blocked is not null)
+            throw blocked;
+
+        return NewestFirst(rows);
+    }
+
+    private async Task<IReadOnlyList<JournalEntry>> LoadJournalRowsAsync(string id, CancellationToken cancellationToken)
+    {
+        // work_notes and comments are defined on task. sys_journal_field.name is therefore
+        // often "task" for an incident or requested item, not "incident" or "sc_req_item".
+        // A name=incident (or name=sc_req_item) clause returns no rows. Match element_id
+        // and the journal element, and keep rows whose name is task or the child table.
         var query = "element_id=" + id + "^elementINcomments,additional_comments,work_notes^ORDERBYDESCsys_created_on";
         var result = await GetListAsync(
             "sys_journal_field",
@@ -930,6 +963,30 @@ public sealed class ServiceNowClient : IServiceNowClient
             return RequireArray(result.Document).EnumerateArray().Select(RecordMapper.Journal).ToArray();
         }
     }
+
+    private async Task<IReadOnlyList<JournalEntry>> LoadRecordActivityAsync(string table, string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await SendAsync(
+                HttpMethod.Get,
+                ItemUrl(table, id, "work_notes,comments"),
+                null,
+                cancellationToken).ConfigureAwait(false);
+            using (result)
+                return RecordMapper.ActivityHistory(RequireObject(result.Document));
+        }
+        catch (ServiceNowException)
+        {
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<JournalEntry> NewestFirst(IReadOnlyList<JournalEntry> notes) =>
+        notes
+            .OrderByDescending(note => AlertClassifier.TryParseInstant(note.CreatedDisplay, out var created) ? created : DateTime.MinValue)
+            .ThenByDescending(note => note.SysId, StringComparer.Ordinal)
+            .ToArray();
 
     public async Task<IReadOnlyList<Choice>> GetChoicesAsync(string table, string element, string? dependentValue, CancellationToken cancellationToken)
     {
