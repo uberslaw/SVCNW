@@ -8,6 +8,7 @@
         MinHeight="720"
         MinWidth="1100"
         WindowStartupLocation="CenterScreen"
+        Icon="Assets/AppIcon.ico"
         Background="{StaticResource AppBrush}"
         FontFamily="Segoe UI"
         FontSize="13"

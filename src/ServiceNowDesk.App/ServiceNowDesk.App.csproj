@@ -14,7 +14,13 @@
     <Company>ServiceNow Desk</Company>
     <Description>Fast desktop client for ServiceNow incidents and requests.</Description>
     <ApplicationTitle>ServiceNow Desk</ApplicationTitle>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\AppIcon.ico" />
+    <Resource Include="Assets\AppIcon.png" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ServiceNowDesk.Core\ServiceNowDesk.Core.csproj" />
