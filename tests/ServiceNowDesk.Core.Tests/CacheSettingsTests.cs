@@ -235,7 +235,7 @@ public class CacheSettingsTests
         Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
-        Assert.Equal(6, main.Startup.Lines.Count);
+        Assert.Equal(8, main.Startup.Lines.Count);
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC-BOGUS");
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010001");
         Assert.True(settings.Current.DownloadCacheOnLaunch);
@@ -447,6 +447,8 @@ public class CacheSettingsTests
         snapshot.ChoicesCapturedAt = now;
         snapshot.GroupsCapturedAt = now;
         snapshot.MembersCapturedAt = now;
+        snapshot.ServiceOfferingsCapturedAt = now;
+        snapshot.ConfigurationItemsCapturedAt = now;
         return snapshot;
     }
 
