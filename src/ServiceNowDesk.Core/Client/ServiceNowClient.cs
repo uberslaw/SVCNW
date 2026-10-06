@@ -92,6 +92,74 @@ public sealed class ServiceNowClient : IServiceNowClient
         }
     }
 
+    public FormCatalogSnapshot ExportCatalog()
+    {
+        lock (_cacheGate)
+            return CopySnapshot();
+    }
+
+    public void ClearChoiceCache()
+    {
+        lock (_cacheGate)
+        {
+            _choices.Clear();
+            _snapshot.Choices.Clear();
+            _snapshot.CapturedAt = default;
+        }
+
+        PersistCatalog();
+    }
+
+    public void ClearAssignmentGroupCache()
+    {
+        lock (_cacheGate)
+        {
+            _groups = [];
+            _groupIds = null;
+            _snapshot.Groups = [];
+        }
+
+        PersistCatalog();
+    }
+
+    public void ClearAssignmentMemberCache()
+    {
+        lock (_cacheGate)
+        {
+            _membersByGroup.Clear();
+            _groupsWithMemberList.Clear();
+            _snapshot.Members = [];
+            _snapshot.DirectoryComplete = false;
+            _snapshot.DirectoryCapturedAt = default;
+        }
+
+        PersistCatalog();
+    }
+
+    public void RestoreCatalog(FormCatalogSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        lock (_cacheGate)
+        {
+            _choices.Clear();
+            _catalogForms.Clear();
+            _membersByGroup.Clear();
+            _groupsWithMemberList.Clear();
+            _groups = [];
+            _groupIds = null;
+            _snapshot.Choices = [];
+            _snapshot.CatalogItems = [];
+            _snapshot.Groups = [];
+            _snapshot.Members = [];
+            _snapshot.CapturedAt = default;
+            _snapshot.DirectoryCapturedAt = default;
+            _snapshot.DirectoryComplete = false;
+        }
+
+        ApplyCatalog(snapshot);
+        PersistCatalog();
+    }
+
     public static ServiceNowClient Create(ServiceNowSession session, HttpMessageHandler? handler = null, IFormCatalogStore? formCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -1139,6 +1207,37 @@ public sealed class ServiceNowClient : IServiceNowClient
         return true;
     }
 
+    private FormCatalogSnapshot CopySnapshot() => new()
+    {
+        CapturedAt = _snapshot.CapturedAt,
+        DirectoryCapturedAt = _snapshot.DirectoryCapturedAt,
+        Choices = _snapshot.Choices.Select(list => new CachedChoiceList
+        {
+            Table = list.Table,
+            Element = list.Element,
+            DependentValue = list.DependentValue,
+            Choices = list.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToList()
+        }).ToList(),
+        CatalogItems = _snapshot.CatalogItems.Select(item => new CachedCatalogForm
+        {
+            SysId = item.SysId,
+            CapturedAt = item.CapturedAt,
+            Variables = item.Variables.Select(variable => new CatalogVariableDefinition(
+                variable.Name,
+                variable.Label,
+                variable.Mandatory,
+                variable.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToArray())).ToList()
+        }).ToList(),
+        DirectoryComplete = _snapshot.DirectoryComplete,
+        Groups = _snapshot.Groups.Select(group => new CachedAssignmentGroup { SysId = group.SysId, Name = group.Name }).ToList(),
+        Members = _snapshot.Members.Select(member => new CachedGroupMember
+        {
+            GroupSysId = member.GroupSysId,
+            UserSysId = member.UserSysId,
+            Name = member.Name
+        }).ToList()
+    };
+
     private void PersistCatalog()
     {
         if (_catalog is null || InstanceUri is null)
@@ -1148,39 +1247,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         {
             FormCatalogSnapshot copy;
             lock (_cacheGate)
-            {
-                copy = new FormCatalogSnapshot
-                {
-                    CapturedAt = _snapshot.CapturedAt,
-                    DirectoryCapturedAt = _snapshot.DirectoryCapturedAt,
-                    Choices = _snapshot.Choices.Select(list => new CachedChoiceList
-                    {
-                        Table = list.Table,
-                        Element = list.Element,
-                        DependentValue = list.DependentValue,
-                        Choices = list.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToList()
-                    }).ToList(),
-                    CatalogItems = _snapshot.CatalogItems.Select(item => new CachedCatalogForm
-                    {
-                        SysId = item.SysId,
-                        CapturedAt = item.CapturedAt,
-                        Variables = item.Variables.Select(variable => new CatalogVariableDefinition(
-                            variable.Name,
-                            variable.Label,
-                            variable.Mandatory,
-                            variable.Choices.Select(choice => new Choice(choice.Value, choice.Label)).ToArray())).ToList()
-                    }).ToList(),
-                    DirectoryComplete = _snapshot.DirectoryComplete,
-                    Groups = _snapshot.Groups.Select(group => new CachedAssignmentGroup { SysId = group.SysId, Name = group.Name }).ToList(),
-                    Members = _snapshot.Members.Select(member => new CachedGroupMember
-                    {
-                        GroupSysId = member.GroupSysId,
-                        UserSysId = member.UserSysId,
-                        Name = member.Name
-                    }).ToList()
-                };
-            }
-
+                copy = CopySnapshot();
             _catalog.Save(InstanceUri, copy);
         }
     }

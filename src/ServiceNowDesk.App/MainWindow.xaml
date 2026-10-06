@@ -16,6 +16,7 @@
         TextOptions.TextFormattingMode="Display"
         PreviewKeyDown="Window_PreviewKeyDown">
     <Grid>
+        <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="228"/>
             <ColumnDefinition Width="*"/>
@@ -23,12 +24,21 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="2" Grid.ColumnSpan="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,8"
+                Visibility="{Binding Startup.ShowBar, Converter={StaticResource BoolVis}}"
+                AutomationProperties.Name="Download progress">
+            <DockPanel LastChildFill="True">
+                <TextBlock DockPanel.Dock="Right" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14"
+                           Text="{Binding Startup.PercentText}"/>
+                <TextBlock Text="{Binding Startup.CountText}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
             <Menu Background="Transparent" Foreground="{StaticResource TextBrush}">
                 <MenuItem Header="Help" Padding="12,6">
                     <MenuItem Header="Documentation" Padding="12,8" Click="Documentation_Click"/>
@@ -36,46 +46,7 @@
             </Menu>
         </Border>
 
-        <Button Grid.Row="0" Grid.ColumnSpan="2"
-                Command="{Binding ToggleDownloadLogCommand}"
-                HorizontalContentAlignment="Stretch"
-                AutomationProperties.Name="Download progress"
-                ToolTip="Show or hide the download log"
-                Cursor="Hand">
-            <Button.Template>
-                <ControlTemplate TargetType="Button">
-                    <Border x:Name="Bar" Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,8">
-                        <DockPanel LastChildFill="True">
-                            <TextBlock DockPanel.Dock="Right" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"
-                                       Text="Hide log" Visibility="{Binding Startup.IsOpen, Converter={StaticResource BoolVis}}"/>
-                            <TextBlock DockPanel.Dock="Right" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold"
-                                       Text="Show log" Visibility="{Binding Startup.IsOpen, Converter={StaticResource InverseBoolVis}}"/>
-                            <TextBlock Text="{Binding Startup.Title}" FontFamily="Consolas" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                        </DockPanel>
-                    </Border>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bar" Property="Background" Value="#D3EBE7"/>
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>
-            </Button.Template>
-        </Button>
-
-        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="#102226" BorderBrush="#1F6E6B" BorderThickness="0,0,0,1" Padding="16,8,16,12" MaxHeight="240"
-                Visibility="{Binding Startup.IsOpen, Converter={StaticResource BoolVis}}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl ItemsSource="{Binding Startup.Lines}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="13" Foreground="#C9E6E1" TextWrapping="Wrap" Margin="0,2"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
-        </Border>
-
-        <Border Grid.Row="3" Grid.RowSpan="2" Background="{StaticResource NavBrush}">
+        <Border Grid.Row="2" Grid.RowSpan="2" Background="{StaticResource NavBrush}">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="20,18,16,12">
                     <TextBlock Text="ServiceNow" Foreground="{StaticResource NavMutedBrush}" FontSize="12"/>
@@ -92,12 +63,13 @@
                     <RadioButton Style="{StaticResource NavButton}" Content="Knowledge" Tag="&#xE82D;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Knowledge}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Notifications" Tag="&#xEA8F;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Notifications}"/>
                     <RadioButton Style="{StaticResource NavButton}" Content="Order catalog" Tag="&#xE719;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Catalog}"/>
-                    <RadioButton Style="{StaticResource NavButton}" Content="Connection" Tag="&#xE713;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Connection}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Settings" Tag="&#xE713;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Settings}"/>
+                    <RadioButton Style="{StaticResource NavButton}" Content="Connection" Tag="&#xE774;" IsChecked="{Binding SelectedSection, Converter={StaticResource EnumEq}, ConverterParameter=Connection}"/>
                 </StackPanel>
             </DockPanel>
         </Border>
 
-        <DockPanel Grid.Row="3" Grid.Column="1">
+        <DockPanel Grid.Row="2" Grid.Column="1">
             <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,12">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -162,11 +134,39 @@
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Connection}">
                     <views:ConnectionView DataContext="{Binding}"/>
                 </Grid>
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Settings}">
+                    <views:SettingsView DataContext="{Binding}"/>
+                </Grid>
             </Grid>
         </DockPanel>
 
-        <Border Grid.Column="1" Grid.Row="4" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
+        <Border Grid.Column="1" Grid.Row="3" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="16,6">
             <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource MutedBrush}"/>
+        </Border>
+        </Grid>
+
+        <Border Background="#C0101718" Visibility="{Binding Startup.ShowScreen, Converter={StaticResource BoolVis}}">
+            <Border Width="680" MaxHeight="520" VerticalAlignment="Center" HorizontalAlignment="Center" Background="#102226" Padding="20" CornerRadius="10">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12" LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="Close" Margin="16,0,0,0" Padding="14,6" Cursor="Hand"
+                                Command="{Binding CloseStartupCommand}" AutomationProperties.Name="Close download"
+                                Foreground="#C9E6E1" Background="Transparent" BorderBrush="#1F6E6B" BorderThickness="1"/>
+                        <TextBlock Text="{Binding Startup.Title}" FontFamily="Consolas" FontSize="16" FontWeight="SemiBold" Foreground="#E7F6F3" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    </DockPanel>
+                    <TextBlock DockPanel.Dock="Bottom" Margin="0,12,0,0" Foreground="#8FB8B2" TextWrapping="Wrap"
+                               Text="Closing this does not stop the download. The desk stays available, with a short progress bar until every section finishes."/>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Startup.Lines}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="13" Foreground="#C9E6E1" TextWrapping="Wrap" Margin="0,3"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
         </Border>
     </Grid>
 </Window>

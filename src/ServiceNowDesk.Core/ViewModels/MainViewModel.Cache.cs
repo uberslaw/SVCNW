@@ -1,0 +1,573 @@
+using ServiceNowDesk.Client;
+using ServiceNowDesk.Models;
+
+namespace ServiceNowDesk.ViewModels;
+
+public partial class MainViewModel
+{
+    private async Task RefreshOneCacheAsync(CacheRowModel? row)
+    {
+        if (row is null)
+            return;
+        if (!IsConnected)
+        {
+            row.ReportFailure("Connect before refreshing this cache.");
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _downloadBusy, 1, 0) != 0)
+        {
+            row.ReportFailure("A download is already running.");
+            return;
+        }
+
+        try
+        {
+            row.Status = "";
+            row.IsFailed = false;
+            row.IsBusy = true;
+            var live = _client as ServiceNowClient;
+            Startup.Begin(1);
+            if (_ui is not null)
+                await Task.Yield();
+            var error = await RunKeyedSectionAsync(live, row.Key, force: true);
+            if (error is null)
+                row.ReportSuccess();
+            else
+                row.ReportFailure(error);
+        }
+        finally
+        {
+            row.IsBusy = false;
+            Interlocked.Exchange(ref _downloadBusy, 0);
+        }
+    }
+
+    private async Task RefreshEveryCacheAsync()
+    {
+        if (!IsConnected)
+        {
+            foreach (var row in Caches)
+                row.ReportFailure("Connect before refreshing this cache.");
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _downloadBusy, 1, 0) != 0)
+        {
+            foreach (var row in Caches)
+                row.ReportFailure("A download is already running.");
+            return;
+        }
+
+        try
+        {
+            foreach (var row in Caches)
+            {
+                row.Status = "";
+                row.IsFailed = false;
+                row.IsBusy = true;
+            }
+
+            var live = _client as ServiceNowClient;
+            var keys = Caches.Select(row => row.Key).ToArray();
+            Startup.Begin(keys.Length);
+            if (_ui is not null)
+                await Task.Yield();
+            foreach (var row in Caches)
+            {
+                var error = await RunKeyedSectionAsync(live, row.Key, force: true);
+                if (error is null)
+                    row.ReportSuccess();
+                else
+                    row.ReportFailure(error);
+                row.IsBusy = false;
+            }
+        }
+        finally
+        {
+            foreach (var row in Caches)
+                row.IsBusy = false;
+            Interlocked.Exchange(ref _downloadBusy, 0);
+        }
+    }
+
+    private async Task<bool> RunDownloadAsync(ServiceNowClient? live, IReadOnlyList<string> keys, bool force)
+    {
+        if (Interlocked.CompareExchange(ref _downloadBusy, 1, 0) != 0)
+            return false;
+
+        try
+        {
+            if (!force && keys.All(key => !NeedsDownload(live, key)))
+            {
+                Startup.Reset();
+                await ApplyFreshCachesAsync(live);
+                return true;
+            }
+
+            Startup.Begin(keys.Count);
+            if (_ui is not null)
+                await Task.Yield();
+            foreach (var key in keys)
+                await RunKeyedSectionAsync(live, key, force);
+            return true;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _downloadBusy, 0);
+        }
+    }
+
+    private async Task<string?> RunKeyedSectionAsync(ServiceNowClient? live, string key, bool force)
+    {
+        Startup.Start(LineName(key));
+        if (_ui is not null)
+        {
+            await Task.Yield();
+            if (IsSample)
+                await Task.Delay(40);
+        }
+
+        try
+        {
+            var cached = await RunKeyAsync(live, key, force);
+            if (cached)
+                Startup.CompleteCached();
+            else
+                Startup.Complete();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            var message = WorkspaceMessages.Describe(ex);
+            Startup.Fail(message);
+            return message;
+        }
+    }
+
+    private Task<bool> RunKeyAsync(ServiceNowClient? live, string key, bool force) => key switch
+    {
+        "choices" => DownloadChoicesAsync(live, force),
+        "groups" => DownloadGroupsAsync(live, force),
+        "members" => DownloadMembersAsync(live, force),
+        "incidents" or "requests" or "request-items" or "walk-ups" => DownloadListAsync(key, force),
+        _ => Task.FromResult(false)
+    };
+
+    private async Task ApplyFreshCachesAsync(ServiceNowClient? live)
+    {
+        await LoadChoiceListsAsync();
+        await BindGroupsAsync();
+        var snapshot = LoadLists();
+        ApplyFreshList("incidents", snapshot);
+        ApplyFreshList("requests", snapshot);
+        ApplyFreshList("request-items", snapshot);
+        ApplyFreshList("walk-ups", snapshot);
+        if (live is null)
+            RememberPracticeStamp("choices");
+    }
+
+    private bool NeedsDownload(ServiceNowClient? live, string key)
+    {
+        var snapshot = LoadLists();
+        return key switch
+        {
+            "choices" => live is not null
+                ? !(live.HasCachedChoices && !live.FormCatalogIsStale)
+                : FormCatalogPolicy.IsStale(snapshot?.ChoicesCapturedAt ?? default, DateTimeOffset.UtcNow),
+            "groups" or "members" => live is not null
+                ? live.AssignmentDirectoryIsStale
+                : FormCatalogPolicy.IsStale(
+                    key == "groups" ? snapshot?.GroupsCapturedAt ?? default : snapshot?.MembersCapturedAt ?? default,
+                    DateTimeOffset.UtcNow),
+            _ => ListIsStale(ListFor(snapshot, key))
+        };
+    }
+
+    private async Task<bool> DownloadChoicesAsync(ServiceNowClient? live, bool force)
+    {
+        var cached = !force && !NeedsDownload(live, "choices");
+        FormCatalogSnapshot? backup = null;
+        if (force && live is not null)
+        {
+            backup = live.ExportCatalog();
+            live.ClearChoiceCache();
+        }
+
+        if (force && live is null)
+            ClearPracticeStamp("choices");
+
+        Exception? failure = null;
+        if (live is not null && !cached)
+        {
+            try
+            {
+                await live.RefreshChoiceCatalogAsync(SplashProgress(), CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+                if (backup is not null)
+                    live.RestoreCatalog(backup);
+            }
+        }
+
+        if (live is null && !cached)
+            Startup.Report(0);
+        await Incidents.ReloadChoiceListsAsync();
+        if (live is null && !cached)
+            Startup.Report(25);
+        await Requests.ReloadChoiceListsAsync();
+        if (live is null && !cached)
+            Startup.Report(50);
+        await RequestedItems.ReloadChoiceListsAsync();
+        if (live is null && !cached)
+            Startup.Report(75);
+        await WalkUps.ReloadChoiceListsAsync();
+        if (live is null && !cached)
+            Startup.Report(100);
+        if (failure is not null)
+            throw failure;
+        if (live is null && !cached)
+            RememberPracticeStamp("choices");
+        return cached;
+    }
+
+    private async Task<bool> DownloadGroupsAsync(ServiceNowClient? live, bool force)
+    {
+        var cached = !force && !NeedsDownload(live, "groups");
+        FormCatalogSnapshot? backup = null;
+        if (force && live is not null)
+        {
+            backup = live.ExportCatalog();
+            live.ClearAssignmentGroupCache();
+        }
+
+        if (force && live is null)
+            ClearPracticeStamp("groups");
+
+        try
+        {
+            if (live is not null && !cached)
+                await live.DownloadAssignmentGroupsAsync(SplashProgress(), CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            if (backup is not null)
+                live!.RestoreCatalog(backup);
+            await BindGroupsAsync();
+            if (IsConnected && live is not null && await HasSavedGroupsAsync(live))
+                StatusMessage = "Connected as " + ConnectedUser + ". Saved assignment lists are still in use.";
+            throw;
+        }
+
+        await BindGroupsAsync();
+        if (live is null && !cached)
+            RememberPracticeStamp("groups");
+        return cached;
+    }
+
+    private async Task<bool> DownloadMembersAsync(ServiceNowClient? live, bool force)
+    {
+        var cached = !force && !NeedsDownload(live, "members");
+        if (cached)
+            return true;
+
+        FormCatalogSnapshot? backup = null;
+        if (force && live is not null)
+        {
+            backup = live.ExportCatalog();
+            live.ClearAssignmentMemberCache();
+        }
+
+        if (force && live is null)
+            ClearPracticeStamp("members");
+
+        if (live is not null)
+        {
+            try
+            {
+                await live.DownloadAssignmentMembersAsync(SplashProgress(), CancellationToken.None);
+                return false;
+            }
+            catch (Exception)
+            {
+                if (backup is not null)
+                    live.RestoreCatalog(backup);
+                if (IsConnected && await HasSavedGroupsAsync(live))
+                    StatusMessage = "Connected as " + ConnectedUser + ". Saved assignment lists are still in use.";
+                throw;
+            }
+        }
+
+        var groups = Incidents.Assignment.Groups.Where(choice => !string.IsNullOrEmpty(choice.Value)).ToArray();
+        var done = 0;
+        Startup.Report(0);
+        foreach (var group in groups)
+        {
+            if (_client is null)
+                break;
+            await _client.ListGroupMembersAsync(group.Value, CancellationToken.None);
+            done++;
+            var total = Math.Max(groups.Length, 1);
+            Startup.Report(done * 100 / total);
+        }
+
+        RememberPracticeStamp("members");
+        return false;
+    }
+
+    private async Task<bool> DownloadListAsync(string key, bool force)
+    {
+        if (_client is null)
+            return false;
+
+        var section = SectionFor(key);
+        var workspace = WorkspaceFor(key);
+        if (!force && TryApplyFreshList(key))
+            return true;
+
+        CachedTicketList? previous = null;
+        if (force)
+            previous = ClearList(key);
+
+        try
+        {
+            Startup.Report(0);
+            workspace.SearchText = force ? "" : SearchText;
+            if (!await workspace.ReloadAsync())
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(workspace.ErrorMessage)
+                    ? "The list could not be downloaded."
+                    : workspace.ErrorMessage);
+
+            _loadedFor[section] = workspace.SearchText;
+            if (string.IsNullOrWhiteSpace(workspace.SearchText))
+                SaveWorkspaceList(section, workspace);
+            return false;
+        }
+        catch
+        {
+            if (force)
+                RestoreList(key, previous);
+            throw;
+        }
+    }
+
+    private async Task LoadChoiceListsAsync()
+    {
+        await Incidents.ReloadChoiceListsAsync();
+        await Requests.ReloadChoiceListsAsync();
+        await RequestedItems.ReloadChoiceListsAsync();
+        await WalkUps.ReloadChoiceListsAsync();
+    }
+
+    private bool TryApplyFreshList(string key)
+    {
+        var list = ListFor(LoadLists(), key);
+        if (list is null || ListIsStale(list))
+            return false;
+        ApplyList(key, list);
+        return true;
+    }
+
+    private void ApplyFreshList(string key, DeskListSnapshot? snapshot)
+    {
+        var list = ListFor(snapshot, key);
+        if (list is null || ListIsStale(list))
+            return;
+        ApplyList(key, list);
+    }
+
+    private void ApplyList(string key, CachedTicketList list)
+    {
+        var rows = list.Items.Select(ToTicket).ToArray();
+        WorkspaceFor(key).ShowCachedRows(rows, list.TotalCount > 0 ? list.TotalCount : rows.Length);
+        _loadedFor[SectionFor(key)] = "";
+    }
+
+    private void SaveWorkspaceList(DeskSection section, RecordWorkspaceViewModel workspace)
+    {
+        if (_lists is null)
+            return;
+        var snapshot = LoadLists() ?? new DeskListSnapshot();
+        var list = new CachedTicketList
+        {
+            CapturedAt = DateTimeOffset.UtcNow,
+            TotalCount = workspace.TotalCount,
+            Items = workspace.Items.Select(FromTicket).ToList()
+        };
+        AssignList(snapshot, KeyFor(section), list);
+        _lists.Save(CacheScope(), snapshot);
+    }
+
+    private CachedTicketList? ClearList(string key)
+    {
+        if (_lists is null)
+            return null;
+        var snapshot = LoadLists() ?? new DeskListSnapshot();
+        var previous = ListFor(snapshot, key);
+        AssignList(snapshot, key, null);
+        _lists.Save(CacheScope(), snapshot);
+        return previous;
+    }
+
+    private void RestoreList(string key, CachedTicketList? previous)
+    {
+        if (_lists is null)
+            return;
+        var snapshot = LoadLists() ?? new DeskListSnapshot();
+        AssignList(snapshot, key, previous);
+        _lists.Save(CacheScope(), snapshot);
+    }
+
+    private void RememberPracticeStamp(string key)
+    {
+        if (_lists is null || _client is ServiceNowClient)
+            return;
+        var snapshot = LoadLists() ?? new DeskListSnapshot();
+        var now = DateTimeOffset.UtcNow;
+        switch (key)
+        {
+            case "choices":
+                snapshot.ChoicesCapturedAt = now;
+                break;
+            case "groups":
+                snapshot.GroupsCapturedAt = now;
+                break;
+            case "members":
+                snapshot.MembersCapturedAt = now;
+                break;
+        }
+
+        _lists.Save(DeskListScope.Practice, snapshot);
+    }
+
+    private void ClearPracticeStamp(string key)
+    {
+        if (_lists is null || _client is ServiceNowClient)
+            return;
+        var snapshot = LoadLists() ?? new DeskListSnapshot();
+        switch (key)
+        {
+            case "choices":
+                snapshot.ChoicesCapturedAt = default;
+                break;
+            case "groups":
+                snapshot.GroupsCapturedAt = default;
+                break;
+            case "members":
+                snapshot.MembersCapturedAt = default;
+                break;
+        }
+
+        _lists.Save(DeskListScope.Practice, snapshot);
+    }
+
+    private DeskListSnapshot? LoadLists()
+    {
+        if (_lists is null)
+            return null;
+        return _lists.Load(CacheScope());
+    }
+
+    private string CacheScope()
+    {
+        if (_client is ServiceNowClient live && live.InstanceUri is Uri uri)
+            return DeskListScope.ForInstance(uri);
+        return DeskListScope.Practice;
+    }
+
+    private RecordWorkspaceViewModel WorkspaceFor(string key) => key switch
+    {
+        "incidents" => Incidents,
+        "requests" => Requests,
+        "request-items" => RequestedItems,
+        "walk-ups" => WalkUps,
+        _ => throw new InvalidOperationException("No list is cached for " + key + ".")
+    };
+
+    private static DeskSection SectionFor(string key) => key switch
+    {
+        "incidents" => DeskSection.Incidents,
+        "requests" => DeskSection.Requests,
+        "request-items" => DeskSection.RequestedItems,
+        "walk-ups" => DeskSection.WalkUps,
+        _ => throw new InvalidOperationException("No list is cached for " + key + ".")
+    };
+
+    private static string KeyFor(DeskSection section) => section switch
+    {
+        DeskSection.Incidents => "incidents",
+        DeskSection.Requests => "requests",
+        DeskSection.RequestedItems => "request-items",
+        DeskSection.WalkUps => "walk-ups",
+        _ => ""
+    };
+
+    private static string LineName(string key) => key switch
+    {
+        "choices" => "Choices",
+        "groups" => "Assignment groups",
+        "members" => "Assignment group members",
+        "incidents" => "Incidents",
+        "requests" => "Requests",
+        "request-items" => "Request items",
+        "walk-ups" => "Walk-ups",
+        _ => key
+    };
+
+    private static bool ListIsStale(CachedTicketList? list) =>
+        list is null || FormCatalogPolicy.IsStale(list.CapturedAt, DateTimeOffset.UtcNow);
+
+    private static CachedTicketList? ListFor(DeskListSnapshot? snapshot, string key) => key switch
+    {
+        "incidents" => snapshot?.Incidents,
+        "requests" => snapshot?.Requests,
+        "request-items" => snapshot?.RequestItems,
+        "walk-ups" => snapshot?.WalkUps,
+        _ => null
+    };
+
+    private static void AssignList(DeskListSnapshot snapshot, string key, CachedTicketList? list)
+    {
+        switch (key)
+        {
+            case "incidents":
+                snapshot.Incidents = list;
+                break;
+            case "requests":
+                snapshot.Requests = list;
+                break;
+            case "request-items":
+                snapshot.RequestItems = list;
+                break;
+            case "walk-ups":
+                snapshot.WalkUps = list;
+                break;
+        }
+    }
+
+    private static CachedTicketRow FromTicket(TicketRow row) => new()
+    {
+        SysId = row.SysId,
+        Number = row.Number,
+        Title = row.Title,
+        StateLabel = row.StateLabel,
+        Tone = row.Tone,
+        Meta = row.Meta,
+        When = row.When,
+        Badge = row.Badge
+    };
+
+    private static TicketRow ToTicket(CachedTicketRow row) => new()
+    {
+        SysId = row.SysId,
+        Number = row.Number,
+        Title = row.Title,
+        StateLabel = row.StateLabel,
+        Tone = row.Tone,
+        Meta = row.Meta,
+        When = row.When,
+        Badge = row.Badge
+    };
+}

@@ -9,12 +9,19 @@ public sealed partial class StartupDownloadModel : ObservableObject
     private int _total = 1;
     private int _finished;
     private int _current = -1;
+    private bool _dismissed;
 
     public ObservableCollection<StartupDownloadLine> Lines { get; } = [];
 
-    [ObservableProperty] private bool isOpen;
+    public event EventHandler? Dismissed;
+
+    [ObservableProperty] private bool showScreen;
+    [ObservableProperty] private bool showBar;
     [ObservableProperty] private bool isRunning;
-    [ObservableProperty] private string title = "Data ready";
+    [ObservableProperty] private string title = "";
+    [ObservableProperty] private string countText = "";
+    [ObservableProperty] private string percentText = "";
+    [ObservableProperty] private int percent;
 
     public void Begin(int total)
     {
@@ -22,9 +29,12 @@ public sealed partial class StartupDownloadModel : ObservableObject
         _total = Math.Max(1, total);
         _finished = 0;
         _current = -1;
+        _dismissed = false;
         Title = Heading(null);
         IsRunning = true;
-        IsOpen = true;
+        ShowScreen = true;
+        ShowBar = false;
+        UpdateSummary();
     }
 
     public void Start(string name)
@@ -73,22 +83,54 @@ public sealed partial class StartupDownloadModel : ObservableObject
         FinishCurrent();
     }
 
-    public void Toggle() => IsOpen = !IsOpen;
+    public void Dismiss()
+    {
+        _dismissed = true;
+        ShowScreen = false;
+        ShowBar = IsRunning;
+        Dismissed?.Invoke(this, EventArgs.Empty);
+    }
 
-    public void Close() => IsOpen = false;
+    public void Close() => Dismiss();
+
+    public void Reset()
+    {
+        Lines.Clear();
+        _finished = 0;
+        _current = -1;
+        _dismissed = false;
+        IsRunning = false;
+        ShowScreen = false;
+        ShowBar = false;
+        Title = "";
+        CountText = "";
+        PercentText = "";
+        Percent = 0;
+    }
 
     private void FinishCurrent()
     {
         _finished++;
         _current = -1;
+        UpdateSummary();
         if (_finished >= _total)
         {
             IsRunning = false;
-            Title = "Data ready";
+            ShowScreen = false;
+            ShowBar = false;
             return;
         }
 
         Title = Heading(null);
+        ShowScreen = !_dismissed;
+        ShowBar = _dismissed;
+    }
+
+    private void UpdateSummary()
+    {
+        CountText = _finished.ToString(CultureInfo.InvariantCulture) + "/" + _total.ToString(CultureInfo.InvariantCulture);
+        Percent = _total <= 0 ? 0 : _finished * 100 / _total;
+        PercentText = Percent.ToString(CultureInfo.InvariantCulture) + "%";
     }
 
     private string Heading(string? current)
