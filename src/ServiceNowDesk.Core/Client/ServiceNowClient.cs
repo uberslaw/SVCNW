@@ -494,6 +494,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             UpdatedBy = FirstText(row, "sys_updated_by"),
             CallerUserName = FirstText(row, "caller_id.user_name", "opened_for.user_name", "requested_for.user_name", "request.requested_for.user_name"),
             AssigneeUserName = FirstText(row, "assigned_to.user_name"),
+            AssigneeDisplay = AssigneeName(row),
             AssignedToSysId = SnowField.Read(row, "assigned_to").Value,
             AssignmentGroupSysId = SnowField.Read(row, "assignment_group").Value,
             FollowUp = hasFollowUp ? followUpAt : null
@@ -587,6 +588,15 @@ public sealed class ServiceNowClient : IServiceNowClient
             SlaPlannedEnd = progress?.PlannedEnd,
             LatestJournalAuthor = authors.TryGetValue(record.SysId, out var author) ? author : ""
         };
+    }
+
+    private static string AssigneeName(JsonElement row)
+    {
+        var assigned = SnowField.Read(row, "assigned_to");
+        var name = assigned.Display.Trim();
+        if (name.Length == 0 || name.Equals(assigned.Value.Trim(), StringComparison.OrdinalIgnoreCase))
+            name = FirstText(row, "assigned_to.user_name");
+        return name;
     }
 
     private static string FirstText(JsonElement row, params string[] names)

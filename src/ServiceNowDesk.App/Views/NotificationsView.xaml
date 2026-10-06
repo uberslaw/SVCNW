@@ -1,8 +1,48 @@
 <UserControl x:Class="ServiceNowDesk.Views.NotificationsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:ServiceNowDesk.Converters">
+    <UserControl.Resources>
+        <DataTemplate x:Key="StandardAlertRow">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="160"/>
+                    <ColumnDefinition Width="140"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="4" Text="{Binding QueueLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="SlaAlertRow">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="130"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding AssigneeLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="5" Text="{Binding QueueLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            </Grid>
+        </DataTemplate>
+        <conv:AlertRowTemplateSelector x:Key="AlertRowTemplate"
+                                       StandardTemplate="{StaticResource StandardAlertRow}"
+                                       SlaTemplate="{StaticResource SlaAlertRow}"/>
+    </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel MaxWidth="880" HorizontalAlignment="Left" Margin="8">
+        <StackPanel MaxWidth="980" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Notifications" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                        Text="Click a colored portion to show that queue, then click a row to open the incident, request item, or walk-up. Green is Assigned to me. Amber is Group queue. Crimson is SLA breaching. Blue is On hold past follow-up. Violet is Updated by caller. Cyan is Returned with notes. A thin strip at the top center of the screen is the desktop widget. Rest the pointer on it to drop the bar. The bar also drops when a jiggle fires, and the portion that caused it is highlighted. Settings chooses whether the strip is there while this window is open, and whether a jiggle repeats on a timer or only for a new alert."/>
@@ -75,7 +115,7 @@
             <TextBlock Text="{Binding SelectedStatus}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                        Visibility="{Binding SelectedStatus, Converter={StaticResource StringVis}}"/>
 
-            <Grid Margin="10,0,10,4">
+            <Grid Margin="10,0,10,4" Visibility="{Binding ShowAssigneeColumn, Converter={StaticResource InverseBoolVis}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120"/>
                     <ColumnDefinition Width="*"/>
@@ -89,36 +129,34 @@
                 <TextBlock Grid.Column="3" Text="Group" Style="{StaticResource FieldLabel}"/>
                 <TextBlock Grid.Column="4" Text="Queue" Style="{StaticResource FieldLabel}"/>
             </Grid>
+            <Grid Margin="10,0,10,4" Visibility="{Binding ShowAssigneeColumn, Converter={StaticResource BoolVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="130"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="1" Text="Title" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="2" Text="State" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="3" Text="Assigned to" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="4" Text="Group" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="5" Text="Queue" Style="{StaticResource FieldLabel}"/>
+            </Grid>
             <TextBlock Text="No open records in this queue." Foreground="{StaticResource MutedBrush}" Margin="10,0,0,12"
                        Visibility="{Binding HasDashboardRows, Converter={StaticResource InverseBoolVis}}"/>
             <ListBox ItemsSource="{Binding DashboardRows}"
                      Style="{StaticResource DeskList}"
-                     ItemContainerStyle="{StaticResource DeskListItem}"
+                     ItemContainerStyle="{StaticResource TicketListItem}"
+                     ItemTemplateSelector="{StaticResource AlertRowTemplate}"
                      MaxHeight="360"
                      MouseLeftButtonUp="Rows_MouseLeftButtonUp"
                      PreviewKeyDown="Rows_PreviewKeyDown"
                      AutomationProperties.Name="Notification dashboard"
                      Visibility="{Binding HasDashboardRows, Converter={StaticResource BoolVis}}"
-                     Margin="0,0,0,8">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="160"/>
-                                <ColumnDefinition Width="140"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="4" Text="{Binding QueueLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                        </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+                     Margin="0,0,0,8"/>
 
             <TextBlock Text="Click a row, or press Enter, to open it." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,18"/>
         </StackPanel>

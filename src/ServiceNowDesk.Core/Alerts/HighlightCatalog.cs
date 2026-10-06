@@ -19,7 +19,8 @@ public sealed record HighlightEntry(
     string SwatchHex,
     string RowHex,
     bool EnabledByDefault,
-    AlertKind? Kind);
+    AlertKind? Kind,
+    bool PaintsTicketLists = true);
 
 /// <summary>
 /// Row colors for incidents, request items, walk-ups, and search.
@@ -31,6 +32,7 @@ public static class HighlightCatalog
     public const string AssignedToMe = "assigned-to-me";
     public const string WatchedGroup = "watched-group";
     public const string SlaBreaching = "sla-breaching";
+    public const string SlaAssignedToYou = "sla-assigned-to-you";
     public const string OnHoldPastFollowUp = "on-hold-past-follow-up";
     public const string UpdatedByCaller = "updated-by-caller";
     public const string ReturnedWithNotes = "returned-with-notes";
@@ -48,6 +50,15 @@ public static class HighlightCatalog
                 "SLA breaching",
                 "Light crimson is the same hue as the SLA breaching circle. The ticket is in that notification.",
                 true),
+            new HighlightEntry(
+                SlaAssignedToYou,
+                "SLA assigned to you",
+                "In the SLA breaching notification list, the Assigned to column shows the person. A light green row, the same hue as the Assigned to me circle, means that person is you. A ticket assigned to someone else stays on the normal background. This color is only for that notification list.",
+                AlertCatalog.Swatch(AlertKind.AssignedToMe).Hex,
+                Lighten(AlertCatalog.Swatch(AlertKind.AssignedToMe).Hex),
+                true,
+                null,
+                false),
             Alert(
                 OnHoldPastFollowUp,
                 AlertKind.OnHoldPastFollowUp,
@@ -172,7 +183,7 @@ public sealed class HighlightPreferences
 
         foreach (var entry in HighlightCatalog.Entries)
         {
-            if (!_enabled.Contains(entry.Key))
+            if (!_enabled.Contains(entry.Key) || !entry.PaintsTicketLists)
                 continue;
             if (entry.Kind is null)
             {
@@ -186,6 +197,13 @@ public sealed class HighlightPreferences
         }
 
         return "";
+    }
+
+    public string ChooseSlaAssigneeHex(bool assignedToViewer)
+    {
+        if (!assignedToViewer || !IsEnabled(HighlightCatalog.SlaAssignedToYou))
+            return "";
+        return HighlightCatalog.Find(HighlightCatalog.SlaAssignedToYou)?.RowHex ?? "";
     }
 
     public void ApplyTo(DeskSettings settings)

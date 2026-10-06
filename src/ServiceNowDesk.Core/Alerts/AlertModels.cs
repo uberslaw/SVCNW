@@ -64,7 +64,9 @@ public sealed record AlertRecord(
     string State,
     string Group,
     string Location,
-    string Updated);
+    string Updated,
+    string Assignee = "",
+    string AssignedToSysId = "");
 
 public sealed record AlertBucket(IReadOnlyList<AlertRecord> Rows, int TotalCount, string Status = "")
 {
@@ -90,6 +92,7 @@ public sealed record WatchedRecord
     public string UpdatedBy { get; init; } = "";
     public string CallerUserName { get; init; } = "";
     public string AssigneeUserName { get; init; } = "";
+    public string AssigneeDisplay { get; init; } = "";
     public string AssignedToSysId { get; init; } = "";
     public string AssignmentGroupSysId { get; init; } = "";
     public DateTime? FollowUp { get; init; }

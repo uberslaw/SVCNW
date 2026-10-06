@@ -167,6 +167,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             UpdatedBy = signals?.UpdatedBy ?? "",
             CallerUserName = UserNameOf(caller),
             AssigneeUserName = UserNameOf(assignee),
+            AssigneeDisplay = assignee.Display?.Trim() ?? "",
             AssignedToSysId = assignee.SysId,
             AssignmentGroupSysId = group.SysId,
             FollowUp = AlertClassifier.TryParseInstant(followUp, out var followUpAt) ? followUpAt : null,

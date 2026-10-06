@@ -90,6 +90,7 @@ public partial class MainViewModel : ObservableObject
             Connection.RememberHighlights(preferences);
             _rows.Use(preferences);
             RepaintRows();
+            Notifications.RememberViewer(_signedInUserId, preferences);
             _store.Save(Connection.BuildSettings());
         };
         Requests.RelatedItemRequested += (_, sysId) => _ = OpenRequestedItemAsync(sysId);
@@ -202,6 +203,7 @@ public partial class MainViewModel : ObservableObject
             WindowTitle = "ServiceNow Desk — " + InstanceLabel;
             IsConnected = true;
             _signedInUserId = user.SysId;
+            Notifications.RememberViewer(_signedInUserId, Connection.Highlights);
             StatusMessage = settings.UseSampleData
                 ? "Practice data loaded. Nothing is sent to ServiceNow."
                 : "Connected as " + user.Name + ".";
@@ -791,6 +793,7 @@ public partial class MainViewModel : ObservableObject
     private void DropConnection(string status)
     {
         _signedInUserId = "";
+        Notifications.RememberViewer("", Connection.Highlights);
         ReplaceClient(null);
         IsConnected = false;
         IsSample = false;

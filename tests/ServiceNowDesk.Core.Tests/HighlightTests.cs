@@ -13,6 +13,7 @@ public class HighlightTests
         Assert.Equal(
             [
                 HighlightCatalog.SlaBreaching,
+                HighlightCatalog.SlaAssignedToYou,
                 HighlightCatalog.OnHoldPastFollowUp,
                 HighlightCatalog.UpdatedByCaller,
                 HighlightCatalog.ReturnedWithNotes,
@@ -34,9 +35,17 @@ public class HighlightTests
             Assert.Equal(HighlightCatalog.Lighten(entry.SwatchHex), entry.RowHex);
         }
 
+        var slaMine = HighlightCatalog.Find(HighlightCatalog.SlaAssignedToYou);
+        Assert.NotNull(slaMine);
+        Assert.False(slaMine.PaintsTicketLists);
+        Assert.True(slaMine.EnabledByDefault);
+        Assert.Contains("Assigned to", slaMine.Explanation, StringComparison.Ordinal);
+        Assert.Equal(AlertCatalog.Swatch(AlertKind.AssignedToMe).Hex, slaMine.SwatchHex);
+
         var defaults = HighlightPreferences.Default;
         Assert.True(defaults.IsEnabled(HighlightCatalog.Unassigned));
         Assert.True(defaults.IsEnabled(HighlightCatalog.SlaBreaching));
+        Assert.True(defaults.IsEnabled(HighlightCatalog.SlaAssignedToYou));
         Assert.False(defaults.IsEnabled(HighlightCatalog.AssignedToMe));
         Assert.False(defaults.IsEnabled(HighlightCatalog.WatchedGroup));
         Assert.Equal(HighlightCatalog.DefaultKeys, HighlightPreferences.From(new DeskSettings()).EnabledKeys);
@@ -78,6 +87,8 @@ public class HighlightTests
         var prefs = HighlightPreferences.Default;
         var sla = HighlightCatalog.Find(HighlightCatalog.SlaBreaching)!.RowHex;
         Assert.Equal(sla, prefs.ChooseRowHex(true, [AlertKind.SlaBreaching, AlertKind.UpdatedByCaller]));
+        Assert.Equal(sla, prefs.ChooseRowHex(false, [AlertKind.SlaBreaching]));
+        Assert.NotEqual(HighlightCatalog.Find(HighlightCatalog.SlaAssignedToYou)!.RowHex, sla);
         Assert.Equal(HighlightCatalog.UnassignedRowHex, prefs.ChooseRowHex(true, []));
         Assert.Equal("", prefs.ChooseRowHex(false, [AlertKind.AssignedToMe, AlertKind.WatchedGroup]));
 
@@ -134,6 +145,43 @@ public class HighlightTests
         highlighter.Use(HighlightPreferences.Default);
         highlighter.Paint(hit);
         Assert.Equal(HighlightCatalog.UnassignedRowHex, hit.HighlightHex);
+    }
+
+    [Fact]
+    public void SlaDashboardNamesTheAssigneeAndHighlightsYours()
+    {
+        var notifications = new NotificationWorkspaceViewModel();
+        notifications.RememberViewer("sample-user", HighlightPreferences.Default);
+        notifications.Apply(new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
+        {
+            [AlertKind.SlaBreaching] = new(
+            [
+                new AlertRecord(AlertKind.SlaBreaching, DeskSection.Incidents, "inc-mine", "INC9", "Mine", "In Progress", "Client Services", "Brisbane", "2026-10-04", "Alex Rivera", "sample-user"),
+                new AlertRecord(AlertKind.SlaBreaching, DeskSection.Incidents, "inc-other", "INC8", "Theirs", "In Progress", "Client Services", "Brisbane", "2026-10-04", "Jordan Lee", "user-jordan"),
+                new AlertRecord(AlertKind.SlaBreaching, DeskSection.Incidents, "inc-none", "INC7", "Empty", "In Progress", "Client Services", "Brisbane", "2026-10-04")
+            ], 3)
+        }), new AlertWatchState());
+
+        notifications.SelectQueueCommand.Execute(AlertKind.SlaBreaching);
+        Assert.True(notifications.ShowAssigneeColumn);
+        var mine = notifications.DashboardRows.Single(row => row.Number == "INC9");
+        var other = notifications.DashboardRows.Single(row => row.Number == "INC8");
+        var empty = notifications.DashboardRows.Single(row => row.Number == "INC7");
+        Assert.Equal("Alex Rivera", mine.AssigneeLabel);
+        Assert.Equal(HighlightCatalog.Find(HighlightCatalog.SlaAssignedToYou)!.RowHex, mine.HighlightHex);
+        Assert.Equal("Jordan Lee", other.AssigneeLabel);
+        Assert.Equal("", other.HighlightHex);
+        Assert.Equal("Unassigned", empty.AssigneeLabel);
+        Assert.Equal("", empty.HighlightHex);
+
+        notifications.SelectQueueCommand.Execute(AlertKind.AssignedToMe);
+        Assert.False(notifications.ShowAssigneeColumn);
+
+        var off = HighlightPreferences.FromKeys(
+            HighlightCatalog.DefaultKeys.Where(key => key != HighlightCatalog.SlaAssignedToYou).ToArray());
+        notifications.SelectQueueCommand.Execute(AlertKind.SlaBreaching);
+        notifications.RememberViewer("sample-user", off);
+        Assert.Equal("", notifications.DashboardRows.Single(row => row.Number == "INC9").HighlightHex);
     }
 
     [Fact]

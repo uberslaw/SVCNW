@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -28,6 +29,19 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     public event EventHandler<AlertRow>? OpenRequested;
     public event EventHandler<AlertKind>? QueueSelected;
     public event EventHandler<AlertAttention>? Attention;
+
+    private string _viewerSysId = "";
+    private HighlightPreferences _highlights = HighlightPreferences.Default;
+
+    public bool ShowAssigneeColumn => SelectedQueue == AlertKind.SlaBreaching;
+
+    public void RememberViewer(string? userSysId, HighlightPreferences highlights)
+    {
+        ArgumentNullException.ThrowIfNull(highlights);
+        _viewerSysId = userSysId?.Trim() ?? "";
+        _highlights = highlights;
+        PaintSlaAssignees();
+    }
 
     [ObservableProperty] private bool anyUnacknowledged;
     [ObservableProperty] private string pollError = "";
@@ -210,6 +224,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     {
         MarkSelectedQueue();
         RefreshDashboard();
+        OnPropertyChanged(nameof(ShowAssigneeColumn));
     }
 
     private void MarkSelectedQueue()
@@ -231,6 +246,25 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
 
         HasDashboardRows = DashboardRows.Count > 0;
         SelectedStatus = Sections.FirstOrDefault(section => section.Kind == SelectedQueue)?.Status ?? "";
+        PaintSlaAssignees();
+    }
+
+    private void PaintSlaAssignees()
+    {
+        foreach (var section in Sections)
+        {
+            foreach (var row in section.Rows)
+                row.HighlightHex = SlaAssigneeHex(row);
+        }
+    }
+
+    private string SlaAssigneeHex(AlertRow row)
+    {
+        if (row.Kind != AlertKind.SlaBreaching)
+            return "";
+        var mine = _viewerSysId.Length > 0
+            && string.Equals(row.AssignedToSysId?.Trim(), _viewerSysId, StringComparison.OrdinalIgnoreCase);
+        return _highlights.ChooseSlaAssigneeHex(mine);
     }
 
     private static DateTime UpdatedStamp(string updated)
@@ -317,8 +351,10 @@ public partial class AlertCircleModel : ObservableObject
     partial void OnStatusChanged(string value) => OnPropertyChanged(nameof(ToolTipText));
 }
 
-public sealed class AlertRow
+public sealed class AlertRow : INotifyPropertyChanged
 {
+    private string _highlightHex = "";
+
     public required AlertKind Kind { get; init; }
     public required DeskSection Section { get; init; }
     public required string SysId { get; init; }
@@ -328,6 +364,25 @@ public sealed class AlertRow
     public required string Group { get; init; }
     public required string Location { get; init; }
     public required string Updated { get; init; }
+    public string Assignee { get; init; } = "";
+    public string AssignedToSysId { get; init; } = "";
+
+    public string AssigneeLabel => string.IsNullOrWhiteSpace(Assignee) ? "Unassigned" : Assignee;
+
+    public string HighlightHex
+    {
+        get => _highlightHex;
+        set
+        {
+            var next = value ?? "";
+            if (string.Equals(_highlightHex, next, StringComparison.Ordinal))
+                return;
+            _highlightHex = next;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HighlightHex)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public string QueueLabel => AlertCatalog.Title(Kind);
 
@@ -365,7 +420,9 @@ public sealed class AlertRow
         State = record.State,
         Group = record.Group,
         Location = record.Location,
-        Updated = record.Updated
+        Updated = record.Updated,
+        Assignee = record.Assignee,
+        AssignedToSysId = record.AssignedToSysId
     };
 }
 

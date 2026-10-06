@@ -95,7 +95,9 @@ public static class AlertClassifier
             record.State,
             record.Group,
             record.Location,
-            record.Updated);
+            record.Updated,
+            record.AssigneeDisplay?.Trim() ?? "",
+            record.AssignedToSysId?.Trim() ?? "");
     }
 
     public static bool TryParseInstant(string? text, out DateTime value)

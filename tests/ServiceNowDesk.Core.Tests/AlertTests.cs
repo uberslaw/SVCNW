@@ -728,7 +728,7 @@ public class AlertTests
             CancellationToken.None);
 
         var sla = snapshot.Bucket(AlertKind.SlaBreaching).Rows;
-        Assert.Contains(sla, row => row.Number == "INC0010010" && row.Section == DeskSection.Incidents);
+        Assert.Contains(sla, row => row.Number == "INC0010010" && row.Section == DeskSection.Incidents && row.Assignee == "Jordan Lee");
         Assert.Contains(sla, row => row.Number == "RITM0010005" && row.Section == DeskSection.RequestedItems);
         Assert.Contains(sla, row => row.Number == "IMS0010003" && row.Section == DeskSection.WalkUps);
         Assert.DoesNotContain(sla, row => row.Number == "INC0010014");

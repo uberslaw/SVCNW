@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using ServiceNowDesk.Alerts;
+using ServiceNowDesk.ViewModels;
 
 namespace ServiceNowDesk.Converters;
 
@@ -85,6 +87,16 @@ public sealed class AlertKindBrushConverter : IValueConverter
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
+}
+
+public sealed class AlertRowTemplateSelector : DataTemplateSelector
+{
+    public DataTemplate? StandardTemplate { get; set; }
+
+    public DataTemplate? SlaTemplate { get; set; }
+
+    public override DataTemplate? SelectTemplate(object item, DependencyObject container) =>
+        item is AlertRow { Kind: AlertKind.SlaBreaching } ? SlaTemplate : StandardTemplate;
 }
 
 public sealed class HexBrushConverter : IValueConverter
