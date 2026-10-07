@@ -51,7 +51,7 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
         </Border>
-        <Border Grid.Row="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="0,0,8,8" Padding="10,8">
+        <Border x:Name="DropPanel" Grid.Row="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="0,0,8,8" Padding="10,8" MinHeight="36">
             <ItemsControl ItemsSource="{Binding Circles}" Focusable="False">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
