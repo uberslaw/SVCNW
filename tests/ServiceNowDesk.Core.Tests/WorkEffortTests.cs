@@ -171,10 +171,30 @@ public class WorkEffortTests
 
         var alexLater = six.Rows.Single(row => row.Name == "Alex Rivera");
         Assert.Equal(2, alexLater.IncOpened);
-        Assert.Equal(1, alexLater.IncUpdated);
-        Assert.Equal(4.2m, alexLater.Weighted);
+        Assert.Equal(2, alexLater.IncUpdated);
+        Assert.Equal(2, alexLater.RitmUpdated);
+        Assert.Equal(4.8m, alexLater.Weighted);
         Assert.Equal("Counts for today.", today.Status);
         Assert.Equal("", today.EmptyMessage);
+
+        var todayMultiple = WorkEffortScore.Present(today, WorkEffortUpdateMode.Multiple);
+        Assert.Equal(2, todayMultiple.Rows[0].RitmUpdated);
+        Assert.Equal(3.2m, todayMultiple.Rows[0].Weighted);
+        Assert.Equal(3, todayMultiple.Rows.Single(row => row.Name == "Jordan Lee").IncUpdated);
+        Assert.Equal(0.9m, todayMultiple.Rows.Single(row => row.Name == "Jordan Lee").Weighted);
+        Assert.Equal("Allow multiple updates adds 3 extra update credits versus daily updates.", todayMultiple.Shift);
+
+        var week = await client.GetWorkEffortAsync(WorkEffortScale.ThisWeek, Now, SampleTeam, CancellationToken.None);
+        var alexWeek = week.Rows.Single(row => row.Name == "Alex Rivera");
+        Assert.Equal(2, alexWeek.RitmUpdated);
+        Assert.Equal(3.2m, alexWeek.Weighted);
+        var weekMultiple = WorkEffortScore.Present(week, WorkEffortUpdateMode.Multiple);
+        Assert.Equal(3, weekMultiple.Rows.Single(row => row.Name == "Alex Rivera").RitmUpdated);
+
+        var four = await client.GetWorkEffortAsync(WorkEffortScale.Last4Weeks, Now, SampleTeam, CancellationToken.None);
+        var alexFour = four.Rows.Single(row => row.Name == "Alex Rivera");
+        Assert.Equal(2, alexFour.IncOpened);
+        Assert.Equal(1, alexFour.IncUpdated);
     }
 
     [Fact]
@@ -185,6 +205,7 @@ public class WorkEffortTests
         Assert.False(leads.ShowWorkEffort);
         Assert.True(leads.ShowQueues);
         Assert.Equal(WorkEffortScale.Today, leads.WorkEffort.Scale);
+        Assert.Equal(WorkEffortUpdateMode.Daily, leads.WorkEffort.UpdateMode);
 
         leads.Area = LeadArea.WorkEffort;
         Assert.True(leads.ShowWorkEffort);
@@ -219,6 +240,15 @@ public class WorkEffortTests
             WorkEffortWindow.For(WorkEffortScale.Last4Weeks, new DateTime(2026, 10, 7, 15, 4, 5)));
         Assert.Contains("sys_updated_on>=2026-09-09@15:04:05", rolling);
         Assert.Contains("sys_updated_on<=2026-10-07@15:04:05", rolling);
+
+        var journal = WorkEffortQuery.JournalClause(people, WorkEffortWindow.For(WorkEffortScale.Today, Now));
+        Assert.Contains("elementINcomments,additional_comments,work_notes", journal);
+        Assert.Contains("sys_created_byINalex.rivera,sample-user", journal);
+        Assert.Contains("sys_created_on>=2026-10-07@00:00:00", journal);
+        Assert.DoesNotContain("jordan^lee", journal);
+        var audit = WorkEffortQuery.AuditClause([Alex], WorkEffortWindow.For(WorkEffortScale.Today, Now));
+        Assert.Contains("tablenameINincident,sc_req_item,interaction", audit);
+        Assert.Contains("userINalex.rivera,sample-user", audit);
     }
 
     [Fact]
@@ -248,6 +278,8 @@ public class WorkEffortTests
         Assert.Contains("sysparm_exclude_reference_link=true", incident);
         Assert.DoesNotContain(liveHandler.Calls, call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal));
         Assert.Contains("sys_id,opened_by,opened_at,resolved_by,resolved_at,closed_by,closed_at,sys_updated_by,sys_updated_on", incident);
+        Assert.Contains(liveHandler.Calls, call => call.PathAndQuery.Contains("table/sys_journal_field", StringComparison.Ordinal));
+        Assert.Contains(liveHandler.Calls, call => call.PathAndQuery.Contains("table/sys_audit", StringComparison.Ordinal));
         Assert.DoesNotContain("short_description", incident);
         Assert.DoesNotContain("user-sam", incident);
         Assert.Contains("opened_at>=2026-10-07@00:00:00", incident);
@@ -522,6 +554,274 @@ public class WorkEffortTests
         Assert.Contains("safety cap", report.Status, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void AnUpdateOnALaterDayStillCountsAfterAnOpenInTheSameWindow()
+    {
+        var monday = new DateTime(2026, 10, 5, 9, 0, 0);
+        var wednesday = new DateTime(2026, 10, 7, 11, 30, 0);
+        var window = WorkEffortWindow.For(WorkEffortScale.ThisWeek, Now);
+        var touch = new WorkEffortTouch(
+            "inc-return",
+            WorkEffortKind.Incident,
+            "sample-user",
+            monday,
+            null,
+            null,
+            null,
+            null,
+            "alex.rivera",
+            monday,
+            new WorkEffortUpdate[] { new("alex.rivera", monday), new("alex.rivera", wednesday) });
+
+        var daily = Assert.Single(WorkEffortScore.Build([Alex], [touch], window, WorkEffortUpdateMode.Daily));
+        var multiple = Assert.Single(WorkEffortScore.Build([Alex], [touch], window, WorkEffortUpdateMode.Multiple));
+        Assert.Equal(1, daily.IncOpened);
+        Assert.Equal(1, daily.IncUpdated);
+        Assert.Equal(1, multiple.IncUpdated);
+        Assert.Equal(1.3m, daily.Weighted);
+        Assert.Equal(WorkEffortWindow.LocalDay(wednesday), WorkEffortWindow.LocalDay(Now));
+        Assert.NotEqual(WorkEffortWindow.LocalDay(monday), WorkEffortWindow.LocalDay(wednesday));
+    }
+
+    [Fact]
+    public void SameDaySavesCollapseAndTheSameMomentIsCountedOnce()
+    {
+        var morning = new DateTime(2026, 10, 7, 9, 0, 0);
+        var noon = new DateTime(2026, 10, 7, 12, 0, 0);
+        var window = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var jordan = new WorkEffortPerson("user-jordan", "Jordan Lee", "jordan.lee");
+        var touch = new WorkEffortTouch(
+            "inc-chase",
+            WorkEffortKind.Incident,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "jordan.lee",
+            Now,
+            new WorkEffortUpdate[]
+            {
+                new("jordan.lee", morning),
+                new("jordan.lee", noon),
+                new("jordan.lee", Now)
+            });
+
+        var daily = Assert.Single(WorkEffortScore.Build([jordan], [touch], window, WorkEffortUpdateMode.Daily));
+        var multiple = Assert.Single(WorkEffortScore.Build([jordan], [touch], window, WorkEffortUpdateMode.Multiple));
+        Assert.Equal(1, daily.IncUpdated);
+        Assert.Equal(3, multiple.IncUpdated);
+        Assert.Equal(0.3m, daily.Weighted);
+        Assert.Equal(0.9m, multiple.Weighted);
+        Assert.Equal(
+            WorkEffortWindow.LocalStamp(Now),
+            WorkEffortWindow.LocalStamp(new DateTime(2026, 10, 7, 15, 0, 0, 400)));
+    }
+
+    [Fact]
+    public void TwoDaysOnOneTicketAreTwoDailyCredits()
+    {
+        var monday = new DateTime(2026, 10, 5, 10, 0, 0);
+        var wednesdayMorning = new DateTime(2026, 10, 7, 9, 0, 0);
+        var touch = new WorkEffortTouch(
+            "ritm-chase",
+            WorkEffortKind.RequestedItem,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "alex.rivera",
+            Now,
+            new WorkEffortUpdate[] { new("alex.rivera", monday), new("alex.rivera", wednesdayMorning) });
+        var week = WorkEffortWindow.For(WorkEffortScale.ThisWeek, Now);
+        var daily = Assert.Single(WorkEffortScore.Build([Alex], [touch], week, WorkEffortUpdateMode.Daily));
+        var multiple = Assert.Single(WorkEffortScore.Build([Alex], [touch], week, WorkEffortUpdateMode.Multiple));
+        Assert.Equal(2, daily.RitmUpdated);
+        Assert.Equal(3, multiple.RitmUpdated);
+        Assert.Equal("Allow multiple updates adds 1 extra update credit versus daily updates.", WorkEffortScore.ShiftLine([daily], [multiple]));
+    }
+
+    [Fact]
+    public void ResolveDayDoesNotAlsoCountAsAnUpdateAndTheNextDayDoes()
+    {
+        var tuesday = new DateTime(2026, 10, 6, 16, 0, 0);
+        var touch = new WorkEffortTouch(
+            "ims-done",
+            WorkEffortKind.Interaction,
+            null,
+            null,
+            null,
+            null,
+            "sample-user",
+            tuesday,
+            "alex.rivera",
+            tuesday,
+            new WorkEffortUpdate[] { new("alex.rivera", tuesday.AddHours(1)), new("alex.rivera", Now) });
+        var week = WorkEffortWindow.For(WorkEffortScale.ThisWeek, Now);
+        var row = Assert.Single(WorkEffortScore.Build([Alex], [touch], week, WorkEffortUpdateMode.Multiple));
+        Assert.Equal(1, row.ImsResolved);
+        Assert.Equal(1, row.ImsUpdated);
+        Assert.Equal(0.9m, row.Weighted);
+    }
+
+    [Fact]
+    public async Task SwitchingUpdateModeRescoresCachedEventsWithoutAnotherQuery()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        var queries = new Dictionary<WorkEffortScale, int>();
+
+        await OpenWorkEffortAsync(page, client, Now, force: false, queries);
+        Assert.Equal(WorkEffortUpdateMode.Daily, page.UpdateMode);
+        Assert.Equal(1, page.Rows.Single(row => row.Name == "Jordan Lee").IncUpdated);
+        Assert.Equal(1, page.Rows[0].RitmUpdated);
+        Assert.Equal(2.9m, page.Rows[0].Weighted);
+        Assert.Equal("Allow multiple updates adds 3 extra update credits versus daily updates.", page.Shift);
+
+        page.UpdateMode = WorkEffortUpdateMode.Multiple;
+        Assert.Equal(1, queries[WorkEffortScale.Today]);
+        Assert.False(page.IsLoading);
+        Assert.Equal(3, page.Rows.Single(row => row.Name == "Jordan Lee").IncUpdated);
+        Assert.Equal(2, page.Rows[0].RitmUpdated);
+        Assert.Equal(3.2m, page.Rows[0].Weighted);
+        Assert.Equal(0.9m, page.Rows.Single(row => row.Name == "Jordan Lee").Weighted);
+        Assert.Equal("As of 15:00", page.AsOf);
+        Assert.Equal("Allow multiple updates adds 3 extra update credits versus daily updates.", page.Shift);
+
+        page.UpdateMode = WorkEffortUpdateMode.Daily;
+        Assert.Equal(1, queries[WorkEffortScale.Today]);
+        Assert.Equal(1, page.Rows.Single(row => row.Name == "Jordan Lee").IncUpdated);
+        Assert.Equal(2.9m, page.Rows[0].Weighted);
+    }
+
+    [Fact]
+    public async Task JournalAndAuditHistoryCountEarlierDaysWithoutWipingTheWindow()
+    {
+        var handler = new StubHandler(HistoryResponder());
+        using var live = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await live.GetWorkEffortAsync(WorkEffortScale.ThisWeek, Now, [Alex], CancellationToken.None);
+        var daily = Assert.Single(report.Rows);
+        Assert.Equal("Alex Rivera", daily.Name);
+        Assert.Equal(1, daily.IncOpened);
+        Assert.Equal(0, daily.IncResolved);
+        Assert.Equal(1, daily.IncUpdated);
+        Assert.Equal(1, daily.RitmUpdated);
+        Assert.Equal(1, daily.ImsUpdated);
+        Assert.Equal(1.9m, daily.Weighted);
+        Assert.DoesNotContain(WorkEffortQuery.HistoryNotice, report.Status, StringComparison.Ordinal);
+
+        var multiple = WorkEffortScore.Present(report, WorkEffortUpdateMode.Multiple);
+        var row = Assert.Single(multiple.Rows);
+        Assert.Equal(3, row.IncUpdated);
+        Assert.Equal(2, row.RitmUpdated);
+        Assert.Equal(1, row.ImsUpdated);
+        Assert.Equal(2.8m, row.Weighted);
+        Assert.Equal("Allow multiple updates adds 3 extra update credits versus daily updates.", multiple.Shift);
+
+        var journalCall = handler.Calls.Single(call => call.PathAndQuery.Contains("table/sys_journal_field", StringComparison.Ordinal));
+        var journal = Uri.UnescapeDataString(journalCall.PathAndQuery);
+        Assert.Contains("elementINcomments,additional_comments,work_notes", journal);
+        Assert.Contains("sys_created_byINalex.rivera,sample-user", journal);
+        Assert.Contains(WorkEffortQuery.JournalFields, journal);
+        var audit = Uri.UnescapeDataString(handler.Calls.Single(call => call.PathAndQuery.Contains("table/sys_audit", StringComparison.Ordinal)).PathAndQuery);
+        Assert.Contains("tablenameINincident,sc_req_item,interaction", audit);
+        Assert.Contains("userINalex.rivera,sample-user", audit);
+        Assert.Contains(
+            handler.Calls,
+            call => call.PathAndQuery.Contains("table/sc_req_item", StringComparison.Ordinal)
+                && Uri.UnescapeDataString(call.PathAndQuery).Contains("sys_idINritm-9", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AFailedJournalReadKeepsTheHeaderUpdateOnALaterDay()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? "";
+            if (path.Contains("table/sys_journal_field", StringComparison.Ordinal))
+                return Api.Json("""{"error":{"message":"ACL","detail":"not allowed"}}""", HttpStatusCode.Forbidden);
+            if (path.Contains("table/sys_audit", StringComparison.Ordinal))
+                return Api.Json("""{"error":{"message":"Invalid query","detail":"no such table"}}""", HttpStatusCode.BadRequest);
+            if (path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json(HistoryIncidentJson);
+            return Api.Json("""{"result":[]}""");
+        });
+        using var live = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await live.GetWorkEffortAsync(WorkEffortScale.ThisWeek, Now, [Alex], CancellationToken.None);
+        var row = Assert.Single(report.Rows);
+        Assert.Equal(1, row.IncOpened);
+        Assert.Equal(1, row.IncUpdated);
+        Assert.Contains(WorkEffortQuery.HistoryNotice, report.Status, StringComparison.Ordinal);
+        var multiple = WorkEffortScore.Present(report, WorkEffortUpdateMode.Multiple);
+        Assert.Equal(1, Assert.Single(multiple.Rows).IncUpdated);
+        Assert.Contains("no extra update credits", multiple.Shift, StringComparison.Ordinal);
+    }
+
+    private static Func<HttpRequestMessage, string, HttpResponseMessage> HistoryResponder() =>
+        (request, _) =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? "";
+            var query = Uri.UnescapeDataString(path);
+            if (path.Contains("table/sys_journal_field", StringComparison.Ordinal))
+                return Api.Json(JournalHistoryJson);
+            if (path.Contains("table/sys_audit", StringComparison.Ordinal))
+                return Api.Json(AuditHistoryJson);
+            if (path.Contains("table/sc_req_item", StringComparison.Ordinal))
+            {
+                if (query.Contains("sys_idIN", StringComparison.Ordinal))
+                    return Api.Json(HistoryRitmLookupJson);
+                return Api.Json("""{"result":[]}""");
+            }
+
+            if (path.Contains("table/incident", StringComparison.Ordinal))
+            {
+                if (query.Contains("sys_idIN", StringComparison.Ordinal))
+                    return Api.Json("""{"result":[]}""");
+                return Api.Json(HistoryIncidentJson);
+            }
+
+            return Api.Json("""{"result":[]}""");
+        };
+
+    private const string HistoryIncidentJson = """
+        {"result":[{
+          "sys_id":{"value":"inc-1","display_value":"inc-1"},
+          "opened_by":{"value":"sample-user","display_value":"Alex Rivera"},
+          "opened_at":{"value":"2026-10-05 09:00:00","display_value":"2026-10-05 09:00:00"},
+          "resolved_by":{"value":"","display_value":""},
+          "resolved_at":{"value":"","display_value":""},
+          "closed_by":{"value":"","display_value":""},
+          "closed_at":{"value":"","display_value":""},
+          "sys_updated_by":{"value":"alex.rivera","display_value":"alex.rivera"},
+          "sys_updated_on":{"value":"2026-10-07 15:00:00","display_value":"2026-10-07 15:00:00"}
+        }]}
+        """;
+
+    private const string HistoryRitmLookupJson = """
+        {"result":[{"sys_id":{"value":"ritm-9","display_value":"ritm-9"}}]}
+        """;
+
+    private const string JournalHistoryJson = """
+        {"result":[
+          {"sys_id":{"value":"j1","display_value":"j1"},"element_id":{"value":"inc-1","display_value":"inc-1"},"element":{"value":"work_notes","display_value":"Work notes"},"name":{"value":"incident","display_value":"incident"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"},"sys_created_on":{"value":"2026-10-05 09:00:00","display_value":"2026-10-05 09:00:00"}},
+          {"sys_id":{"value":"j2","display_value":"j2"},"element_id":{"value":"inc-1","display_value":"inc-1"},"element":{"value":"comments","display_value":"Comments"},"name":{"value":"incident","display_value":"incident"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"},"sys_created_on":{"value":"2026-10-07 10:00:00","display_value":"2026-10-07 10:00:00"}},
+          {"sys_id":{"value":"j3","display_value":"j3"},"element_id":{"value":"inc-1","display_value":"inc-1"},"element":{"value":"work_notes","display_value":"Work notes"},"name":{"value":"incident","display_value":"incident"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"},"sys_created_on":{"value":"2026-10-07 14:00:00","display_value":"2026-10-07 14:00:00"}},
+          {"sys_id":{"value":"j4","display_value":"j4"},"element_id":{"value":"inc-1","display_value":"inc-1"},"element":{"value":"work_notes","display_value":"Work notes"},"name":{"value":"incident","display_value":"incident"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"},"sys_created_on":{"value":"2026-10-07 15:00:00","display_value":"2026-10-07 15:00:00"}},
+          {"sys_id":{"value":"j5","display_value":"j5"},"element_id":{"value":"ritm-9","display_value":"ritm-9"},"element":{"value":"work_notes","display_value":"Work notes"},"name":{"value":"task","display_value":"task"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"},"sys_created_on":{"value":"2026-10-06 09:00:00","display_value":"2026-10-06 09:00:00"}},
+          {"sys_id":{"value":"j6","display_value":"j6"},"element_id":{"value":"ritm-9","display_value":"ritm-9"},"element":{"value":"comments","display_value":"Comments"},"name":{"value":"task","display_value":"task"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"},"sys_created_on":{"value":"2026-10-06 15:00:00","display_value":"2026-10-06 15:00:00"}}
+        ]}
+        """;
+
+    private const string AuditHistoryJson = """
+        {"result":[
+          {"sys_id":{"value":"a1","display_value":"a1"},"documentkey":{"value":"ims-3","display_value":"ims-3"},"tablename":{"value":"interaction","display_value":"interaction"},"user":{"value":"alex.rivera","display_value":"alex.rivera"},"sys_created_on":{"value":"2026-10-07 16:00:00","display_value":"2026-10-07 16:00:00"}},
+          {"sys_id":{"value":"a2","display_value":"a2"},"documentkey":{"value":"ims-3","display_value":"ims-3"},"tablename":{"value":"interaction","display_value":"interaction"},"user":{"value":"alex.rivera","display_value":"alex.rivera"},"sys_created_on":{"value":"2026-10-07 16:00:00","display_value":"2026-10-07 16:00:00"}}
+        ]}
+        """;
 
     private static async Task WaitUntilAsync(Func<bool> ready)
     {

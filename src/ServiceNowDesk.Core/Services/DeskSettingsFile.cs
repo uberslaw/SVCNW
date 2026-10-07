@@ -56,6 +56,7 @@ public static class DeskSettingsFile
         public int? NotificationPollSeconds { get; set; }
         public bool? DownloadCacheOnLaunch { get; set; }
         public List<string>? EnabledHighlights { get; set; }
+        public int LegendIntensityVersion { get; set; }
         public int? LegendIntensity { get; set; }
         public Dictionary<string, int>? LegendColorIntensities { get; set; }
         public List<string>? LeadTeamMemberIds { get; set; }
@@ -92,6 +93,7 @@ public static class DeskSettingsFile
             NotificationPollSeconds = settings.NotificationPollSeconds,
             DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch,
             EnabledHighlights = settings.EnabledHighlights is null ? null : [.. settings.EnabledHighlights],
+            LegendIntensityVersion = settings.LegendIntensityVersion,
             LegendIntensity = settings.LegendIntensity,
             LegendColorIntensities = CopyIntensities(settings.LegendColorIntensities),
             LeadTeamMemberIds = settings.LeadTeamMemberIds is null ? [] : [.. settings.LeadTeamMemberIds],
@@ -129,6 +131,7 @@ public static class DeskSettingsFile
             NotificationPollSeconds = NotificationPollSeconds ?? 60,
             DownloadCacheOnLaunch = DownloadCacheOnLaunch ?? true,
             EnabledHighlights = EnabledHighlights is null ? null : [.. EnabledHighlights],
+            LegendIntensityVersion = LegendIntensityVersion,
             LegendIntensity = LegendIntensity,
             LegendColorIntensities = CopyIntensities(LegendColorIntensities),
             LeadTeamMemberIds = LeadTeamMemberIds is null ? [] : [.. LeadTeamMemberIds],

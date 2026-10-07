@@ -201,7 +201,7 @@
                 <TextBlock Text="{Binding LockedTeamNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding LockedTeamNote, Converter={StaticResource StringVis}}"/>
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                           Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. An update that did not open, close, or resolve that record is 0.3. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Figures load the first time you open a time scale each day. Refresh reloads the scale you are looking at. Leaving this page does not stop the load."/>
+                           Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. Daily updates is on when this panel opens: one update credit (0.3) per person, per ticket, per local day. Allow multiple updates counts each save. An open, resolve, or close is not also an update on that same day. A later day still counts. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Figures load the first time you open a time scale each day. The update switch uses that loaded history and does not ask ServiceNow again. Refresh reloads the scale you are looking at. Leaving this page does not stop the load."/>
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -233,6 +233,14 @@
                                  IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=TwelveMonths}"
                                  AutomationProperties.Name="12 months"/>
                 </WrapPanel>
+                <WrapPanel Margin="0,0,0,8" AutomationProperties.Name="Work Effort update counting">
+                    <RadioButton GroupName="WorkEffortUpdates" Content="Daily updates" Margin="0,0,16,8"
+                                 IsChecked="{Binding WorkEffort.UpdateMode, Converter={StaticResource EnumEq}, ConverterParameter=Daily}"
+                                 AutomationProperties.Name="Daily updates"/>
+                    <RadioButton GroupName="WorkEffortUpdates" Content="Allow multiple updates" Margin="0,0,16,8"
+                                 IsChecked="{Binding WorkEffort.UpdateMode, Converter={StaticResource EnumEq}, ConverterParameter=Multiple}"
+                                 AutomationProperties.Name="Allow multiple updates"/>
+                </WrapPanel>
                 <ProgressBar Minimum="0"
                              Maximum="{Binding WorkEffort.ProgressMaximum}"
                              Value="{Binding WorkEffort.ProgressValue}"
@@ -255,6 +263,9 @@
                 </ProgressBar>
                 <TextBlock Text="{Binding WorkEffort.Status}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding WorkEffort.Status, Converter={StaticResource StringVis}}"/>
+                <TextBlock Text="{Binding WorkEffort.Shift}" TextWrapping="Wrap" Margin="0,0,0,8"
+                           Visibility="{Binding WorkEffort.Shift, Converter={StaticResource StringVis}}"
+                           AutomationProperties.Name="Work Effort update shift"/>
                 <TextBlock Text="{Binding WorkEffort.EmptyMessage}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding WorkEffort.EmptyMessage, Converter={StaticResource StringVis}}"/>
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"

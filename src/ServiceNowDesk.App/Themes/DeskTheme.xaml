@@ -12,6 +12,7 @@
     <conv:EqualsMultiConverter x:Key="EqualsMulti"/>
     <conv:AlertKindBrushConverter x:Key="AlertBrush"/>
     <conv:HexBrushConverter x:Key="HexBrush"/>
+    <conv:LegendTrackBrushConverter x:Key="LegendTrack"/>
 
     <Color x:Key="NavColor">#1B2B2E</Color>
     <Color x:Key="NavMutedColor">#B7C7C6</Color>
@@ -211,6 +212,69 @@
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
         <Setter Property="Padding" Value="8,4"/>
+    </Style>
+
+    <Style x:Key="LegendTrackButton" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="LegendThumb" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border Width="14" Height="14" CornerRadius="7" Background="{StaticResource WhiteBrush}"
+                            BorderBrush="{StaticResource TextBrush}" BorderThickness="1"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="LegendSlider" TargetType="Slider">
+        <Setter Property="Minimum" Value="0"/>
+        <Setter Property="Maximum" Value="100"/>
+        <Setter Property="TickFrequency" Value="1"/>
+        <Setter Property="IsSnapToTickEnabled" Value="True"/>
+        <Setter Property="IsMoveToPointEnabled" Value="True"/>
+        <Setter Property="MinHeight" Value="18"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid Height="18" VerticalAlignment="Center" SnapsToDevicePixels="True">
+                        <Border Height="6" Margin="7,0" VerticalAlignment="Center" CornerRadius="3">
+                            <Border.Background>
+                                <MultiBinding Converter="{StaticResource LegendTrack}">
+                                    <Binding Path="DataContext.AdjustIndividually" RelativeSource="{RelativeSource TemplatedParent}"/>
+                                    <Binding Path="DataContext.SelectedOriginalHex" RelativeSource="{RelativeSource TemplatedParent}"/>
+                                </MultiBinding>
+                            </Border.Background>
+                        </Border>
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource LegendTrackButton}" Command="{x:Static Slider.DecreaseLarge}"/>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource LegendTrackButton}" Command="{x:Static Slider.IncreaseLarge}"/>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource LegendThumb}"/>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style x:Key="NavButton" TargetType="RadioButton">

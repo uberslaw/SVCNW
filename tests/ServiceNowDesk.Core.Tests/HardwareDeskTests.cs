@@ -357,7 +357,7 @@ public class HardwareDeskTests
         workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
         await workspace.RefreshAsync();
 
-        Assert.Contains("location.nameLIKE", client.LastHardwareQuery);
+        Assert.Contains("location.name=", client.LastHardwareQuery);
         Assert.Contains("Sydney Office", client.LastHardwareQuery);
         Assert.DoesNotContain("Hong Kong", client.LastHardwareQuery);
         Assert.DoesNotContain("Maroochydore", client.LastHardwareQuery);
@@ -398,8 +398,8 @@ public class HardwareDeskTests
         workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
         await workspace.RefreshAsync();
 
-        Assert.Contains("location.nameLIKE\"Brisbane Office\"", client.LastHardwareQuery);
-        Assert.DoesNotContain("location.nameLIKE\"Brisbane\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
         Assert.True(workspace.Offices.Single(office => office.Name == "Brisbane Office").IsSelected);
         Assert.Contains("Maroochydore", client.LastHardwareQuery);
         Assert.Contains("Gold Coast", client.LastHardwareQuery);
@@ -508,8 +508,8 @@ public class HardwareDeskTests
         again.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
         await again.RefreshAsync();
 
-        Assert.Contains("location.nameLIKE\"Brisbane Office\"", client.LastHardwareQuery);
-        Assert.DoesNotContain("location.nameLIKE\"Brisbane\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
         Assert.Contains("Cairns", client.LastHardwareQuery);
         Assert.DoesNotContain("Hong Kong", client.LastHardwareQuery);
         Assert.DoesNotContain("Maroochydore", client.LastHardwareQuery);
@@ -586,11 +586,11 @@ public class HardwareDeskTests
         Assert.False(workspace.Offices.Single(office => office.Name == "Cairns Depot").IsSelected);
         Assert.False(workspace.Offices.Single(office => office.Name == "Maroochydore").IsSelected);
         Assert.False(workspace.Offices.Single(office => office.Name == "Gold Coast").IsSelected);
-        Assert.Contains("location.nameLIKE\"Brisbane Office\"", client.LastHardwareQuery);
-        Assert.Contains("location.nameLIKE\"Townsville Office\"", client.LastHardwareQuery);
-        Assert.Contains("location.nameLIKE\"Cairns\"", client.LastHardwareQuery);
-        Assert.DoesNotContain("location.nameLIKE\"Brisbane\"", client.LastHardwareQuery);
-        Assert.DoesNotContain("location.nameLIKE\"Townsville\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Townsville Office\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Townsville\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Cairns\"", client.LastHardwareQuery);
         Assert.DoesNotContain("Cairns Depot", client.LastHardwareQuery);
         Assert.Equal(3, workspace.Items.Count);
         Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
@@ -603,16 +603,23 @@ public class HardwareDeskTests
         var query = HardwareCatalog.ListQuery(null, ["Brisbane Office", "Maroochydore Office", "Gold Coast Office", "Townsville Office"]);
 
         Assert.Equal(
-            "model_category.name=Computer^location.nameLIKE\"Brisbane Office\""
-            + "^NQmodel_category.name=Computer^location.nameLIKE\"Maroochydore Office\""
-            + "^NQmodel_category.name=Computer^location.nameLIKE\"Gold Coast Office\""
-            + "^NQmodel_category.name=Computer^location.nameLIKE\"Townsville Office\""
+            "model_category.name=Computer^location.name=\"Brisbane Office\""
+            + "^NQmodel_category.name=Computer^location.name=\"Brisbane\""
+            + "^NQmodel_category.name=Computer^location.name=\"Maroochydore Office\""
+            + "^NQmodel_category.name=Computer^location.name=\"Maroochydore\""
+            + "^NQmodel_category.name=Computer^location.name=\"Gold Coast Office\""
+            + "^NQmodel_category.name=Computer^location.name=\"Gold Coast\""
+            + "^NQmodel_category.name=Computer^location.name=\"Townsville Office\""
+            + "^NQmodel_category.name=Computer^location.name=\"Townsville\""
             + "^ORDERBYserial_number",
             query);
         Assert.DoesNotContain("(", query);
         Assert.DoesNotContain("Hong Kong", query);
         Assert.Equal(
-            "model_category.name=Computer^location.nameLIKE\"Brisbane Office\"^ORDERBYserial_number",
+            "model_category.name=Computer^location.name=\"Brisbane\"^NQmodel_category.name=Computer^location.name=\"Brisbane Office\"^ORDERBYserial_number",
+            HardwareCatalog.ListQuery(null, ["Brisbane"]));
+        Assert.Equal(
+            "model_category.name=Computer^location.name=\"Brisbane Office\"^NQmodel_category.name=Computer^location.name=\"Brisbane\"^ORDERBYserial_number",
             HardwareCatalog.ListQuery(null, ["Brisbane Office"]));
         Assert.Equal("model_category.name=Computer^ORDERBYserial_number", HardwareCatalog.ListQuery(null, null));
     }
@@ -633,9 +640,8 @@ public class HardwareDeskTests
         var only = Assert.Single(page.Items);
         Assert.Equal("Brisbane Office", only.Location.Display);
         Assert.DoesNotContain("(", client.LastHardwareQuery);
-        Assert.Contains(
-            "model_category.name=Computer^location.nameLIKE\"Brisbane Office\"^ORDERBYserial_number",
-            client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
     }
 
     [Fact]
@@ -654,7 +660,8 @@ public class HardwareDeskTests
         Assert.DoesNotContain(workspace.Offices, office => office.Name.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
         Assert.All(workspace.Items, asset => Assert.Equal("Brisbane Office", asset.Location.Display));
-        Assert.Contains("location.nameLIKE\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
         Assert.DoesNotContain("(", client.LastHardwareQuery);
 
         await workspace.SearchAllLocationsCommand.ExecuteAsync(null);
@@ -662,6 +669,86 @@ public class HardwareDeskTests
         Assert.Contains(workspace.Items, asset => asset.SerialNumber == "0000-0000-0353");
         Assert.DoesNotContain(workspace.Offices, office => office.Name == "Hong Kong Office");
         Assert.Equal("All locations", workspace.OfficeSelectionSummary);
+    }
+
+    [Fact]
+    public async Task DefaultBrisbaneShowsAnAssetStoredAsBrisbaneOffice()
+    {
+        using var client = new SampleServiceNowClient();
+        client.RemoveLocation("Brisbane Office");
+        client.SignedInUser = ViewerAt("Brisbane");
+        var workspace = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+        workspace.Attach(client);
+        workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
+        await workspace.RefreshAsync();
+
+        var selected = Assert.Single(workspace.Offices, office => office.IsSelected);
+        Assert.Equal("Brisbane", selected.Name);
+        Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
+        Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.DoesNotContain("(", client.LastHardwareQuery);
+        Assert.Contains("Showing Brisbane.", workspace.OfficeStatus);
+        Assert.True(HardwareCatalog.MatchesLocation(new HardwareAsset
+        {
+            Location = new ReferenceValue("loc", "Brisbane Office"),
+            ModelCategory = HardwareCatalog.Computer
+        }, ["Brisbane"]));
+        Assert.True(HardwareOfficeNames.SamePlace("Brisbane", "Brisbane Office"));
+        Assert.False(HardwareCatalog.MatchesLocation(new HardwareAsset
+        {
+            Location = new ReferenceValue("loc-hkg", "Hong Kong Office"),
+            ModelCategory = HardwareCatalog.Computer
+        }, ["Brisbane"]));
+    }
+
+    [Fact]
+    public async Task BrisbaneOfficeSelectionKeepsARowStoredAsBrisbane()
+    {
+        using var client = new SampleServiceNowClient();
+        client.AddComputer(new HardwareAsset
+        {
+            SysId = "hw-bne-city",
+            SerialNumber = "BNECITY1",
+            Model = "HP ZBook",
+            ModelCategory = HardwareCatalog.Computer,
+            Location = new ReferenceValue("loc-city", "Brisbane"),
+            InstallStatus = HardwareCatalog.InUse,
+            InstallStatusLabel = HardwareCatalog.InUse
+        });
+        var store = new MemorySettingsStore();
+        store.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane Office"] });
+        var workspace = new HardwareWorkspaceViewModel(store);
+        workspace.Attach(client);
+        await workspace.RefreshAsync();
+
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == "BNECITY1");
+        Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
+        Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
+    }
+
+    [Fact]
+    public async Task UnappliedLocationFilterIsNotReportedAsAnEmptyOffice()
+    {
+        using var client = new SampleServiceNowClient();
+        client.ApplyHardwareLocationFilter = false;
+        client.RemoveHardware(asset => HardwareOfficeNames.SamePlace(asset.Location.Display, "Brisbane"));
+        client.AddComputer(HongKongVm("0000-0000-0999"));
+        var store = new MemorySettingsStore();
+        store.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane"] });
+        var workspace = new HardwareWorkspaceViewModel(store);
+        workspace.Attach(client);
+        await workspace.RefreshAsync();
+
+        Assert.Empty(workspace.Items);
+        Assert.Contains("did not apply", workspace.OfficeStatus, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Brisbane", workspace.OfficeStatus);
+        Assert.DoesNotContain("Showing Brisbane.", workspace.OfficeStatus);
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
+        Assert.DoesNotContain(workspace.Offices, office => office.Name == "Hong Kong Office");
     }
 
     [Fact]

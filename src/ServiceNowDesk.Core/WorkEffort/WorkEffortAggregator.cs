@@ -32,8 +32,8 @@ public static class WorkEffortTeam
 }
 
 /// <summary>
-/// Counts one table page at a time. The only retained row state is the set of
-/// record ids already counted, and that set stops growing at the safety cap.
+/// Counts one table page at a time. Record ids already counted stop growing at the safety cap.
+/// Update moments are kept only until the page is folded, then dropped.
 /// </summary>
 public sealed class WorkEffortAttempt
 {
@@ -41,15 +41,24 @@ public sealed class WorkEffortAttempt
 
     private readonly WorkEffortPerson[] _people;
     private readonly WorkEffortWindow _window;
+    private readonly WorkEffortUpdateMode _mode;
     private readonly int _cap;
     private readonly int[] _counts;
     private readonly HashSet<string> _seen;
+    private readonly HashSet<LifeKey> _life = [];
+    private readonly List<PendingUpdate> _updates = [];
+    private bool _finished;
 
-    public WorkEffortAttempt(IReadOnlyList<WorkEffortPerson> people, WorkEffortWindow window, int safetyCap)
+    public WorkEffortAttempt(
+        IReadOnlyList<WorkEffortPerson> people,
+        WorkEffortWindow window,
+        int safetyCap,
+        WorkEffortUpdateMode mode = WorkEffortUpdateMode.Daily)
     {
         ArgumentNullException.ThrowIfNull(people);
         _people = people as WorkEffortPerson[] ?? people.ToArray();
         _window = window;
+        _mode = mode;
         _cap = safetyCap < 1 ? 1 : safetyCap;
         _counts = new int[_people.Length * Width];
         _seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -84,13 +93,18 @@ public sealed class WorkEffortAttempt
     public void FoldInto(int[] totals)
     {
         ArgumentNullException.ThrowIfNull(totals);
+        Finish();
         if (totals.Length != _counts.Length)
             throw new ArgumentException("Count width does not match the team.", nameof(totals));
         for (var index = 0; index < _counts.Length; index++)
             totals[index] += _counts[index];
     }
 
-    public IReadOnlyList<WorkEffortRow> ToRows() => ToRows(_people, _counts);
+    public IReadOnlyList<WorkEffortRow> ToRows()
+    {
+        Finish();
+        return ToRows(_people, _counts);
+    }
 
     public static IReadOnlyList<WorkEffortRow> ToRows(IReadOnlyList<WorkEffortPerson> people, int[] counts)
     {
@@ -149,11 +163,12 @@ public sealed class WorkEffortAttempt
             var opened = InWindow(touch.OpenedAt) && Same(person.SysId, touch.OpenedBySysId);
             var resolved = InWindow(touch.ResolvedAt) && Same(person.SysId, touch.ResolvedBySysId);
             var closed = InWindow(touch.ClosedAt) && Same(person.SysId, touch.ClosedBySysId);
-            var updated = InWindow(touch.UpdatedAt)
-                && (Same(person.UserName, touch.UpdatedBy) || Same(person.SysId, touch.UpdatedBy))
-                && !opened
-                && !resolved
-                && !closed;
+            if (opened)
+                _life.Add(new LifeKey(index, touch.Kind, id, DayNumber(touch.OpenedAt!.Value)));
+            if (resolved)
+                _life.Add(new LifeKey(index, touch.Kind, id, DayNumber(touch.ResolvedAt!.Value)));
+            if (closed)
+                _life.Add(new LifeKey(index, touch.Kind, id, DayNumber(touch.ClosedAt!.Value)));
             var completed = resolved || closed;
             var slot = index * Width;
             switch (touch.Kind)
@@ -161,20 +176,95 @@ public sealed class WorkEffortAttempt
                 case WorkEffortKind.RequestedItem:
                     if (opened) _counts[slot + 3]++;
                     if (completed) _counts[slot + 4]++;
-                    if (updated) _counts[slot + 5]++;
                     break;
                 case WorkEffortKind.Interaction:
                     if (opened) _counts[slot + 6]++;
                     if (completed) _counts[slot + 7]++;
-                    if (updated) _counts[slot + 8]++;
                     break;
                 default:
                     if (opened) _counts[slot]++;
                     if (completed) _counts[slot + 1]++;
-                    if (updated) _counts[slot + 2]++;
                     break;
             }
         }
+
+        ConsiderUpdate(touch.Kind, id, touch.UpdatedBy, touch.UpdatedAt);
+        if (touch.Updates is null)
+            return;
+        foreach (var update in touch.Updates)
+            ConsiderUpdate(touch.Kind, id, update.By, update.At);
+    }
+
+    private void ConsiderUpdate(WorkEffortKind kind, string recordId, string? by, DateTime? at)
+    {
+        if (at is not DateTime moment || string.IsNullOrWhiteSpace(by))
+            return;
+        if (!InWindow(moment))
+            return;
+        var stamp = WorkEffortWindow.LocalStamp(moment);
+        var day = DayNumber(stamp);
+        for (var index = 0; index < _people.Length; index++)
+        {
+            var person = _people[index];
+            if (!Same(person.UserName, by) && !Same(person.SysId, by))
+                continue;
+            if (_life.Contains(new LifeKey(index, kind, recordId, day)))
+                continue;
+            _updates.Add(new PendingUpdate(index, kind, recordId, stamp));
+        }
+    }
+
+    private void Finish()
+    {
+        if (_finished)
+            return;
+        _finished = true;
+        if (_updates.Count == 0)
+            return;
+
+        var grouped = new Dictionary<GroupKey, UpdateGroup>();
+        foreach (var update in _updates)
+        {
+            var key = new GroupKey(update.Person, update.Kind, update.RecordId);
+            if (!grouped.TryGetValue(key, out var group))
+            {
+                group = new UpdateGroup();
+                grouped[key] = group;
+            }
+
+            if (!group.Moments.Add(update.Stamp.Ticks))
+                continue;
+            group.Days.Add(DayNumber(update.Stamp));
+        }
+
+        foreach (var pair in grouped)
+        {
+            var credit = _mode == WorkEffortUpdateMode.Multiple ? pair.Value.Moments.Count : pair.Value.Days.Count;
+            AddUpdate(pair.Key.Person, pair.Key.Kind, credit);
+        }
+
+        _updates.Clear();
+        _life.Clear();
+    }
+
+    private void AddUpdate(int person, WorkEffortKind kind, int credit)
+    {
+        if (credit <= 0)
+            return;
+        var slot = person * Width;
+        var offset = kind switch
+        {
+            WorkEffortKind.RequestedItem => 5,
+            WorkEffortKind.Interaction => 8,
+            _ => 2
+        };
+        _counts[slot + offset] += credit;
+    }
+
+    private static int DayNumber(DateTime moment)
+    {
+        var day = WorkEffortWindow.LocalDay(moment);
+        return day.Year * 10000 + day.Month * 100 + day.Day;
     }
 
     private bool InWindow(DateTime? moment) =>
@@ -185,5 +275,18 @@ public sealed class WorkEffortAttempt
         var a = (left ?? "").Trim();
         var b = (right ?? "").Trim();
         return a.Length > 0 && a.Equals(b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private readonly record struct LifeKey(int Person, WorkEffortKind Kind, string RecordId, int Day);
+
+    private readonly record struct PendingUpdate(int Person, WorkEffortKind Kind, string RecordId, DateTime Stamp);
+
+    private readonly record struct GroupKey(int Person, WorkEffortKind Kind, string RecordId);
+
+    private sealed class UpdateGroup
+    {
+        public HashSet<long> Moments { get; } = [];
+
+        public HashSet<int> Days { get; } = [];
     }
 }

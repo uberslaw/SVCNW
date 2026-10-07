@@ -5,6 +5,7 @@ namespace ServiceNowDesk.Views;
 
 /// <summary>
 /// Hides the ticket list beside an existing editor so Leads can host that same form.
+/// A named page action, such as Create New on request items, is hidden with the list.
 /// </summary>
 public static class EditorPane
 {
@@ -40,9 +41,13 @@ public static class EditorPane
         if (view.FindName("RecordLayout") is not Grid layout || view.FindName("TicketList") is not UIElement list)
             return;
         list.Visibility = editorOnly ? Visibility.Collapsed : Visibility.Visible;
+        if (view.FindName("PageActions") is UIElement actions)
+            actions.Visibility = editorOnly ? Visibility.Collapsed : Visibility.Visible;
         if (layout.ColumnDefinitions.Count < 2)
             return;
         layout.ColumnDefinitions[0].Width = editorOnly ? new GridLength(0) : new GridLength(400);
         layout.ColumnDefinitions[1].Width = editorOnly ? new GridLength(0) : new GridLength(16);
+        if (layout.RowDefinitions.Count > 0)
+            layout.RowDefinitions[0].Height = editorOnly ? new GridLength(0) : GridLength.Auto;
     }
 }

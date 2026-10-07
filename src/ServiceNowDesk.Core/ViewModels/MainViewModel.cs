@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.Navigation;
 using ServiceNowDesk.Services;
 using ServiceNowDesk.WorkEffort;
 
@@ -151,6 +152,7 @@ public partial class MainViewModel : ObservableObject
             Leads.Board.RememberViewer(_signedInUserId, preferences);
             _store.Save(Connection.BuildSettings());
         };
+        RequestedItems.CreateNewRequested += (_, _) => TrySelect(DeskNavigation.OrderCatalogSection);
         Requests.RelatedItemRequested += (_, sysId) => _ = OpenRequestedItemAsync(sysId);
         Search.OpenRequested += (_, hit) => SearchOpenTask = OpenSearchResultAsync(hit);
         Search.KnowledgeSearchRequested += (_, _) => _ = RefreshKnowledgeQuietlyAsync();
@@ -187,6 +189,34 @@ public partial class MainViewModel : ObservableObject
             else if (Connection.LeadsEnabled)
                 _ = ReloadLeadTeamAsync();
         };
+        Connection.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(ConnectionViewModel.LeadsEnabled))
+                RebuildNavigation();
+        };
+        RebuildNavigation();
+    }
+
+    public ObservableCollection<DeskNavEntry> Navigation { get; } = [];
+
+    private void RebuildNavigation()
+    {
+        var selected = SelectedSection;
+        Navigation.Clear();
+        foreach (var item in DeskNavigation.Visible(Connection.LeadsEnabled))
+            Navigation.Add(new DeskNavEntry(item, selected == item.Section, SelectNavigation));
+    }
+
+    private void SelectNavigation(DeskSection section)
+    {
+        if (!TrySelect(section))
+            SyncNavigationSelection();
+    }
+
+    private void SyncNavigationSelection()
+    {
+        foreach (var entry in Navigation)
+            entry.ShowSelected(entry.Section == SelectedSection);
     }
 
     /// <summary>
@@ -572,6 +602,7 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnSelectedSectionChanged(DeskSection value)
     {
+        SyncNavigationSelection();
         if (!_preserveNavigation)
             _returnStack.Clear();
 

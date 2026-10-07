@@ -19,9 +19,9 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
         Entries = HighlightCatalog.Entries.Select(entry => new LegendEntryModel(this, entry)).ToArray();
         foreach (var entry in Entries)
         {
-            var measured = LegendColorIntensity.Measure(entry.SwatchHex);
-            _intensities[entry.Key] = measured;
-            entry.Paint(measured);
+            var closest = LegendColorIntensity.Closest(entry.SwatchHex);
+            _intensities[entry.Key] = closest;
+            entry.Paint(closest, applied: false);
         }
 
         _ready = true;
@@ -46,6 +46,9 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
 
     [ObservableProperty] private string intensityCaption = "All colours";
 
+    public string SelectedOriginalHex =>
+        SelectedKey is null ? "" : HighlightCatalog.Find(SelectedKey)?.SwatchHex ?? "";
+
     public event EventHandler<HighlightPreferences>? Changed;
 
     public HighlightPreferences Current()
@@ -68,8 +71,9 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
         foreach (var entry in Entries)
         {
             _intensities[entry.Key] = preferences.IntensityOf(entry.Key);
-            entry.Paint(_intensities[entry.Key]);
         }
+
+        PaintAll();
 
         AdjustIndividually = false;
         SelectedKey = null;
@@ -143,6 +147,7 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
     partial void OnSelectedKeyChanged(string? value)
     {
         _ = value;
+        OnPropertyChanged(nameof(SelectedOriginalHex));
         RefreshSelection();
         RefreshCaption();
         SetIntensityCommand.NotifyCanExecuteChanged();
@@ -174,7 +179,19 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
     private void PaintAll()
     {
         foreach (var entry in Entries)
-            entry.Paint(_intensities[entry.Key]);
+            entry.Paint(_intensities[entry.Key], Applied(entry.Key));
+    }
+
+    private bool Applied(string key)
+    {
+        if (_sharedIntensity is not null)
+            return true;
+
+        var original = HighlightCatalog.Find(key)?.SwatchHex;
+        if (original is null)
+            return false;
+
+        return _intensities[key] != LegendColorIntensity.Closest(original);
     }
 
     private Dictionary<string, int>? Overrides()
@@ -184,7 +201,7 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
         {
             var value = _intensities[entry.Key];
             var original = HighlightCatalog.Find(entry.Key)!.SwatchHex;
-            var baseline = _sharedIntensity ?? LegendColorIntensity.Measure(original);
+            var baseline = _sharedIntensity ?? LegendColorIntensity.Closest(original);
             if (value == baseline)
                 continue;
             overrides ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -272,10 +289,17 @@ public partial class LegendEntryModel : ObservableObject
 
     [ObservableProperty] private bool isEnabled;
 
-    internal void Paint(int intensity)
+    internal void Paint(int position, bool applied)
     {
-        SwatchHex = LegendColorIntensity.Swatch(_baseSwatch, intensity);
-        RowHex = LegendColorIntensity.Row(_baseSwatch, _baseRow, intensity);
+        if (!applied)
+        {
+            SwatchHex = _baseSwatch;
+            RowHex = _baseRow;
+            return;
+        }
+
+        SwatchHex = LegendColorIntensity.Curve(_baseSwatch, position);
+        RowHex = LegendColorIntensity.Row(_baseSwatch, _baseRow, position, applied: true);
     }
 
     [RelayCommand]
