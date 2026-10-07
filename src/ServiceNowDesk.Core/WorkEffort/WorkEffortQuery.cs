@@ -42,7 +42,7 @@ public sealed record WorkEffortTablePlan(
 
     private static WorkEffortTablePlan Plan(string table, WorkEffortKind kind, bool openedBy, bool openedFor, bool resolved, bool closed)
     {
-        var fields = new List<string> { "sys_id" };
+        var fields = new List<string> { "sys_id", "number", "short_description" };
         if (openedBy)
             fields.Add("opened_by");
         if (openedFor)

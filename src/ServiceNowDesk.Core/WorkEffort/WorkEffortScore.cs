@@ -57,7 +57,9 @@ public sealed record WorkEffortTouch(
     DateTime? ClosedAt,
     string? UpdatedBy,
     DateTime? UpdatedAt,
-    IReadOnlyList<WorkEffortUpdate>? Updates = null)
+    IReadOnlyList<WorkEffortUpdate>? Updates = null,
+    string? Number = null,
+    string? Title = null)
 {
     public WorkEffortTouch Combine(WorkEffortTouch other)
     {
@@ -85,7 +87,9 @@ public sealed record WorkEffortTouch(
             ClosedAt = ClosedAt ?? other.ClosedAt,
             UpdatedBy = First(UpdatedBy, other.UpdatedBy),
             UpdatedAt = UpdatedAt ?? other.UpdatedAt,
-            Updates = updates
+            Updates = updates,
+            Number = First(Number, other.Number),
+            Title = First(Title, other.Title)
         };
     }
 
@@ -167,6 +171,7 @@ public sealed class WorkEffortBatch
 
 public sealed record WorkEffortRow
 {
+    public string PersonSysId { get; init; } = "";
     public string Name { get; init; } = "";
     public int IncOpened { get; init; }
     public int IncResolved { get; init; }

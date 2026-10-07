@@ -36,7 +36,8 @@ public static class SampleWorkEffort
         var fortyDays = now.AddDays(-40);
         return
         [
-            new("inc-today", WorkEffortKind.Incident, "sample-user", now, "sample-user", now, null, null, "alex.rivera", now),
+            new("inc-today", WorkEffortKind.Incident, "sample-user", now, "sample-user", now, null, null, "alex.rivera", now,
+                Number: "INC0010001", Title: "VPN drops on campus Wi-Fi"),
             // Alex updated one request item on two local days, and twice on the later day.
             // The header moment is repeated in the history so it is counted once.
             new("ritm-update", WorkEffortKind.RequestedItem, null, null, null, null, null, null, "alex.rivera", now,
@@ -45,23 +46,29 @@ public static class SampleWorkEffort
                     new("alex.rivera", twoDaysAgo),
                     new("alex.rivera", earlierToday),
                     new("alex.rivera", now)
-                }),
-            new("ims-close", WorkEffortKind.Interaction, null, null, null, null, "sample-user", now, "alex.rivera", now),
+                },
+                Number: "RITM0010002", Title: "Laptop docking station"),
+            new("ims-close", WorkEffortKind.Interaction, null, null, null, null, "sample-user", now, "alex.rivera", now,
+                Number: "IMS0010003", Title: "Badge reader walk-up"),
             // Opened ten days ago. That day's header update is not a second credit. The next day is.
             new("inc-ten", WorkEffortKind.Incident, "sample-user", tenDays, null, null, null, null, "alex.rivera", tenDays,
                 new WorkEffortUpdate[]
                 {
                     new("alex.rivera", dayAfterOpen)
-                }),
-            new("inc-forty", WorkEffortKind.Incident, null, null, null, null, null, null, "alex.rivera", fortyDays),
+                },
+                Number: "INC0010004", Title: "Printer jam in east wing"),
+            new("inc-forty", WorkEffortKind.Incident, null, null, null, null, null, null, "alex.rivera", fortyDays,
+                Number: "INC0010005", Title: "Mailbox full notice"),
             // Jordan saved one incident several times on the same local day.
             new("inc-jordan", WorkEffortKind.Incident, null, null, null, null, null, null, "jordan.lee", now,
                 new WorkEffortUpdate[]
                 {
                     new("jordan.lee", earlierToday),
                     new("jordan.lee", midToday)
-                }),
-            new("inc-sam", WorkEffortKind.Incident, "user-sam", now, "user-sam", now, null, null, "sam.patel", now)
+                },
+                Number: "INC0010006", Title: "Monitor flicker after login"),
+            new("inc-sam", WorkEffortKind.Incident, "user-sam", now, "user-sam", now, null, null, "sam.patel", now,
+                Number: "INC0010007", Title: "Switch uplink alarm")
         ];
     }
 

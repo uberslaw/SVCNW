@@ -342,7 +342,13 @@ public partial class LeadsViewModel : ObservableObject
     public string UnknownTable { get; private set; } = "";
     public string UnknownSysId { get; private set; } = "";
 
-    public bool ShowTicketPane => ShowQueues;
+    public bool ShowTicketPane =>
+        ShowQueues
+        || ShowIncidentEditor
+        || ShowRequestEditor
+        || ShowRequestedItemEditor
+        || ShowWalkUpEditor
+        || ShowUnknownEditor;
 
     public void UseEditors(
         RecordWorkspaceViewModel incidents,
@@ -370,6 +376,23 @@ public partial class LeadsViewModel : ObservableObject
         OnPropertyChanged(nameof(RequestEditor));
         OnPropertyChanged(nameof(RequestedItemEditor));
         OnPropertyChanged(nameof(WalkUpEditor));
+    }
+
+    public Task OpenWorkEffortTicketAsync(WorkEffortCredit credit)
+    {
+        ArgumentNullException.ThrowIfNull(credit);
+        return OpenTicketAsync(new AlertRow
+        {
+            Kind = AlertKind.Unattended,
+            Section = credit.Section,
+            SysId = credit.RecordSysId,
+            Number = credit.DisplayNumber,
+            Title = credit.Title ?? "",
+            State = "",
+            Group = "",
+            Location = "",
+            Updated = ""
+        });
     }
 
     public async Task OpenTicketAsync(AlertRow row)

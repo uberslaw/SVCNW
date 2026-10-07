@@ -212,7 +212,8 @@ public class WorkEffortTests
         Assert.False(leads.ShowQueues);
         Assert.Equal("interaction", WorkEffortTablePlan.InteractionAttempts[0].Table);
         Assert.Contains("opened_for", WorkEffortTablePlan.InteractionAttempts[^1].Fields);
-        Assert.DoesNotContain("short_description", WorkEffortTablePlan.Incident.Fields);
+        Assert.Contains("number", WorkEffortTablePlan.Incident.Fields);
+        Assert.Contains("short_description", WorkEffortTablePlan.Incident.Fields);
     }
 
     [Fact]
@@ -232,7 +233,8 @@ public class WorkEffortTests
         Assert.Contains("opened_at<=2026-10-07@23:59:59", clause);
         Assert.DoesNotContain("jordan^lee", clause);
         Assert.DoesNotContain("opened_at<2026", clause);
-        Assert.DoesNotContain("short_description", WorkEffortTablePlan.Incident.Fields);
+        Assert.Contains("number", WorkEffortTablePlan.Incident.Fields);
+        Assert.Contains("short_description", WorkEffortTablePlan.Incident.Fields);
 
         var rolling = WorkEffortQuery.Clause(
             WorkEffortTablePlan.Incident,
@@ -277,10 +279,10 @@ public class WorkEffortTests
         Assert.Contains("sysparm_limit=" + WorkEffortQuery.PageSize, incident);
         Assert.Contains("sysparm_exclude_reference_link=true", incident);
         Assert.DoesNotContain(liveHandler.Calls, call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal));
-        Assert.Contains("sys_id,opened_by,opened_at,resolved_by,resolved_at,closed_by,closed_at,sys_updated_by,sys_updated_on", incident);
+        Assert.Contains("sys_id,number,short_description,opened_by,opened_at,resolved_by,resolved_at,closed_by,closed_at,sys_updated_by,sys_updated_on", incident);
         Assert.Contains(liveHandler.Calls, call => call.PathAndQuery.Contains("table/sys_journal_field", StringComparison.Ordinal));
         Assert.Contains(liveHandler.Calls, call => call.PathAndQuery.Contains("table/sys_audit", StringComparison.Ordinal));
-        Assert.DoesNotContain("short_description", incident);
+        Assert.Contains("short_description", incident);
         Assert.DoesNotContain("user-sam", incident);
         Assert.Contains("opened_at>=2026-10-07@00:00:00", incident);
         Assert.Contains("opened_at<=2026-10-07@23:59:59", incident);
@@ -759,6 +761,114 @@ public class WorkEffortTests
         var multiple = WorkEffortScore.Present(report, WorkEffortUpdateMode.Multiple);
         Assert.Equal(1, Assert.Single(multiple.Rows).IncUpdated);
         Assert.Contains("no extra update credits", multiple.Shift, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CellDetailMembershipMatchesTheScoreAndPersonDetailIsTheUnion()
+    {
+        var window = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var people = SampleWorkEffort.WithLogins(SampleTeam);
+        var touches = SampleWorkEffort.Touches(Now);
+        var rows = WorkEffortScore.Build(people, touches, window, WorkEffortUpdateMode.Daily);
+        var credits = WorkEffortDetail.Build(people, touches, window, WorkEffortUpdateMode.Daily);
+        var alex = rows.Single(row => row.Name == "Alex Rivera");
+        var jordan = rows.Single(row => row.Name == "Jordan Lee");
+
+        Assert.Equal(alex.IncOpened, WorkEffortDetail.ForCell(credits, alex.PersonSysId, WorkEffortColumn.IncOpened).Count);
+        Assert.Equal(alex.IncResolved, WorkEffortDetail.ForCell(credits, alex.PersonSysId, WorkEffortColumn.IncResolved).Count);
+        Assert.Equal(alex.RitmUpdated, WorkEffortDetail.ForCell(credits, alex.PersonSysId, WorkEffortColumn.RitmUpdated).Count);
+        Assert.Equal(alex.ImsResolved, WorkEffortDetail.ForCell(credits, alex.PersonSysId, WorkEffortColumn.ImsResolved).Count);
+        Assert.Equal(jordan.IncUpdated, WorkEffortDetail.ForCell(credits, jordan.PersonSysId, WorkEffortColumn.IncUpdated).Count);
+
+        var alexAll = WorkEffortDetail.ForPerson(credits, alex.PersonSysId);
+        Assert.Equal(
+            alex.IncOpened + alex.IncResolved + alex.IncUpdated
+            + alex.RitmOpened + alex.RitmResolved + alex.RitmUpdated
+            + alex.ImsOpened + alex.ImsResolved + alex.ImsUpdated,
+            alexAll.Count);
+        Assert.Contains(alexAll, line => line.DisplayNumber == "INC0010001" && line.MetricLabel == "opened");
+        Assert.Contains(alexAll, line => line.DisplayNumber == "IMS0010003" && line.MetricLabel == "closed");
+        Assert.Contains(alexAll, line => line.DisplayNumber == "RITM0010002" && line.MetricLabel == "updated");
+        Assert.DoesNotContain(alexAll, line => line.PersonSysId == jordan.PersonSysId);
+    }
+
+    [Fact]
+    public void DailyVersusMultipleChangesUpdatedDetailLines()
+    {
+        var window = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var people = SampleWorkEffort.WithLogins(SampleTeam);
+        var touches = SampleWorkEffort.Touches(Now);
+        var daily = WorkEffortDetail.Build(people, touches, window, WorkEffortUpdateMode.Daily);
+        var multiple = WorkEffortDetail.Build(people, touches, window, WorkEffortUpdateMode.Multiple);
+
+        var jordanDaily = WorkEffortDetail.ForCell(daily, SampleWorkEffort.Jordan.SysId, WorkEffortColumn.IncUpdated);
+        var jordanMultiple = WorkEffortDetail.ForCell(multiple, SampleWorkEffort.Jordan.SysId, WorkEffortColumn.IncUpdated);
+        Assert.Single(jordanDaily);
+        Assert.Equal(3, jordanMultiple.Count);
+        Assert.All(jordanDaily, line => Assert.False(string.IsNullOrWhiteSpace(line.Day)));
+        Assert.All(jordanMultiple, line => Assert.Equal("", line.Day));
+
+        var alexDaily = WorkEffortDetail.ForCell(daily, SampleWorkEffort.SignedIn.SysId, WorkEffortColumn.RitmUpdated);
+        var alexMultiple = WorkEffortDetail.ForCell(multiple, SampleWorkEffort.SignedIn.SysId, WorkEffortColumn.RitmUpdated);
+        Assert.Single(alexDaily);
+        Assert.Equal(2, alexMultiple.Count);
+    }
+
+    [Fact]
+    public async Task DetailAndExportUseLoadedTouchesForAlexAndJordan()
+    {
+        using var client = new SampleServiceNowClient();
+        var desktop = new RecordingDesktopServices();
+        var page = new WorkEffortViewModel();
+        page.UseDesktop(desktop);
+        var queries = new Dictionary<WorkEffortScale, int>();
+        await OpenWorkEffortAsync(page, client, Now, force: false, queries);
+
+        var alex = page.Rows.Single(row => row.Name == "Alex Rivera");
+        page.ShowCellDetail(alex, WorkEffortColumn.RitmUpdated);
+        Assert.True(page.ShowDetail);
+        Assert.True(page.DetailHasRows);
+        Assert.Equal(alex.RitmUpdated, page.DetailLines.Count);
+        Assert.Contains(page.DetailLines, line => line.DisplayNumber == "RITM0010002");
+
+        page.ExportDetailCommand.Execute(null);
+        var detailPath = Assert.Single(desktop.SavedFiles);
+        var detailCsv = File.ReadAllText(detailPath);
+        Assert.Contains("RITM0010002", detailCsv, StringComparison.Ordinal);
+        Assert.Contains("updated", detailCsv, StringComparison.Ordinal);
+        Assert.Contains("RITM", detailCsv, StringComparison.Ordinal);
+
+        var jordan = page.Rows.Single(row => row.Name == "Jordan Lee");
+        page.ShowPersonDetail(jordan);
+        Assert.Equal(jordan.IncUpdated, page.DetailLines.Count);
+        Assert.Contains(page.DetailLines, line => line.DisplayNumber == "INC0010006");
+
+        page.UpdateMode = WorkEffortUpdateMode.Multiple;
+        Assert.Equal(3, page.DetailLines.Count);
+
+        page.ShowCellDetail(alex, WorkEffortColumn.IncOpened);
+        Assert.Equal(alex.IncOpened, page.Rows.Single(row => row.Name == "Alex Rivera").IncOpened);
+        Assert.Single(page.DetailLines);
+
+        page.ShowCellDetail(page.Rows.Single(row => row.Name == "Riley Chen"), WorkEffortColumn.IncOpened);
+        Assert.True(page.ShowDetail);
+        Assert.False(page.DetailHasRows);
+        Assert.Equal(WorkEffortDetail.EmptyCellMessage, page.DetailEmptyMessage);
+
+        desktop.SavedFiles.Clear();
+        page.ExportBoardCommand.Execute(null);
+        var boardPath = Assert.Single(desktop.SavedFiles);
+        var boardCsv = File.ReadAllText(boardPath);
+        Assert.Contains("INC0010001", boardCsv, StringComparison.Ordinal);
+        Assert.Contains("INC0010006", boardCsv, StringComparison.Ordinal);
+        Assert.Contains("opened", boardCsv, StringComparison.Ordinal);
+        Assert.Contains("Alex Rivera", boardCsv, StringComparison.Ordinal);
+        Assert.Contains("Jordan Lee", boardCsv, StringComparison.Ordinal);
+
+        var unloaded = new WorkEffortViewModel();
+        unloaded.UseDesktop(desktop);
+        unloaded.ShowPersonDetail(alex);
+        Assert.Equal(WorkEffortDetail.NotLoadedMessage, unloaded.DetailEmptyMessage);
     }
 
     private static Func<HttpRequestMessage, string, HttpResponseMessage> HistoryResponder() =>

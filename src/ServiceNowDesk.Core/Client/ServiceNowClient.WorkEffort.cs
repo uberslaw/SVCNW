@@ -705,6 +705,8 @@ public sealed partial class ServiceNowClient
         var updatedBy = updated.Value.Trim();
         if (updatedBy.Length == 0)
             updatedBy = updated.Display.Trim();
+        var number = SnowField.Read(row, "number");
+        var title = SnowField.Read(row, "short_description");
         return new WorkEffortTouch(
             sysId,
             kind,
@@ -715,7 +717,9 @@ public sealed partial class ServiceNowClient
             NullIfEmpty(SnowField.Read(row, "closed_by").Value),
             ReadMoment(row, "closed_at"),
             NullIfEmpty(updatedBy),
-            ReadMoment(row, "sys_updated_on"));
+            ReadMoment(row, "sys_updated_on"),
+            Number: NullIfEmpty(number.Display.Length > 0 ? number.Display : number.Value),
+            Title: NullIfEmpty(title.Display.Length > 0 ? title.Display : title.Value));
     }
 
     private static DateTime? ReadMoment(JsonElement row, string name)

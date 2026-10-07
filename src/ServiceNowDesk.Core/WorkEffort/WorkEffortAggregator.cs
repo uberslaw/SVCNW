@@ -33,7 +33,7 @@ public static class WorkEffortTeam
 
 /// <summary>
 /// Counts one table page at a time. Record ids already counted stop growing at the safety cap.
-/// Update moments are kept only until the page is folded, then dropped.
+/// Credited ticket lines are kept for drill-down after the page is folded.
 /// </summary>
 public sealed class WorkEffortAttempt
 {
@@ -47,6 +47,8 @@ public sealed class WorkEffortAttempt
     private readonly HashSet<string> _seen;
     private readonly HashSet<LifeKey> _life = [];
     private readonly List<PendingUpdate> _updates = [];
+    private readonly Dictionary<string, TouchLabel> _labels = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<WorkEffortCredit> _credits = [];
     private bool _finished;
 
     public WorkEffortAttempt(
@@ -106,6 +108,17 @@ public sealed class WorkEffortAttempt
         return ToRows(_people, _counts);
     }
 
+    public IReadOnlyList<WorkEffortCredit> Credits()
+    {
+        Finish();
+        return _credits
+            .OrderBy(line => line.PersonName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(line => line.When)
+            .ThenBy(line => line.DisplayNumber, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(line => line.MetricLabel, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     public static IReadOnlyList<WorkEffortRow> ToRows(IReadOnlyList<WorkEffortPerson> people, int[] counts)
     {
         ArgumentNullException.ThrowIfNull(people);
@@ -129,6 +142,7 @@ public sealed class WorkEffortAttempt
                 + (incUpdated + ritmUpdated + imsUpdated) * WorkEffortScore.UpdateWeight;
             rows.Add(new WorkEffortRow
             {
+                PersonSysId = people[index].SysId,
                 Name = people[index].DisplayName,
                 IncOpened = incOpened,
                 IncResolved = incResolved,
@@ -157,6 +171,8 @@ public sealed class WorkEffortAttempt
         if (!_seen.Add((int)touch.Kind + "\n" + id))
             return;
 
+        RememberLabel(touch.Kind, id, touch.Number, touch.Title);
+
         for (var index = 0; index < _people.Length; index++)
         {
             var person = _people[index];
@@ -174,16 +190,55 @@ public sealed class WorkEffortAttempt
             switch (touch.Kind)
             {
                 case WorkEffortKind.RequestedItem:
-                    if (opened) _counts[slot + 3]++;
-                    if (completed) _counts[slot + 4]++;
+                    if (opened)
+                    {
+                        _counts[slot + 3]++;
+                        AddLifeCredit(index, touch.Kind, id, WorkEffortMetric.Opened, touch.OpenedAt!.Value);
+                    }
+
+                    if (completed)
+                    {
+                        _counts[slot + 4]++;
+                        if (resolved)
+                            AddLifeCredit(index, touch.Kind, id, WorkEffortMetric.Resolved, touch.ResolvedAt!.Value);
+                        else
+                            AddLifeCredit(index, touch.Kind, id, WorkEffortMetric.Closed, touch.ClosedAt!.Value);
+                    }
+
                     break;
                 case WorkEffortKind.Interaction:
-                    if (opened) _counts[slot + 6]++;
-                    if (completed) _counts[slot + 7]++;
+                    if (opened)
+                    {
+                        _counts[slot + 6]++;
+                        AddLifeCredit(index, touch.Kind, id, WorkEffortMetric.Opened, touch.OpenedAt!.Value);
+                    }
+
+                    if (completed)
+                    {
+                        _counts[slot + 7]++;
+                        if (resolved)
+                            AddLifeCredit(index, touch.Kind, id, WorkEffortMetric.Resolved, touch.ResolvedAt!.Value);
+                        else
+                            AddLifeCredit(index, touch.Kind, id, WorkEffortMetric.Closed, touch.ClosedAt!.Value);
+                    }
+
                     break;
                 default:
-                    if (opened) _counts[slot]++;
-                    if (completed) _counts[slot + 1]++;
+                    if (opened)
+                    {
+                        _counts[slot]++;
+                        AddLifeCredit(index, touch.Kind, id, WorkEffortMetric.Opened, touch.OpenedAt!.Value);
+                    }
+
+                    if (completed)
+                    {
+                        _counts[slot + 1]++;
+                        if (resolved)
+                            AddLifeCredit(index, touch.Kind, id, WorkEffortMetric.Resolved, touch.ResolvedAt!.Value);
+                        else
+                            AddLifeCredit(index, touch.Kind, id, WorkEffortMetric.Closed, touch.ClosedAt!.Value);
+                    }
+
                     break;
             }
         }
@@ -234,13 +289,35 @@ public sealed class WorkEffortAttempt
 
             if (!group.Moments.Add(update.Stamp.Ticks))
                 continue;
-            group.Days.Add(DayNumber(update.Stamp));
+            group.Stamps.Add(update.Stamp);
         }
 
         foreach (var pair in grouped)
         {
-            var credit = _mode == WorkEffortUpdateMode.Multiple ? pair.Value.Moments.Count : pair.Value.Days.Count;
-            AddUpdate(pair.Key.Person, pair.Key.Kind, credit);
+            if (_mode == WorkEffortUpdateMode.Multiple)
+            {
+                foreach (var stamp in pair.Value.Stamps.OrderBy(value => value))
+                    AddUpdateCredit(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, stamp, day: "");
+                AddUpdate(pair.Key.Person, pair.Key.Kind, pair.Value.Moments.Count);
+            }
+            else
+            {
+                var byDay = new Dictionary<int, DateTime>();
+                foreach (var stamp in pair.Value.Stamps.OrderBy(value => value))
+                {
+                    var day = DayNumber(stamp);
+                    if (!byDay.ContainsKey(day))
+                        byDay[day] = stamp;
+                }
+
+                foreach (var stamp in byDay.Values.OrderBy(value => value))
+                {
+                    var day = WorkEffortWindow.LocalDay(stamp).ToString("yyyy-MM-dd");
+                    AddUpdateCredit(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, stamp, day);
+                }
+
+                AddUpdate(pair.Key.Person, pair.Key.Kind, byDay.Count);
+            }
         }
 
         _updates.Clear();
@@ -259,6 +336,57 @@ public sealed class WorkEffortAttempt
             _ => 2
         };
         _counts[slot + offset] += credit;
+    }
+
+    private void AddLifeCredit(int person, WorkEffortKind kind, string recordId, WorkEffortMetric metric, DateTime when)
+    {
+        var label = LabelOf(kind, recordId);
+        var who = _people[person];
+        _credits.Add(new WorkEffortCredit(
+            who.SysId,
+            who.DisplayName,
+            recordId,
+            label.Number,
+            label.Title,
+            kind,
+            metric,
+            WorkEffortWindow.LocalStamp(when)));
+    }
+
+    private void AddUpdateCredit(int person, WorkEffortKind kind, string recordId, DateTime when, string day)
+    {
+        var label = LabelOf(kind, recordId);
+        var who = _people[person];
+        _credits.Add(new WorkEffortCredit(
+            who.SysId,
+            who.DisplayName,
+            recordId,
+            label.Number,
+            label.Title,
+            kind,
+            WorkEffortMetric.Updated,
+            when,
+            day));
+    }
+
+    private void RememberLabel(WorkEffortKind kind, string recordId, string? number, string? title)
+    {
+        var key = (int)kind + "\n" + recordId;
+        if (_labels.TryGetValue(key, out var existing))
+        {
+            _labels[key] = new TouchLabel(
+                string.IsNullOrWhiteSpace(existing.Number) ? (number ?? "").Trim() : existing.Number,
+                string.IsNullOrWhiteSpace(existing.Title) ? (title ?? "").Trim() : existing.Title);
+            return;
+        }
+
+        _labels[key] = new TouchLabel((number ?? "").Trim(), (title ?? "").Trim());
+    }
+
+    private TouchLabel LabelOf(WorkEffortKind kind, string recordId)
+    {
+        var key = (int)kind + "\n" + recordId;
+        return _labels.TryGetValue(key, out var label) ? label : new TouchLabel("", "");
     }
 
     private static int DayNumber(DateTime moment)
@@ -283,10 +411,12 @@ public sealed class WorkEffortAttempt
 
     private readonly record struct GroupKey(int Person, WorkEffortKind Kind, string RecordId);
 
+    private readonly record struct TouchLabel(string Number, string Title);
+
     private sealed class UpdateGroup
     {
         public HashSet<long> Moments { get; } = [];
 
-        public HashSet<int> Days { get; } = [];
+        public List<DateTime> Stamps { get; } = [];
     }
 }
