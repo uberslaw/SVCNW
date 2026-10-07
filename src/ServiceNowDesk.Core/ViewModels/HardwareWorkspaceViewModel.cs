@@ -20,6 +20,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     private bool _suppressOffice;
     private bool _missingLocationNotice;
     private bool _locationFilterIgnored;
+    private bool _overrideActive;
     private string _signedInLocation = "";
     private int _substateGeneration;
 
@@ -100,8 +101,19 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _officesReady = false;
     }
 
-    public void RememberViewer(CurrentUser? user) =>
+    public void RememberViewer(CurrentUser? user)
+    {
         _signedInLocation = user?.Location?.Trim() ?? "";
+        OnPropertyChanged(nameof(AccountOfficeText));
+    }
+
+    /// <summary>
+    /// The office name on the signed-in account, shown even when an override is active.
+    /// </summary>
+    public string AccountOfficeText =>
+        string.IsNullOrWhiteSpace(_signedInLocation)
+            ? "No location on the signed-in account."
+            : "Your office: " + _signedInLocation;
 
     public void Detach()
     {
@@ -109,7 +121,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _choicesReady = false;
         _officesReady = false;
         _missingLocationNotice = false;
+        _overrideActive = false;
         _signedInLocation = "";
+        OnPropertyChanged(nameof(AccountOfficeText));
         _loaded = null;
         HasEditor = false;
         IsDirty = false;
@@ -440,20 +454,50 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void SetDefaultOffices()
+    private async Task OverrideOfficeAsync()
     {
         var names = SelectedOfficeNames();
+        _overrideActive = true;
+        _missingLocationNotice = false;
         if (_settings is not null)
         {
             var settings = _settings.Load();
             settings.HardwareOfficeLocations = names;
+            settings.HardwareOfficeOverride = true;
             _settings.Save(settings);
         }
 
-        OfficeStatus = names.Count == 0
-            ? "Default saved: all locations."
-            : "Default saved: " + string.Join(", ", names) + ".";
         DefaultSaved?.Invoke(this, EventArgs.Empty);
+        await RefreshCoreAsync();
+    }
+
+    [RelayCommand]
+    private async Task ClearOverrideAsync()
+    {
+        _overrideActive = false;
+        if (_settings is not null)
+        {
+            var settings = _settings.Load();
+            settings.HardwareOfficeLocations = null;
+            settings.HardwareOfficeOverride = false;
+            _settings.Save(settings);
+        }
+
+        _suppressOffice = true;
+        foreach (var office in Offices)
+            office.IsSelected = false;
+        if (!string.IsNullOrWhiteSpace(_signedInLocation))
+        {
+            _missingLocationNotice = false;
+            EnsureOffice(_signedInLocation, true, HardwareOfficeLabelKind.Account);
+        }
+        else
+            _missingLocationNotice = true;
+
+        _suppressOffice = false;
+        OnPropertyChanged(nameof(OfficeSelectionSummary));
+        DefaultSaved?.Invoke(this, EventArgs.Empty);
+        await RefreshCoreAsync();
     }
 
     private async Task OpenCoreAsync(string sysId)
@@ -632,20 +676,22 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             EnsureOffice(_signedInLocation, false, HardwareOfficeLabelKind.Account);
             await AddReferenceLocationsAsync();
 
-            var saved = ReadSavedOffices();
-            if (saved is not null)
+            if (ReadOverride(out var saved))
             {
+                _overrideActive = true;
                 _missingLocationNotice = false;
                 foreach (var name in saved)
                     EnsureOffice(name, true, HardwareOfficeLabelKind.Seed);
             }
             else if (!string.IsNullOrWhiteSpace(_signedInLocation))
             {
+                _overrideActive = false;
                 _missingLocationNotice = false;
                 EnsureOffice(_signedInLocation, true, HardwareOfficeLabelKind.Account);
             }
             else
             {
+                _overrideActive = false;
                 _missingLocationNotice = true;
             }
         }
@@ -684,20 +730,26 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         }
     }
 
-    private IReadOnlyList<string>? ReadSavedOffices()
+    /// <summary>
+    /// A saved office list applies only after Override office. An older list without that flag
+    /// is left unused so it cannot open the tab on an empty grid.
+    /// </summary>
+    private bool ReadOverride(out IReadOnlyList<string> offices)
     {
+        offices = [];
         if (_settings is null)
-            return null;
+            return false;
 
-        var saved = _settings.Load().HardwareOfficeLocations;
-        if (saved is null)
-            return null;
+        var settings = _settings.Load();
+        if (!settings.HardwareOfficeOverride)
+            return false;
 
-        return saved
+        offices = (settings.HardwareOfficeLocations ?? [])
             .Select(name => name?.Trim() ?? "")
             .Where(name => name.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        return true;
     }
 
     private Task<PagedResult<HardwareAsset>> LoadHardwarePageAsync(IReadOnlyList<string> offices) =>
@@ -771,6 +823,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         OfficeLoad = RefreshCoreAsync();
     }
 
+    private bool IsAccountSelection(IReadOnlyList<string> offices) =>
+        offices.Count == 1 && HardwareOfficeNames.SamePlace(offices[0], _signedInLocation);
+
     private List<string> SelectedOfficeNames() =>
         Offices
             .Where(office => office.IsSelected)
@@ -782,10 +837,16 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     {
         if (_locationFilterIgnored && offices.Count > 0)
             OfficeStatus = "The location filter did not apply. This page is not limited to " + string.Join(", ", offices) + ".";
+        else if (_overrideActive)
+            OfficeStatus = offices.Count == 0
+                ? "Showing all locations."
+                : "Showing override: " + string.Join(", ", offices) + ".";
         else if (offices.Count == 0 && _missingLocationNotice)
             OfficeStatus = "No location on the signed-in account. Showing all locations.";
         else if (offices.Count == 0)
             OfficeStatus = "Showing all locations.";
+        else if (IsAccountSelection(offices))
+            OfficeStatus = "Showing your office: " + _signedInLocation + ".";
         else
             OfficeStatus = "Showing " + string.Join(", ", offices) + ".";
         OnPropertyChanged(nameof(OfficeSelectionSummary));

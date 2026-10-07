@@ -152,6 +152,8 @@ public static class HardwareCatalog
     /// Each checked office is queried as its own name and as the same place with or without
     /// a trailing " Office", one complete clause per label joined by ^NQ. A parenthesized
     /// OR is not used: ServiceNow drops that group and the row cap then returns other cities.
+    /// A quoted <c>IN</c> list is not used either: ServiceNow keeps those quote characters,
+    /// so <c>location.nameIN"Brisbane","Brisbane Office"</c> matches neither stored name.
     /// </summary>
     public static string ListQuery(string? text, IReadOnlyList<string>? locations = null)
     {

@@ -152,6 +152,12 @@ public sealed record CurrentUser(string SysId, string Name, string UserName, str
 
 public sealed class DeskSettings
 {
+    /// <summary>
+    /// Instance URL shown when the saved settings have no instance URL yet.
+    /// A URL the user already saved is left as they saved it.
+    /// </summary>
+    public const string DefaultInstanceUrl = "https://arup.service-now.com";
+
     public string InstanceUrl { get; set; } = "";
     public ServiceNowAuthMode AuthMode { get; set; } = ServiceNowAuthMode.Basic;
     public string Username { get; set; } = "";
@@ -189,10 +195,18 @@ public sealed class DeskSettings
     ];
 
     /// <summary>
-    /// Offices the hardware tab loads on open. Null means nothing is saved yet.
-    /// An empty list means the saved default is every location.
+    /// Offices chosen with Override office. Null means no override is stored.
+    /// An empty list means the override is every location.
+    /// Ignored on open unless <see cref="HardwareOfficeOverride"/> is true, so an older
+    /// saved multi-office list cannot hide the signed-in office.
     /// </summary>
     public List<string>? HardwareOfficeLocations { get; set; }
+
+    /// <summary>
+    /// True after Override office is used. False for a missing field and for an older
+    /// saved office list that was not set with that control.
+    /// </summary>
+    public bool HardwareOfficeOverride { get; set; }
 
     public int NotificationPollSeconds { get; set; } = 60;
     public bool DownloadCacheOnLaunch { get; set; } = true;

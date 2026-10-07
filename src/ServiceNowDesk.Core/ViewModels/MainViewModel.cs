@@ -91,7 +91,10 @@ public partial class MainViewModel : ObservableObject
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
         Hardware = new HardwareWorkspaceViewModel(store);
         Hardware.DefaultSaved += (_, _) =>
-            Connection.RememberHardwareOffices(_store.Load().HardwareOfficeLocations);
+        {
+            var saved = _store.Load();
+            Connection.RememberHardwareOffices(saved.HardwareOfficeLocations, saved.HardwareOfficeOverride);
+        };
         Requests = new RequestWorkspaceViewModel(desktop);
         RequestedItems = new RequestedItemWorkspaceViewModel(desktop, recent);
         WalkUps = new InteractionWorkspaceViewModel(desktop, recent);
