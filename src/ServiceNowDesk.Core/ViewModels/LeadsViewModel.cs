@@ -387,7 +387,11 @@ public partial class LeadsViewModel : ObservableObject
             Section = credit.Section,
             SysId = credit.RecordSysId,
             Number = credit.DisplayNumber,
-            Title = credit.Title ?? ""
+            Title = credit.Title ?? "",
+            State = "",
+            Group = "",
+            Location = "",
+            Updated = ""
         });
     }
 

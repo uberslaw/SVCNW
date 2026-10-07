@@ -417,8 +417,6 @@ public sealed class WorkEffortAttempt
     {
         public HashSet<long> Moments { get; } = [];
 
-        public HashSet<int> Days { get; } = [];
-
         public List<DateTime> Stamps { get; } = [];
     }
 }

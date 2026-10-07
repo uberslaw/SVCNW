@@ -233,7 +233,8 @@ public class WorkEffortTests
         Assert.Contains("opened_at<=2026-10-07@23:59:59", clause);
         Assert.DoesNotContain("jordan^lee", clause);
         Assert.DoesNotContain("opened_at<2026", clause);
-        Assert.DoesNotContain("short_description", WorkEffortTablePlan.Incident.Fields);
+        Assert.Contains("number", WorkEffortTablePlan.Incident.Fields);
+        Assert.Contains("short_description", WorkEffortTablePlan.Incident.Fields);
 
         var rolling = WorkEffortQuery.Clause(
             WorkEffortTablePlan.Incident,
@@ -847,7 +848,7 @@ public class WorkEffortTests
 
         page.ShowCellDetail(alex, WorkEffortColumn.IncOpened);
         Assert.Equal(alex.IncOpened, page.Rows.Single(row => row.Name == "Alex Rivera").IncOpened);
-        Assert.Equal(1, page.DetailLines.Count);
+        Assert.Single(page.DetailLines);
 
         page.ShowCellDetail(page.Rows.Single(row => row.Name == "Riley Chen"), WorkEffortColumn.IncOpened);
         Assert.True(page.ShowDetail);
