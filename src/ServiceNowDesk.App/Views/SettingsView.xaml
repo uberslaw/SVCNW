@@ -1,9 +1,31 @@
 <UserControl x:Class="ServiceNowDesk.Views.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Loaded="OnLoaded">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Settings" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
+
+            <TextBlock Text="Leads" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
+            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8">
+                <StackPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                               Text="Enter the leads password to show the Leads menu."/>
+                    <TextBlock Text="Leads password" Style="{StaticResource FieldLabel}"/>
+                    <PasswordBox x:Name="LeadsPasswordInput" Width="280" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                 PasswordChanged="LeadsPasswordInput_PasswordChanged"
+                                 AutomationProperties.Name="Leads password"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                        <Button Content="Unlock" Style="{StaticResource PrimaryButton}" Command="{Binding Connection.UnlockLeadsCommand}" Margin="0,0,8,0"
+                                AutomationProperties.Name="Unlock Leads"/>
+                        <Button Content="Hide Leads" Style="{StaticResource SecondaryButton}" Command="{Binding Connection.HideLeadsCommand}"
+                                Visibility="{Binding Connection.LeadsEnabled, Converter={StaticResource BoolVis}}"
+                                AutomationProperties.Name="Hide Leads"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding Connection.LeadsAccessStatus}" TextWrapping="Wrap" Foreground="{StaticResource ErrorBrush}" Margin="0,8,0,0"
+                               Visibility="{Binding Connection.LeadsAccessStatus, Converter={StaticResource StringVis}}"/>
+                </StackPanel>
+            </Border>
 
             <TextBlock Text="Notifications" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
             <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8"
