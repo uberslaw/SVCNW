@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
 
 namespace ServiceNowDesk.Services;
@@ -42,6 +43,7 @@ public static class DeskSettingsFile
         public bool UseSampleData { get; set; }
         public string? JiggleFrequency { get; set; }
         public int? JiggleDurationSeconds { get; set; }
+        public double? JiggleSpeed { get; set; }
         public DesktopWidgetWhen? ShowDesktopWidget { get; set; }
         public JiggleWhen? JiggleWhen { get; set; }
         public bool? MaximizeWhenJiggling { get; set; }
@@ -75,6 +77,7 @@ public static class DeskSettingsFile
             UseSampleData = settings.UseSampleData,
             JiggleFrequency = settings.JiggleFrequency,
             JiggleDurationSeconds = settings.JiggleDurationSeconds,
+            JiggleSpeed = JiggleMotion.Snap(settings.JiggleSpeed),
             ShowDesktopWidget = settings.ShowDesktopWidget,
             JiggleWhen = settings.JiggleWhen,
             MaximizeWhenJiggling = settings.MaximizeWhenJiggling,
@@ -109,6 +112,7 @@ public static class DeskSettingsFile
             UseSampleData = UseSampleData,
             JiggleFrequency = string.IsNullOrWhiteSpace(JiggleFrequency) ? "00:01:00" : JiggleFrequency,
             JiggleDurationSeconds = JiggleDurationSeconds ?? 2,
+            JiggleSpeed = JiggleSpeed is null ? JiggleMotion.DefaultMovesPerSecond : JiggleMotion.Snap(JiggleSpeed.Value),
             ShowDesktopWidget = ShowDesktopWidget ?? DesktopWidgetWhen.WhileOpen,
             JiggleWhen = JiggleWhen ?? ServiceNowDesk.Models.JiggleWhen.Persistent,
             MaximizeWhenJiggling = MaximizeWhenJiggling ?? true,

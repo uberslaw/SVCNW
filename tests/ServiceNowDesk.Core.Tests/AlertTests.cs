@@ -174,6 +174,7 @@ public class AlertTests
         var defaults = NotificationPreferences.From(new DeskSettings());
         Assert.Equal("00:01:00", defaults.JiggleFrequency);
         Assert.Equal(2, defaults.JiggleDurationSeconds);
+        Assert.Equal(3d, defaults.JiggleSpeed);
         Assert.Equal(DesktopWidgetWhen.WhileOpen, defaults.ShowDesktopWidget);
         Assert.Equal(JiggleWhen.Persistent, defaults.JiggleWhen);
         Assert.Equal(60, defaults.PollSeconds);

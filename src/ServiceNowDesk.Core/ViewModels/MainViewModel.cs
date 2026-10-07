@@ -154,6 +154,11 @@ public partial class MainViewModel : ObservableObject
                 _ = LoadLeadRosterAsync();
             }
         };
+        NotificationSettings.JiggleSpeedChanged += (_, _) =>
+        {
+            Connection.Notifications.JiggleSpeed = NotificationSettings.ActiveJiggleSpeed;
+            _store.Save(Connection.BuildSettings());
+        };
         Connection.DownloadCachePreferenceChanged += (_, _) => _store.Save(Connection.BuildSettings());
         Connection.LeadsAccessChanged += (_, _) =>
         {

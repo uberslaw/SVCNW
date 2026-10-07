@@ -38,6 +38,21 @@
                     <TextBlock Text="Jiggle duration (seconds)" Style="{StaticResource FieldLabel}"/>
                     <TextBox Text="{Binding DurationText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"/>
 
+                    <TextBlock Text="Jiggle speed (moves per second)" Style="{StaticResource FieldLabel}"/>
+                    <DockPanel Margin="0,0,0,4" LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Right" Width="36" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   FontWeight="SemiBold" TextAlignment="Right"
+                                   Text="{Binding JiggleSpeed, StringFormat={}{0:0.#}}"
+                                   AutomationProperties.Name="Jiggle speed value"/>
+                        <Slider Minimum="1" Maximum="10" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                                IsMoveToPointEnabled="True"
+                                SmallChange="0.5" LargeChange="1" VerticalAlignment="Center"
+                                Value="{Binding JiggleSpeed, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                AutomationProperties.Name="Jiggle speed"/>
+                    </DockPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"
+                               Text="How fast the strip moves while it is jiggling. 1 is one move per second. 10 is ten moves per second. 4.5 is 4.5 moves per second. One move is one full shake. The next jiggle uses this speed."/>
+
                     <CheckBox Content="Maximize when jiggling" IsChecked="{Binding MaximizeWhenJiggling}" Margin="0,0,0,8"/>
                     <CheckBox Content="Play sound when jiggling" IsChecked="{Binding PlaySoundWhenJiggling}" Margin="0,0,0,8"/>
                     <CheckBox Content="Play sound on alert metric" IsChecked="{Binding PlaySoundOnAlertMetric}" Margin="0,0,0,10"/>
