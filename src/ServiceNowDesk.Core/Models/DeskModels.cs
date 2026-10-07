@@ -1,3 +1,5 @@
+using ServiceNowDesk.Alerts;
+
 namespace ServiceNowDesk.Models;
 
 public enum AssignmentScope
@@ -156,6 +158,12 @@ public sealed class DeskSettings
     public bool UseSampleData { get; set; }
     public string JiggleFrequency { get; set; } = "00:01:00";
     public int JiggleDurationSeconds { get; set; } = 2;
+
+    /// <summary>
+    /// How many times the desktop strip moves per second while it is jiggling.
+    /// One move is one full shake. Missing values in an older settings file use the default.
+    /// </summary>
+    public double JiggleSpeed { get; set; } = JiggleMotion.DefaultMovesPerSecond;
     public DesktopWidgetWhen ShowDesktopWidget { get; set; } = DesktopWidgetWhen.WhileOpen;
     public JiggleWhen JiggleWhen { get; set; } = JiggleWhen.Persistent;
     public bool MaximizeWhenJiggling { get; set; } = true;

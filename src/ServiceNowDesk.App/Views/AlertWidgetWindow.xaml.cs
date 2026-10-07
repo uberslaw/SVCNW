@@ -235,7 +235,7 @@ public partial class AlertWidgetWindow : Window
         var generation = ++_dropGeneration;
         ApplyChrome();
         if (maximize)
-            StartWiggle(generation);
+            StartWiggle(generation, _settings.ActiveJiggleSpeed);
         PinTopmost();
 
         _dropTimer?.Stop();
@@ -253,20 +253,20 @@ public partial class AlertWidgetWindow : Window
         hold.Start();
     }
 
-    private void StartWiggle(int generation)
+    private void StartWiggle(int generation, double movesPerSecond)
     {
         var origin = CenterLeft(Width > 1 ? Width : WidgetFallbackWidth);
         BeginAnimation(LeftProperty, null);
         Left = origin;
         var seconds = Math.Max(1, _settings?.ActiveDurationSeconds ?? 2);
         var duration = TimeSpan.FromSeconds(seconds);
+        var plan = JiggleMotion.Plan(movesPerSecond, duration);
         var animation = new DoubleAnimationUsingKeyFrames { Duration = duration };
-        const int cycles = 6;
-        var frames = cycles * 8;
+        var frames = JiggleMotion.KeyframeCount(plan.SineCycles);
         for (var i = 0; i <= frames; i++)
         {
             var t = i / (double)frames;
-            var offset = Math.Sin(t * cycles * Math.PI * 2) * 6;
+            var offset = JiggleMotion.Offset(plan.MovesPerSecond, duration, t);
             animation.KeyFrames.Add(new LinearDoubleKeyFrame(origin + offset, KeyTime.FromPercent(t)));
         }
 

@@ -9,6 +9,7 @@ namespace ServiceNowDesk.ViewModels;
 public partial class NotificationSettingsViewModel : ObservableObject
 {
     private NotificationPreferences _committed = NotificationPreferences.From(new DeskSettings());
+    private bool _loading;
 
     public NotificationSettingsViewModel()
     {
@@ -19,9 +20,16 @@ public partial class NotificationSettingsViewModel : ObservableObject
 
     public event EventHandler? SettingsChanged;
 
+    /// <summary>
+    /// The slider moved. The speed is already on <see cref="Committed"/> and <see cref="ActiveJiggleSpeed"/>.
+    /// This does not restart the alert poll; only the next strip shake uses the new speed.
+    /// </summary>
+    public event EventHandler? JiggleSpeedChanged;
+
     [ObservableProperty] private string settingsMessage = "";
     [ObservableProperty] private string frequencyText = NotificationPreferences.DefaultFrequency;
     [ObservableProperty] private string durationText = NotificationPreferences.DefaultDurationSeconds.ToString(CultureInfo.InvariantCulture);
+    [ObservableProperty] private double jiggleSpeed = JiggleMotion.DefaultMovesPerSecond;
     [ObservableProperty] private string pollSecondsText = NotificationPreferences.DefaultPollSeconds.ToString(CultureInfo.InvariantCulture);
     [ObservableProperty] private DesktopWidgetWhen showDesktopWidget = DesktopWidgetWhen.WhileOpen;
     [ObservableProperty] private JiggleWhen jiggleWhen = JiggleWhen.Persistent;
@@ -33,6 +41,7 @@ public partial class NotificationSettingsViewModel : ObservableObject
     [ObservableProperty] private string locationsText = string.Join(Environment.NewLine, NotificationPreferences.DefaultLocations);
     [ObservableProperty] private string activeFrequency = NotificationPreferences.DefaultFrequency;
     [ObservableProperty] private int activeDurationSeconds = NotificationPreferences.DefaultDurationSeconds;
+    [ObservableProperty] private double activeJiggleSpeed = JiggleMotion.DefaultMovesPerSecond;
     [ObservableProperty] private DesktopWidgetWhen activeShowDesktopWidget = DesktopWidgetWhen.WhileOpen;
     [ObservableProperty] private JiggleWhen activeJiggleWhen = JiggleWhen.Persistent;
     [ObservableProperty] private bool activeMaximizeWhenJiggling = true;
@@ -48,10 +57,12 @@ public partial class NotificationSettingsViewModel : ObservableObject
     public void Load(NotificationPreferences preferences)
     {
         ArgumentNullException.ThrowIfNull(preferences);
+        _loading = true;
         _committed = preferences.Copy();
         CopyCommittedToDraft();
         PublishActive();
         SettingsMessage = "";
+        _loading = false;
     }
 
     public void Load(DeskSettings settings) => Load(NotificationPreferences.From(settings));
@@ -76,6 +87,8 @@ public partial class NotificationSettingsViewModel : ObservableObject
             errors.Add("Jiggle duration must be at least 1 second.");
             DurationText = _committed.JiggleDurationSeconds.ToString(CultureInfo.InvariantCulture);
         }
+
+        next.JiggleSpeed = JiggleMotion.Snap(JiggleSpeed);
 
         if (NotificationPreferences.TryParsePollSeconds(PollSecondsText, out var pollSeconds))
             next.PollSeconds = pollSeconds;
@@ -104,10 +117,31 @@ public partial class NotificationSettingsViewModel : ObservableObject
 
     public void SetSoundPath(string? path) => SoundPath = path?.Trim() ?? "";
 
+    partial void OnJiggleSpeedChanged(double value)
+    {
+        var snapped = JiggleMotion.Snap(value);
+        if (snapped != value)
+        {
+            JiggleSpeed = snapped;
+            return;
+        }
+
+        if (_loading)
+            return;
+
+        if (_committed.JiggleSpeed == snapped && ActiveJiggleSpeed == snapped)
+            return;
+
+        _committed.JiggleSpeed = snapped;
+        ActiveJiggleSpeed = snapped;
+        JiggleSpeedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     private void CopyCommittedToDraft()
     {
         FrequencyText = _committed.JiggleFrequency;
         DurationText = _committed.JiggleDurationSeconds.ToString(CultureInfo.InvariantCulture);
+        JiggleSpeed = _committed.JiggleSpeed;
         PollSecondsText = _committed.PollSeconds.ToString(CultureInfo.InvariantCulture);
         ShowDesktopWidget = _committed.ShowDesktopWidget;
         JiggleWhen = _committed.JiggleWhen;
@@ -123,6 +157,7 @@ public partial class NotificationSettingsViewModel : ObservableObject
     {
         ActiveFrequency = _committed.JiggleFrequency;
         ActiveDurationSeconds = _committed.JiggleDurationSeconds;
+        ActiveJiggleSpeed = _committed.JiggleSpeed;
         ActiveShowDesktopWidget = _committed.ShowDesktopWidget;
         ActiveJiggleWhen = _committed.JiggleWhen;
         ActiveMaximizeWhenJiggling = _committed.MaximizeWhenJiggling;

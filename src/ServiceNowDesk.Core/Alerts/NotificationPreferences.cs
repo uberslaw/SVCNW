@@ -23,6 +23,7 @@ public sealed class NotificationPreferences
 
     public string JiggleFrequency { get; set; } = DefaultFrequency;
     public int JiggleDurationSeconds { get; set; } = DefaultDurationSeconds;
+    public double JiggleSpeed { get; set; } = JiggleMotion.DefaultMovesPerSecond;
     public DesktopWidgetWhen ShowDesktopWidget { get; set; } = DesktopWidgetWhen.WhileOpen;
     public JiggleWhen JiggleWhen { get; set; } = JiggleWhen.Persistent;
     public bool MaximizeWhenJiggling { get; set; } = true;
@@ -82,6 +83,7 @@ public sealed class NotificationPreferences
             JiggleDurationSeconds = settings.JiggleDurationSeconds >= MinimumDurationSeconds
                 ? settings.JiggleDurationSeconds
                 : DefaultDurationSeconds,
+            JiggleSpeed = JiggleMotion.Snap(settings.JiggleSpeed),
             ShowDesktopWidget = Normalize(settings.ShowDesktopWidget),
             JiggleWhen = Normalize(settings.JiggleWhen),
             MaximizeWhenJiggling = settings.MaximizeWhenJiggling,
@@ -107,6 +109,7 @@ public sealed class NotificationPreferences
         ArgumentNullException.ThrowIfNull(settings);
         settings.JiggleFrequency = JiggleFrequency;
         settings.JiggleDurationSeconds = JiggleDurationSeconds;
+        settings.JiggleSpeed = JiggleMotion.Snap(JiggleSpeed);
         settings.ShowDesktopWidget = ShowDesktopWidget;
         settings.JiggleWhen = JiggleWhen;
         settings.MaximizeWhenJiggling = MaximizeWhenJiggling;
@@ -122,6 +125,7 @@ public sealed class NotificationPreferences
     {
         JiggleFrequency = JiggleFrequency,
         JiggleDurationSeconds = JiggleDurationSeconds,
+        JiggleSpeed = JiggleSpeed,
         ShowDesktopWidget = ShowDesktopWidget,
         JiggleWhen = JiggleWhen,
         MaximizeWhenJiggling = MaximizeWhenJiggling,
