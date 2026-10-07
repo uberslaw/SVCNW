@@ -152,38 +152,40 @@ public sealed class HighlightPreferences
 
     private HighlightPreferences(
         IEnumerable<string> keys,
-        int sharedIntensity = LegendColorIntensity.Full,
+        int? sharedIntensity = null,
         IReadOnlyDictionary<string, int>? perColour = null)
     {
         _enabled = new HashSet<string>(keys, StringComparer.OrdinalIgnoreCase);
-        SharedIntensity = LegendColorIntensity.Clamp(sharedIntensity);
+        SharedIntensity = sharedIntensity is int shared ? LegendColorIntensity.Clamp(shared) : null;
         _intensityOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         if (perColour is not null)
         {
             foreach (var pair in perColour)
             {
-                if (pair.Key is null || HighlightCatalog.Find(pair.Key) is null)
+                var key = pair.Key;
+                var entry = key is null ? null : HighlightCatalog.Find(key);
+                if (entry is null || key is null)
                     continue;
                 var value = LegendColorIntensity.Clamp(pair.Value);
-                if (value == SharedIntensity)
+                var baseline = SharedIntensity ?? LegendColorIntensity.Measure(entry.SwatchHex);
+                if (value == baseline)
                     continue;
-                _intensityOverrides[pair.Key] = value;
+                _intensityOverrides[key] = value;
             }
         }
 
         _rowHex = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in HighlightCatalog.Entries)
         {
-            var intensity = IntensityOf(entry.Key);
-            if (intensity == LegendColorIntensity.Full)
-                continue;
-            _rowHex[entry.Key] = LegendColorIntensity.Apply(entry.RowHex, intensity);
+            var row = LegendColorIntensity.Row(entry.SwatchHex, entry.RowHex, IntensityOf(entry.Key));
+            if (!string.Equals(row, entry.RowHex, StringComparison.OrdinalIgnoreCase))
+                _rowHex[entry.Key] = row;
         }
     }
 
     public static HighlightPreferences Default { get; } = FromKeys(null);
 
-    public int SharedIntensity { get; }
+    public int? SharedIntensity { get; }
 
     public IReadOnlyList<string> EnabledKeys =>
         HighlightCatalog.Entries.Where(entry => _enabled.Contains(entry.Key)).Select(entry => entry.Key).ToArray();
@@ -211,12 +213,20 @@ public sealed class HighlightPreferences
     }
 
     public HighlightPreferences WithIntensity(int? shared, IReadOnlyDictionary<string, int>? perColour) =>
-        new(EnabledKeys, shared ?? LegendColorIntensity.Full, perColour);
+        new(EnabledKeys, shared, perColour);
 
     public bool IsEnabled(string key) => key is not null && _enabled.Contains(key);
 
-    public int IntensityOf(string key) =>
-        key is not null && _intensityOverrides.TryGetValue(key, out var value) ? value : SharedIntensity;
+    public int IntensityOf(string key)
+    {
+        if (key is not null && _intensityOverrides.TryGetValue(key, out var value))
+            return value;
+        if (SharedIntensity is int shared)
+            return shared;
+
+        var entry = HighlightCatalog.Find(key);
+        return entry is null ? LegendColorIntensity.White : LegendColorIntensity.Measure(entry.SwatchHex);
+    }
 
     public string ChooseRowHex(bool unassigned, IEnumerable<AlertKind>? kinds)
     {
@@ -257,7 +267,7 @@ public sealed class HighlightPreferences
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings.EnabledHighlights = [.. EnabledKeys];
-        settings.LegendIntensity = SharedIntensity == LegendColorIntensity.Full ? null : SharedIntensity;
+        settings.LegendIntensity = SharedIntensity;
         settings.LegendColorIntensities = _intensityOverrides.Count == 0
             ? null
             : new Dictionary<string, int>(_intensityOverrides, StringComparer.OrdinalIgnoreCase);

@@ -176,14 +176,16 @@ public sealed class DeskSettings
     public List<string>? EnabledHighlights { get; set; }
 
     /// <summary>
-    /// Shared legend colour intensity, 0–100. Null means today's colours (100).
-    /// All-at-once writes this and clears <see cref="LegendColorIntensities"/>.
+    /// Shared legend lightness, 0–100. 0 is white and 100 is black.
+    /// Null means each colour keeps the lightness measured from its swatch, unless
+    /// <see cref="LegendColorIntensities"/> names that colour.
+    /// All-colours writes this and clears per-colour overrides.
     /// </summary>
     public int? LegendIntensity { get; set; }
 
     /// <summary>
-    /// Intensity for one legend colour, 0–100, keyed by highlight catalog key.
-    /// Null means every colour uses <see cref="LegendIntensity"/>.
+    /// Lightness for one legend colour, 0–100, keyed by highlight catalog key.
+    /// Null means every colour uses <see cref="LegendIntensity"/>, or the measured swatch lightness when that is missing too.
     /// </summary>
     public Dictionary<string, int>? LegendColorIntensities { get; set; }
 }

@@ -28,7 +28,7 @@
                                 AutomationProperties.Name="Legend colour intensity"/>
                     </DockPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,14"
-                               Text="100 matches today's colours. Moving the slider washes every swatch and row tint toward white. Tick Adjust individually, click a colour, move the slider, then press Set. Only that colour changes, and only when Set is pressed."/>
+                               Text="0 is white and 100 is black. The thumb starts at the lightness of the current colours. Moving the slider sets every colour to that lightness and keeps each hue. Tick Adjust individually, click a colour, move the slider, then press Set. Only that colour changes, and only when Set is pressed."/>
                     <ItemsControl ItemsSource="{Binding Entries}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
