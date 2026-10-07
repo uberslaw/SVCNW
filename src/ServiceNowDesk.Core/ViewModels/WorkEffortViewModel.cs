@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ServiceNowDesk.Services;
 using ServiceNowDesk.WorkEffort;
 
 namespace ServiceNowDesk.ViewModels;
@@ -12,6 +13,8 @@ public partial class WorkEffortViewModel : ObservableObject
     private DateOnly? _cachedDay;
     private string _loadingTeam = "";
     private WorkEffortCacheEntry? _shown;
+    private IDesktopServices? _desktop;
+    private IReadOnlyList<WorkEffortCredit> _boardCredits = [];
 
     public WorkEffortViewModel()
     {
@@ -19,9 +22,13 @@ public partial class WorkEffortViewModel : ObservableObject
 
     public ObservableCollection<WorkEffortRow> Rows { get; } = [];
 
+    public ObservableCollection<WorkEffortCredit> DetailLines { get; } = [];
+
     public event EventHandler? ScaleChanged;
 
     public event EventHandler? RefreshRequested;
+
+    public event EventHandler<WorkEffortCredit>? OpenTicketRequested;
 
     private WorkEffortScale? _loadingScale;
 
@@ -35,6 +42,13 @@ public partial class WorkEffortViewModel : ObservableObject
     [ObservableProperty] private bool isLoading;
     [ObservableProperty] private int progressValue;
     [ObservableProperty] private int progressMaximum = WorkEffortEstimate.BarMaximum;
+    [ObservableProperty] private bool showDetail;
+    [ObservableProperty] private string detailTitle = "";
+    [ObservableProperty] private string detailEmptyMessage = "";
+    [ObservableProperty] private bool detailHasRows;
+    [ObservableProperty] private string exportNote = "";
+
+    public void UseDesktop(IDesktopServices desktop) => _desktop = desktop;
 
     /// <summary>
     /// True when the screen needs a query. A cached scale from the same local day and the same team
@@ -147,6 +161,8 @@ public partial class WorkEffortViewModel : ObservableObject
         Shift = "";
         AsOf = "";
         _shown = null;
+        _boardCredits = [];
+        ClearDetail();
         _loadingScale = Scale;
         ProgressValue = 0;
         ProgressMaximum = WorkEffortEstimate.BarMaximum;
@@ -158,15 +174,7 @@ public partial class WorkEffortViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(report);
         _shown = null;
-        Rows.Clear();
-        foreach (var row in report.Rows)
-            Rows.Add(row);
-        HasRows = Rows.Count > 0;
-        EmptyMessage = HasRows ? "" : report.EmptyMessage;
-        Shift = HasRows ? report.Shift : "";
-        Status = report.Status;
-        IsLoading = false;
-        _loadingScale = null;
+        ApplyReport(report);
     }
 
     public void ShowError(string message)
@@ -177,6 +185,8 @@ public partial class WorkEffortViewModel : ObservableObject
         Shift = "";
         AsOf = "";
         _shown = null;
+        _boardCredits = [];
+        ClearDetail();
         Status = message ?? "";
         IsLoading = false;
         _loadingScale = null;
@@ -187,6 +197,7 @@ public partial class WorkEffortViewModel : ObservableObject
         _cache.Clear();
         _cachedDay = null;
         _shown = null;
+        _boardCredits = [];
         Rows.Clear();
         HasRows = false;
         EmptyMessage = "";
@@ -198,8 +209,87 @@ public partial class WorkEffortViewModel : ObservableObject
         ProgressMaximum = WorkEffortEstimate.BarMaximum;
         _loadingScale = null;
         _loadingTeam = "";
+        ClearDetail();
         if (UpdateMode != WorkEffortUpdateMode.Daily)
             UpdateMode = WorkEffortUpdateMode.Daily;
+    }
+
+    public void ShowPersonDetail(WorkEffortRow? row)
+    {
+        if (row is null)
+            return;
+        if (!HasLoadedLedger())
+        {
+            PresentDetail("Work Effort detail", [], WorkEffortDetail.NotLoadedMessage);
+            return;
+        }
+
+        var lines = WorkEffortDetail.ForPerson(_boardCredits, row.PersonSysId);
+        var empty = lines.Count == 0 ? WorkEffortDetail.EmptyPersonMessage : "";
+        PresentDetail(row.Name + " — all metrics", lines, empty);
+    }
+
+    public void ShowCellDetail(WorkEffortRow? row, WorkEffortColumn column)
+    {
+        if (row is null)
+            return;
+        if (!HasLoadedLedger())
+        {
+            PresentDetail("Work Effort detail", [], WorkEffortDetail.NotLoadedMessage);
+            return;
+        }
+
+        var lines = WorkEffortDetail.ForCell(_boardCredits, row.PersonSysId, column);
+        var title = row.Name + " — " + WorkEffortDetail.ColumnLabel(column);
+        var empty = lines.Count == 0 ? WorkEffortDetail.EmptyCellMessage : "";
+        PresentDetail(title, lines, empty);
+    }
+
+    public void ShowCellDetail(WorkEffortRow? row, string? columnName)
+    {
+        if (!WorkEffortDetail.TryParseColumn(columnName, out var column))
+            return;
+        ShowCellDetail(row, column);
+    }
+
+    [RelayCommand]
+    private void CloseDetail() => ClearDetail();
+
+    [RelayCommand]
+    private void OpenCredit(WorkEffortCredit? credit)
+    {
+        if (credit is null || string.IsNullOrWhiteSpace(credit.RecordSysId))
+            return;
+        OpenTicketRequested?.Invoke(this, credit);
+    }
+
+    [RelayCommand]
+    private void ExportDetail()
+    {
+        if (!ShowDetail)
+            return;
+        if (!HasLoadedLedger())
+        {
+            ExportNote = WorkEffortDetail.NotLoadedMessage;
+            return;
+        }
+
+        var name = SanitizeFileName(DetailTitle) + ".csv";
+        WriteCsv(name, DetailLines);
+    }
+
+    [RelayCommand]
+    private void ExportBoard()
+    {
+        if (!HasLoadedLedger())
+        {
+            ExportNote = WorkEffortDetail.NotLoadedMessage;
+            return;
+        }
+
+        var scale = Scale.ToString().ToLowerInvariant();
+        var name = "work-effort-board-" + scale + ".csv";
+        WriteCsv(name, _boardCredits);
     }
 
     [RelayCommand]
@@ -232,9 +322,149 @@ public partial class WorkEffortViewModel : ObservableObject
 
     private void ShowEntry(WorkEffortCacheEntry entry)
     {
-        Show(WorkEffortScore.Present(entry.Report, UpdateMode));
         _shown = entry;
+        ApplyReport(WorkEffortScore.Present(entry.Report, UpdateMode));
         AsOf = "As of " + entry.LoadedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
+    }
+
+    private void ApplyReport(WorkEffortReport report)
+    {
+        Rows.Clear();
+        foreach (var row in report.Rows)
+            Rows.Add(row);
+        HasRows = Rows.Count > 0;
+        EmptyMessage = HasRows ? "" : report.EmptyMessage;
+        Shift = HasRows ? report.Shift : "";
+        Status = report.Status;
+        IsLoading = false;
+        _loadingScale = null;
+        RebuildBoardCredits(report);
+        if (ShowDetail)
+            RefreshOpenDetail();
+    }
+
+    private void RebuildBoardCredits(WorkEffortReport report)
+    {
+        if (report.Ledger is null)
+        {
+            _boardCredits = [];
+            return;
+        }
+
+        _boardCredits = WorkEffortDetail.Build(
+            report.Ledger.People,
+            report.Ledger.Touches,
+            report.Ledger.Window,
+            UpdateMode);
+    }
+
+    private bool HasLoadedLedger() => _shown is not null && _shown.Value.Report.Ledger is not null && !IsLoading;
+
+    private void RefreshOpenDetail()
+    {
+        if (!ShowDetail)
+            return;
+        // Re-score keeps an open detail in sync when Daily / Multiple flips.
+        if (_shown?.Report.Ledger is null)
+        {
+            PresentDetail(DetailTitle, [], WorkEffortDetail.NotLoadedMessage);
+            return;
+        }
+
+        // Title still describes the selection; rebuild lines from the current board credits.
+        var title = DetailTitle;
+        IReadOnlyList<WorkEffortCredit> lines;
+        string empty;
+        if (title.Contains(" — all metrics", StringComparison.Ordinal))
+        {
+            var name = title.Replace(" — all metrics", "", StringComparison.Ordinal);
+            var row = Rows.FirstOrDefault(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (row is null)
+            {
+                PresentDetail(title, [], WorkEffortDetail.EmptyPersonMessage);
+                return;
+            }
+
+            lines = WorkEffortDetail.ForPerson(_boardCredits, row.PersonSysId);
+            empty = lines.Count == 0 ? WorkEffortDetail.EmptyPersonMessage : "";
+        }
+        else
+        {
+            var sep = title.LastIndexOf(" — ", StringComparison.Ordinal);
+            if (sep < 0)
+            {
+                PresentDetail(title, _boardCredits, "");
+                return;
+            }
+
+            var name = title[..sep];
+            var columnLabel = title[(sep + 3)..];
+            var row = Rows.FirstOrDefault(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            var column = Enum.GetValues<WorkEffortColumn>()
+                .FirstOrDefault(value => WorkEffortDetail.ColumnLabel(value) == columnLabel);
+            if (row is null)
+            {
+                PresentDetail(title, [], WorkEffortDetail.EmptyCellMessage);
+                return;
+            }
+
+            lines = WorkEffortDetail.ForCell(_boardCredits, row.PersonSysId, column);
+            empty = lines.Count == 0 ? WorkEffortDetail.EmptyCellMessage : "";
+        }
+
+        PresentDetail(title, lines, empty);
+    }
+
+    private void PresentDetail(string title, IReadOnlyList<WorkEffortCredit> lines, string empty)
+    {
+        DetailTitle = title;
+        DetailLines.Clear();
+        foreach (var line in lines)
+            DetailLines.Add(line);
+        DetailHasRows = DetailLines.Count > 0;
+        DetailEmptyMessage = DetailHasRows ? "" : empty;
+        ShowDetail = true;
+        ExportNote = "";
+    }
+
+    private void ClearDetail()
+    {
+        ShowDetail = false;
+        DetailTitle = "";
+        DetailEmptyMessage = "";
+        DetailHasRows = false;
+        DetailLines.Clear();
+        ExportNote = "";
+    }
+
+    private void WriteCsv(string fileName, IEnumerable<WorkEffortCredit> lines)
+    {
+        if (_desktop is null)
+        {
+            ExportNote = "Export is not available.";
+            return;
+        }
+
+        var csv = WorkEffortCsv.Format(lines);
+        var path = _desktop.SaveTextFile(
+            fileName,
+            "CSV (*.csv)|*.csv|All files (*.*)|*.*",
+            csv,
+            WorkEffortCsv.Utf8Bom);
+        ExportNote = path is null ? "Export cancelled." : "Saved " + path;
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        var text = (value ?? "").Trim();
+        if (text.Length == 0)
+            return "work-effort-detail";
+        foreach (var bad in Path.GetInvalidFileNameChars())
+            text = text.Replace(bad, '-');
+        text = text.Replace(' ', '-');
+        while (text.Contains("--", StringComparison.Ordinal))
+            text = text.Replace("--", "-", StringComparison.Ordinal);
+        return text.Length == 0 ? "work-effort-detail" : text;
     }
 
     private readonly record struct WorkEffortCacheEntry(DateTime LoadedAt, WorkEffortReport Report, string TeamKey);

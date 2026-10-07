@@ -107,8 +107,10 @@ public partial class MainViewModel : ObservableObject
         Leads = new LeadsViewModel();
         DailyWork = new DailyWorkViewModel(_dailyWork, personalTasks ?? new MemoryPersonalTaskStore());
         Leads.UseEditors(Incidents, Requests, RequestedItems, WalkUps);
+        Leads.WorkEffort.UseDesktop(desktop);
         Leads.OpenUnknownRecord = OpenUnknownLeadRecord;
         Leads.Board.OpenRequested += (_, row) => _ = Leads.OpenTicketAsync(row);
+        Leads.WorkEffort.OpenTicketRequested += (_, credit) => _ = Leads.OpenWorkEffortTicketAsync(credit);
         DailyWork.OpenRequested += (_, row) => _ = OpenDailyWorkAsync(row);
         DailyWork.IncidentRequested += (_, row) => NoteConvertTask = ConvertNoteAsync(row, incident: true);
         DailyWork.RequestedItemRequested += (_, row) => NoteConvertTask = ConvertNoteAsync(row, incident: false);
