@@ -1,18 +1,33 @@
 namespace ServiceNowDesk.Alerts;
 
 /// <summary>
-/// Legend slider curve. Position 0 is a light wash, 70 is fully saturated, and 100 is a step darker.
+/// Legend slider curve. Position 0 is the wash the previous curve painted at 25.
+/// Position 100 keeps full saturation and continues that first quarter past the old maximum, a step darker.
 /// Hue stays with the original swatch. Saved positions use <see cref="Version"/>; older lightness numbers are ignored.
+/// A saved 100 is this stronger end. The slider stays 0–100, so that saved value is stronger than the old maximum.
 /// </summary>
 public static class LegendColorIntensity
 {
     public const int Version = 2;
     public const int Minimum = 0;
     public const int Maximum = 100;
-    public const int Vivid = 70;
+
+    /// <summary>Previous curve position shown at slider 0. Slider P paints that curve at <c>P + WindowStart</c>, through 125.</summary>
+    public const int WindowStart = 25;
+
+    private const int LegacyVivid = 70;
+    private const int LegacyEnd = 100;
+
+    /// <summary>Slider position of full saturation. The previous curve reached it at 70, and this window starts at 25.</summary>
+    public const int Vivid = LegacyVivid - WindowStart;
 
     public const string NeutralTrackStart = "#E6E6E6";
     public const string NeutralTrackEnd = "#1A1A1A";
+
+    /// <summary>Normal list text, the same value as TextColor in the desk theme.</summary>
+    private const double MinimumRowContrast = 4.5;
+
+    private static readonly (byte Red, byte Green, byte Blue) RowText = (0x1C, 0x25, 0x29);
 
     public readonly record struct Hsl(double Hue, double Saturation, double Lightness);
 
@@ -35,17 +50,22 @@ public static class LegendColorIntensity
         return Clamp((int)Math.Round(total / (double)count, MidpointRounding.AwayFromZero));
     }
 
-    /// <summary>Saturation and lightness at <paramref name="position"/>, before the swatch hue is applied.</summary>
+    /// <summary>
+    /// Saturation and lightness at <paramref name="position"/>, before the swatch hue is applied.
+    /// 0 matches the previous curve at 25. 100 matches that curve extended to 125.
+    /// Past full saturation the colour stays on the same hue and darkens. It does not fade toward grey.
+    /// </summary>
     public static Hsl Sample(int position)
     {
         position = Clamp(position);
-        if (position <= Vivid)
+        var legacy = position + WindowStart;
+        if (legacy <= LegacyVivid)
         {
-            var span = position / (double)Vivid;
+            var span = legacy / (double)LegacyVivid;
             return new Hsl(0d, Lerp(0.20d, 1.00d, span), Lerp(0.90d, 0.46d, span));
         }
 
-        var tail = (position - Vivid) / (double)(Maximum - Vivid);
+        var tail = (legacy - LegacyVivid) / (double)(LegacyEnd - LegacyVivid);
         return new Hsl(0d, 1.00d, Lerp(0.46d, 0.32d, tail));
     }
 
@@ -60,7 +80,8 @@ public static class LegendColorIntensity
     {
         var (hue, _, _) = ToHsl(Parse(Normalize(originalHex)));
         var sample = Sample(position);
-        return FromHsl(hue, sample.Saturation, sample.Lightness);
+        var lightness = LightnessForReadableRow(hue, sample.Saturation, sample.Lightness);
+        return FromHsl(hue, sample.Saturation, lightness);
     }
 
     /// <summary>Whole-number position whose curve colour is nearest the original swatch in RGB.</summary>
@@ -93,6 +114,57 @@ public static class LegendColorIntensity
             return Normalize(originalRow);
 
         return HighlightCatalog.Lighten(Curve(originalSwatch, position));
+    }
+
+    /// <summary>
+    /// Keeps the lightened row at or above about 4.5:1 with normal text.
+    /// Darkening stops just on the readable side of that line.
+    /// </summary>
+    private static double LightnessForReadableRow(double hue, double saturation, double lightness)
+    {
+        if (RowContrast(hue, saturation, lightness) >= MinimumRowContrast)
+            return lightness;
+
+        var tooDark = lightness;
+        var readable = Math.Max(lightness, 0.90d);
+        for (var step = 0; step < 24; step++)
+        {
+            var mid = (tooDark + readable) / 2d;
+            if (RowContrast(hue, saturation, mid) >= MinimumRowContrast)
+                readable = mid;
+            else
+                tooDark = mid;
+        }
+
+        return readable;
+    }
+
+    private static double RowContrast(double hue, double saturation, double lightness)
+    {
+        var row = Parse(HighlightCatalog.Lighten(FromHsl(hue, saturation, lightness)));
+        return Contrast(row, RowText);
+    }
+
+    private static double Contrast(
+        (byte Red, byte Green, byte Blue) background,
+        (byte Red, byte Green, byte Blue) foreground)
+    {
+        var left = RelativeLuminance(background);
+        var right = RelativeLuminance(foreground);
+        var lighter = Math.Max(left, right);
+        var darker = Math.Min(left, right);
+        return (lighter + 0.05d) / (darker + 0.05d);
+    }
+
+    private static double RelativeLuminance((byte Red, byte Green, byte Blue) color) =>
+        0.2126d * Linearize(color.Red) + 0.7152d * Linearize(color.Green) + 0.0722d * Linearize(color.Blue);
+
+    private static double Linearize(byte channel)
+    {
+        var unit = channel / 255d;
+        return unit <= 0.04045d
+            ? unit / 12.92d
+            : Math.Pow((unit + 0.055d) / 1.055d, 2.4d);
     }
 
     private static double Lerp(double start, double end, double span) => start + (end - start) * span;

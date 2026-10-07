@@ -28,7 +28,7 @@
                                 AutomationProperties.Name="Legend colour intensity"/>
                     </DockPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,14"
-                               Text="The track runs from a light wash on the left to a deep shade on the right. Colours go from washed to vivid, then a little darker. The thumb starts at the closest match to today's colours. Moving it sets every colour and keeps each hue. Tick Adjust individually, click a colour, move the slider, then press Set. Only that colour changes, and only when Set is pressed."/>
+                               Text="The track starts at the wash that used to sit a quarter of the way along, then pastel, fuller colour, and a step darker than the old strongest tint. The thumb starts at the closest match to today's colours. Moving it sets every colour and keeps each hue. The notification circles stay the same dark dots. Tick Adjust individually, click a colour, move the slider, then press Set. Only that colour changes, and only when Set is pressed."/>
                     <ItemsControl ItemsSource="{Binding Entries}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
