@@ -8,247 +8,334 @@ namespace ServiceNowDesk.Client;
 
 public sealed partial class ServiceNowClient
 {
-    public Task<WorkEffortReport> GetWorkEffortAsync(WorkEffortScale scale, DateTime localNow, CancellationToken cancellationToken) =>
-        GetWorkEffortAsync(scale, localNow, WorkEffortQuery.SafetyCap, cancellationToken);
+    public Task<WorkEffortReport> GetWorkEffortAsync(
+        WorkEffortScale scale,
+        DateTime localNow,
+        IReadOnlyList<WorkEffortPerson> team,
+        CancellationToken cancellationToken) =>
+        GetWorkEffortAsync(scale, localNow, team, progress: null, cancellationToken);
 
     public Task<WorkEffortReport> GetWorkEffortAsync(
         WorkEffortScale scale,
         DateTime localNow,
+        IReadOnlyList<WorkEffortPerson> team,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken) =>
-        GetWorkEffortAsync(scale, localNow, WorkEffortQuery.SafetyCap, cancellationToken, progress);
+        LoadWorkEffortAsync(scale, localNow, team, WorkEffortQuery.SafetyCap, progress, cancellationToken);
 
-    internal async Task<WorkEffortReport> GetWorkEffortAsync(
+    internal Task<WorkEffortReport> GetWorkEffortAsync(
         WorkEffortScale scale,
         DateTime localNow,
         int safetyCap,
         CancellationToken cancellationToken,
-        IProgress<WorkEffortProgress>? progress = null)
+        IProgress<WorkEffortProgress>? progress = null,
+        IReadOnlyList<WorkEffortPerson>? team = null) =>
+        LoadWorkEffortAsync(scale, localNow, team, safetyCap, progress, cancellationToken);
+
+    private async Task<WorkEffortReport> LoadWorkEffortAsync(
+        WorkEffortScale scale,
+        DateTime localNow,
+        IReadOnlyList<WorkEffortPerson>? team,
+        int safetyCap,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken)
     {
+        var people = WorkEffortTeam.Normalize(team);
+        if (people.Count == 0)
+            return WorkEffortReport.NoTeam();
+
         var window = WorkEffortWindow.For(scale, localNow);
         var cap = Math.Max(1, safetyCap);
-        var user = await GetCurrentUserAsync(cancellationToken).ConfigureAwait(false);
-        var signedIn = new WorkEffortPerson(
-            user.SysId,
-            string.IsNullOrWhiteSpace(user.Name) ? user.UserName : user.Name,
-            user.UserName);
-        var groups = await LoadWorkEffortGroupsAsync(signedIn.SysId, cancellationToken).ConfigureAwait(false);
-        if (groups.Ids.Count == 0)
-            return WorkEffortReport.NoGroups();
-
         var problems = new List<string>();
-        if (groups.Truncated)
-            problems.Add("Some of your groups were left out because the group list hit its cap.");
+        var resolved = await ResolveTeamLoginsAsync(people, cancellationToken).ConfigureAwait(false);
+        people = resolved.People;
+        if (resolved.Problem is not null)
+            problems.Add(resolved.Problem);
+        if (!WorkEffortQuery.HasScope(people))
+            return WorkEffortReport.NoTeam();
 
-        var members = await LoadWorkEffortMembersAsync(groups.Ids, cancellationToken).ConfigureAwait(false);
-        if (members.Truncated)
-            problems.Add("Some people in your groups were left out because the member list hit its cap.");
-
-        var memberships = new List<WorkEffortMembership>();
-        foreach (var groupId in groups.Ids)
-            memberships.Add(new WorkEffortMembership(groupId, signedIn));
-        memberships.AddRange(members.Memberships);
-        var people = WorkEffortRoster.Collect(memberships, signedIn);
-        if (people.Count == 0)
-            return WorkEffortReport.NoGroups();
-
-        var touches = new List<WorkEffortTouch>();
+        var pace = new WorkEffortPace();
+        var totals = new int[people.Count * WorkEffortAttempt.Width];
         var truncated = false;
-        progress?.Report(WorkEffortProgress.Loading(scale, 0));
-        var incident = await LoadWorkEffortTableAsync([WorkEffortTablePlan.Incident], people, window, cap, cancellationToken).ConfigureAwait(false);
-        touches.AddRange(incident.Touches);
+        progress?.Report(pace.Snapshot());
+
+        var incident = await LoadWorkEffortTableAsync(WorkEffortTablePlan.IncidentPlans, people, window, cap, totals, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= incident.Truncated;
         if (incident.Problem is not null)
             problems.Add(incident.Problem);
 
-        progress?.Report(WorkEffortProgress.Loading(scale, 1));
-        var items = await LoadWorkEffortTableAsync(WorkEffortTablePlan.RequestedItemAttempts, people, window, cap, cancellationToken).ConfigureAwait(false);
-        touches.AddRange(items.Touches);
+        var items = await LoadWorkEffortTableAsync(WorkEffortTablePlan.RequestedItemAttempts, people, window, cap, totals, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= items.Truncated;
         if (items.Problem is not null)
             problems.Add(items.Problem);
 
-        progress?.Report(WorkEffortProgress.Loading(scale, 2));
-        var interactions = await LoadWorkEffortTableAsync(WorkEffortTablePlan.InteractionAttempts, people, window, cap, cancellationToken).ConfigureAwait(false);
-        touches.AddRange(interactions.Touches);
+        var interactions = await LoadWorkEffortTableAsync(WorkEffortTablePlan.InteractionAttempts, people, window, cap, totals, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= interactions.Truncated;
         if (interactions.Problem is not null)
             problems.Add(interactions.Problem);
 
-        var rows = WorkEffortScore.Build(people, touches, window);
+        var rows = WorkEffortAttempt.ToRows(people, totals);
         return new WorkEffortReport(rows, WorkEffortQuery.Status(scale, truncated, problems), "");
     }
 
-    private async Task<(List<string> Ids, bool Truncated)> LoadWorkEffortGroupsAsync(string userSysId, CancellationToken cancellationToken)
-    {
-        var id = EncodedQuery.SafeToken(userSysId, "user id");
-        var ids = new List<string>();
-        var truncated = await PageRowsAsync(
-            "sys_user_grmember",
-            "group,user",
-            "user=" + id + "^ORDERBYsys_id",
-            200,
-            null,
-            row =>
-            {
-                var group = SnowField.Read(row, "group").Value.Trim();
-                if (group.Length == 0 || ids.Any(existing => existing.Equals(group, StringComparison.OrdinalIgnoreCase)))
-                    return;
-                try
-                {
-                    ids.Add(EncodedQuery.SafeToken(group, "group id"));
-                }
-                catch (InvalidOperationException)
-                {
-                }
-            },
-            cancellationToken).ConfigureAwait(false);
-        return (ids, truncated);
-    }
-
-    private async Task<(List<WorkEffortMembership> Memberships, bool Truncated)> LoadWorkEffortMembersAsync(
-        IReadOnlyList<string> groupIds,
+    /// <summary>
+    /// One narrow user lookup for the ticked team when a sign-in name is missing.
+    /// Opens and resolves match on sys_id. Updates match on the sign-in name.
+    /// </summary>
+    private async Task<(IReadOnlyList<WorkEffortPerson> People, string? Problem)> ResolveTeamLoginsAsync(
+        IReadOnlyList<WorkEffortPerson> people,
         CancellationToken cancellationToken)
     {
-        var memberships = new List<WorkEffortMembership>();
-        var truncated = false;
-        const int groupChunk = 40;
-        var remaining = 8000;
-        for (var index = 0; index < groupIds.Count && remaining > 0; index += groupChunk)
+        if (people.All(person => person.UserName.Length > 0))
+            return (people, null);
+
+        var ids = new List<string>();
+        foreach (var person in people)
         {
-            var chunk = groupIds.Skip(index).Take(groupChunk).ToArray();
-            var before = memberships.Count;
-            var hit = await PageRowsAsync(
-                "sys_user_grmember",
-                "group,user,user.name,user.user_name",
-                "groupIN" + string.Join(",", chunk) + "^ORDERBYsys_id",
-                remaining,
-                null,
-                row =>
-                {
-                    var membership = ReadMember(row);
-                    if (membership is WorkEffortMembership value)
-                        memberships.Add(value);
-                },
-                cancellationToken).ConfigureAwait(false);
-            remaining -= Math.Max(0, memberships.Count - before);
-            if (hit)
-                truncated = true;
+            if (person.UserName.Length > 0)
+                continue;
+            try
+            {
+                var token = EncodedQuery.SafeToken(person.SysId, "user id");
+                if (!ids.Any(existing => existing.Equals(token, StringComparison.OrdinalIgnoreCase)))
+                    ids.Add(token);
+            }
+            catch (InvalidOperationException)
+            {
+            }
         }
 
-        return (memberships, truncated);
-    }
+        if (ids.Count == 0)
+            return (people, null);
 
-    private static WorkEffortMembership? ReadMember(JsonElement row)
-    {
-        var group = SnowField.Read(row, "group").Value.Trim();
-        var user = SnowField.Read(row, "user");
-        var userId = user.Value.Trim();
-        if (group.Length == 0 || userId.Length == 0)
-            return null;
+        var found = new Dictionary<string, (string Name, string User)>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            group = EncodedQuery.SafeToken(group, "group id");
-            userId = EncodedQuery.SafeToken(userId, "user id");
+            for (var index = 0; index < ids.Count; index += WorkEffortQuery.ChunkSize)
+            {
+                var chunk = ids.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray();
+                var result = await GetListAsync(
+                    "sys_user",
+                    "sys_id,name,user_name",
+                    "sys_idIN" + string.Join(",", chunk),
+                    chunk.Length,
+                    0,
+                    cancellationToken).ConfigureAwait(false);
+                using (result)
+                using (new WorkEffortQuietScope())
+                {
+                    foreach (var row in RequireArray(result.Document).EnumerateArray())
+                    {
+                        var id = SnowField.Read(row, "sys_id").Value.Trim();
+                        if (id.Length == 0)
+                            id = SnowField.Read(row, "sys_id").Display.Trim();
+                        if (id.Length == 0)
+                            continue;
+                        var name = SnowField.Read(row, "name");
+                        var login = SnowField.Read(row, "user_name");
+                        var display = name.Display.Trim();
+                        if (display.Length == 0)
+                            display = name.Value.Trim();
+                        var user = login.Value.Trim();
+                        if (user.Length == 0)
+                            user = login.Display.Trim();
+                        found[id] = (display, user);
+                    }
+                }
+            }
         }
-        catch (InvalidOperationException)
+        catch (ServiceNowException)
         {
-            return null;
+            return (people, "Sign-in names could not be loaded, so some updates may be missing.");
         }
 
-        var name = SnowField.Read(row, "user.name");
-        var login = SnowField.Read(row, "user.user_name");
-        var display = name.Display.Trim();
-        if (display.Length == 0 || display.Equals(userId, StringComparison.OrdinalIgnoreCase))
-            display = login.Display.Trim();
-        if (display.Length == 0)
-            display = user.Display.Trim();
-        var userName = login.Value.Trim();
-        if (userName.Length == 0)
-            userName = login.Display.Trim();
-        return new WorkEffortMembership(group, new WorkEffortPerson(userId, display, userName));
+        var merged = new List<WorkEffortPerson>(people.Count);
+        foreach (var person in people)
+        {
+            if (!found.TryGetValue(person.SysId, out var known))
+            {
+                merged.Add(person);
+                continue;
+            }
+
+            var name = person.Name.Length > 0 && !person.Name.Equals(person.SysId, StringComparison.OrdinalIgnoreCase)
+                ? person.Name
+                : known.Name.Length > 0 ? known.Name : person.Name;
+            var user = person.UserName.Length > 0 ? person.UserName : known.User;
+            merged.Add(new WorkEffortPerson(person.SysId, name, user));
+        }
+
+        return (merged, null);
     }
 
-    /// <summary>
-    /// Aggregate group-by can count opens or resolves, but an update is dropped when the same
-    /// person opened, closed, or resolved that record, and a close counts only when they did
-    /// not also resolve it. Those rules need the user and date columns on each record, so this
-    /// pages that narrow list instead of full ticket bodies.
-    /// </summary>
-    private async Task<(List<WorkEffortTouch> Touches, bool Truncated, string? Problem)> LoadWorkEffortTableAsync(
+    private async Task<(bool Truncated, string? Problem)> LoadWorkEffortTableAsync(
         IReadOnlyList<WorkEffortTablePlan> plans,
         IReadOnlyList<WorkEffortPerson> people,
         WorkEffortWindow window,
         int safetyCap,
+        int[] totals,
+        WorkEffortPace pace,
+        IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {
         ServiceNowException? rejected = null;
         for (var index = 0; index < plans.Count; index++)
         {
-            var plan = plans[index];
+            var attempt = new WorkEffortAttempt(people, window, safetyCap);
+            pace.BeginTable();
             try
             {
-                var loaded = await LoadWorkEffortPlanAsync(plan, people, window, safetyCap, cancellationToken).ConfigureAwait(false);
-                return (loaded.Touches, loaded.Truncated, null);
+                var truncated = await LoadWorkEffortPlanAsync(plans[index], people, window, attempt, pace, progress, cancellationToken).ConfigureAwait(false);
+                attempt.FoldInto(totals);
+                pace.CompleteTable();
+                progress?.Report(pace.Snapshot());
+                return (truncated || attempt.Truncated, null);
             }
             catch (ServiceNowException ex) when (ex.StatusCode == 400 && index < plans.Count - 1)
             {
+                pace.CancelTable();
                 rejected = ex;
             }
             catch (ServiceNowException ex)
             {
+                pace.CancelTable();
                 rejected = ex;
                 break;
             }
         }
 
+        pace.CompleteTable();
+        progress?.Report(pace.Snapshot());
         var label = plans.Count == 0 ? "Records" : TableLabel(plans[0].Kind);
         var detail = rejected is null ? "" : " " + rejected.Message;
-        return ([], false, label + " could not be counted." + detail);
+        return (false, label + " could not be counted." + detail);
     }
 
-    private async Task<(List<WorkEffortTouch> Touches, bool Truncated)> LoadWorkEffortPlanAsync(
+    private async Task<bool> LoadWorkEffortPlanAsync(
         WorkEffortTablePlan plan,
         IReadOnlyList<WorkEffortPerson> people,
         WorkEffortWindow window,
-        int safetyCap,
+        WorkEffortAttempt attempt,
+        WorkEffortPace pace,
+        IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var touches = new List<WorkEffortTouch>();
         var truncated = false;
         foreach (var chunk in WorkEffortQuery.Chunks(people))
         {
-            if (touches.Count >= safetyCap)
+            if (!attempt.WantsMore)
             {
                 truncated = true;
                 break;
             }
 
-            var room = safetyCap - touches.Count;
             var clause = WorkEffortQuery.Clause(plan, chunk, window);
-            var hit = await PageRowsAsync(
-                plan.Table,
-                plan.Fields,
-                clause,
-                room,
-                null,
-                row =>
-                {
-                    var touch = ReadTouch(row, plan.Kind);
-                    if (touch is not null)
-                        touches.Add(touch);
-                },
-                cancellationToken).ConfigureAwait(false);
-            if (hit)
+            if (WorkEffortQuery.IsUnscoped(clause))
+                continue;
+
+            var hit = await PageWorkEffortAsync(plan, clause, attempt, pace, progress, cancellationToken).ConfigureAwait(false);
+            truncated |= hit;
+            if (attempt.Truncated)
                 truncated = true;
         }
 
-        return (touches, truncated);
+        return truncated;
+    }
+
+    /// <summary>
+    /// One page at a time, one request at a time. Counts are folded into the attempt
+    /// and the JSON document is dropped before the next page is asked for.
+    /// display_value=all stays on because opened_by has to be the sys_id and the
+    /// date has to be the local display time. The field list is only those columns.
+    /// </summary>
+    private async Task<bool> PageWorkEffortAsync(
+        WorkEffortTablePlan plan,
+        string query,
+        WorkEffortAttempt attempt,
+        WorkEffortPace pace,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var offset = 0;
+        var received = 0;
+        int? total = null;
+        var truncated = false;
+        while (attempt.WantsMore)
+        {
+            var limit = Math.Min(WorkEffortQuery.PageSize, Math.Max(1, attempt.Room));
+            var result = await GetListAsync(plan.Table, plan.Fields, query, limit, offset, cancellationToken).ConfigureAwait(false);
+            var stop = false;
+            using (result)
+            using (new WorkEffortQuietScope())
+            {
+                var rows = RequireArray(result.Document);
+                var count = rows.GetArrayLength();
+                var kept = 0;
+                foreach (var row in rows.EnumerateArray())
+                {
+                    var touch = ReadTouch(row, plan.Kind);
+                    if (!attempt.TakeRow(touch))
+                    {
+                        truncated = true;
+                        stop = true;
+                        break;
+                    }
+
+                    kept++;
+                }
+
+                received += count;
+                if (result.TotalCount is int reported)
+                    total = reported;
+                pace.AddPage(kept, total);
+                progress?.Report(pace.Snapshot());
+
+                var hasNext = !string.IsNullOrWhiteSpace(result.NextLink);
+                var linkOffset = TryReadOffset(result.NextLink);
+                var more = total is int expected && received < expected;
+                if (stop || count == 0)
+                {
+                    truncated |= more || hasNext;
+                    break;
+                }
+
+                if (total is int done && received >= done)
+                    break;
+
+                if (!more && !hasNext && count < limit)
+                    break;
+
+                var step = offset + count;
+                var nextOffset = step;
+                if (linkOffset > offset && (count >= limit || linkOffset <= step))
+                    nextOffset = linkOffset;
+
+                if (!attempt.WantsMore)
+                {
+                    truncated |= more || hasNext;
+                    break;
+                }
+
+                if (nextOffset <= offset)
+                {
+                    truncated |= more || hasNext || count >= limit;
+                    break;
+                }
+
+                offset = nextOffset;
+            }
+        }
+
+        if (!attempt.WantsMore && total is int expectedTotal && received < expectedTotal)
+            truncated = true;
+        return truncated;
     }
 
     private static WorkEffortTouch? ReadTouch(JsonElement row, WorkEffortKind kind)
     {
         var sysId = SnowField.Read(row, "sys_id").Value.Trim();
+        if (sysId.Length == 0)
+            sysId = SnowField.Read(row, "sys_id").Display.Trim();
         if (sysId.Length == 0)
             return null;
         var openedBy = SnowField.Read(row, "opened_by").Value.Trim();

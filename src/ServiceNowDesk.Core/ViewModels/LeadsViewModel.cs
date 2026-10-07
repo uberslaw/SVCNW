@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.WorkEffort;
 
 namespace ServiceNowDesk.ViewModels;
 
@@ -58,6 +59,24 @@ public partial class LeadsViewModel : ObservableObject
 
     public IReadOnlyList<string> SelectedMemberIds =>
         Members.Where(member => member.IsSelected).Select(member => member.SysId).ToArray();
+
+    /// <summary>
+    /// People ticked on My team. When the roster has not been drawn yet, the saved ticks are the team.
+    /// An empty roster with no saved ticks is an undefined team.
+    /// </summary>
+    public IReadOnlyList<WorkEffortPerson> DefinedTeam(IEnumerable<string>? savedIds = null)
+    {
+        if (Members.Count > 0)
+        {
+            return WorkEffortTeam.Normalize(
+                Members.Where(member => member.IsSelected)
+                    .Select(member => new WorkEffortPerson(member.SysId, member.Name, "")));
+        }
+
+        if (savedIds is null)
+            return [];
+        return WorkEffortTeam.Normalize(savedIds.Select(id => new WorkEffortPerson(id ?? "", id ?? "", "")));
+    }
 
     public void Show(LeadBoard board)
     {

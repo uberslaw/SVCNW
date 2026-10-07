@@ -49,4 +49,33 @@ public static class SampleWorkEffort
         var rows = WorkEffortScore.Build(people, Touches(localNow), window);
         return new WorkEffortReport(rows, WorkEffortWindow.CountsLabel(scale), "");
     }
+
+    public static IReadOnlyList<WorkEffortPerson> WithLogins(IReadOnlyList<WorkEffortPerson>? team)
+    {
+        var normalized = WorkEffortTeam.Normalize(team);
+        var known = new Dictionary<string, WorkEffortPerson>(StringComparer.OrdinalIgnoreCase)
+        {
+            [SignedIn.SysId] = SignedIn,
+            [Jordan.SysId] = Jordan,
+            [Riley.SysId] = Riley,
+            [Sam.SysId] = Sam
+        };
+        var people = new List<WorkEffortPerson>(normalized.Count);
+        foreach (var person in normalized)
+        {
+            if (!known.TryGetValue(person.SysId, out var match))
+            {
+                people.Add(person);
+                continue;
+            }
+
+            var name = person.Name.Length > 0 && !person.Name.Equals(person.SysId, StringComparison.OrdinalIgnoreCase)
+                ? person.Name
+                : match.Name;
+            var user = person.UserName.Length > 0 ? person.UserName : match.UserName;
+            people.Add(new WorkEffortPerson(person.SysId, name, user));
+        }
+
+        return people;
+    }
 }

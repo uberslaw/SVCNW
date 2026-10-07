@@ -77,7 +77,12 @@ public sealed record WorkEffortReport(IReadOnlyList<WorkEffortRow> Rows, string 
 {
     public const string EmptyGroupsMessage = "You are not in a group, so there is nobody to count.";
 
+    public const string DefineTeamMessage =
+        "Define your team on My team. Tick the people to include. Work Effort does not run until you do.";
+
     public static WorkEffortReport NoGroups() => new([], "", EmptyGroupsMessage);
+
+    public static WorkEffortReport NoTeam() => new([], "", DefineTeamMessage);
 }
 
 public static class WorkEffortRoster
@@ -151,73 +156,10 @@ public static class WorkEffortScore
         }
 
         var merged = Merge(touches);
-        var rows = new List<WorkEffortRow>(distinct.Count);
-        foreach (var person in distinct)
-        {
-            var incOpened = 0;
-            var incResolved = 0;
-            var incUpdated = 0;
-            var ritmOpened = 0;
-            var ritmResolved = 0;
-            var ritmUpdated = 0;
-            var imsOpened = 0;
-            var imsResolved = 0;
-            var imsUpdated = 0;
-            foreach (var touch in merged)
-            {
-                var opened = InWindow(touch.OpenedAt, window) && Same(person.SysId, touch.OpenedBySysId);
-                var resolved = InWindow(touch.ResolvedAt, window) && Same(person.SysId, touch.ResolvedBySysId);
-                var closed = InWindow(touch.ClosedAt, window) && Same(person.SysId, touch.ClosedBySysId);
-                var updated = InWindow(touch.UpdatedAt, window)
-                    && (Same(person.UserName, touch.UpdatedBy) || Same(person.SysId, touch.UpdatedBy))
-                    && !opened
-                    && !resolved
-                    && !closed;
-                var completed = resolved || closed;
-                switch (touch.Kind)
-                {
-                    case WorkEffortKind.RequestedItem:
-                        if (opened) ritmOpened++;
-                        if (completed) ritmResolved++;
-                        if (updated) ritmUpdated++;
-                        break;
-                    case WorkEffortKind.Interaction:
-                        if (opened) imsOpened++;
-                        if (completed) imsResolved++;
-                        if (updated) imsUpdated++;
-                        break;
-                    default:
-                        if (opened) incOpened++;
-                        if (completed) incResolved++;
-                        if (updated) incUpdated++;
-                        break;
-                }
-            }
-
-            var weighted = (incOpened + incResolved) * IncidentWeight
-                + (ritmOpened + ritmResolved) * RequestedItemWeight
-                + (imsOpened + imsResolved) * InteractionWeight
-                + (incUpdated + ritmUpdated + imsUpdated) * UpdateWeight;
-            rows.Add(new WorkEffortRow
-            {
-                Name = person.DisplayName,
-                IncOpened = incOpened,
-                IncResolved = incResolved,
-                IncUpdated = incUpdated,
-                RitmOpened = ritmOpened,
-                RitmResolved = ritmResolved,
-                RitmUpdated = ritmUpdated,
-                ImsOpened = imsOpened,
-                ImsResolved = imsResolved,
-                ImsUpdated = imsUpdated,
-                Weighted = weighted
-            });
-        }
-
-        return rows
-            .OrderByDescending(row => row.Weighted)
-            .ThenBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var attempt = new WorkEffortAttempt(distinct, window, int.MaxValue);
+        foreach (var touch in merged)
+            attempt.TakeRow(touch);
+        return attempt.ToRows();
     }
 
     public static List<WorkEffortTouch> Merge(IEnumerable<WorkEffortTouch> touches)
@@ -236,15 +178,5 @@ public static class WorkEffortScore
         }
 
         return map.Values.ToList();
-    }
-
-    private static bool InWindow(DateTime? moment, WorkEffortWindow window) =>
-        moment is DateTime value && window.Contains(value);
-
-    private static bool Same(string? left, string? right)
-    {
-        var a = (left ?? "").Trim();
-        var b = (right ?? "").Trim();
-        return a.Length > 0 && a.Equals(b, StringComparison.OrdinalIgnoreCase);
     }
 }

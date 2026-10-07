@@ -25,7 +25,7 @@
             </StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12">
                 <TextBlock.Text>
-                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. The ticked names are saved on this PC. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work Effort counts everyone in your groups."/>
+                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. The ticked names are saved on this PC. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work Effort counts only the people you tick."/>
                 </TextBlock.Text>
             </TextBlock>
 
@@ -142,7 +142,7 @@
             <StackPanel Visibility="{Binding ShowWorkEffort, Converter={StaticResource BoolVis}}">
                 <TextBlock Text="Work Effort" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                           Text="Everyone in your groups, including you, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. An update that did not open, close, or resolve that record is 0.3. Closing counts as the resolve when that person did not also resolve it. Figures load the first time you open a time scale each day. Refresh reloads the scale you are looking at. Leaving this page does not stop the load."/>
+                           Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. An update that did not open, close, or resolve that record is 0.3. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Figures load the first time you open a time scale each day. Refresh reloads the scale you are looking at. Leaving this page does not stop the load."/>
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>

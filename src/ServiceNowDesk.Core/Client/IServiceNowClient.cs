@@ -82,17 +82,23 @@ public interface IServiceNowClient : IDisposable
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Opened, resolved, and updated counts for people in the signed-in user's groups.
+    /// Opened, resolved, and updated counts for the lead's defined team.
+    /// An empty team returns the prompt and does not call ServiceNow.
     /// IMS is the walk-up <c>interaction</c> table.
-    /// </summary>
-    Task<WorkEffortReport> GetWorkEffortAsync(WorkEffortScale scale, DateTime localNow, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Same count, reporting incidents, then request items, then interactions as each table finishes.
     /// </summary>
     Task<WorkEffortReport> GetWorkEffortAsync(
         WorkEffortScale scale,
         DateTime localNow,
+        IReadOnlyList<WorkEffortPerson> team,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Same count. While it runs, progress is the minute estimate and a bar.
+    /// </summary>
+    Task<WorkEffortReport> GetWorkEffortAsync(
+        WorkEffortScale scale,
+        DateTime localNow,
+        IReadOnlyList<WorkEffortPerson> team,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken);
 }

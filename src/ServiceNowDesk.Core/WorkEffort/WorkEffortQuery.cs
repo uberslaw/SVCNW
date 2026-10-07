@@ -38,6 +38,8 @@ public sealed record WorkEffortTablePlan(
         Plan("interaction", WorkEffortKind.Interaction, openedBy: false, openedFor: true, resolved: false, closed: true)
     ];
 
+    public static IReadOnlyList<WorkEffortTablePlan> IncidentPlans { get; } = [Incident];
+
     private static WorkEffortTablePlan Plan(string table, WorkEffortKind kind, bool openedBy, bool openedFor, bool resolved, bool closed)
     {
         var fields = new List<string> { "sys_id" };
@@ -68,6 +70,8 @@ public static class WorkEffortQuery
 {
     public const int SafetyCap = 8000;
     public const int ChunkSize = 40;
+    /// <summary>Small pages keep each JSON body off the large-object heap.</summary>
+    public const int PageSize = 30;
     public const string CapNotice = "These figures are partial. The safety cap was reached.";
 
     public static IEnumerable<IReadOnlyList<WorkEffortPerson>> Chunks(IReadOnlyList<WorkEffortPerson> people)
@@ -115,6 +119,21 @@ public static class WorkEffortQuery
         if (parts.Count == 0)
             return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
         return string.Join("^NQ", parts) + "^ORDERBYsys_id";
+    }
+
+    public static bool IsUnscoped(string? clause) =>
+        (clause ?? "").StartsWith("sys_id=NO_WORK_EFFORT", StringComparison.Ordinal);
+
+    public static bool HasScope(IReadOnlyList<WorkEffortPerson> people)
+    {
+        ArgumentNullException.ThrowIfNull(people);
+        foreach (var person in people)
+        {
+            if (SafeId(person.SysId).Length > 0 || SafeName(person.UserName).Length > 0)
+                return true;
+        }
+
+        return false;
     }
 
     public static string Status(WorkEffortScale scale, bool truncated, IEnumerable<string>? problems)

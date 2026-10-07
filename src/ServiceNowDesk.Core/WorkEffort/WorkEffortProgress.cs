@@ -1,8 +1,8 @@
 namespace ServiceNowDesk.WorkEffort;
 
 /// <summary>
-/// Measured progress for one Work Effort query: incidents, then request items, then interactions.
-/// <see cref="Completed"/> is how many of those tables have finished.
+/// Progress for one Work Effort run. <see cref="Completed"/> and <see cref="Total"/> drive the bar.
+/// <see cref="Status"/> is the minute estimate while the run is still going.
 /// </summary>
 public readonly record struct WorkEffortProgress(int Completed, int Total, string Status)
 {
@@ -10,16 +10,13 @@ public readonly record struct WorkEffortProgress(int Completed, int Total, strin
 
     public static WorkEffortProgress Loading(WorkEffortScale scale, int completedTables)
     {
+        _ = scale;
         var done = completedTables < 0 ? 0 : completedTables;
-        if (done > Steps - 1)
-            done = Steps - 1;
-        var table = done switch
-        {
-            0 => "incidents",
-            1 => "request items",
-            _ => "interactions"
-        };
-        return new WorkEffortProgress(done, Steps, "Loading " + table + " for " + Phrase(scale) + ".");
+        if (done > Steps)
+            done = Steps;
+        var open = done < Steps;
+        var bar = WorkEffortEstimate.Bar(done, Steps, open, 0, null);
+        return new WorkEffortProgress(bar, WorkEffortEstimate.BarMaximum, WorkEffortEstimate.Text(1));
     }
 
     public static string Phrase(WorkEffortScale scale) => scale switch

@@ -1403,14 +1403,24 @@ public partial class MainViewModel : ObservableObject
     private int _workEffortGeneration;
 
     /// <summary>
-    /// Loads the selected scale. Leaving Leads or switching to My team or Regional does not cancel it.
-    /// Refresh, or choosing another time scale, cancels only the previous Work Effort query.
-    /// A finished background load is cached for the local day.
+    /// Loads the selected scale for the people ticked on My team. Leaving Leads or switching to
+    /// My team or Regional does not cancel it. Refresh, or choosing another time scale, cancels
+    /// only the previous Work Effort query. Coming back while it is running does not start a second one.
+    /// A finished background load is cached for the local day and that team.
     /// </summary>
     private async Task LoadWorkEffortAsync(bool force)
     {
         if (Leads.Area != LeadArea.WorkEffort)
             return;
+
+        var team = Leads.DefinedTeam(Connection.LeadTeamMemberIds);
+        if (team.Count == 0)
+        {
+            if (Leads.WorkEffort.IsLoading)
+                return;
+            Leads.WorkEffort.Show(WorkEffortReport.NoTeam());
+            return;
+        }
 
         var client = _client;
         if (client is null || !IsConnected)
@@ -1421,7 +1431,8 @@ public partial class MainViewModel : ObservableObject
 
         var scale = Leads.WorkEffort.Scale;
         var localNow = DateTime.Now;
-        if (!Leads.WorkEffort.BeginLoad(localNow, force))
+        var teamKey = WorkEffortTeam.Key(team);
+        if (!Leads.WorkEffort.BeginLoad(localNow, force, teamKey))
             return;
 
         var generation = BeginWorkEffortLoad();
@@ -1430,12 +1441,22 @@ public partial class MainViewModel : ObservableObject
         var sink = new WorkEffortProgressSink(this, generation, client, scale);
         try
         {
-            var report = await client.GetWorkEffortAsync(scale, localNow, sink, cts.Token).ConfigureAwait(false);
+            var report = await Task.Run(
+                () => client.GetWorkEffortAsync(scale, localNow, team, sink, cts.Token),
+                cts.Token).ConfigureAwait(false);
             PostToUi(() =>
             {
                 if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
                     return;
-                Leads.WorkEffort.Remember(scale, localNow, report);
+                if (!string.Equals(WorkEffortTeam.Key(Leads.DefinedTeam(Connection.LeadTeamMemberIds)), teamKey, StringComparison.Ordinal))
+                {
+                    Leads.WorkEffort.AbandonLoad();
+                    if (Leads.Area == LeadArea.WorkEffort)
+                        _ = LoadWorkEffortAsync(force: false);
+                    return;
+                }
+
+                Leads.WorkEffort.Remember(scale, localNow, report, teamKey);
             });
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)

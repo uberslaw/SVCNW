@@ -10,6 +10,7 @@ public partial class WorkEffortViewModel : ObservableObject
 {
     private readonly Dictionary<WorkEffortScale, WorkEffortCacheEntry> _cache = [];
     private DateOnly? _cachedDay;
+    private string _loadingTeam = "";
 
     public WorkEffortViewModel()
     {
@@ -30,34 +31,36 @@ public partial class WorkEffortViewModel : ObservableObject
     [ObservableProperty] private bool hasRows;
     [ObservableProperty] private bool isLoading;
     [ObservableProperty] private int progressValue;
-    [ObservableProperty] private int progressMaximum = WorkEffortProgress.Steps;
+    [ObservableProperty] private int progressMaximum = WorkEffortEstimate.BarMaximum;
 
     /// <summary>
-    /// True when the screen needs a query. A cached scale from the same local day is shown and returns false.
-    /// A load already running for the selected scale also returns false, so leaving the page and coming back
-    /// does not start a second query. A new local day drops every cached scale. Force reloads only the scale
-    /// that is selected.
+    /// True when the screen needs a query. A cached scale from the same local day and the same team
+    /// is shown and returns false. A load already running for the selected scale also returns false,
+    /// so leaving the page and coming back does not start a second query. A new local day drops every
+    /// cached scale. Force reloads only the scale that is selected.
     /// </summary>
-    public bool BeginLoad(DateTime localNow, bool force)
+    public bool BeginLoad(DateTime localNow, bool force, string? teamKey = null)
     {
+        var key = teamKey ?? "";
         if (!force && IsLoading && _loadingScale == Scale)
             return false;
-        if (!force && TryShowCached(localNow))
+        if (!force && TryShowCached(localNow, key))
             return false;
 
+        _loadingTeam = key;
         MarkLoading();
         return true;
     }
 
-    public bool TryShowCached(DateTime localNow)
+    public bool TryShowCached(DateTime localNow, string? teamKey = null)
     {
-        if (!TryGet(localNow, Scale, out var entry))
+        if (!TryGet(localNow, Scale, teamKey ?? "", out var entry))
             return false;
         ShowEntry(entry);
         return true;
     }
 
-    public void Remember(WorkEffortScale scale, DateTime localNow, WorkEffortReport report)
+    public void Remember(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string? teamKey = null)
     {
         ArgumentNullException.ThrowIfNull(report);
         var clock = WorkEffortWindow.Clock(localNow);
@@ -68,10 +71,41 @@ public partial class WorkEffortViewModel : ObservableObject
             _cachedDay = day;
         }
 
-        var entry = new WorkEffortCacheEntry(clock, report);
+        var key = teamKey ?? "";
+        var entry = new WorkEffortCacheEntry(clock, report, key);
         _cache[scale] = entry;
-        if (scale == Scale)
+        if (scale == Scale && string.Equals(key, _loadingTeam, StringComparison.Ordinal))
             ShowEntry(entry);
+    }
+
+    /// <summary>
+    /// Queues the report and returns before the rows are counted. An empty team shows the prompt
+    /// and does not call <paramref name="tables"/>.
+    /// </summary>
+    public Task<WorkEffortReport> StartBackground(
+        DateTime localNow,
+        IReadOnlyList<WorkEffortPerson> team,
+        Func<int, IEnumerable<WorkEffortTouch>> tables,
+        CancellationToken cancellationToken,
+        int safetyCap = WorkEffortQuery.SafetyCap)
+    {
+        ArgumentNullException.ThrowIfNull(tables);
+        var people = WorkEffortTeam.Normalize(team);
+        if (people.Count == 0)
+        {
+            var empty = WorkEffortReport.NoTeam();
+            Show(empty);
+            return Task.FromResult(empty);
+        }
+
+        var key = WorkEffortTeam.Key(people);
+        var scale = Scale;
+        if (!BeginLoad(localNow, force: true, key))
+            return Task.FromResult(WorkEffortReport.NoTeam());
+
+        var window = WorkEffortWindow.For(scale, localNow);
+        var progress = new Progress<WorkEffortProgress>(update => Apply(scale, update));
+        return WorkEffortEngine.Start(people, window, tables, progress, cancellationToken, safetyCap);
     }
 
     public void Apply(WorkEffortScale scale, WorkEffortProgress progress)
@@ -110,9 +144,9 @@ public partial class WorkEffortViewModel : ObservableObject
         AsOf = "";
         _loadingScale = Scale;
         ProgressValue = 0;
-        ProgressMaximum = WorkEffortProgress.Steps;
+        ProgressMaximum = WorkEffortEstimate.BarMaximum;
         IsLoading = true;
-        Status = WorkEffortProgress.Loading(Scale, 0).Status;
+        Status = WorkEffortEstimate.Text(1);
     }
 
     public void Show(WorkEffortReport report)
@@ -150,8 +184,9 @@ public partial class WorkEffortViewModel : ObservableObject
         Status = "";
         IsLoading = false;
         ProgressValue = 0;
-        ProgressMaximum = WorkEffortProgress.Steps;
+        ProgressMaximum = WorkEffortEstimate.BarMaximum;
         _loadingScale = null;
+        _loadingTeam = "";
     }
 
     [RelayCommand]
@@ -163,13 +198,15 @@ public partial class WorkEffortViewModel : ObservableObject
         ScaleChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private bool TryGet(DateTime localNow, WorkEffortScale scale, out WorkEffortCacheEntry entry)
+    private bool TryGet(DateTime localNow, WorkEffortScale scale, string teamKey, out WorkEffortCacheEntry entry)
     {
         entry = default;
         var day = DateOnly.FromDateTime(WorkEffortWindow.Clock(localNow));
         if (_cachedDay != day)
             return false;
-        return _cache.TryGetValue(scale, out entry);
+        if (!_cache.TryGetValue(scale, out entry))
+            return false;
+        return string.Equals(entry.TeamKey, teamKey, StringComparison.Ordinal);
     }
 
     private void ShowEntry(WorkEffortCacheEntry entry)
@@ -178,5 +215,5 @@ public partial class WorkEffortViewModel : ObservableObject
         AsOf = "As of " + entry.LoadedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
     }
 
-    private readonly record struct WorkEffortCacheEntry(DateTime LoadedAt, WorkEffortReport Report);
+    private readonly record struct WorkEffortCacheEntry(DateTime LoadedAt, WorkEffortReport Report, string TeamKey);
 }
