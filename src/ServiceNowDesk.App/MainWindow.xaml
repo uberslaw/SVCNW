@@ -241,6 +241,9 @@
                 <MenuItem Header="Help" Padding="12,6">
                     <MenuItem Header="Documentation" Padding="12,8" Click="Documentation_Click"/>
                     <MenuItem Header="Notifications" Padding="12,8" Click="NotificationsHelp_Click"/>
+                    <MenuItem Header="Tutorial" Padding="12,8">
+                        <MenuItem Header="Guided setup" Padding="12,8" Click="GuidedSetup_Click"/>
+                    </MenuItem>
                 </MenuItem>
             </Menu>
         </Border>
@@ -253,7 +256,7 @@
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Bottom" Margin="20,8,16,16" Foreground="{StaticResource NavMutedBrush}" FontSize="11" TextWrapping="Wrap"
                            Text="Ctrl+K search&#10;Ctrl+N new&#10;Ctrl+S save&#10;Ctrl+Enter post note&#10;Ctrl+Shift+R resolve&#10;Ctrl+8 walk-up&#10;Ctrl+9 notifications&#10;F5 refresh"/>
-                <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding Navigation}">
+                <ItemsControl x:Name="NavList" Margin="0,8,0,0" ItemsSource="{Binding Navigation}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <RadioButton Style="{StaticResource NavButton}"
@@ -395,7 +398,7 @@
                     <views:CatalogView DataContext="{Binding Catalog}"/>
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Connection}">
-                    <views:ConnectionView DataContext="{Binding}"/>
+                    <views:ConnectionView x:Name="ConnectionPage" DataContext="{Binding}"/>
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Legend}">
                     <views:LegendView DataContext="{Binding}"/>
@@ -412,7 +415,7 @@
         </Grid>
 
         <Border Background="#C0101718" Visibility="{Binding Startup.ShowScreen, Converter={StaticResource BoolVis}}">
-            <Border Width="680" MaxHeight="520" VerticalAlignment="Center" HorizontalAlignment="Center" Background="#102226" Padding="20" CornerRadius="10">
+            <Border x:Name="SplashCard" Width="680" MaxHeight="520" VerticalAlignment="Center" HorizontalAlignment="Center" Background="#102226" Padding="20" CornerRadius="10">
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12" LastChildFill="True">
                         <Button DockPanel.Dock="Right" Margin="16,0,0,0" Padding="14,6" Cursor="Hand"
@@ -486,5 +489,7 @@
                 </DockPanel>
             </Border>
         </Border>
+
+        <views:GuidedSetupOverlay/>
     </Grid>
 </Window>

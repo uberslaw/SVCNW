@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
+using ServiceNowDesk.GuidedSetup;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Navigation;
 using ServiceNowDesk.Services;
@@ -204,8 +205,19 @@ public partial class MainViewModel : ObservableObject
             if (args.PropertyName == nameof(ConnectionViewModel.LeadsEnabled))
                 RebuildNavigation();
         };
+        Guided = new GuidedSetupController(
+            PersistGuidedSetup,
+            () => DeskNavigation.Visible(Connection.LeadsEnabled).ToList(),
+            () => !Connection.LeadsEnabled,
+            () => BrowserSignInOptionLabel(Connection),
+            () => Connection.AuthMode,
+            () => Startup.ShowScreen);
+        Guided.StartApplied += OnGuidedStart;
+        Startup.PropertyChanged += OnStartupChanged;
         RebuildNavigation();
     }
+
+    public GuidedSetupController Guided { get; }
 
     public ObservableCollection<DeskNavEntry> Navigation { get; } = [];
 
@@ -291,7 +303,10 @@ public partial class MainViewModel : ObservableObject
         NotificationSettings.Load(Connection.Notifications);
         Legend.Load(Connection.Highlights);
         _rows.Use(Connection.Highlights);
-        if (BrowserSignInClock.IsSavedSessionExpired(settings, DateTimeOffset.UtcNow))
+        var expired = BrowserSignInClock.IsSavedSessionExpired(settings, DateTimeOffset.UtcNow);
+        Guided.Load(Connection.GuidedSetupOffer, Connection.GuidedSetupFinished);
+        Guided.ConsiderLaunch(signedIn: !expired && ShouldAutoConnect(settings));
+        if (expired)
         {
             AbandonExpiredBrowserSession();
             return;
@@ -428,17 +443,23 @@ public partial class MainViewModel : ObservableObject
             Connection.SessionExpiresAt = clock.ExpiresAtUtc;
             _store.Save(Connection.BuildSettings());
             await ConnectAsync();
+            if (IsConnected)
+                Guided.SignInSucceeded(Startup.ShowScreen);
+            else
+                Guided.SignInFailed();
         }
         catch (BrowserSignInCanceledException)
         {
             if (!IsConnected)
                 StatusMessage = "Not connected.";
+            Guided.SignInFailed();
         }
         catch (Exception ex)
         {
             ErrorMessage = WorkspaceMessages.Describe(ex);
             if (!IsConnected)
                 StatusMessage = "Not connected.";
+            Guided.SignInFailed();
         }
         finally
         {

@@ -1,4 +1,5 @@
 using ServiceNowDesk.Alerts;
+using ServiceNowDesk.GuidedSetup;
 
 namespace ServiceNowDesk.Models;
 
@@ -250,6 +251,15 @@ public sealed class DeskSettings
     /// Null means every colour uses <see cref="LegendIntensity"/>, or the closest original-swatch position when that is missing too.
     /// </summary>
     public Dictionary<string, int>? LegendColorIntensities { get; set; }
+
+    /// <summary>
+    /// Last launch-offer answer. <see cref="GuidedSetupOfferChoice.NotThisTime"/> asks again next launch.
+    /// <see cref="GuidedSetupOfferChoice.DontAskAgain"/> never auto-prompts. Help can still start the tour.
+    /// </summary>
+    public GuidedSetupOfferChoice GuidedSetupOffer { get; set; }
+
+    /// <summary>True after Exit or the last Next. Launch does not auto-prompt again.</summary>
+    public bool GuidedSetupFinished { get; set; }
 }
 
 public sealed class ServiceNowSession

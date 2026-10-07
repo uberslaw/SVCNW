@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
+using ServiceNowDesk.GuidedSetup;
 using ServiceNowDesk.Models;
 
 namespace ServiceNowDesk.ViewModels;
@@ -66,6 +67,10 @@ public partial class ConnectionViewModel : ObservableObject
     /// <summary>True when <see cref="HardwareOfficeLocations"/> was set with Override office.</summary>
     public bool HardwareOfficeOverride { get; private set; }
 
+    public GuidedSetupOfferChoice GuidedSetupOffer { get; private set; }
+
+    public bool GuidedSetupFinished { get; private set; }
+
     partial void OnAuthModeChanged(ServiceNowAuthMode value) => SyncFlags();
     partial void OnUseSampleDataChanged(bool value) => SyncFlags();
     partial void OnSessionCookieChanged(string value) => UpdateBrowserStatus();
@@ -104,7 +109,15 @@ public partial class ConnectionViewModel : ObservableObject
             ? CopyHardwareOffices(HardwareOfficeLocations) ?? []
             : CopyHardwareOffices(HardwareOfficeLocations);
         settings.HardwareOfficeOverride = HardwareOfficeOverride;
+        settings.GuidedSetupOffer = GuidedSetupOffer;
+        settings.GuidedSetupFinished = GuidedSetupFinished;
         return settings;
+    }
+
+    public void RememberGuidedSetup(GuidedSetupOfferChoice choice, bool finished)
+    {
+        GuidedSetupOffer = choice;
+        GuidedSetupFinished = finished;
     }
 
     [RelayCommand]
@@ -195,6 +208,8 @@ public partial class ConnectionViewModel : ObservableObject
         LeadsTeamLocked = settings.LeadsEnabled && settings.LeadsTeamLocked;
         HardwareOfficeLocations = CopyHardwareOffices(settings.HardwareOfficeLocations);
         HardwareOfficeOverride = settings.HardwareOfficeOverride;
+        GuidedSetupOffer = settings.GuidedSetupOffer;
+        GuidedSetupFinished = settings.GuidedSetupFinished;
         LeadsPassword = "";
         LeadsAccessStatus = "";
         SyncFlags();

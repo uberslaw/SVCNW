@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ServiceNowDesk.Alerts;
+using ServiceNowDesk.GuidedSetup;
 using ServiceNowDesk.Models;
 
 namespace ServiceNowDesk.Services;
@@ -64,6 +65,8 @@ public static class DeskSettingsFile
         public bool LeadTeamSaved { get; set; }
         public bool LeadsEnabled { get; set; }
         public bool LeadsTeamLocked { get; set; }
+        public GuidedSetupOfferChoice GuidedSetupOffer { get; set; }
+        public bool GuidedSetupFinished { get; set; }
 
         public static Stored From(DeskSettings settings, Func<string?, string> protect) => new()
         {
@@ -101,7 +104,9 @@ public static class DeskSettingsFile
             LeadTeamMemberIds = settings.LeadTeamMemberIds is null ? [] : [.. settings.LeadTeamMemberIds],
             LeadTeamSaved = settings.LeadTeamSaved,
             LeadsEnabled = settings.LeadsEnabled,
-            LeadsTeamLocked = settings.LeadsTeamLocked
+            LeadsTeamLocked = settings.LeadsTeamLocked,
+            GuidedSetupOffer = settings.GuidedSetupOffer,
+            GuidedSetupFinished = settings.GuidedSetupFinished
         };
 
         public DeskSettings ToSettings(Func<string?, string> unprotect) => new()
@@ -140,7 +145,9 @@ public static class DeskSettingsFile
             LeadTeamMemberIds = LeadTeamMemberIds is null ? [] : [.. LeadTeamMemberIds],
             LeadTeamSaved = LeadTeamSaved,
             LeadsEnabled = LeadsEnabled,
-            LeadsTeamLocked = LeadsTeamLocked
+            LeadsTeamLocked = LeadsTeamLocked,
+            GuidedSetupOffer = GuidedSetupOffer,
+            GuidedSetupFinished = GuidedSetupFinished
         };
 
         private static Dictionary<string, int>? CopyIntensities(Dictionary<string, int>? intensities) =>
