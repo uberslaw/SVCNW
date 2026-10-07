@@ -289,6 +289,7 @@ public partial class LeadsViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowRoster));
         OnPropertyChanged(nameof(ShowQueues));
         OnPropertyChanged(nameof(ShowWorkEffort));
+        OnPropertyChanged(nameof(ShowTicketPane));
         OnPropertyChanged(nameof(ShowCheckboxes));
         OnPropertyChanged(nameof(ShowSavedNames));
         OnPropertyChanged(nameof(ShowSaveTeam));
@@ -314,6 +315,118 @@ public partial class LeadsViewModel : ObservableObject
         foreach (var name in names)
             SavedNames.Add(name);
     }
+
+    private RecordWorkspaceViewModel? _incidentEditor;
+    private RecordWorkspaceViewModel? _requestEditor;
+    private RecordWorkspaceViewModel? _requestedItemEditor;
+    private RecordWorkspaceViewModel? _walkUpEditor;
+    private string _openSysId = "";
+
+    public RecordWorkspaceViewModel? IncidentEditor => _incidentEditor;
+    public RecordWorkspaceViewModel? RequestEditor => _requestEditor;
+    public RecordWorkspaceViewModel? RequestedItemEditor => _requestedItemEditor;
+    public RecordWorkspaceViewModel? WalkUpEditor => _walkUpEditor;
+    public RecordWorkspaceViewModel? ActiveEditor { get; private set; }
+
+    public Action? OpenUnknownRecord { get; set; }
+
+    [ObservableProperty] private string editorPrompt = "Click a ticket.";
+    [ObservableProperty] private string editorIdentity = "";
+    [ObservableProperty] private bool showIncidentEditor;
+    [ObservableProperty] private bool showRequestEditor;
+    [ObservableProperty] private bool showRequestedItemEditor;
+    [ObservableProperty] private bool showWalkUpEditor;
+    [ObservableProperty] private bool showUnknownEditor;
+    [ObservableProperty] private string unknownNumber = "";
+    [ObservableProperty] private string unknownTitle = "";
+    public string UnknownTable { get; private set; } = "";
+    public string UnknownSysId { get; private set; } = "";
+
+    public bool ShowTicketPane => ShowQueues;
+
+    public void UseEditors(
+        RecordWorkspaceViewModel incidents,
+        RecordWorkspaceViewModel requests,
+        RecordWorkspaceViewModel requestedItems,
+        RecordWorkspaceViewModel walkUps)
+    {
+        Watch(_incidentEditor);
+        Watch(_requestEditor);
+        Watch(_requestedItemEditor);
+        Watch(_walkUpEditor);
+        _incidentEditor = incidents;
+        _requestEditor = requests;
+        _requestedItemEditor = requestedItems;
+        _walkUpEditor = walkUps;
+        if (incidents is not null)
+            incidents.RecordSaved += OnRecordSaved;
+        if (requests is not null)
+            requests.RecordSaved += OnRecordSaved;
+        if (requestedItems is not null)
+            requestedItems.RecordSaved += OnRecordSaved;
+        if (walkUps is not null)
+            walkUps.RecordSaved += OnRecordSaved;
+        OnPropertyChanged(nameof(IncidentEditor));
+        OnPropertyChanged(nameof(RequestEditor));
+        OnPropertyChanged(nameof(RequestedItemEditor));
+        OnPropertyChanged(nameof(WalkUpEditor));
+    }
+
+    public async Task OpenTicketAsync(AlertRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        _openSysId = row.SysId ?? "";
+        UnknownNumber = row.Number ?? "";
+        UnknownTitle = row.Title ?? "";
+        UnknownSysId = _openSysId;
+        UnknownTable = TableFor(row.Section);
+        ShowIncidentEditor = row.Section == DeskSection.Incidents;
+        ShowRequestEditor = row.Section == DeskSection.Requests;
+        ShowRequestedItemEditor = row.Section == DeskSection.RequestedItems;
+        ShowWalkUpEditor = row.Section == DeskSection.WalkUps;
+        ShowUnknownEditor = !ShowIncidentEditor && !ShowRequestEditor && !ShowRequestedItemEditor && !ShowWalkUpEditor;
+        EditorPrompt = "";
+        ActiveEditor = row.Section switch
+        {
+            DeskSection.Incidents => _incidentEditor,
+            DeskSection.Requests => _requestEditor,
+            DeskSection.RequestedItems => _requestedItemEditor,
+            DeskSection.WalkUps => _walkUpEditor,
+            _ => null
+        };
+        EditorIdentity = ActiveEditor?.TableName ?? (ShowUnknownEditor ? "unknown" : "");
+        OnPropertyChanged(nameof(ActiveEditor));
+        OnPropertyChanged(nameof(ShowTicketPane));
+        if (ActiveEditor is null || _openSysId.Length == 0)
+            return;
+        await ActiveEditor.OpenFromSearchAsync(_openSysId);
+    }
+
+    [RelayCommand]
+    private void OpenUnknownInBrowser() => OpenUnknownRecord?.Invoke();
+
+    private void Watch(RecordWorkspaceViewModel? editor)
+    {
+        if (editor is not null)
+            editor.RecordSaved -= OnRecordSaved;
+    }
+
+    private void OnRecordSaved(object? sender, SavedTicketFields fields)
+    {
+        if (string.IsNullOrWhiteSpace(fields.SysId))
+            return;
+        Board.PatchTicket(fields.SysId, fields.ShortDescription, fields.StateLabel, fields.AssigneeName, fields.AssigneeId);
+    }
+
+    private static string TableFor(DeskSection section) => section switch
+    {
+        DeskSection.Incidents => "incident",
+        DeskSection.Requests => "sc_request",
+        DeskSection.RequestedItems => "sc_req_item",
+        DeskSection.WalkUps => "interaction",
+        DeskSection.Knowledge => "kb_knowledge",
+        _ => "task"
+    };
 }
 
 public partial class LeadMemberModel : ObservableObject

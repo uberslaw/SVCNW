@@ -33,6 +33,9 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
 
     public ReferenceFieldModel Caller { get; }
     public AssignmentFields Assignment { get; }
+
+    protected override (string Name, string Id)? SavedAssignee() =>
+        (Assignment.SelectedMemberLabel, Assignment.MemberId);
     public ReferenceChoiceField ServiceOffering { get; }
     public ReferenceChoiceField ConfigurationItem { get; }
     public ObservableCollection<IncidentTemplate> Templates { get; } = [];

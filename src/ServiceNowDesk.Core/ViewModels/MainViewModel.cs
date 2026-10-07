@@ -12,6 +12,7 @@ namespace ServiceNowDesk.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly ISettingsStore _store;
+    private readonly IDesktopServices _desktop;
     private readonly IBrowserSignIn? _browserSignIn;
     private readonly IFormCatalogStore? _formCatalog;
     private readonly IDeskListStore? _lists;
@@ -75,6 +76,7 @@ public partial class MainViewModel : ObservableObject
         Func<IServiceNowClient>? sampleClientFactory = null)
     {
         _store = store;
+        _desktop = desktop;
         _browserSignIn = browserSignIn;
         _formCatalog = formCatalog;
         _clientFactory = clientFactory;
@@ -100,7 +102,9 @@ public partial class MainViewModel : ObservableObject
         Legend = new LegendSettingsViewModel();
         Leads = new LeadsViewModel();
         DailyWork = new DailyWorkViewModel(_dailyWork, personalTasks ?? new MemoryPersonalTaskStore());
-        Leads.Board.OpenRequested += (_, row) => _ = OpenNotificationAsync(row);
+        Leads.UseEditors(Incidents, Requests, RequestedItems, WalkUps);
+        Leads.OpenUnknownRecord = OpenUnknownLeadRecord;
+        Leads.Board.OpenRequested += (_, row) => _ = Leads.OpenTicketAsync(row);
         DailyWork.OpenRequested += (_, row) => _ = OpenDailyWorkAsync(row);
         DailyWork.IncidentRequested += (_, row) => NoteConvertTask = ConvertNoteAsync(row, incident: true);
         DailyWork.RequestedItemRequested += (_, row) => NoteConvertTask = ConvertNoteAsync(row, incident: false);
@@ -703,6 +707,17 @@ public partial class MainViewModel : ObservableObject
     {
         _watch.Acknowledge();
         Notifications.RefreshAcknowledgement(_watch);
+    }
+
+    private void OpenUnknownLeadRecord()
+    {
+        if (_client?.InstanceUri is null || string.IsNullOrWhiteSpace(Leads.UnknownSysId))
+        {
+            StatusMessage = "Connect to a live instance to open this record in the browser.";
+            return;
+        }
+
+        _desktop.OpenUrl(ServiceNowLinks.Record(_client.InstanceUri, Leads.UnknownTable, Leads.UnknownSysId));
     }
 
     public Task OpenNotificationAsync(AlertRow row)

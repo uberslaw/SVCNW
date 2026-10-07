@@ -26,16 +26,27 @@ public sealed class LeadBoard
 
     public AlertSnapshot For(LeadArea area) => area == LeadArea.Regional ? Regional : Team;
 
-    public static LeadBoard Build(IEnumerable<WatchedRecord> records, DateTime now, IEnumerable<string>? teamMemberIds, string? groupName)
+    public static LeadBoard Build(
+        IEnumerable<WatchedRecord> records,
+        DateTime now,
+        IEnumerable<string>? teamMemberIds,
+        string? groupName,
+        IEnumerable<string>? offices = null)
     {
         ArgumentNullException.ThrowIfNull(records);
-        var rows = records.ToArray();
+        var rows = Distinct(records);
         var team = new HashSet<string>(
             (teamMemberIds ?? []).Select(id => id?.Trim() ?? "").Where(id => id.Length > 0),
             StringComparer.OrdinalIgnoreCase);
+        var officeNames = new HashSet<string>(
+            (offices ?? []).Select(office => office?.Trim() ?? "").Where(office => office.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
+        var regional = rows.Where(record => InGroup(record, groupName)).ToArray();
+        var assigned = rows.Where(record => AssignedToAny(record, team)).ToArray();
+        var teamInRegion = assigned.Where(record => InGroup(record, groupName)).ToArray();
         return new LeadBoard(
-            Snapshot(rows.Where(record => AssignedToAny(record, team)), now),
-            Snapshot(rows.Where(record => InGroup(record, groupName)), now));
+            Snapshot(assigned, teamInRegion, now, officeNames),
+            Snapshot(regional, regional, now, officeNames));
     }
 
     public static bool AssignedToAny(WatchedRecord record, IReadOnlySet<string> memberIds)
@@ -57,27 +68,74 @@ public sealed class LeadBoard
         return string.Equals(record.AssignmentGroupSysId?.Trim(), name, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static AlertSnapshot Snapshot(IEnumerable<WatchedRecord> records, DateTime now)
+    /// <summary>
+    /// Updated by caller and unattended count only tickets already in the region.
+    /// The other queues keep this view's own population.
+    /// </summary>
+    private static AlertSnapshot Snapshot(
+        IReadOnlyList<WatchedRecord> population,
+        IReadOnlyList<WatchedRecord> callerAndQuiet,
+        DateTime now,
+        IReadOnlySet<string> offices)
     {
-        var rows = records.ToArray();
+        var rows = population.ToArray();
+        var shared = callerAndQuiet.ToArray();
         var buckets = new Dictionary<AlertKind, AlertBucket>
         {
             [AlertKind.SlaBreaching] = AlertClassifier.Bucket(AlertKind.SlaBreaching, rows, now),
             [AlertKind.OnHoldPastFollowUp] = AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, rows, now),
-            [AlertKind.UpdatedByCaller] = CallerUpdates(rows),
+            [AlertKind.UpdatedByCaller] = CallerUpdates(shared, offices),
             [AlertKind.ReturnedWithNotes] = AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, rows, now),
-            [AlertKind.Unattended] = AlertClassifier.Bucket(AlertKind.Unattended, rows, now)
+            [AlertKind.Unattended] = Unattended(shared, now)
         };
         return new AlertSnapshot(buckets);
     }
 
-    private static AlertBucket CallerUpdates(IReadOnlyList<WatchedRecord> records)
+    private static AlertBucket CallerUpdates(IReadOnlyList<WatchedRecord> records, IReadOnlySet<string> offices)
     {
-        var rows = records
+        var rows = Distinct(records)
             .Where(record => AlertClassifier.IsStillOpen(record) && AlertClassifier.CallerMadeTheLatestUpdate(record))
+            .Where(record => InOffice(record, offices))
             .Select(record => AlertClassifier.ToRecord(record, AlertKind.UpdatedByCaller))
             .ToArray();
         return new AlertBucket(rows, rows.Length);
+    }
+
+    private static AlertBucket Unattended(IReadOnlyList<WatchedRecord> records, DateTime now)
+    {
+        var rows = Distinct(records)
+            .Where(record => AlertClassifier.IsUnattended(record, now))
+            .Select(record => AlertClassifier.ToRecord(record, AlertKind.Unattended))
+            .ToArray();
+        return new AlertBucket(rows, rows.Length);
+    }
+
+    /// <summary>
+    /// An empty office list does not hide tickets. A configured list must match the location name.
+    /// </summary>
+    private static bool InOffice(WatchedRecord record, IReadOnlySet<string> offices)
+    {
+        if (offices.Count == 0)
+            return true;
+        var location = record.Location?.Trim() ?? "";
+        return location.Length > 0 && offices.Contains(location);
+    }
+
+    private static WatchedRecord[] Distinct(IEnumerable<WatchedRecord> records)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var rows = new List<WatchedRecord>();
+        foreach (var record in records)
+        {
+            if (record is null)
+                continue;
+            var id = (record.SysId ?? "").Trim();
+            if (id.Length == 0 || !seen.Add(record.Section + "\n" + id))
+                continue;
+            rows.Add(record);
+        }
+
+        return rows.ToArray();
     }
 
     private static AlertSnapshot EmptySnapshot() => new(new Dictionary<AlertKind, AlertBucket>());

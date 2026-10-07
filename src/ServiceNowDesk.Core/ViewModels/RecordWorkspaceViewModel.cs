@@ -47,6 +47,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     public ObservableCollection<TicketRow> Items { get; } = [];
 
     public Action<TicketRow>? PrepareRow { get; set; }
+    public event EventHandler<SavedTicketFields>? RecordSaved;
     public ObservableCollection<JournalEntry> Journal { get; } = [];
     public ObservableCollection<Choice> ResolveChoices { get; } = [];
 
@@ -260,6 +261,13 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             IsNew = false;
             ShowUnsavedBanner = false;
             EditorMessage = "Saved " + Number + ".";
+            var assignee = SavedAssignee();
+            RecordSaved?.Invoke(this, new SavedTicketFields(
+                EditorSysId ?? "",
+                ShortDescription ?? "",
+                StateLabel ?? "",
+                assignee?.Name,
+                assignee?.Id));
             await RefreshAttachmentsAsync(CancellationToken.None);
         }
         catch (Exception ex)
@@ -635,6 +643,9 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     protected abstract void Restore();
     protected abstract Task SaveNewAsync(CancellationToken cancellationToken);
     protected abstract Task SaveExistingAsync(CancellationToken cancellationToken);
+
+    /// <summary>Assignee name and id after a save. Null when this record has no assignee field.</summary>
+    protected virtual (string Name, string Id)? SavedAssignee() => null;
     protected abstract Task ResolveRecordAsync(CancellationToken cancellationToken);
     protected virtual bool TryValidate(out string message)
     {
@@ -840,3 +851,5 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     partial void OnResolveNotesChanged(string value) => ConfirmResolveCommand.NotifyCanExecuteChanged();
     partial void OnHasEditorChanged(bool value) => NotifyCommands();
 }
+
+public sealed record SavedTicketFields(string SysId, string ShortDescription, string StateLabel, string? AssigneeName, string? AssigneeId);

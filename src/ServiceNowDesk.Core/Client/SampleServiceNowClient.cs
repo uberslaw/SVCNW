@@ -202,7 +202,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         });
         return new AlertReport(
             personal,
-            LeadBoard.Build(lead, now, search.TeamMemberIds, search.GroupName),
+            LeadBoard.Build(lead, now, search.TeamMemberIds, search.GroupName, search.Locations),
             DailyWorkBoard.From(watched, lead, now, userId, search.TeamMemberIds));
     }
 

@@ -29,6 +29,9 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
 
     public ReferenceFieldModel Caller { get; }
     public AssignmentFields Assignment { get; }
+
+    protected override (string Name, string Id)? SavedAssignee() =>
+        (Assignment.SelectedMemberLabel, Assignment.MemberId);
     public ObservableCollection<Choice> StateChoices { get; } = [];
     public ObservableCollection<Choice> TypeChoices { get; } = [];
 
