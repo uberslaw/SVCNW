@@ -184,7 +184,7 @@
                         <DockPanel>
                             <Ellipse DockPanel.Dock="Left" Width="12" Height="12" Margin="0,5,10,0" VerticalAlignment="Top" Fill="{StaticResource ReturnedBrush}"/>
                             <StackPanel>
-                                <TextBlock Text="Cyan · Returned with notes" Style="{StaticResource HelpQueueName}"/>
+                                <TextBlock Text="Cyan · Returned by DT" Style="{StaticResource HelpQueueName}"/>
                                 <TextBlock Style="{StaticResource HelpBody}" Margin="0"
                                            Text="The newest comment or work note is from someone other than the caller and the assignee."/>
                             </StackPanel>
@@ -218,9 +218,9 @@
                         <StackPanel>
                             <TextBlock Text="Also" Style="{StaticResource HelpHeading}"/>
                             <TextBlock Style="{StaticResource HelpBody}"
-                                       Text="Daily Work ranks what you should attend to among tickets assigned to you: SLA breaching, updated by the caller, a follow-up that has passed, unattended, and returned with notes. Every 5 minutes while connected, and when Daily Work opens, the desk checks for new unassigned incidents in your groups and the watched group and lists them at the top. The morning report is not replaced. My team uses the people ticked under Leads."/>
+                                       Text="Daily Work ranks what you should attend to among tickets assigned to you: SLA breaching, updated by the caller, a follow-up that has passed, unattended, and Returned by DT. Every 5 minutes while connected, and when Daily Work opens, the desk checks for new unassigned incidents in your groups and the watched group and lists them at the top. The morning report is not replaced. My team uses the people ticked under Leads."/>
                             <TextBlock Style="{StaticResource HelpBody}" Margin="0"
-                                       Text="Leads repeats SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets for the people you tick and for the whole watched group. Save team hides those checkboxes until Edit team. On that same page, beside My team and Regional, Work Effort counts opened, resolved, and updated incidents, request items, and walk-ups for the people on My team. If nobody is ticked, it asks you to define the team and does not call ServiceNow. While a time scale loads, it says how many minutes are left and a bar advances. That work stays off to the side so the desk remains usable. Leaving the page does not stop that load. The first open of a time scale each day loads it, later visits that day use the saved figures, and Refresh loads the scale you are looking at again. The as-of time is when those numbers were loaded."/>
+                                       Text="Leads repeats SLA breaching, on hold past follow-up, updated by caller, Returned by DT, and unattended tickets for the people you tick and for the whole watched group. Save team hides those checkboxes until Edit team. On that same page, beside My team and Regional, Work Effort counts opened, resolved, and updated incidents, request items, and walk-ups for the people on My team. If nobody is ticked, it asks you to define the team and does not call ServiceNow. While a time scale loads, it says how many minutes are left and a bar advances. That work stays off to the side so the desk remains usable. Leaving the page does not stop that load. The first open of a time scale each day loads it, later visits that day use the saved figures, and Refresh loads the scale you are looking at again. The as-of time is when those numbers were loaded."/>
                         </StackPanel>
                     </Border>
                 </StackPanel>

@@ -104,25 +104,15 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(watch);
-        var decision = watch.Observe(snapshot.Counts);
+        var counts = new Dictionary<AlertKind, int>();
+        foreach (var kind in AlertCatalog.All)
+            counts[kind] = DisplayCount(kind, snapshot.Bucket(kind));
+        var decision = watch.Observe(counts);
         foreach (var section in Sections)
-        {
-            var bucket = snapshot.Bucket(section.Kind);
-            section.Count = bucket.TotalCount;
-            section.Status = bucket.Status;
-            section.IsUnacknowledged = watch.IsUnacknowledged(section.Kind);
-            section.Replace(bucket.Rows);
-        }
+            WriteSection(section, snapshot.Bucket(section.Kind), watch.IsUnacknowledged(section.Kind));
 
         foreach (var circle in Circles)
-        {
-            var bucket = snapshot.Bucket(circle.Kind);
-            circle.Count = bucket.TotalCount;
-            circle.Status = bucket.Status;
-            circle.IsUnacknowledged = watch.IsUnacknowledged(circle.Kind);
-            if (!circle.IsUnacknowledged)
-                circle.IsJiggleCause = false;
-        }
+            WriteCircle(circle, snapshot.Bucket(circle.Kind), watch.IsUnacknowledged(circle.Kind));
 
         AnyUnacknowledged = watch.AnyUnacknowledged;
         PollError = "";
@@ -172,7 +162,58 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         RefreshWidget();
     }
 
-    public void NotePollError(string message) => PollError = message;
+    public void NotePollError(string message) => PollError = ShortPollError(message);
+
+    private int DisplayCount(AlertKind kind, AlertBucket bucket)
+    {
+        var previous = Sections.FirstOrDefault(section => section.Kind == kind)?.Count
+            ?? Circles.FirstOrDefault(circle => circle.Kind == kind)?.Count
+            ?? 0;
+        return Keep(previous, bucket) ? previous : bucket.TotalCount;
+    }
+
+    private static void WriteSection(AlertSectionModel section, AlertBucket bucket, bool unacknowledged)
+    {
+        if (Keep(section.Count, bucket))
+        {
+            section.Status = bucket.Status;
+            section.IsUnacknowledged = unacknowledged;
+            return;
+        }
+
+        section.Count = bucket.TotalCount;
+        section.Status = bucket.Status;
+        section.IsUnacknowledged = unacknowledged;
+        section.Replace(bucket.Rows);
+    }
+
+    private static void WriteCircle(AlertCircleModel circle, AlertBucket bucket, bool unacknowledged)
+    {
+        if (Keep(circle.Count, bucket))
+        {
+            circle.Status = bucket.Status;
+            circle.IsUnacknowledged = unacknowledged;
+            if (!unacknowledged)
+                circle.IsJiggleCause = false;
+            return;
+        }
+
+        circle.Count = bucket.TotalCount;
+        circle.Status = bucket.Status;
+        circle.IsUnacknowledged = unacknowledged;
+        if (!unacknowledged)
+            circle.IsJiggleCause = false;
+    }
+
+    private static bool Keep(int previous, AlertBucket bucket) =>
+        previous > 0 && bucket.TotalCount == 0 && !string.IsNullOrWhiteSpace(bucket.Status);
+
+    private static string ShortPollError(string? message)
+    {
+        if (ServiceNowException.IsQueryTooLong(message))
+            return ServiceNowException.QueryTooLongMessage;
+        return message ?? "";
+    }
 
     public IReadOnlyList<AlertKind> UnacknowledgedKinds =>
         Circles.Where(circle => circle.IsUnacknowledged).Select(circle => circle.Kind).ToArray();

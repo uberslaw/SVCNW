@@ -75,8 +75,8 @@ public static class HighlightCatalog
             Alert(
                 ReturnedWithNotes,
                 AlertKind.ReturnedWithNotes,
-                "Returned with notes",
-                "Light cyan is the same hue as the Returned with notes circle. The latest journal note is from someone other than the caller and the assignee.",
+                "Returned by DT",
+                "Light cyan is the same hue as the Returned by DT circle. The latest journal note is from someone other than the caller and the assignee.",
                 true),
             Alert(
                 Unattended,

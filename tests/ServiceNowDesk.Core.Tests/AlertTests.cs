@@ -593,7 +593,7 @@ public class AlertTests
     public void CategoryLabelsAndColorsStayDistinct()
     {
         Assert.Equal(
-            ["Assigned to me", "Group queue", "SLA breaching", "On hold past follow-up", "Updated by caller", "Returned with notes", "Unattended tickets"],
+            ["Assigned to me", "Group queue", "SLA breaching", "On hold past follow-up", "Updated by caller", "Returned by DT", "Unattended tickets"],
             AlertCatalog.All.Select(AlertCatalog.Title).ToArray());
         Assert.Equal(
             ["Green", "Amber", "Crimson", "Blue", "Violet", "Cyan", "Slate"],
@@ -1048,6 +1048,240 @@ public class AlertTests
         Assert.DoesNotContain("<", query);
         Assert.DoesNotContain("javascript:gs.nowDateTime", query);
     }
+
+    [Fact]
+    public void ReturnedByDtKeepsItsKeyAndSplitsRolesThatUsedToBeOneQuery()
+    {
+        Assert.Equal("returned-with-notes", HighlightCatalog.ReturnedWithNotes);
+        var legend = HighlightCatalog.Find(HighlightCatalog.ReturnedWithNotes);
+        Assert.NotNull(legend);
+        Assert.Equal("Returned by DT", legend.Title);
+        Assert.Contains("Returned by DT", legend.Explanation);
+        Assert.Equal("Returned by DT", AlertCatalog.Title(AlertKind.ReturnedWithNotes));
+
+        var groups = Enumerable.Range(0, 40).Select(index => index.ToString("x32")).ToArray();
+        var queries = AlertQueryBuilder.PopulationQueries(
+            "sample-user",
+            groups,
+            "Aus DT - Client Services",
+            ["Brisbane", "Gold Coast", "Townsville", "Cairns", "Maroochydore"]);
+        Assert.All(queries, query => Assert.True(query.Length <= AlertQueryBuilder.MaxQueryLength, query));
+        Assert.DoesNotContain(queries, query => query.Contains("^NQ", StringComparison.Ordinal));
+        Assert.Contains(queries, query => query.StartsWith("assigned_to=sample-user", StringComparison.Ordinal) && !query.Contains("assignment_group", StringComparison.Ordinal));
+        var groupQueries = queries.Where(query => query.Contains("assignment_groupIN", StringComparison.Ordinal)).ToArray();
+        Assert.True(groupQueries.Length > 1);
+        Assert.All(groupQueries, query =>
+        {
+            Assert.DoesNotContain("assigned_to=", query);
+            Assert.DoesNotContain("location.name", query);
+        });
+        Assert.Contains(queries, query => query.Contains("location.name", StringComparison.Ordinal) && !query.Contains("assignment_groupIN", StringComparison.Ordinal));
+        var packed = string.Join(",", groupQueries);
+        Assert.All(groups, id => Assert.Contains(id, packed, StringComparison.Ordinal));
+
+        var team = Enumerable.Range(0, 30).Select(index => "team" + index.ToString("D28")).ToArray();
+        var leads = AlertQueryBuilder.LeadQueries("Aus DT - Client Services", team);
+        Assert.DoesNotContain(leads, query => query.Contains("^NQ", StringComparison.Ordinal));
+        Assert.Contains(leads, query => query.Contains("assignment_group.name", StringComparison.Ordinal) && !query.Contains("assigned_to", StringComparison.Ordinal));
+        Assert.Contains(leads, query => query.Contains("assigned_toIN", StringComparison.Ordinal) && !query.Contains("location.name", StringComparison.Ordinal));
+        Assert.All(leads, query => Assert.True(query.Length <= AlertQueryBuilder.MaxQueryLength, query));
+
+        var ids = Enumerable.Range(0, 80).Select(index => index.ToString("x32")).ToArray();
+        var journals = AlertQueryBuilder.LatestJournalQueries(ids);
+        Assert.True(journals.Count > 1);
+        Assert.All(journals, query =>
+        {
+            Assert.True(query.Length <= AlertQueryBuilder.MaxQueryLength, query);
+            Assert.Contains("elementINcomments,work_notes", query);
+            Assert.DoesNotContain("^NQ", query);
+        });
+        Assert.Empty(AlertQueryBuilder.LatestJournalQueries([]));
+        Assert.Empty(AlertQueryBuilder.LeadQueries("   ", []));
+    }
+
+    [Fact]
+    public async Task ReturnedByDtFetchesPersonalRolesSeparatelyFromLeadAndRegional()
+    {
+        var groups = Enumerable.Range(0, 40).Select(index => index.ToString("x32")).ToArray();
+        var memberJson = string.Join(",", groups.Select(id => "{\"group\":{\"value\":\"" + id + "\",\"display_value\":\"Group\"}}"));
+        const string team = "cccccccccccccccccccccccccccccccc";
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? "");
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("{\"result\":[" + memberJson + "]}");
+            if (path.Contains("sys_journal_field", StringComparison.Ordinal))
+            {
+                if (query.Contains("inc-mine", StringComparison.Ordinal))
+                    return Api.Json(JournalAuthor("inc-mine", "casey.ng"));
+                return Api.Json("""{"result":[]}""");
+            }
+
+            if (path.Contains("/incident", StringComparison.Ordinal)
+                && query.Contains("caller_id", StringComparison.Ordinal)
+                && query.Contains("assigned_to=sample-user", StringComparison.Ordinal)
+                && !query.Contains("assigned_toIN", StringComparison.Ordinal))
+                return Api.Json(PopulationIncident("inc-mine", "INC0094001"));
+            if (path.Contains("/incident", StringComparison.Ordinal)
+                && query.Contains("assigned_toIN", StringComparison.Ordinal)
+                && query.Contains(team, StringComparison.Ordinal))
+                return Api.Json(PopulationIncident("inc-lead", "INC0094002", team, "sam.patel"));
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetAlertReportAsync(
+            new AlertSearch("sample-user", "Aus DT - Client Services", ["Brisbane"], [team]),
+            CancellationToken.None);
+
+        var decoded = handler.Calls.Select(call => (call.PathAndQuery, Query: QueryOf(call.PathAndQuery))).ToArray();
+        Assert.All(decoded, call => Assert.True(call.Query.Length <= AlertQueryBuilder.MaxQueryLength, call.Query));
+
+        var personal = decoded.Where(call =>
+            call.Query.Contains("assigned_to=sample-user", StringComparison.Ordinal)
+            && !call.Query.Contains("assigned_toIN", StringComparison.Ordinal)).ToArray();
+        Assert.NotEmpty(personal);
+        Assert.All(personal, call =>
+        {
+            Assert.DoesNotContain(team, call.Query);
+            Assert.DoesNotContain("^NQ", call.Query);
+            Assert.DoesNotContain("assignment_groupIN", call.Query);
+            Assert.DoesNotContain("sysparm_suppress_pagination_header", call.PathAndQuery);
+        });
+
+        var groupCalls = decoded.Where(call => call.Query.Contains("assignment_groupIN", StringComparison.Ordinal)).ToArray();
+        Assert.True(groupCalls.Length > 1);
+        Assert.All(groupCalls, call =>
+        {
+            Assert.DoesNotContain("assigned_to=", call.Query);
+            Assert.DoesNotContain("location.name", call.Query);
+            Assert.DoesNotContain("^NQ", call.Query);
+            Assert.DoesNotContain(team, call.Query);
+        });
+        Assert.Contains(groupCalls, call => call.PathAndQuery.Contains("sysparm_suppress_pagination_header=true", StringComparison.Ordinal));
+
+        var regional = decoded.Where(call =>
+            call.Query.Contains("assignment_group.name", StringComparison.Ordinal)
+            && !call.Query.Contains("location.name", StringComparison.Ordinal)).ToArray();
+        Assert.NotEmpty(regional);
+        Assert.All(regional, call =>
+        {
+            Assert.DoesNotContain("assigned_to=sample-user", call.Query);
+            Assert.DoesNotContain("^NQ", call.Query);
+        });
+
+        var journals = decoded.Where(call => call.PathAndQuery.Contains("sys_journal_field", StringComparison.Ordinal)).Select(call => call.Query).ToArray();
+        Assert.Contains(journals, query => query.Contains("inc-mine", StringComparison.Ordinal) && !query.Contains("inc-lead", StringComparison.Ordinal));
+        Assert.Contains(journals, query => query.Contains("inc-lead", StringComparison.Ordinal) && !query.Contains("inc-mine", StringComparison.Ordinal));
+        Assert.Equal("INC0094001", Assert.Single(report.Personal.Bucket(AlertKind.ReturnedWithNotes).Rows).Number);
+    }
+
+    [Fact]
+    public async Task AFailedPopulationQueryKeepsTheRowsFromTheShorterRequest()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? "");
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
+            if (path.Contains("sys_journal_field", StringComparison.Ordinal))
+                return Api.Json(JournalAuthor("inc-mine", "casey.ng"));
+            if (path.Contains("/incident", StringComparison.Ordinal) && query.Contains("assignment_groupIN", StringComparison.Ordinal))
+            {
+                return Api.Json(
+                    """{"error":{"message":"The requested query is too long to build the response pagination header URLs. Please do one of the following: shorten the sysparm_query, or query without pagination by setting the parameter 'sysparm_suppress_pagination_header' to true, or set 'sysparm_limit' with a value larger than 546 to bypass the need for pagination."}}""",
+                    HttpStatusCode.BadRequest);
+            }
+
+            if (path.Contains("/incident", StringComparison.Ordinal)
+                && query.Contains("caller_id", StringComparison.Ordinal)
+                && query.Contains("assigned_to=sample-user", StringComparison.Ordinal))
+                return Api.Json(PopulationIncident("inc-mine", "INC0094001"));
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var snapshot = await client.GetOpenAlertsAsync(new AlertSearch("sample-user", "", []), CancellationToken.None);
+        var returned = snapshot.Bucket(AlertKind.ReturnedWithNotes);
+        Assert.Equal("INC0094001", Assert.Single(returned.Rows).Number);
+        Assert.Contains(ServiceNowException.QueryTooLongMessage, returned.Status);
+        Assert.DoesNotContain("pagination header", returned.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sysparm_suppress_pagination_header", returned.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("546", returned.Status);
+    }
+
+    [Fact]
+    public void AFailedRefreshKeepsAQueueThatAlreadyHasACount()
+    {
+        var notifications = new NotificationWorkspaceViewModel();
+        var watch = new AlertWatchState();
+        var row = new AlertRecord(
+            AlertKind.ReturnedWithNotes,
+            DeskSection.Incidents,
+            "inc-back",
+            "INC1",
+            "Badge",
+            "In Progress",
+            "Client Services",
+            "Brisbane",
+            "2026-10-02",
+            "Alex Rivera",
+            "sample-user");
+        notifications.Apply(Snapshot(AlertKind.ReturnedWithNotes, new([row], 1)), watch);
+        var section = notifications.Sections.Single(item => item.Kind == AlertKind.ReturnedWithNotes);
+        Assert.Equal("Returned by DT", section.Title);
+        Assert.Equal(1, section.Count);
+
+        notifications.Apply(Snapshot(AlertKind.ReturnedWithNotes, new([], 0, ServiceNowException.QueryTooLongMessage)), watch);
+        Assert.Equal(1, section.Count);
+        Assert.Equal("INC1", Assert.Single(section.Rows).Number);
+        Assert.Equal(ServiceNowException.QueryTooLongMessage, section.Status);
+        Assert.Equal(1, notifications.Circles.Single(circle => circle.Kind == AlertKind.ReturnedWithNotes).Count);
+        Assert.Equal(1, watch.CurrentCount(AlertKind.ReturnedWithNotes));
+
+        notifications.Apply(Snapshot(AlertKind.ReturnedWithNotes, AlertBucket.Empty), watch);
+        Assert.Equal(0, section.Count);
+        Assert.Empty(section.Rows);
+
+        notifications.NotePollError(
+            "The requested query is too long to build the response pagination header URLs. Set sysparm_suppress_pagination_header.");
+        Assert.Equal(ServiceNowException.QueryTooLongMessage, notifications.PollError);
+
+        var leads = new LeadsViewModel();
+        var team = Snapshot(AlertKind.ReturnedWithNotes, new([row], 1));
+        var empty = new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>());
+        leads.Show(new LeadBoard(team, empty));
+        leads.Show(new LeadBoard(Snapshot(AlertKind.ReturnedWithNotes, new([], 0, ServiceNowException.QueryTooLongMessage)), empty));
+        Assert.Equal(1, leads.Board.Sections.Single(item => item.Kind == AlertKind.ReturnedWithNotes).Count);
+        leads.Area = LeadArea.Regional;
+        Assert.Equal(0, leads.Board.Sections.Single(item => item.Kind == AlertKind.ReturnedWithNotes).Count);
+    }
+
+    private static AlertSnapshot Snapshot(AlertKind kind, AlertBucket bucket) =>
+        new(new Dictionary<AlertKind, AlertBucket> { [kind] = bucket });
+
+    private static string PopulationIncident(string sysId, string number, string assigneeId = "sample-user", string assigneeUser = "alex.rivera") =>
+        "{\"result\":[{"
+        + "\"sys_id\":{\"value\":\"" + sysId + "\"},"
+        + "\"number\":{\"value\":\"" + number + "\",\"display_value\":\"" + number + "\"},"
+        + "\"short_description\":{\"value\":\"Badge\",\"display_value\":\"Badge\"},"
+        + "\"state\":{\"value\":\"2\",\"display_value\":\"In Progress\"},"
+        + "\"assigned_to\":{\"value\":\"" + assigneeId + "\",\"display_value\":\"Alex\"},"
+        + "\"assigned_to.user_name\":{\"value\":\"" + assigneeUser + "\"},"
+        + "\"assignment_group\":{\"value\":\"group-cs\",\"display_value\":\"Client Services\"},"
+        + "\"sys_updated_on\":{\"value\":\"2026-10-01 09:00:00\",\"display_value\":\"2026-10-01 09:00\"},"
+        + "\"sys_updated_by\":{\"value\":\"alex.rivera\"},"
+        + "\"caller_id.user_name\":{\"value\":\"jordan.lee\"},"
+        + "\"active\":{\"value\":\"true\"}"
+        + "}]}";
+
+    private static string JournalAuthor(string sysId, string author) =>
+        "{\"result\":[{"
+        + "\"element_id\":{\"value\":\"" + sysId + "\"},"
+        + "\"element\":{\"value\":\"work_notes\"},"
+        + "\"sys_created_by\":{\"value\":\"" + author + "\"},"
+        + "\"sys_created_on\":{\"value\":\"2026-10-02 09:00:00\"}"
+        + "}]}";
 
     private static string WatchedIncident(string sysId, string number, string updatedBy, string caller) =>
         $$"""

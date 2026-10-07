@@ -347,17 +347,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             sla = new Dictionary<string, IReadOnlyList<SlaSignal>>(StringComparer.OrdinalIgnoreCase);
         }
 
-        IReadOnlyDictionary<string, string> authors;
-        try
-        {
-            authors = await LoadLatestJournalAuthorsAsync(ids, cancellationToken).ConfigureAwait(false);
-        }
-        catch (ServiceNowException)
-        {
-            authors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        return DistinctWatched(open.Select(record => FoldSignals(record, sla, authors)));
+        var journal = await LoadLatestJournalAuthorsAsync(ids, cancellationToken).ConfigureAwait(false);
+        return DistinctWatched(open.Select(record => FoldSignals(record, sla, journal.Authors)));
     }
 
     private async Task<AlertBucket> QueryAlertsAsync(
@@ -404,15 +395,6 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             SnowField.Read(row, "assigned_to").Value);
     }
 
-    private static string OrderedPopulation(AlertSearch search, IReadOnlyList<string> groupIds, DeskSection section) =>
-        AlertQueryBuilder.Population(search.UserSysId, groupIds, search.GroupName, search.Locations, section) + "^ORDERBYDESCsys_updated_on";
-
-    private static string OrderedLead(AlertSearch search, DeskSection section)
-    {
-        var query = AlertQueryBuilder.LeadPopulation(search.GroupName, search.TeamMemberIds, section);
-        return query is null ? "active=false" : query + "^ORDERBYDESCsys_updated_on";
-    }
-
     private async Task<CategoryLoad> LoadCategoryBucketsAsync(AlertSearch search, CancellationToken cancellationToken)
     {
         var notes = new List<string>();
@@ -425,66 +407,102 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         catch (ServiceNowException ex)
         {
             groupIds = [];
-            notes.Add("Group membership was skipped: " + ex.Message);
+            notes.Add("Group membership was skipped: " + ServiceNowException.ShortQueryMessage(ex));
         }
 
         var watched = new List<WatchedRecord>();
-        watched.AddRange(await TryPopulationAsync("incident", PopulationIncidentFields, OrderedPopulation(search, groupIds, DeskSection.Incidents), DeskSection.Incidents, "Incidents were skipped: ", notes, cancellationToken).ConfigureAwait(false));
-        watched.AddRange(await TryPopulationAsync("sc_req_item", PopulationItemFields, OrderedPopulation(search, groupIds, DeskSection.RequestedItems), DeskSection.RequestedItems, "Request items were skipped: ", notes, cancellationToken).ConfigureAwait(false));
+        var incidents = await LoadSectionsAsync(
+            "incident",
+            PopulationIncidentFields,
+            AlertQueryBuilder.PopulationQueries(search.UserSysId, groupIds, search.GroupName, search.Locations, DeskSection.Incidents),
+            DeskSection.Incidents,
+            "Incidents were skipped: ",
+            null,
+            null,
+            cancellationToken).ConfigureAwait(false);
+        watched.AddRange(incidents.Rows);
+        AddNote(notes, incidents.Failure);
 
-        var skipInteractionHold = false;
-        try
-        {
-            watched.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFields, OrderedPopulation(search, groupIds, DeskSection.WalkUps), DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
-        }
-        catch (ServiceNowException ex)
-        {
-            skipInteractionHold = true;
-            holdNotes.Add("Walk-up follow-up was skipped: " + ex.Message);
-            try
-            {
-                watched.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFieldsWithoutFollowUp, OrderedPopulation(search, groupIds, DeskSection.WalkUps), DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
-            }
-            catch (ServiceNowException retry)
-            {
-                notes.Add("Walk-ups were skipped: " + retry.Message);
-            }
-        }
+        var items = await LoadSectionsAsync(
+            "sc_req_item",
+            PopulationItemFields,
+            AlertQueryBuilder.PopulationQueries(search.UserSysId, groupIds, search.GroupName, search.Locations, DeskSection.RequestedItems),
+            DeskSection.RequestedItems,
+            "Request items were skipped: ",
+            null,
+            null,
+            cancellationToken).ConfigureAwait(false);
+        watched.AddRange(items.Rows);
+        AddNote(notes, items.Failure);
+
+        var walkUps = await LoadSectionsAsync(
+            "interaction",
+            PopulationInteractionFields,
+            AlertQueryBuilder.PopulationQueries(search.UserSysId, groupIds, search.GroupName, search.Locations, DeskSection.WalkUps),
+            DeskSection.WalkUps,
+            "Walk-ups were skipped: ",
+            PopulationInteractionFieldsWithoutFollowUp,
+            "Walk-up follow-up was skipped: ",
+            cancellationToken).ConfigureAwait(false);
+        watched.AddRange(walkUps.Rows);
+        AddNote(notes, walkUps.Failure);
+        AddNote(holdNotes, walkUps.HoldNote);
 
         var leadNotes = new List<string>();
         var lead = new List<WatchedRecord>();
-        if (AlertQueryBuilder.LeadPopulation(search.GroupName, search.TeamMemberIds) is not null)
+        var leadQuery = AlertQueryBuilder.LeadQueries(search.GroupName, search.TeamMemberIds, DeskSection.Incidents);
+        if (leadQuery.Count > 0)
         {
-            lead.AddRange(await TryPopulationAsync("incident", PopulationIncidentFields, OrderedLead(search, DeskSection.Incidents), DeskSection.Incidents, "Lead incidents were skipped: ", leadNotes, cancellationToken).ConfigureAwait(false));
-            lead.AddRange(await TryPopulationAsync("sc_req_item", PopulationItemFields, OrderedLead(search, DeskSection.RequestedItems), DeskSection.RequestedItems, "Lead request items were skipped: ", leadNotes, cancellationToken).ConfigureAwait(false));
-            try
-            {
-                lead.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFields, OrderedLead(search, DeskSection.WalkUps), DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
-            }
-            catch (ServiceNowException)
-            {
-                try
-                {
-                    lead.AddRange(await LoadPopulationAsync("interaction", PopulationInteractionFieldsWithoutFollowUp, OrderedLead(search, DeskSection.WalkUps), DeskSection.WalkUps, cancellationToken).ConfigureAwait(false));
-                }
-                catch (ServiceNowException retry)
-                {
-                    leadNotes.Add("Lead walk-ups were skipped: " + retry.Message);
-                }
-            }
+            var leadIncidents = await LoadSectionsAsync(
+                "incident",
+                PopulationIncidentFields,
+                leadQuery,
+                DeskSection.Incidents,
+                "Lead incidents were skipped: ",
+                null,
+                null,
+                cancellationToken).ConfigureAwait(false);
+            lead.AddRange(leadIncidents.Rows);
+            AddNote(leadNotes, leadIncidents.Failure);
+
+            var leadItems = await LoadSectionsAsync(
+                "sc_req_item",
+                PopulationItemFields,
+                AlertQueryBuilder.LeadQueries(search.GroupName, search.TeamMemberIds, DeskSection.RequestedItems),
+                DeskSection.RequestedItems,
+                "Lead request items were skipped: ",
+                null,
+                null,
+                cancellationToken).ConfigureAwait(false);
+            lead.AddRange(leadItems.Rows);
+            AddNote(leadNotes, leadItems.Failure);
+
+            var leadWalkUps = await LoadSectionsAsync(
+                "interaction",
+                PopulationInteractionFields,
+                AlertQueryBuilder.LeadQueries(search.GroupName, search.TeamMemberIds, DeskSection.WalkUps),
+                DeskSection.WalkUps,
+                "Lead walk-ups were skipped: ",
+                PopulationInteractionFieldsWithoutFollowUp,
+                null,
+                cancellationToken).ConfigureAwait(false);
+            lead.AddRange(leadWalkUps.Rows);
+            AddNote(leadNotes, leadWalkUps.Failure);
         }
 
         var distinct = DistinctWatched(watched);
         var leadDistinct = DistinctWatched(lead);
-        var ids = distinct.Select(record => record.SysId)
-            .Concat(leadDistinct.Select(record => record.SysId))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var personalIds = new HashSet<string>(distinct.Select(record => record.SysId), StringComparer.OrdinalIgnoreCase);
+        var leadOnlyIds = leadDistinct
+            .Select(record => record.SysId)
+            .Where(id => !personalIds.Contains(id))
             .ToArray();
+        var slaIds = personalIds.Concat(leadOnlyIds).ToArray();
         var slaStatus = "";
         IReadOnlyDictionary<string, IReadOnlyList<SlaSignal>> sla;
         try
         {
-            sla = await LoadSlaAsync(ids, cancellationToken).ConfigureAwait(false);
+            sla = await LoadSlaAsync(slaIds, cancellationToken).ConfigureAwait(false);
         }
         catch (ServiceNowException ex)
         {
@@ -492,26 +510,16 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             slaStatus = SlaFailureStatus(ex);
         }
 
-        var journalStatus = "";
-        IReadOnlyDictionary<string, string> authors;
-        try
-        {
-            authors = await LoadLatestJournalAuthorsAsync(ids, cancellationToken).ConfigureAwait(false);
-        }
-        catch (ServiceNowException ex)
-        {
-            authors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            journalStatus = ex.Message;
-        }
-
-        var personalIds = new HashSet<string>(distinct.Select(record => record.SysId), StringComparer.OrdinalIgnoreCase);
-        var leadIds = new HashSet<string>(leadDistinct.Select(record => record.SysId), StringComparer.OrdinalIgnoreCase);
-        var folded = DistinctWatched(distinct.Concat(leadDistinct)).Select(record => FoldSignals(record, sla, authors)).ToArray();
-        var personalFolded = folded.Where(record => personalIds.Contains(record.SysId)).ToArray();
-        var leadFolded = folded.Where(record => leadIds.Contains(record.SysId)).ToArray();
+        var personalJournal = await LoadLatestJournalAuthorsAsync(distinct.Select(record => record.SysId).ToArray(), cancellationToken).ConfigureAwait(false);
+        var leadJournal = await LoadLatestJournalAuthorsAsync(leadOnlyIds, cancellationToken).ConfigureAwait(false);
+        var personalFolded = distinct.Select(record => FoldSignals(record, sla, personalJournal.Authors)).ToArray();
+        var leadAuthors = new Dictionary<string, string>(personalJournal.Authors, StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in leadJournal.Authors)
+            leadAuthors[pair.Key] = pair.Value;
+        var leadFolded = leadDistinct.Select(record => FoldSignals(record, sla, leadAuthors)).ToArray();
         var shared = JoinNotes(notes);
         var now = DateTime.Now;
-        var holdSource = skipInteractionHold
+        var holdSource = walkUps.SkippedFollowUp
             ? personalFolded.Where(record => record.Section != DeskSection.WalkUps)
             : personalFolded;
         var viewer = new AssigneeScope(search.UserSysId);
@@ -520,10 +528,46 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             AlertClassifier.Bucket(AlertKind.SlaBreaching, personalFolded, now, slaScope, JoinNotes(slaStatus, shared)),
             AlertClassifier.Bucket(AlertKind.OnHoldPastFollowUp, holdSource, now, viewer, JoinNotes(holdNotes, shared)),
             AlertClassifier.Bucket(AlertKind.UpdatedByCaller, personalFolded, now, new CallerUpdateScope(search.UserSysId, search.GroupName, search.Locations), shared),
-            AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, personalFolded, now, JoinNotes(journalStatus, shared)),
+            AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, personalFolded, now, JoinNotes(personalJournal.Error, shared)),
             AlertClassifier.Bucket(AlertKind.Unattended, personalFolded, now, viewer, shared));
         var daily = DailyWorkBoard.From(personalFolded, leadFolded, now, search.UserSysId, search.TeamMemberIds);
-        return new CategoryLoad(personal, LeadBoard.Build(leadFolded, now, search.TeamMemberIds, search.GroupName, search.Locations), daily);
+        var leads = AnnotateLead(
+            LeadBoard.Build(leadFolded, now, search.TeamMemberIds, search.GroupName, search.Locations),
+            JoinNotes(leadNotes),
+            leadJournal.Error);
+        return new CategoryLoad(personal, leads, daily);
+    }
+
+    private static void AddNote(List<string> notes, string? note)
+    {
+        if (!string.IsNullOrWhiteSpace(note))
+            notes.Add(note);
+    }
+
+    private static LeadBoard AnnotateLead(LeadBoard board, string? populationStatus, string? journalStatus)
+    {
+        if (string.IsNullOrWhiteSpace(populationStatus) && string.IsNullOrWhiteSpace(journalStatus))
+            return board;
+        return new LeadBoard(
+            AnnotateLeadSnapshot(board.Team, populationStatus, journalStatus),
+            AnnotateLeadSnapshot(board.Regional, populationStatus, journalStatus));
+    }
+
+    private static AlertSnapshot AnnotateLeadSnapshot(AlertSnapshot snapshot, string? populationStatus, string? journalStatus)
+    {
+        var buckets = new Dictionary<AlertKind, AlertBucket>();
+        foreach (var kind in AlertCatalog.All)
+        {
+            var bucket = snapshot.Bucket(kind);
+            var status = kind == AlertKind.ReturnedWithNotes
+                ? JoinNotes(journalStatus, populationStatus)
+                : populationStatus ?? "";
+            buckets[kind] = string.IsNullOrWhiteSpace(status) || !string.IsNullOrWhiteSpace(bucket.Status)
+                ? bucket
+                : new AlertBucket(bucket.Rows, bucket.TotalCount, status);
+        }
+
+        return new AlertSnapshot(buckets);
     }
 
     private static WatchedRecord[] DistinctWatched(IEnumerable<WatchedRecord> records) =>
@@ -538,25 +582,59 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         return _groupIds ?? [];
     }
 
-    private async Task<WatchedRecord[]> TryPopulationAsync(
+    private readonly record struct SectionLoad(WatchedRecord[] Rows, string? Failure, string? HoldNote, bool SkippedFollowUp);
+
+    /// <summary>
+    /// Loads each already-short query and merges the rows. One failed request does not drop the rows from the others.
+    /// </summary>
+    private async Task<SectionLoad> LoadSectionsAsync(
         string table,
         string fields,
-        string query,
+        IReadOnlyList<string> queries,
         DeskSection section,
         string failurePrefix,
-        List<string> notes,
+        string? fallbackFields,
+        string? fallbackNotePrefix,
         CancellationToken cancellationToken)
     {
-        try
+        var rows = new List<WatchedRecord>();
+        string? failure = null;
+        string? holdNote = null;
+        var skippedFollowUp = false;
+        var activeFields = fields;
+        foreach (var query in queries)
         {
-            return await LoadPopulationAsync(table, fields, query, section, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                rows.AddRange(await LoadPopulationAsync(table, activeFields, query, section, cancellationToken).ConfigureAwait(false));
+            }
+            catch (ServiceNowException ex) when (fallbackFields is not null && !skippedFollowUp && MissingFollowUp(ex))
+            {
+                skippedFollowUp = true;
+                activeFields = fallbackFields;
+                if (!string.IsNullOrWhiteSpace(fallbackNotePrefix))
+                    holdNote = fallbackNotePrefix + ex.Message;
+                try
+                {
+                    rows.AddRange(await LoadPopulationAsync(table, activeFields, query, section, cancellationToken).ConfigureAwait(false));
+                }
+                catch (ServiceNowException retry)
+                {
+                    failure ??= failurePrefix + ServiceNowException.ShortQueryMessage(retry);
+                }
+            }
+            catch (ServiceNowException ex)
+            {
+                failure ??= failurePrefix + ServiceNowException.ShortQueryMessage(ex);
+            }
         }
-        catch (ServiceNowException ex)
-        {
-            notes.Add(failurePrefix + ex.Message);
-            return [];
-        }
+
+        return new SectionLoad(rows.ToArray(), failure, holdNote, skippedFollowUp);
     }
+
+    private static bool MissingFollowUp(ServiceNowException exception) =>
+        exception.Message.Contains("follow_up", StringComparison.OrdinalIgnoreCase)
+        || (exception.Detail?.Contains("follow_up", StringComparison.OrdinalIgnoreCase) ?? false);
 
     private async Task<WatchedRecord[]> LoadPopulationAsync(
         string table,
@@ -565,7 +643,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         DeskSection section,
         CancellationToken cancellationToken)
     {
-        var result = await GetListAsync(table, fields, query, AlertLimit, 0, cancellationToken).ConfigureAwait(false);
+        var result = await GetListAsync(table, fields, query, AlertLimit, 0, cancellationToken, SuppressPagination(query)).ConfigureAwait(false);
         using (result)
         {
             var rows = new List<WatchedRecord>();
@@ -656,35 +734,59 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         return ex.Message;
     }
 
-    private async Task<IReadOnlyDictionary<string, string>> LoadLatestJournalAuthorsAsync(IReadOnlyList<string> taskIds, CancellationToken cancellationToken)
-    {
-        var query = AlertQueryBuilder.LatestJournal(taskIds);
-        var authors = new Dictionary<string, (string Author, DateTime Created)>(StringComparer.OrdinalIgnoreCase);
-        if (query is null)
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    private readonly record struct JournalLoad(IReadOnlyDictionary<string, string> Authors, string? Error);
 
-        var result = await GetListAsync("sys_journal_field", "element_id,element,sys_created_by,sys_created_on", query, 500, 0, cancellationToken).ConfigureAwait(false);
-        using (result)
+    private async Task<JournalLoad> LoadLatestJournalAuthorsAsync(IReadOnlyList<string> taskIds, CancellationToken cancellationToken)
+    {
+        var authors = new Dictionary<string, (string Author, DateTime Created)>(StringComparer.OrdinalIgnoreCase);
+        string? error = null;
+        foreach (var query in AlertQueryBuilder.LatestJournalQueries(taskIds))
         {
-            foreach (var row in RequireArray(result.Document).EnumerateArray())
+            try
             {
-                var element = SnowField.Read(row, "element").Value;
-                if (!element.Equals("comments", StringComparison.OrdinalIgnoreCase)
-                    && !element.Equals("work_notes", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var id = SnowField.Read(row, "element_id").Value;
-                var author = FirstText(row, "sys_created_by");
-                if (id.Length == 0 || author.Length == 0)
-                    continue;
-                var createdText = FirstText(row, "sys_created_on");
-                var created = AlertClassifier.TryParseInstant(createdText, out var parsed) ? parsed : DateTime.MinValue;
-                if (!authors.TryGetValue(id, out var current) || created >= current.Created)
-                    authors[id] = (author, created);
+                var result = await GetListAsync(
+                    "sys_journal_field",
+                    "element_id,element,sys_created_by,sys_created_on",
+                    query,
+                    500,
+                    0,
+                    cancellationToken,
+                    SuppressPagination(query)).ConfigureAwait(false);
+                using (result)
+                {
+                    foreach (var row in RequireArray(result.Document).EnumerateArray())
+                    {
+                        var element = SnowField.Read(row, "element").Value;
+                        if (!element.Equals("comments", StringComparison.OrdinalIgnoreCase)
+                            && !element.Equals("work_notes", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        var id = SnowField.Read(row, "element_id").Value;
+                        var author = FirstText(row, "sys_created_by");
+                        if (id.Length == 0 || author.Length == 0)
+                            continue;
+                        var createdText = FirstText(row, "sys_created_on");
+                        var created = AlertClassifier.TryParseInstant(createdText, out var parsed) ? parsed : DateTime.MinValue;
+                        if (!authors.TryGetValue(id, out var current) || created >= current.Created)
+                            authors[id] = (author, created);
+                    }
+                }
+            }
+            catch (ServiceNowException ex)
+            {
+                error ??= ServiceNowException.ShortQueryMessage(ex);
             }
         }
 
-        return authors.ToDictionary(pair => pair.Key, pair => pair.Value.Author, StringComparer.OrdinalIgnoreCase);
+        return new JournalLoad(
+            authors.ToDictionary(pair => pair.Key, pair => pair.Value.Author, StringComparer.OrdinalIgnoreCase),
+            error);
     }
+
+    /// <summary>
+    /// A packed chunk is already as short as the split allows. Skip the pagination header on that request only.
+    /// </summary>
+    private static bool SuppressPagination(string query) =>
+        query.Length >= AlertQueryBuilder.MaxQueryLength - 48;
 
     private static WatchedRecord FoldSignals(
         WatchedRecord record,
@@ -1916,7 +2018,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         result.Dispose();
     }
 
-    private async Task<ApiPayload> GetListAsync(string table, string fields, string query, int limit, int offset, CancellationToken cancellationToken)
+    private async Task<ApiPayload> GetListAsync(string table, string fields, string query, int limit, int offset, CancellationToken cancellationToken, bool suppressPaginationHeader = false)
     {
         var url = "api/now/table/" + table
             + "?sysparm_display_value=all&sysparm_exclude_reference_link=true"
@@ -1924,6 +2026,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             + "&sysparm_limit=" + limit
             + "&sysparm_offset=" + offset
             + "&sysparm_query=" + Uri.EscapeDataString(query);
+        if (suppressPaginationHeader)
+            url += "&sysparm_suppress_pagination_header=true";
         return await SendAsync(HttpMethod.Get, url, null, cancellationToken).ConfigureAwait(false);
     }
 

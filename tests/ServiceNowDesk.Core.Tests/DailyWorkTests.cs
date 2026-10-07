@@ -162,6 +162,7 @@ public class DailyWorkTests
         var caller = quiet with { SysId = "inc-caller", Number = "INC-CALLER", UpdatedByCaller = true, Unattended = true };
         var follow = quiet with { SysId = "inc-follow", Number = "INC-FOLLOW", FollowUpPassed = true, Unattended = false };
         var returned = quiet with { SysId = "inc-back", Number = "INC-BACK", Unattended = false, ReturnedWithNotes = true };
+        Assert.Equal("Returned by DT", returned.Reasons);
         var both = critical with { UpdatedByCaller = true, FollowUpPassed = true, SlaBreaching = true };
 
         Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRanker.HighlightHex(critical));
