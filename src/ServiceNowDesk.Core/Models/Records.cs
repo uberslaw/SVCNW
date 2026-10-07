@@ -84,6 +84,7 @@ public sealed record RequestedItemRecord
     public ReferenceValue AssignmentGroup { get; init; }
     public ReferenceValue ServiceOffering { get; init; }
     public ReferenceValue ConfigurationItem { get; init; }
+    public string Location { get; init; } = "";
     public string OpenedAtDisplay { get; init; } = "";
     public string UpdatedAtDisplay { get; init; } = "";
     public string UpdatedAtValue { get; init; } = "";
@@ -103,6 +104,7 @@ public sealed record InteractionRecord
     public ReferenceValue OpenedFor { get; init; }
     public ReferenceValue AssignedTo { get; init; }
     public ReferenceValue AssignmentGroup { get; init; }
+    public string Location { get; init; } = "";
     public string OpenedAtDisplay { get; init; } = "";
     public string UpdatedAtDisplay { get; init; } = "";
     public string UpdatedAtValue { get; init; } = "";

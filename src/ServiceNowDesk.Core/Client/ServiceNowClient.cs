@@ -16,7 +16,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private const string IncidentFields = "sys_id,number,short_description,description,state,priority,impact,urgency,category,subcategory,contact_type,caller_id,assigned_to,assignment_group,service_offering,cmdb_ci,location,opened_at,sys_updated_on,active,close_code,close_notes,hold_reason,follow_up";
     private const string HardwareFields = "sys_id,serial_number,display_name,model,model_category,assigned_to,location,install_status,substatus,stockroom,comments";
     private const string RequestFields = "sys_id,number,short_description,description,request_state,requested_for,opened_by,opened_at,due_date,priority,special_instructions,approval,stage,active,sys_updated_on";
-    private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,priority,close_notes,hold_reason,follow_up";
+    private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,service_offering,cmdb_ci,location,opened_at,sys_updated_on,active,priority,close_notes,hold_reason,follow_up";
     private const string KnowledgeFields = "sys_id,number,short_description,text,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
     private const string KnowledgeListFields = "sys_id,number,short_description,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
     private const string AlertIncidentFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
@@ -28,7 +28,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private const string PopulationInteractionFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name,follow_up";
     private const string PopulationInteractionFieldsWithoutFollowUp = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name";
     private const int AlertLimit = 100;
-    private const string InteractionFields = "sys_id,number,short_description,description,state,type,opened_for,assigned_to,assignment_group,opened_at,sys_updated_on,active";
+    private const string InteractionFields = "sys_id,number,short_description,description,state,type,opened_for,assigned_to,assignment_group,location,opened_at,sys_updated_on,active";
 
     private readonly HttpClient _http;
     private readonly ServiceNowAuthMode _authMode;
@@ -1331,7 +1331,6 @@ public sealed partial class ServiceNowClient : IServiceNowClient
                 .EnumerateArray()
                 .Select(RecordMapper.Hardware)
                 .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
-                .Where(asset => HardwareCatalog.MatchesLocation(asset, query.Locations))
                 .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             return new PagedResult<HardwareAsset>(items, result.TotalCount);
@@ -1639,10 +1638,19 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             assignment = query.Assignment switch
             {
                 AssignmentScope.Mine => "assigned_to=javascript:gs.getUserID()",
+                AssignmentScope.Unassigned when query.OfficeLocations is not null =>
+                    "assigned_toISEMPTY^" + await MyGroupsClauseAsync(cancellationToken).ConfigureAwait(false),
                 AssignmentScope.Unassigned => "assigned_toISEMPTY",
                 AssignmentScope.MyGroups => await MyGroupsClauseAsync(cancellationToken).ConfigureAwait(false),
                 _ => ""
             };
+        }
+
+        if (query.OfficeLocations is not null
+            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+        {
+            var office = OfficeQueue.LocationClause(query.OfficeLocations);
+            assignment = string.IsNullOrEmpty(assignment) ? office : assignment + "^" + office;
         }
 
         var extra = string.IsNullOrWhiteSpace(query.ParentRequestId)

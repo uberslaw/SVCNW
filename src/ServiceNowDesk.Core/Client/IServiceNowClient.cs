@@ -85,6 +85,8 @@ public interface IServiceNowClient : IDisposable
     /// Opened, resolved, and updated counts for the lead's defined team.
     /// An empty team returns the prompt and does not call ServiceNow.
     /// IMS is the walk-up <c>interaction</c> table.
+    /// Updated counts start as one credit per person, per ticket, per local day.
+    /// The report keeps the loaded events so the screen can compare each save without asking again.
     /// </summary>
     Task<WorkEffortReport> GetWorkEffortAsync(
         WorkEffortScale scale,

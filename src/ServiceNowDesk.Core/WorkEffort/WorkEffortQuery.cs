@@ -73,6 +73,12 @@ public static class WorkEffortQuery
     /// <summary>Small pages keep each JSON body off the large-object heap.</summary>
     public const int PageSize = 30;
     public const string CapNotice = "These figures are partial. The safety cap was reached.";
+    public const string JournalTable = "sys_journal_field";
+    public const string AuditTable = "sys_audit";
+    public const string JournalFields = "sys_id,element_id,element,name,sys_created_by,sys_created_on";
+    public const string AuditFields = "sys_id,documentkey,tablename,user,sys_created_on";
+    public const string HistoryNotice =
+        "Update history could not be read, so only the latest update on each record is counted.";
 
     public static IEnumerable<IReadOnlyList<WorkEffortPerson>> Chunks(IReadOnlyList<WorkEffortPerson> people)
     {
@@ -119,6 +125,61 @@ public static class WorkEffortQuery
         if (parts.Count == 0)
             return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
         return string.Join("^NQ", parts) + "^ORDERBYsys_id";
+    }
+
+    /// <summary>
+    /// Work notes and comments in the window, by the team's user_name or sys_id.
+    /// The journal name is often task, so the caller still has to place each element_id.
+    /// </summary>
+    public static string JournalClause(IReadOnlyList<WorkEffortPerson> people, WorkEffortWindow window)
+    {
+        ArgumentNullException.ThrowIfNull(people);
+        var authors = Authors(people);
+        if (authors.Length == 0)
+            return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
+        var start = Stamp(window.Start);
+        var end = Stamp(window.End);
+        return "elementINcomments,additional_comments,work_notes^"
+            + In("sys_created_by", authors)
+            + "^"
+            + Between("sys_created_on", start, end)
+            + "^ORDERBYsys_id";
+    }
+
+    /// <summary>
+    /// Field history for incidents, request items, and walk-ups. Rows that share a second are one moment.
+    /// </summary>
+    public static string AuditClause(IReadOnlyList<WorkEffortPerson> people, WorkEffortWindow window)
+    {
+        ArgumentNullException.ThrowIfNull(people);
+        var authors = Authors(people);
+        if (authors.Length == 0)
+            return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
+        var start = Stamp(window.Start);
+        var end = Stamp(window.End);
+        return "tablenameINincident,sc_req_item,interaction^"
+            + In("user", authors)
+            + "^"
+            + Between("sys_created_on", start, end)
+            + "^ORDERBYsys_id";
+    }
+
+    public static string IdClause(IReadOnlyList<string> ids)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        var safe = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in ids)
+        {
+            var token = SafeId(id);
+            if (token.Length == 0 || !seen.Add(token))
+                continue;
+            safe.Add(token);
+        }
+
+        if (safe.Count == 0)
+            return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
+        return In("sys_id", safe) + "^ORDERBYsys_id";
     }
 
     public static bool IsUnscoped(string? clause) =>
@@ -174,6 +235,23 @@ public static class WorkEffortQuery
         {
             return "";
         }
+    }
+
+    private static string[] Authors(IReadOnlyList<WorkEffortPerson> people)
+    {
+        var values = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var person in people)
+        {
+            var name = SafeName(person.UserName);
+            if (name.Length > 0 && seen.Add(name))
+                values.Add(name);
+            var id = SafeId(person.SysId);
+            if (id.Length > 0 && seen.Add(id))
+                values.Add(id);
+        }
+
+        return values.ToArray();
     }
 
     private static string SafeName(string? value)

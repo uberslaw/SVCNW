@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
@@ -44,6 +45,12 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     [ObservableProperty] private string catalogItem = "";
 
     public bool ShowHoldReason => AlertClassifier.IsOnHold(DeskSection.RequestedItems, State, SelectedStateLabel);
+
+    /// <summary>Raised by Create New. The shell opens the same catalog section the nav item used.</summary>
+    public event EventHandler? CreateNewRequested;
+
+    [RelayCommand]
+    private void CreateNew() => CreateNewRequested?.Invoke(this, EventArgs.Empty);
 
     private string SelectedStateLabel
     {

@@ -6,7 +6,7 @@
         <StackPanel MaxWidth="720" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Connection" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,16"
-                       Text="Sign in as the agent who will work the tickets. My open and my groups then match that person. If the company uses single sign-on, choose Browser sign-in. Practice data lets the team learn the layout before credentials are ready."/>
+                       Text="Sign in as the agent who will work the tickets. My Tickets and My Team then match that person. If the company uses single sign-on, choose Browser sign-in. Practice data lets the team learn the layout before credentials are ready."/>
 
             <CheckBox Content="Use practice data instead of a live instance" IsChecked="{Binding Connection.UseSampleData}" Margin="0,0,0,14"/>
 

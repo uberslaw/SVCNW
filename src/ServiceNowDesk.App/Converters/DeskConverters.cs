@@ -131,6 +131,62 @@ public sealed class HexBrushConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+public sealed class LegendTrackBrushConverter : IMultiValueConverter
+{
+    private static readonly LinearGradientBrush Neutral = Build(
+        LegendColorIntensity.NeutralTrackStart,
+        null,
+        LegendColorIntensity.NeutralTrackEnd);
+
+    private static readonly Dictionary<string, LinearGradientBrush> Hues = new(StringComparer.OrdinalIgnoreCase);
+
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+    {
+        var individual = values.Length > 0 && values[0] is true;
+        var hex = values.Length > 1 ? values[1] as string : null;
+        if (!individual || string.IsNullOrWhiteSpace(hex))
+            return Neutral;
+
+        if (Hues.TryGetValue(hex, out var cached))
+            return cached;
+
+        try
+        {
+            var brush = Build(
+                LegendColorIntensity.Curve(hex, LegendColorIntensity.Minimum),
+                LegendColorIntensity.Curve(hex, LegendColorIntensity.Vivid),
+                LegendColorIntensity.Curve(hex, LegendColorIntensity.Maximum));
+            Hues[hex] = brush;
+            return brush;
+        }
+        catch (ArgumentException)
+        {
+            return Neutral;
+        }
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+
+    private static LinearGradientBrush Build(string start, string? vivid, string end)
+    {
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 0)
+        };
+        brush.GradientStops.Add(new GradientStop(Stop(start), 0));
+        if (vivid is not null)
+            brush.GradientStops.Add(new GradientStop(Stop(vivid), LegendColorIntensity.Vivid / 100d));
+        brush.GradientStops.Add(new GradientStop(Stop(end), 1));
+        brush.Freeze();
+        return brush;
+    }
+
+    private static Color Stop(string hex) =>
+        (Color)ColorConverter.ConvertFromString(hex);
+}
+
 public sealed class EqualsMultiConverter : IMultiValueConverter
 {
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>

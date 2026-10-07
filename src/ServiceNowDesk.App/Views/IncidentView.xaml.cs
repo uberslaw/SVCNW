@@ -15,9 +15,25 @@ public partial class IncidentView
     bool _fittingList;
     bool _fittingForm;
 
+    public static readonly DependencyProperty EditorOnlyProperty =
+        DependencyProperty.Register(nameof(EditorOnly), typeof(bool), typeof(IncidentView), new PropertyMetadata(false, (d, _) => ((IncidentView)d).ApplyEditorOnly()));
+
     public IncidentView()
     {
         InitializeComponent();
+    }
+
+    public bool EditorOnly
+    {
+        get => (bool)GetValue(EditorOnlyProperty);
+        set => SetValue(EditorOnlyProperty, value);
+    }
+
+    private void ApplyEditorOnly()
+    {
+        EditorPane.Apply(EditorOnly, Layout, ListPane);
+        if (!EditorOnly)
+            FitListColumn();
     }
 
     private void Layout_SizeChanged(object sender, SizeChangedEventArgs e) => FitListColumn();
@@ -28,7 +44,7 @@ public partial class IncidentView
 
     private void FitListColumn()
     {
-        if (_fittingList)
+        if (EditorOnly || _fittingList)
             return;
 
         var available = Layout.ActualWidth;

@@ -96,7 +96,7 @@
                             <TextBlock Style="{StaticResource HelpBullet}" Margin="8,0,0,10" Text="•  Their own ServiceNow user name and password"/>
                             <TextBlock Style="{StaticResource HelpBody}" Text="Click Connect."/>
                             <TextBlock Style="{StaticResource HelpBody}" Margin="0"
-                                       Text="The app posts those to https://&lt;instance&gt;/oauth_token.do using the password grant. ServiceNow returns a token for that user. Ticket calls then run as that user, so ACLs, assignment groups, and My open / My groups match the web UI for the person at the keyboard. The password and client secret stay on that PC, encrypted with Windows DPAPI for the current Windows user, under %AppData%\ServiceNowDesk\settings.json. When the token expires, the app requests a new one with the same saved user name and password. There is no shared login session between machines."/>
+                                       Text="The app posts those to https://&lt;instance&gt;/oauth_token.do using the password grant. ServiceNow returns a token for that user. Ticket calls then run as that user, so ACLs, assignment groups, and My Tickets / My Team match the web UI for the person at the keyboard. The password and client secret stay on that PC, encrypted with Windows DPAPI for the current Windows user, under %AppData%\ServiceNowDesk\settings.json. When the token expires, the app requests a new one with the same saved user name and password. There is no shared login session between machines."/>
                         </StackPanel>
                     </Border>
 
@@ -104,7 +104,7 @@
                         <StackPanel>
                             <TextBlock Text="What not to use for agents" Style="{StaticResource HelpHeading}"/>
                             <TextBlock Style="{StaticResource HelpBody}"
-                                       Text="OAuth client credentials is one integration account. On the registry record, set OAuth Application User to that account. Every API call then runs as that account. My open is that account, not the person at the keyboard. Use client credentials only for an unattended integration, not for the desk."/>
+                                       Text="OAuth client credentials is one integration account. On the registry record, set OAuth Application User to that account. Every API call then runs as that account. My Tickets is that account, not the person at the keyboard. Use client credentials only for an unattended integration, not for the desk."/>
                             <TextBlock Style="{StaticResource HelpBody}"
                                        Text="Username and password (no OAuth) is also per person: each agent enters their own ServiceNow user name and password, and calls run as that user. Use it when the instance still allows basic authentication for the API."/>
                             <TextBlock Style="{StaticResource HelpBody}" Margin="0"

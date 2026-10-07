@@ -68,7 +68,8 @@ public enum DeskSection
     Leads,
     DailyWork,
     Legend,
-    Hardware
+    Hardware,
+    InTheMix
 }
 
 public sealed record Choice(string Value, string Label)
@@ -98,6 +99,13 @@ public sealed record TicketQuery
     /// Hardware office names to load. Null or empty does not restrict location.
     /// </summary>
     public IReadOnlyList<string>? Locations { get; init; }
+
+    /// <summary>
+    /// Cities for My Team and Unassigned. Null leaves those queues unlimited.
+    /// An empty list matches no location, so the queue stays inside an office that was not named.
+    /// My Tickets ignores this.
+    /// </summary>
+    public IReadOnlyList<string>? OfficeLocations { get; init; }
 
     public int Limit { get; init; } = 50;
     public int Offset { get; init; }
@@ -201,16 +209,22 @@ public sealed class DeskSettings
     public List<string>? EnabledHighlights { get; set; }
 
     /// <summary>
-    /// Shared legend lightness, 0–100. 0 is white and 100 is black.
-    /// Null means each colour keeps the lightness measured from its swatch, unless
+    /// Schema for <see cref="LegendIntensity"/>. Version 2 is the wash-to-vivid curve.
+    /// Any other value, including a missing field, ignores saved positions so an older white-to-black number is not reused.
+    /// </summary>
+    public int LegendIntensityVersion { get; set; }
+
+    /// <summary>
+    /// Shared legend slider position, 0–100, on the current curve.
+    /// Null means each colour keeps the position closest to its original swatch, unless
     /// <see cref="LegendColorIntensities"/> names that colour.
     /// All-colours writes this and clears per-colour overrides.
     /// </summary>
     public int? LegendIntensity { get; set; }
 
     /// <summary>
-    /// Lightness for one legend colour, 0–100, keyed by highlight catalog key.
-    /// Null means every colour uses <see cref="LegendIntensity"/>, or the measured swatch lightness when that is missing too.
+    /// Slider position for one legend colour, 0–100, keyed by highlight catalog key.
+    /// Null means every colour uses <see cref="LegendIntensity"/>, or the closest original-swatch position when that is missing too.
     /// </summary>
     public Dictionary<string, int>? LegendColorIntensities { get; set; }
 }

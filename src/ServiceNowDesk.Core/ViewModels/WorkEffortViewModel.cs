@@ -11,6 +11,7 @@ public partial class WorkEffortViewModel : ObservableObject
     private readonly Dictionary<WorkEffortScale, WorkEffortCacheEntry> _cache = [];
     private DateOnly? _cachedDay;
     private string _loadingTeam = "";
+    private WorkEffortCacheEntry? _shown;
 
     public WorkEffortViewModel()
     {
@@ -25,8 +26,10 @@ public partial class WorkEffortViewModel : ObservableObject
     private WorkEffortScale? _loadingScale;
 
     [ObservableProperty] private WorkEffortScale scale = WorkEffortScale.Today;
+    [ObservableProperty] private WorkEffortUpdateMode updateMode = WorkEffortUpdateMode.Daily;
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string emptyMessage = "";
+    [ObservableProperty] private string shift = "";
     [ObservableProperty] private string asOf = "";
     [ObservableProperty] private bool hasRows;
     [ObservableProperty] private bool isLoading;
@@ -141,7 +144,9 @@ public partial class WorkEffortViewModel : ObservableObject
         Rows.Clear();
         HasRows = false;
         EmptyMessage = "";
+        Shift = "";
         AsOf = "";
+        _shown = null;
         _loadingScale = Scale;
         ProgressValue = 0;
         ProgressMaximum = WorkEffortEstimate.BarMaximum;
@@ -152,11 +157,13 @@ public partial class WorkEffortViewModel : ObservableObject
     public void Show(WorkEffortReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
+        _shown = null;
         Rows.Clear();
         foreach (var row in report.Rows)
             Rows.Add(row);
         HasRows = Rows.Count > 0;
         EmptyMessage = HasRows ? "" : report.EmptyMessage;
+        Shift = HasRows ? report.Shift : "";
         Status = report.Status;
         IsLoading = false;
         _loadingScale = null;
@@ -167,7 +174,9 @@ public partial class WorkEffortViewModel : ObservableObject
         Rows.Clear();
         HasRows = false;
         EmptyMessage = "";
+        Shift = "";
         AsOf = "";
+        _shown = null;
         Status = message ?? "";
         IsLoading = false;
         _loadingScale = null;
@@ -177,9 +186,11 @@ public partial class WorkEffortViewModel : ObservableObject
     {
         _cache.Clear();
         _cachedDay = null;
+        _shown = null;
         Rows.Clear();
         HasRows = false;
         EmptyMessage = "";
+        Shift = "";
         AsOf = "";
         Status = "";
         IsLoading = false;
@@ -187,6 +198,8 @@ public partial class WorkEffortViewModel : ObservableObject
         ProgressMaximum = WorkEffortEstimate.BarMaximum;
         _loadingScale = null;
         _loadingTeam = "";
+        if (UpdateMode != WorkEffortUpdateMode.Daily)
+            UpdateMode = WorkEffortUpdateMode.Daily;
     }
 
     [RelayCommand]
@@ -196,6 +209,14 @@ public partial class WorkEffortViewModel : ObservableObject
     {
         _ = value;
         ScaleChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    partial void OnUpdateModeChanged(WorkEffortUpdateMode value)
+    {
+        _ = value;
+        if (IsLoading || _shown is null)
+            return;
+        ShowEntry(_shown.Value);
     }
 
     private bool TryGet(DateTime localNow, WorkEffortScale scale, string teamKey, out WorkEffortCacheEntry entry)
@@ -211,7 +232,8 @@ public partial class WorkEffortViewModel : ObservableObject
 
     private void ShowEntry(WorkEffortCacheEntry entry)
     {
-        Show(entry.Report);
+        Show(WorkEffortScore.Present(entry.Report, UpdateMode));
+        _shown = entry;
         AsOf = "As of " + entry.LoadedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
     }
 
