@@ -108,6 +108,13 @@ public sealed record TicketQuery
     /// </summary>
     public IReadOnlyList<string>? OfficeLocations { get; init; }
 
+    /// <summary>
+    /// When set with <see cref="AssignmentScope.MyGroups"/>, the list is people assigned to these
+    /// users instead of the signed-in user's assignment groups. Null keeps the group clause.
+    /// An empty list matches nobody (<c>sys_id=NO_TEAM</c>).
+    /// </summary>
+    public IReadOnlyList<string>? TeamMemberIds { get; init; }
+
     public int Limit { get; init; } = 50;
     public int Offset { get; init; }
 

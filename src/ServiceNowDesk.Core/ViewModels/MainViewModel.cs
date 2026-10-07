@@ -123,7 +123,10 @@ public partial class MainViewModel : ObservableObject
             Connection.RememberLeadTeam(Leads.SelectedMemberIds);
             _store.Save(Connection.BuildSettings());
             if (IsConnected)
+            {
+                ApplyTeamQueue();
                 RefreshAlerts();
+            }
         };
         Leads.TeamPersisted += (_, _) =>
         {
@@ -134,7 +137,10 @@ public partial class MainViewModel : ObservableObject
             Connection.RememberLeadTeamSaved(true);
             _store.Save(Connection.BuildSettings());
             if (IsConnected)
+            {
+                ApplyTeamQueue();
                 RefreshAlerts();
+            }
         };
         Leads.WorkEffortRequested += (_, _) => _ = LoadWorkEffortAsync(force: false);
         Leads.WorkEffort.RefreshRequested += (_, _) => _ = LoadWorkEffortAsync(force: true);
@@ -935,10 +941,22 @@ public partial class MainViewModel : ObservableObject
         RequestedItems.UseOfficeCities(cities);
         WalkUps.UseOfficeCities(cities);
         Mix.UseOfficeCities(cities);
+        ApplyTeamQueue();
         _loadedFor.Remove(DeskSection.Incidents);
         _loadedFor.Remove(DeskSection.RequestedItems);
         _loadedFor.Remove(DeskSection.WalkUps);
         _loadedFor.Remove(DeskSection.InTheMix);
+    }
+
+    private void ApplyTeamQueue()
+    {
+        var team = TeamIdsForAlerts();
+        WalkUps.UseTeamMembers(team);
+        Mix.UseTeamMembers(team);
+        _loadedFor.Remove(DeskSection.WalkUps);
+        _loadedFor.Remove(DeskSection.InTheMix);
+        if (IsConnected && SelectedSection is DeskSection.WalkUps or DeskSection.InTheMix)
+            _ = EnsureSectionAsync();
     }
 
     private async Task OpenMixRowAsync(TicketRow row)
@@ -1791,6 +1809,7 @@ public partial class MainViewModel : ObservableObject
                 if (!ReferenceEquals(client, _client) || !Connection.LeadsTeamLocked)
                     return;
                 Leads.UseLockedRoster([], LockedLeadTeam.NoLocationPrompt);
+                ApplyTeamQueue();
             });
             return;
         }
@@ -1804,6 +1823,7 @@ public partial class MainViewModel : ObservableObject
                 if (!ReferenceEquals(client, _client) || !Connection.LeadsTeamLocked)
                     return;
                 Leads.UseLockedRoster(people, note);
+                ApplyTeamQueue();
                 if (Leads.Area == LeadArea.WorkEffort)
                     _ = LoadWorkEffortAsync(force: false);
                 RefreshAlerts();
