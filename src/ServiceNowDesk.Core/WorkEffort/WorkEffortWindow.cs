@@ -47,6 +47,22 @@ public readonly record struct WorkEffortWindow(DateTime Start, DateTime End, Wor
         return value >= Start && value <= End;
     }
 
+    /// <summary>
+    /// Local wall time to the second. UTC is converted to local. Unspecified values are already
+    /// the local time ServiceNow displayed. Two stamps in the same second are one moment.
+    /// </summary>
+    public static DateTime LocalStamp(DateTime moment)
+    {
+        var value = moment.Kind == DateTimeKind.Utc ? moment.ToLocalTime() : moment;
+        return new DateTime(value.Year, value.Month, value.Day, value.Hour, value.Minute, value.Second, DateTimeKind.Unspecified);
+    }
+
+    /// <summary>
+    /// The local calendar day of <paramref name="moment"/>. Monday and Wednesday are two days.
+    /// Several times on Monday share one day.
+    /// </summary>
+    public static DateOnly LocalDay(DateTime moment) => DateOnly.FromDateTime(LocalStamp(moment));
+
     public static string CountsLabel(WorkEffortScale scale) => scale switch
     {
         WorkEffortScale.ThisWeek => "Counts for this week.",

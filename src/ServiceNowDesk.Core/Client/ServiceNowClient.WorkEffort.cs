@@ -55,27 +55,34 @@ public sealed partial class ServiceNowClient
             return WorkEffortReport.NoTeam();
 
         var pace = new WorkEffortPace();
-        var totals = new int[people.Count * WorkEffortAttempt.Width];
+        var batch = new WorkEffortBatch();
         var truncated = false;
         progress?.Report(pace.Snapshot());
 
-        var incident = await LoadWorkEffortTableAsync(WorkEffortTablePlan.IncidentPlans, people, window, cap, totals, pace, progress, cancellationToken).ConfigureAwait(false);
+        var incident = await LoadWorkEffortTableAsync(WorkEffortTablePlan.IncidentPlans, people, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= incident.Truncated;
         if (incident.Problem is not null)
             problems.Add(incident.Problem);
 
-        var items = await LoadWorkEffortTableAsync(WorkEffortTablePlan.RequestedItemAttempts, people, window, cap, totals, pace, progress, cancellationToken).ConfigureAwait(false);
+        var items = await LoadWorkEffortTableAsync(WorkEffortTablePlan.RequestedItemAttempts, people, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= items.Truncated;
         if (items.Problem is not null)
             problems.Add(items.Problem);
 
-        var interactions = await LoadWorkEffortTableAsync(WorkEffortTablePlan.InteractionAttempts, people, window, cap, totals, pace, progress, cancellationToken).ConfigureAwait(false);
+        var interactions = await LoadWorkEffortTableAsync(WorkEffortTablePlan.InteractionAttempts, people, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= interactions.Truncated;
         if (interactions.Problem is not null)
             problems.Add(interactions.Problem);
 
-        var rows = WorkEffortAttempt.ToRows(people, totals);
-        return new WorkEffortReport(rows, WorkEffortQuery.Status(scale, truncated, problems), "");
+        var history = await LoadWorkEffortHistoryAsync(people, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+        truncated |= history.Truncated;
+        if (history.Problem is not null)
+            problems.Add(history.Problem);
+
+        var touches = batch.Touches();
+        var ledger = new WorkEffortLedger(people, touches, window);
+        var rows = WorkEffortScore.Build(people, touches, window, WorkEffortUpdateMode.Daily);
+        return new WorkEffortReport(rows, WorkEffortQuery.Status(scale, truncated, problems), "", ledger);
     }
 
     /// <summary>
@@ -173,7 +180,7 @@ public sealed partial class ServiceNowClient
         IReadOnlyList<WorkEffortPerson> people,
         WorkEffortWindow window,
         int safetyCap,
-        int[] totals,
+        WorkEffortBatch batch,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
@@ -181,15 +188,14 @@ public sealed partial class ServiceNowClient
         ServiceNowException? rejected = null;
         for (var index = 0; index < plans.Count; index++)
         {
-            var attempt = new WorkEffortAttempt(people, window, safetyCap);
+            var budget = new WorkEffortBudget(safetyCap);
             pace.BeginTable();
             try
             {
-                var truncated = await LoadWorkEffortPlanAsync(plans[index], people, window, attempt, pace, progress, cancellationToken).ConfigureAwait(false);
-                attempt.FoldInto(totals);
+                var truncated = await LoadWorkEffortPlanAsync(plans[index], people, window, batch, budget, pace, progress, cancellationToken).ConfigureAwait(false);
                 pace.CompleteTable();
                 progress?.Report(pace.Snapshot());
-                return (truncated || attempt.Truncated, null);
+                return (truncated || budget.Truncated, null);
             }
             catch (ServiceNowException ex) when (ex.StatusCode == 400 && index < plans.Count - 1)
             {
@@ -215,7 +221,8 @@ public sealed partial class ServiceNowClient
         WorkEffortTablePlan plan,
         IReadOnlyList<WorkEffortPerson> people,
         WorkEffortWindow window,
-        WorkEffortAttempt attempt,
+        WorkEffortBatch batch,
+        WorkEffortBudget budget,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
@@ -223,7 +230,7 @@ public sealed partial class ServiceNowClient
         var truncated = false;
         foreach (var chunk in WorkEffortQuery.Chunks(people))
         {
-            if (!attempt.WantsMore)
+            if (!budget.WantsMore)
             {
                 truncated = true;
                 break;
@@ -233,9 +240,22 @@ public sealed partial class ServiceNowClient
             if (WorkEffortQuery.IsUnscoped(clause))
                 continue;
 
-            var hit = await PageWorkEffortAsync(plan, clause, attempt, pace, progress, cancellationToken).ConfigureAwait(false);
+            var hit = await PageWorkEffortAsync(
+                plan.Table,
+                plan.Fields,
+                clause,
+                budget,
+                row =>
+                {
+                    var touch = ReadTouch(row, plan.Kind);
+                    if (touch is not null)
+                        batch.Add(touch);
+                },
+                pace,
+                progress,
+                cancellationToken).ConfigureAwait(false);
             truncated |= hit;
-            if (attempt.Truncated)
+            if (budget.Truncated)
                 truncated = true;
         }
 
@@ -249,9 +269,11 @@ public sealed partial class ServiceNowClient
     /// date has to be the local display time. The field list is only those columns.
     /// </summary>
     private async Task<bool> PageWorkEffortAsync(
-        WorkEffortTablePlan plan,
+        string table,
+        string fields,
         string query,
-        WorkEffortAttempt attempt,
+        WorkEffortBudget budget,
+        Action<JsonElement> accept,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
@@ -260,10 +282,10 @@ public sealed partial class ServiceNowClient
         var received = 0;
         int? total = null;
         var truncated = false;
-        while (attempt.WantsMore)
+        while (budget.WantsMore)
         {
-            var limit = Math.Min(WorkEffortQuery.PageSize, Math.Max(1, attempt.Room));
-            var result = await GetListAsync(plan.Table, plan.Fields, query, limit, offset, cancellationToken).ConfigureAwait(false);
+            var limit = Math.Min(WorkEffortQuery.PageSize, Math.Max(1, budget.Room));
+            var result = await GetListAsync(table, fields, query, limit, offset, cancellationToken).ConfigureAwait(false);
             var stop = false;
             using (result)
             using (new WorkEffortQuietScope())
@@ -273,14 +295,14 @@ public sealed partial class ServiceNowClient
                 var kept = 0;
                 foreach (var row in rows.EnumerateArray())
                 {
-                    var touch = ReadTouch(row, plan.Kind);
-                    if (!attempt.TakeRow(touch))
+                    if (!budget.Take())
                     {
                         truncated = true;
                         stop = true;
                         break;
                     }
 
+                    accept(row);
                     kept++;
                 }
 
@@ -310,7 +332,7 @@ public sealed partial class ServiceNowClient
                 if (linkOffset > offset && (count >= limit || linkOffset <= step))
                     nextOffset = linkOffset;
 
-                if (!attempt.WantsMore)
+                if (!budget.WantsMore)
                 {
                     truncated |= more || hasNext;
                     break;
@@ -326,9 +348,347 @@ public sealed partial class ServiceNowClient
             }
         }
 
-        if (!attempt.WantsMore && total is int expectedTotal && received < expectedTotal)
+        if (!budget.WantsMore && total is int expectedTotal && received < expectedTotal)
             truncated = true;
         return truncated;
+    }
+
+    /// <summary>
+    /// Journal rows (work notes and comments) plus audit rows when the instance allows them.
+    /// The header update is only the latest save, so earlier days live here. A journal row and
+    /// the header row at the same local second are one moment when the score runs.
+    /// </summary>
+    private async Task<(bool Truncated, string? Problem)> LoadWorkEffortHistoryAsync(
+        IReadOnlyList<WorkEffortPerson> people,
+        WorkEffortWindow window,
+        int safetyCap,
+        WorkEffortBatch batch,
+        WorkEffortPace pace,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var truncated = false;
+        string? problem = null;
+        pace.BeginTable();
+        try
+        {
+            truncated |= await LoadJournalAsync(people, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+            pace.CompleteTable();
+            progress?.Report(pace.Snapshot());
+        }
+        catch (ServiceNowException)
+        {
+            pace.CancelTable();
+            pace.CompleteTable();
+            progress?.Report(pace.Snapshot());
+            problem = WorkEffortQuery.HistoryNotice;
+        }
+
+        pace.BeginTable();
+        try
+        {
+            truncated |= await LoadAuditAsync(people, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+            pace.CompleteTable();
+            progress?.Report(pace.Snapshot());
+        }
+        catch (ServiceNowException)
+        {
+            pace.CancelTable();
+            pace.CompleteTable();
+            progress?.Report(pace.Snapshot());
+        }
+
+        return (truncated, problem);
+    }
+
+    private async Task<bool> LoadJournalAsync(
+        IReadOnlyList<WorkEffortPerson> people,
+        WorkEffortWindow window,
+        int safetyCap,
+        WorkEffortBatch batch,
+        WorkEffortPace pace,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var budget = new WorkEffortBudget(safetyCap);
+        var pending = new List<JournalHit>();
+        var truncated = false;
+        foreach (var chunk in WorkEffortQuery.Chunks(people))
+        {
+            if (!budget.WantsMore)
+            {
+                truncated = true;
+                break;
+            }
+
+            var clause = WorkEffortQuery.JournalClause(chunk, window);
+            if (WorkEffortQuery.IsUnscoped(clause))
+                continue;
+
+            truncated |= await PageWorkEffortAsync(
+                WorkEffortQuery.JournalTable,
+                WorkEffortQuery.JournalFields,
+                clause,
+                budget,
+                row =>
+                {
+                    if (!TryReadJournal(row, window, out var hit))
+                        return;
+                    if (hit.Kind is WorkEffortKind known)
+                        batch.AddUpdate(known, hit.RecordId, hit.By, hit.At);
+                    else
+                        pending.Add(hit);
+                },
+                pace,
+                progress,
+                cancellationToken).ConfigureAwait(false);
+            if (budget.Truncated)
+                truncated = true;
+        }
+
+        if (pending.Count > 0)
+            await PlaceJournalAsync(pending, batch, cancellationToken).ConfigureAwait(false);
+        return truncated || budget.Truncated;
+    }
+
+    private async Task PlaceJournalAsync(
+        List<JournalHit> pending,
+        WorkEffortBatch batch,
+        CancellationToken cancellationToken)
+    {
+        var unknown = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var hit in pending)
+        {
+            if (batch.KindOf(hit.RecordId) is not null)
+                continue;
+            if (seen.Add(hit.RecordId))
+                unknown.Add(hit.RecordId);
+        }
+
+        var found = new Dictionary<string, WorkEffortKind>(StringComparer.OrdinalIgnoreCase);
+        if (unknown.Count > 0)
+        {
+            var remaining = unknown;
+            foreach (var table in new[] { "incident", "sc_req_item", "interaction" })
+            {
+                if (remaining.Count == 0)
+                    break;
+                var kind = table switch
+                {
+                    "sc_req_item" => WorkEffortKind.RequestedItem,
+                    "interaction" => WorkEffortKind.Interaction,
+                    _ => WorkEffortKind.Incident
+                };
+                var hits = await LookupRecordIdsAsync(table, remaining, cancellationToken).ConfigureAwait(false);
+                var next = new List<string>();
+                foreach (var id in remaining)
+                {
+                    if (hits.Contains(id))
+                        found[id] = kind;
+                    else
+                        next.Add(id);
+                }
+
+                remaining = next;
+            }
+        }
+
+        foreach (var hit in pending)
+        {
+            var kind = batch.KindOf(hit.RecordId);
+            if (kind is null && found.TryGetValue(hit.RecordId, out var placed))
+                kind = placed;
+            if (kind is not WorkEffortKind known)
+                continue;
+            batch.AddUpdate(known, hit.RecordId, hit.By, hit.At);
+        }
+    }
+
+    private async Task<HashSet<string>> LookupRecordIdsAsync(
+        string table,
+        IReadOnlyList<string> ids,
+        CancellationToken cancellationToken)
+    {
+        var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < ids.Count; index += WorkEffortQuery.ChunkSize)
+        {
+            var chunk = ids.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray();
+            var clause = WorkEffortQuery.IdClause(chunk);
+            if (WorkEffortQuery.IsUnscoped(clause))
+                continue;
+            try
+            {
+                var result = await GetListAsync(table, "sys_id", clause, chunk.Length, 0, cancellationToken).ConfigureAwait(false);
+                using (result)
+                using (new WorkEffortQuietScope())
+                {
+                    foreach (var row in RequireArray(result.Document).EnumerateArray())
+                    {
+                        var id = SnowField.Read(row, "sys_id").Value.Trim();
+                        if (id.Length == 0)
+                            id = SnowField.Read(row, "sys_id").Display.Trim();
+                        if (id.Length > 0)
+                            found.Add(id);
+                    }
+                }
+            }
+            catch (ServiceNowException ex) when (ex.StatusCode is 400 or 403 or 404)
+            {
+            }
+        }
+
+        return found;
+    }
+
+    private async Task<bool> LoadAuditAsync(
+        IReadOnlyList<WorkEffortPerson> people,
+        WorkEffortWindow window,
+        int safetyCap,
+        WorkEffortBatch batch,
+        WorkEffortPace pace,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var budget = new WorkEffortBudget(safetyCap);
+        var truncated = false;
+        foreach (var chunk in WorkEffortQuery.Chunks(people))
+        {
+            if (!budget.WantsMore)
+            {
+                truncated = true;
+                break;
+            }
+
+            var clause = WorkEffortQuery.AuditClause(chunk, window);
+            if (WorkEffortQuery.IsUnscoped(clause))
+                continue;
+
+            truncated |= await PageWorkEffortAsync(
+                WorkEffortQuery.AuditTable,
+                WorkEffortQuery.AuditFields,
+                clause,
+                budget,
+                row =>
+                {
+                    if (!TryReadAudit(row, window, out var kind, out var id, out var by, out var at))
+                        return;
+                    batch.AddUpdate(kind, id, by, at);
+                },
+                pace,
+                progress,
+                cancellationToken).ConfigureAwait(false);
+            if (budget.Truncated)
+                truncated = true;
+        }
+
+        return truncated || budget.Truncated;
+    }
+
+    private static bool TryReadJournal(JsonElement row, WorkEffortWindow window, out JournalHit hit)
+    {
+        hit = default;
+        var element = SnowField.Read(row, "element").Value.Trim();
+        if (element.Length == 0)
+            element = SnowField.Read(row, "element").Display.Trim();
+        if (!IsUpdateElement(element))
+            return false;
+        var id = SnowField.Read(row, "element_id").Value.Trim();
+        if (id.Length == 0)
+            id = SnowField.Read(row, "element_id").Display.Trim();
+        var by = ReadAuthor(row, "sys_created_by");
+        var at = ReadMoment(row, "sys_created_on");
+        if (id.Length == 0 || by.Length == 0 || at is not DateTime moment || !window.Contains(moment))
+            return false;
+        var name = SnowField.Read(row, "name").Value.Trim();
+        if (name.Length == 0)
+            name = SnowField.Read(row, "name").Display.Trim();
+        hit = new JournalHit(id, by, moment, KindFromTable(name));
+        return true;
+    }
+
+    private static bool TryReadAudit(
+        JsonElement row,
+        WorkEffortWindow window,
+        out WorkEffortKind kind,
+        out string id,
+        out string by,
+        out DateTime at)
+    {
+        kind = default;
+        id = "";
+        by = "";
+        at = default;
+        var table = SnowField.Read(row, "tablename").Value.Trim();
+        if (table.Length == 0)
+            table = SnowField.Read(row, "tablename").Display.Trim();
+        if (KindFromTable(table) is not WorkEffortKind known)
+            return false;
+        id = SnowField.Read(row, "documentkey").Value.Trim();
+        if (id.Length == 0)
+            id = SnowField.Read(row, "documentkey").Display.Trim();
+        by = ReadAuthor(row, "user");
+        var moment = ReadMoment(row, "sys_created_on");
+        if (id.Length == 0 || by.Length == 0 || moment is not DateTime stamp || !window.Contains(stamp))
+            return false;
+        kind = known;
+        at = stamp;
+        return true;
+    }
+
+    private static bool IsUpdateElement(string element) =>
+        element.Equals("comments", StringComparison.OrdinalIgnoreCase)
+        || element.Equals("additional_comments", StringComparison.OrdinalIgnoreCase)
+        || element.Equals("work_notes", StringComparison.OrdinalIgnoreCase);
+
+    private static WorkEffortKind? KindFromTable(string? table)
+    {
+        var name = (table ?? "").Trim();
+        if (name.Equals("incident", StringComparison.OrdinalIgnoreCase))
+            return WorkEffortKind.Incident;
+        if (name.Equals("sc_req_item", StringComparison.OrdinalIgnoreCase))
+            return WorkEffortKind.RequestedItem;
+        if (name.Equals("interaction", StringComparison.OrdinalIgnoreCase))
+            return WorkEffortKind.Interaction;
+        return null;
+    }
+
+    private static string ReadAuthor(JsonElement row, string name)
+    {
+        var field = SnowField.Read(row, name);
+        var author = field.Value.Trim();
+        if (author.Length == 0)
+            author = field.Display.Trim();
+        return author;
+    }
+
+    private readonly record struct JournalHit(string RecordId, string By, DateTime At, WorkEffortKind? Kind);
+
+    private sealed class WorkEffortBudget
+    {
+        public WorkEffortBudget(int cap) => Cap = cap < 1 ? 1 : cap;
+
+        public int Cap { get; }
+
+        public int Received { get; private set; }
+
+        public bool Truncated { get; private set; }
+
+        public bool WantsMore => Received < Cap && !Truncated;
+
+        public int Room => Math.Max(0, Cap - Received);
+
+        public bool Take()
+        {
+            if (Received >= Cap)
+            {
+                Truncated = true;
+                return false;
+            }
+
+            Received++;
+            return true;
+        }
     }
 
     private static WorkEffortTouch? ReadTouch(JsonElement row, WorkEffortKind kind)
