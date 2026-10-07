@@ -11,14 +11,22 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
     private bool _ready;
     private bool _loading;
     private bool _suspendSlider;
-    private int _sharedIntensity = LegendColorIntensity.Full;
+    private int? _sharedIntensity;
 
     public LegendSettingsViewModel()
     {
+        _suspendSlider = true;
         Entries = HighlightCatalog.Entries.Select(entry => new LegendEntryModel(this, entry)).ToArray();
         foreach (var entry in Entries)
-            _intensities[entry.Key] = LegendColorIntensity.Full;
+        {
+            var measured = LegendColorIntensity.Measure(entry.SwatchHex);
+            _intensities[entry.Key] = measured;
+            entry.Paint(measured);
+        }
+
         _ready = true;
+        SliderValue = Average();
+        _suspendSlider = false;
         RefreshShown();
     }
 
@@ -32,7 +40,7 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
 
     [ObservableProperty] private bool adjustIndividually;
 
-    [ObservableProperty] private int sliderValue = LegendColorIntensity.Full;
+    [ObservableProperty] private int sliderValue;
 
     [ObservableProperty] private string? selectedKey;
 
@@ -46,6 +54,8 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
             Entries.Where(entry => entry.IsEnabled).Select(entry => entry.Key).ToArray());
         return preferences.WithIntensity(_sharedIntensity, Overrides());
     }
+
+    private int Average() => LegendColorIntensity.Average(Entries.Select(entry => _intensities[entry.Key]));
 
     public void Load(HighlightPreferences preferences)
     {
@@ -63,7 +73,7 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
 
         AdjustIndividually = false;
         SelectedKey = null;
-        SliderValue = _sharedIntensity;
+        SliderValue = Average();
         _suspendSlider = false;
         _loading = false;
         RefreshShown();
@@ -99,7 +109,7 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
             if (!value)
             {
                 SelectedKey = null;
-                SliderValue = _sharedIntensity;
+                SliderValue = Average();
             }
 
             _suspendSlider = false;
@@ -156,7 +166,7 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
     {
         _sharedIntensity = LegendColorIntensity.Clamp(value);
         foreach (var entry in Entries)
-            _intensities[entry.Key] = _sharedIntensity;
+            _intensities[entry.Key] = _sharedIntensity.Value;
         PaintAll();
         Publish();
     }
@@ -173,7 +183,9 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
         foreach (var entry in Entries)
         {
             var value = _intensities[entry.Key];
-            if (value == _sharedIntensity)
+            var original = HighlightCatalog.Find(entry.Key)!.SwatchHex;
+            var baseline = _sharedIntensity ?? LegendColorIntensity.Measure(original);
+            if (value == baseline)
                 continue;
             overrides ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             overrides[entry.Key] = value;
@@ -262,8 +274,8 @@ public partial class LegendEntryModel : ObservableObject
 
     internal void Paint(int intensity)
     {
-        SwatchHex = LegendColorIntensity.Apply(_baseSwatch, intensity);
-        RowHex = LegendColorIntensity.Apply(_baseRow, intensity);
+        SwatchHex = LegendColorIntensity.Swatch(_baseSwatch, intensity);
+        RowHex = LegendColorIntensity.Row(_baseSwatch, _baseRow, intensity);
     }
 
     [RelayCommand]
