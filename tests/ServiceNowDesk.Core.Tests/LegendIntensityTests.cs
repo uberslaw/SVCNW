@@ -62,7 +62,10 @@ public class LegendIntensityTests
         Assert.Equal(
             LegendColorIntensity.Apply(HighlightCatalog.UnassignedRowHex, 50),
             main.Incidents.Items[0].HighlightHex);
-        Assert.Equal(LegendColorIntensity.Apply(slaRow, 50), mine.HighlightHex);
+        var washedSla = LegendColorIntensity.Apply(slaRow, 50);
+        Assert.Equal(washedSla, main.Connection.Highlights.ChooseSlaAssigneeHex(true));
+        main.Notifications.RememberViewer("sample-user", main.Connection.Highlights);
+        Assert.Equal(washedSla, mine.HighlightHex);
         Assert.Equal(50, store.Current.LegendIntensity);
         Assert.Null(store.Current.LegendColorIntensities);
         Assert.Equal("secret", store.Current.Password);
