@@ -40,6 +40,7 @@ public partial class MainViewModel : ObservableObject
     private string _signedInUserId = "";
     private string _signedInUserLocation = "";
     private int _sessionEpoch;
+    private int _mixOpenGeneration;
 
     public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
 
@@ -95,6 +96,8 @@ public partial class MainViewModel : ObservableObject
         RequestedItems = new RequestedItemWorkspaceViewModel(desktop, recent);
         WalkUps = new InteractionWorkspaceViewModel(desktop, recent);
         WalkUps.IncidentRequested += (_, conversion) => ConvertOpenTask = OpenConvertedIncidentAsync(conversion);
+        Mix = new MixWorkspaceViewModel();
+        Mix.OpenRequested += (_, row) => MixOpenTask = OpenMixRowAsync(row);
         Search = new SearchWorkspaceViewModel();
         Knowledge = new KnowledgeWorkspaceViewModel(desktop);
         Catalog = new CatalogWorkspaceViewModel();
@@ -140,6 +143,7 @@ public partial class MainViewModel : ObservableObject
         Requests.PrepareRow = _rows.Paint;
         RequestedItems.PrepareRow = _rows.Paint;
         WalkUps.PrepareRow = _rows.Paint;
+        Mix.PrepareRow = _rows.Paint;
         Search.PrepareHit = _rows.Paint;
         Legend.Changed += (_, preferences) =>
         {
@@ -170,8 +174,11 @@ public partial class MainViewModel : ObservableObject
             Leads.SetGroupName(NotificationSettings.Committed.WatchedGroupName);
             if (IsConnected)
             {
+                ApplyOfficeCities();
                 StartAlertLoop();
                 _ = LoadLeadRosterAsync();
+                if (SelectedSection is DeskSection.Incidents or DeskSection.RequestedItems or DeskSection.WalkUps or DeskSection.InTheMix)
+                    _ = EnsureSectionAsync();
             }
         };
         NotificationSettings.JiggleSpeedChanged += (_, _) =>
@@ -237,6 +244,8 @@ public partial class MainViewModel : ObservableObject
     public RequestWorkspaceViewModel Requests { get; }
     public RequestedItemWorkspaceViewModel RequestedItems { get; }
     public InteractionWorkspaceViewModel WalkUps { get; }
+    public MixWorkspaceViewModel Mix { get; }
+    public Task MixOpenTask { get; private set; } = Task.CompletedTask;
     public Task ConvertOpenTask { get; private set; } = Task.CompletedTask;
     public SearchWorkspaceViewModel Search { get; }
     public KnowledgeWorkspaceViewModel Knowledge { get; }
@@ -268,7 +277,8 @@ public partial class MainViewModel : ObservableObject
         (SelectedSection == DeskSection.Incidents && Incidents.ShowResolvePanel)
         || (SelectedSection == DeskSection.Requests && Requests.ShowResolvePanel)
         || (SelectedSection == DeskSection.RequestedItems && RequestedItems.ShowResolvePanel)
-        || (SelectedSection == DeskSection.WalkUps && WalkUps.ShowResolvePanel);
+        || (SelectedSection == DeskSection.WalkUps && WalkUps.ShowResolvePanel)
+        || (SelectedSection == DeskSection.InTheMix && Mix.Editor?.ShowResolvePanel == true);
 
     public async Task InitializeAsync()
     {
@@ -330,6 +340,7 @@ public partial class MainViewModel : ObservableObject
             IsConnected = true;
             _signedInUserId = user.SysId;
             _signedInUserLocation = user.Location ?? "";
+            ApplyOfficeCities();
             Catalog.RememberSignedInUser(user);
             Notifications.RememberViewer(_signedInUserId, Connection.Highlights);
             Leads.Board.RememberViewer(_signedInUserId, Connection.Highlights);
@@ -453,6 +464,17 @@ public partial class MainViewModel : ObservableObject
         if (!IsConnected || _client is null)
             return;
 
+        if (SelectedSection == DeskSection.InTheMix)
+        {
+            Mix.SearchText = SearchText;
+            await Mix.RefreshAsync();
+            if (string.IsNullOrEmpty(Mix.ErrorMessage))
+                _loadedFor[DeskSection.InTheMix] = SearchText;
+            else
+                AbandonIfRejected(Mix.ErrorMessage);
+            return;
+        }
+
         var workspace = ActiveRecord;
         if (workspace is not null)
         {
@@ -534,8 +556,8 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        if (ActiveRecord is not null)
-            await ActiveRecord.SaveCommand.ExecuteAsync(null);
+        if (EditingWorkspace is not null)
+            await EditingWorkspace.SaveCommand.ExecuteAsync(null);
     }
 
     [RelayCommand]
@@ -548,7 +570,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ResolveActive()
     {
-        var workspace = ActiveRecord;
+        var workspace = EditingWorkspace;
         if (workspace is null)
             return;
         if (workspace.ShowResolvePanel)
@@ -572,14 +594,14 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void CancelActive()
     {
-        if (ActiveRecord?.ShowResolvePanel == true)
-            ActiveRecord.CancelResolveCommand.Execute(null);
+        if (EditingWorkspace?.ShowResolvePanel == true)
+            EditingWorkspace.CancelResolveCommand.Execute(null);
     }
 
     [RelayCommand]
     private void PostActive()
     {
-        var workspace = ActiveRecord;
+        var workspace = EditingWorkspace;
         if (workspace is null)
             return;
         if (workspace.ShowResolvePanel)
@@ -613,6 +635,7 @@ public partial class MainViewModel : ObservableObject
             DeskSection.Requests => "Search requests",
             DeskSection.RequestedItems => "Search request items",
             DeskSection.WalkUps => "Search walk-up interactions",
+            DeskSection.InTheMix => "Search incidents, request items, and walk-ups",
             DeskSection.Search => "Search incidents, requests, items, walk-ups, and knowledge",
             DeskSection.Knowledge => "Filter knowledge articles",
             DeskSection.Catalog => "Search the catalog",
@@ -627,6 +650,7 @@ public partial class MainViewModel : ObservableObject
             or DeskSection.Requests
             or DeskSection.RequestedItems
             or DeskSection.WalkUps
+            or DeskSection.InTheMix
             or DeskSection.Search
             or DeskSection.Notifications
             or DeskSection.Leads;
@@ -647,6 +671,9 @@ public partial class MainViewModel : ObservableObject
         ShowBack = CanGoBack();
         BackCommand.NotifyCanExecuteChanged();
     }
+
+    private RecordWorkspaceViewModel? EditingWorkspace =>
+        SelectedSection == DeskSection.InTheMix ? Mix.Editor : ActiveRecord;
 
     private RecordWorkspaceViewModel? ActiveRecord => SelectedSection switch
     {
@@ -702,6 +729,9 @@ public partial class MainViewModel : ObservableObject
                 break;
             case DeskSection.WalkUps:
                 await LoadRecordSectionAsync(DeskSection.WalkUps, WalkUps);
+                break;
+            case DeskSection.InTheMix:
+                await LoadMixAsync();
                 break;
             case DeskSection.Search:
                 if (!Search.HasCurrentResultsFor(SearchText))
@@ -862,6 +892,77 @@ public partial class MainViewModel : ObservableObject
             When = "",
             SortKey = row.Number
         }, fromSearch: false);
+    }
+
+    private async Task LoadMixAsync()
+    {
+        if (Mix.HasLoaded && _loadedFor.TryGetValue(DeskSection.InTheMix, out var loaded) && loaded == SearchText)
+            return;
+
+        Mix.SearchText = SearchText;
+        await Mix.RefreshAsync();
+        _loadedFor[DeskSection.InTheMix] = SearchText;
+    }
+
+    private void ApplyOfficeCities()
+    {
+        var cities = OfficeQueue.Cities(Connection.Notifications.OfficeLocations, _signedInUserLocation);
+        Incidents.UseOfficeCities(cities);
+        RequestedItems.UseOfficeCities(cities);
+        WalkUps.UseOfficeCities(cities);
+        Mix.UseOfficeCities(cities);
+        _loadedFor.Remove(DeskSection.Incidents);
+        _loadedFor.Remove(DeskSection.RequestedItems);
+        _loadedFor.Remove(DeskSection.WalkUps);
+        _loadedFor.Remove(DeskSection.InTheMix);
+    }
+
+    private async Task OpenMixRowAsync(TicketRow row)
+    {
+        var generation = ++_mixOpenGeneration;
+        RecordWorkspaceViewModel workspace = row.Source switch
+        {
+            DeskSection.RequestedItems => RequestedItems,
+            DeskSection.WalkUps => WalkUps,
+            _ => Incidents
+        };
+
+        if (Mix.Editor is { IsDirty: true } || workspace.IsDirty)
+        {
+            if (Mix.Editor is { IsDirty: true } dirty)
+            {
+                dirty.ShowUnsavedBanner = true;
+                dirty.EditorMessage = "Save or discard unsaved changes before opening another record.";
+            }
+
+            Mix.RevertSelection();
+            return;
+        }
+
+        try
+        {
+            await workspace.EnsureChoicesAsync();
+            if (generation != _mixOpenGeneration)
+                return;
+            await workspace.OpenFromSearchAsync(row.SysId);
+            if (generation != _mixOpenGeneration)
+                return;
+            if (!string.Equals(workspace.Number, row.Number, StringComparison.OrdinalIgnoreCase))
+            {
+                Mix.RevertSelection();
+                return;
+            }
+
+            Mix.RememberOpened(row);
+            Mix.ShowEditor(workspace);
+        }
+        catch (Exception ex)
+        {
+            if (generation != _mixOpenGeneration)
+                return;
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+            Mix.RevertSelection();
+        }
     }
 
     private async Task LoadRecordSectionAsync(DeskSection section, RecordWorkspaceViewModel workspace)
@@ -1148,6 +1249,7 @@ public partial class MainViewModel : ObservableObject
         Requests.Detach();
         RequestedItems.Detach();
         WalkUps.Detach();
+        Mix.Detach();
         Catalog.Attach(null);
         Search.Reset();
         Search.Attach(null);
@@ -1165,6 +1267,7 @@ public partial class MainViewModel : ObservableObject
         Requests.Attach(client);
         RequestedItems.Attach(client);
         WalkUps.Attach(client);
+        Mix.Attach(client);
         Catalog.Attach(client);
         Search.Attach(client);
         Knowledge.Attach(client);
@@ -1455,6 +1558,7 @@ public partial class MainViewModel : ObservableObject
         Paint(Requests.RelatedItems);
         Paint(RequestedItems.Items);
         Paint(WalkUps.Items);
+        Paint(Mix.Items);
         foreach (var hit in Search.Results)
             _rows.Paint(hit);
     }

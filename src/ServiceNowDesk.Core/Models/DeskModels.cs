@@ -68,7 +68,8 @@ public enum DeskSection
     Leads,
     DailyWork,
     Legend,
-    Hardware
+    Hardware,
+    InTheMix
 }
 
 public sealed record Choice(string Value, string Label)
@@ -98,6 +99,13 @@ public sealed record TicketQuery
     /// Hardware office names to load. Null or empty does not restrict location.
     /// </summary>
     public IReadOnlyList<string>? Locations { get; init; }
+
+    /// <summary>
+    /// Cities for My Team and Unassigned. Null leaves those queues unlimited.
+    /// An empty list matches no location, so the queue stays inside an office that was not named.
+    /// My Tickets ignores this.
+    /// </summary>
+    public IReadOnlyList<string>? OfficeLocations { get; init; }
 
     public int Limit { get; init; } = 50;
     public int Offset { get; init; }

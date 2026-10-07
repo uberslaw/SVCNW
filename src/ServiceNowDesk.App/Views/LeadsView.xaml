@@ -349,13 +349,13 @@
                         <Button Content="Open in browser" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"
                                 Command="{Binding OpenUnknownInBrowserCommand}" AutomationProperties.Name="Open in browser"/>
                     </StackPanel>
-                    <local:IncidentView DataContext="{Binding IncidentEditor}" local:EditorPane.EditorOnly="True"
+                    <local:IncidentView DataContext="{Binding IncidentEditor}" EditorOnly="True"
                                         Visibility="{Binding ShowIncidentEditor, Converter={StaticResource BoolVis}}"/>
-                    <local:RequestView DataContext="{Binding RequestEditor}" local:EditorPane.EditorOnly="True"
+                    <local:RequestView DataContext="{Binding RequestEditor}" EditorOnly="True"
                                        Visibility="{Binding ShowRequestEditor, Converter={StaticResource BoolVis}}"/>
-                    <local:RequestedItemView DataContext="{Binding RequestedItemEditor}" local:EditorPane.EditorOnly="True"
+                    <local:RequestedItemView DataContext="{Binding RequestedItemEditor}" EditorOnly="True"
                                              Visibility="{Binding ShowRequestedItemEditor, Converter={StaticResource BoolVis}}"/>
-                    <local:InteractionView DataContext="{Binding WalkUpEditor}" local:EditorPane.EditorOnly="True"
+                    <local:InteractionView DataContext="{Binding WalkUpEditor}" EditorOnly="True"
                                            Visibility="{Binding ShowWalkUpEditor, Converter={StaticResource BoolVis}}"/>
                 </Grid>
             </ScrollViewer>

@@ -193,6 +193,13 @@ public sealed class TicketRow : IHighlightRow
     public string Badge { get; init; } = "";
     public bool Unassigned { get; init; }
     public string StateValue { get; init; } = "";
+    public string SortKey { get; init; } = "";
+
+    /// <summary>INC, RITM, or IMS on the combined list. Empty on a single-table list.</summary>
+    public string Kind { get; init; } = "";
+
+    /// <summary>Record type for the combined list. Single-table rows leave this unset.</summary>
+    public DeskSection Source { get; init; }
 
     public string HighlightHex
     {
@@ -220,7 +227,8 @@ public sealed class TicketRow : IHighlightRow
         When = record.UpdatedAtDisplay,
         Badge = BadgeFor(record.Priority),
         Unassigned = record.AssignedTo.IsEmpty,
-        StateValue = record.State
+        StateValue = record.State,
+        SortKey = record.UpdatedAtValue
     };
 
     public static TicketRow FromRequest(RequestRecord record) => new()
@@ -233,7 +241,8 @@ public sealed class TicketRow : IHighlightRow
         Meta = Join(record.RequestedFor.Display, record.StageLabel),
         When = record.UpdatedAtDisplay,
         Badge = BadgeFor(record.Priority),
-        StateValue = record.RequestState
+        StateValue = record.RequestState,
+        SortKey = record.UpdatedAtValue
     };
 
     public static TicketRow FromInteraction(InteractionRecord record) => new()
@@ -246,7 +255,8 @@ public sealed class TicketRow : IHighlightRow
         Meta = Join(record.OpenedFor.Display, record.AssignmentGroup.Display),
         When = record.UpdatedAtDisplay,
         Unassigned = record.AssignedTo.IsEmpty,
-        StateValue = record.State
+        StateValue = record.State,
+        SortKey = record.UpdatedAtValue
     };
 
     public static TicketRow FromItem(RequestedItemRecord record) => new()
@@ -260,7 +270,8 @@ public sealed class TicketRow : IHighlightRow
         When = record.UpdatedAtDisplay,
         Badge = BadgeFor(record.Priority),
         Unassigned = record.AssignedTo.IsEmpty,
-        StateValue = record.State
+        StateValue = record.State,
+        SortKey = record.UpdatedAtValue
     };
 
     private static string BadgeFor(string priority) =>
