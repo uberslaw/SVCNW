@@ -86,4 +86,13 @@ public interface IServiceNowClient : IDisposable
     /// IMS is the walk-up <c>interaction</c> table.
     /// </summary>
     Task<WorkEffortReport> GetWorkEffortAsync(WorkEffortScale scale, DateTime localNow, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Same count, reporting incidents, then request items, then interactions as each table finishes.
+    /// </summary>
+    Task<WorkEffortReport> GetWorkEffortAsync(
+        WorkEffortScale scale,
+        DateTime localNow,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken);
 }

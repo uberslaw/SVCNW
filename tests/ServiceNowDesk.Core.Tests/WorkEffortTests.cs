@@ -1,6 +1,10 @@
 using System.Net;
+using System.Reflection;
+using System.Runtime.ExceptionServices;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
+using ServiceNowDesk.Models;
+using ServiceNowDesk.Services;
 using ServiceNowDesk.ViewModels;
 using ServiceNowDesk.WorkEffort;
 
@@ -322,6 +326,169 @@ public class WorkEffortTests
     }
 
     [Fact]
+    public async Task LeavingWorkEffortDoesNotCancelTheLoadAndTheNextVisitUsesTheCache()
+    {
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proxy = DispatchProxy.Create<IServiceNowClient, WorkEffortHold>();
+        var hold = (WorkEffortHold)(object)proxy;
+        hold.Inner = new SampleServiceNowClient();
+        hold.Ready = ready;
+
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            sampleClientFactory: () => proxy);
+        main.Connection.UseSampleData = true;
+        main.Connection.DownloadCacheOnLaunch = false;
+        main.Connection.LeadsPassword = "iddqd";
+        main.Connection.UnlockLeads();
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.True(main.IsConnected);
+
+        Assert.True(main.TrySelect(DeskSection.Leads));
+        main.Leads.Area = LeadArea.WorkEffort;
+
+        Assert.Equal(1, hold.Queries);
+        Assert.True(main.Leads.WorkEffort.IsLoading);
+        Assert.Equal(0, main.Leads.WorkEffort.ProgressValue);
+        Assert.Equal(WorkEffortProgress.Steps, main.Leads.WorkEffort.ProgressMaximum);
+        Assert.Contains("incidents", main.Leads.WorkEffort.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("today", main.Leads.WorkEffort.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.False(main.IsBusy);
+        var token = Assert.Single(hold.Tokens);
+        Assert.False(token.IsCancellationRequested);
+
+        main.Leads.Area = LeadArea.Team;
+        main.SelectedSection = DeskSection.Incidents;
+        Assert.Equal(DeskSection.Incidents, main.SelectedSection);
+        Assert.False(main.IsBusy);
+        Assert.False(token.IsCancellationRequested);
+        Assert.Equal(1, hold.Queries);
+        Assert.True(main.Leads.WorkEffort.IsLoading);
+
+        ready.SetResult();
+        await WaitUntilAsync(() => !main.Leads.WorkEffort.IsLoading && main.Leads.WorkEffort.HasRows);
+
+        Assert.False(main.Leads.WorkEffort.IsLoading);
+        Assert.Equal("Alex Rivera", main.Leads.WorkEffort.Rows[0].Name);
+        Assert.StartsWith("As of ", main.Leads.WorkEffort.AsOf, StringComparison.Ordinal);
+        Assert.Contains("Counts for today", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
+        Assert.Equal(1, hold.Queries);
+
+        Assert.True(main.TrySelect(DeskSection.Leads));
+        main.Leads.Area = LeadArea.WorkEffort;
+        Assert.Equal(1, hold.Queries);
+        Assert.False(main.Leads.WorkEffort.IsLoading);
+        Assert.True(main.Leads.WorkEffort.HasRows);
+        Assert.Equal("Alex Rivera", main.Leads.WorkEffort.Rows[0].Name);
+
+        main.DisconnectCommand.Execute(null);
+    }
+
+    [Fact]
+    public async Task ADifferentTimeScaleCancelsOnlyThePreviousWorkEffortLoad()
+    {
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proxy = DispatchProxy.Create<IServiceNowClient, WorkEffortHold>();
+        var hold = (WorkEffortHold)(object)proxy;
+        hold.Inner = new SampleServiceNowClient();
+        hold.Ready = ready;
+
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            sampleClientFactory: () => proxy);
+        main.Connection.UseSampleData = true;
+        main.Connection.DownloadCacheOnLaunch = false;
+        main.Connection.LeadsPassword = "iddqd";
+        main.Connection.UnlockLeads();
+        await main.ConnectCommand.ExecuteAsync(null);
+
+        Assert.True(main.TrySelect(DeskSection.Leads));
+        main.Leads.Area = LeadArea.WorkEffort;
+        Assert.Equal(1, hold.Queries);
+        var first = hold.Tokens[0];
+
+        main.Leads.WorkEffort.Scale = WorkEffortScale.ThisWeek;
+        Assert.True(first.IsCancellationRequested);
+        Assert.Equal(2, hold.Queries);
+        Assert.False(hold.Tokens[1].IsCancellationRequested);
+        Assert.True(main.Leads.WorkEffort.IsLoading);
+        Assert.Contains("this week", main.Leads.WorkEffort.Status, StringComparison.OrdinalIgnoreCase);
+
+        ready.SetResult();
+        await WaitUntilAsync(() => !main.Leads.WorkEffort.IsLoading && main.Leads.WorkEffort.HasRows);
+        Assert.Contains("this week", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
+        Assert.Equal(2, hold.Queries);
+
+        main.Leads.WorkEffort.Scale = WorkEffortScale.Today;
+        await WaitUntilAsync(() => !main.Leads.WorkEffort.IsLoading && main.Leads.WorkEffort.HasRows);
+        Assert.Equal(3, hold.Queries);
+        Assert.Contains("today", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
+
+        main.Leads.WorkEffort.Scale = WorkEffortScale.ThisWeek;
+        Assert.Equal(3, hold.Queries);
+        Assert.False(main.Leads.WorkEffort.IsLoading);
+        Assert.Contains("this week", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
+
+        main.Leads.WorkEffort.RefreshCommand.Execute(null);
+        await WaitUntilAsync(() => !main.Leads.WorkEffort.IsLoading && hold.Queries == 4);
+        Assert.Equal(4, hold.Queries);
+        Assert.True(main.Leads.WorkEffort.HasRows);
+
+        main.DisconnectCommand.Execute(null);
+    }
+
+    [Fact]
+    public void ARunningLoadStillFinishesAfterAnotherBeginAndTheSameDayDoesNotQueryAgain()
+    {
+        var page = new WorkEffortViewModel();
+        Assert.True(page.BeginLoad(Now, force: false));
+        Assert.True(page.IsLoading);
+        Assert.Equal(0, page.ProgressValue);
+        Assert.Contains("incidents", page.Status, StringComparison.OrdinalIgnoreCase);
+
+        Assert.False(page.BeginLoad(Now.AddMinutes(10), force: false));
+        Assert.True(page.IsLoading);
+        Assert.Equal(0, page.ProgressValue);
+
+        page.Apply(WorkEffortScale.Today, WorkEffortProgress.Loading(WorkEffortScale.Today, 1));
+        Assert.Equal(1, page.ProgressValue);
+        Assert.Contains("request items", page.Status, StringComparison.OrdinalIgnoreCase);
+        page.Apply(WorkEffortScale.Today, WorkEffortProgress.Loading(WorkEffortScale.Today, 2));
+        Assert.Equal(2, page.ProgressValue);
+        Assert.Contains("interactions", page.Status, StringComparison.OrdinalIgnoreCase);
+
+        page.Remember(WorkEffortScale.Today, Now, SampleWorkEffort.Report(WorkEffortScale.Today, Now));
+        Assert.False(page.IsLoading);
+        Assert.True(page.HasRows);
+        Assert.Equal("As of 15:00", page.AsOf);
+        Assert.Contains("Counts for today", page.Status, StringComparison.Ordinal);
+
+        Assert.False(page.BeginLoad(Now.AddHours(2), force: false));
+        Assert.False(page.IsLoading);
+        Assert.Equal("Alex Rivera", page.Rows[0].Name);
+    }
+
+    [Fact]
+    public async Task LiveLoadReportsIncidentsThenRequestItemsThenInteractions()
+    {
+        var handler = new StubHandler(GroupResponder(includeMembers: true, incidentTotal: null, rejectInteractionResolve: true));
+        using var live = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var ticks = new ProgressList();
+        var report = await live.GetWorkEffortAsync(WorkEffortScale.Today, Now, ticks, CancellationToken.None);
+
+        Assert.Equal([0, 1, 2], ticks.Ticks.Select(tick => tick.Completed).ToArray());
+        Assert.All(ticks.Ticks, tick => Assert.Equal(WorkEffortProgress.Steps, tick.Total));
+        Assert.Contains("incidents", ticks.Ticks[0].Status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("request items", ticks.Ticks[1].Status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("interactions", ticks.Ticks[2].Status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("today", ticks.Ticks[0].Status, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Alex Rivera", report.Rows[0].Name);
+        Assert.False(string.IsNullOrWhiteSpace(report.Status));
+    }
+
+    [Fact]
     public async Task HittingTheSafetyCapSaysTheFiguresArePartial()
     {
         var handler = new StubHandler(GroupResponder(includeMembers: true, incidentTotal: 9, rejectInteractionResolve: false));
@@ -329,6 +496,17 @@ public class WorkEffortTests
         var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None);
         Assert.Contains("safety cap", report.Status, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> ready)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(8);
+        while (!ready())
+        {
+            if (DateTime.UtcNow >= deadline)
+                throw new TimeoutException("Timed out waiting for work effort.");
+            await Task.Delay(15);
+        }
     }
 
     private static async Task OpenWorkEffortAsync(
@@ -391,6 +569,13 @@ public class WorkEffortTests
         ]}
         """;
 
+    private sealed class ProgressList : IProgress<WorkEffortProgress>
+    {
+        public List<WorkEffortProgress> Ticks { get; } = [];
+
+        public void Report(WorkEffortProgress value) => Ticks.Add(value);
+    }
+
     private const string IncidentTouchJson = """
         {"result":[{
           "sys_id":{"value":"inc-1","display_value":"inc-1"},
@@ -404,4 +589,48 @@ public class WorkEffortTests
           "sys_updated_on":{"value":"2026-10-06 23:00:00","display_value":"2026-10-07 15:00:00"}
         }]}
         """;
+}
+
+public class WorkEffortHold : DispatchProxy
+{
+    public SampleServiceNowClient Inner { get; set; } = null!;
+
+    public TaskCompletionSource Ready { get; set; } = null!;
+
+    public int Queries;
+
+    public List<CancellationToken> Tokens { get; } = [];
+
+    protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+    {
+        if (targetMethod is null)
+            throw new InvalidOperationException("Missing ServiceNow method.");
+        if (targetMethod.Name == nameof(IServiceNowClient.GetWorkEffortAsync) && targetMethod.GetParameters().Length == 4)
+            return HoldAsync(args ?? []);
+
+        try
+        {
+            return targetMethod.Invoke(Inner, args);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
+    }
+
+    private async Task<WorkEffortReport> HoldAsync(object?[] args)
+    {
+        var scale = (WorkEffortScale)args[0]!;
+        var localNow = (DateTime)args[1]!;
+        var progress = args[2] as IProgress<WorkEffortProgress>;
+        var token = args[3] is CancellationToken cancellation ? cancellation : CancellationToken.None;
+        Interlocked.Increment(ref Queries);
+        Tokens.Add(token);
+        progress?.Report(WorkEffortProgress.Loading(scale, 0));
+        await Ready.Task.WaitAsync(token).ConfigureAwait(false);
+        progress?.Report(WorkEffortProgress.Loading(scale, 1));
+        progress?.Report(WorkEffortProgress.Loading(scale, 2));
+        return SampleWorkEffort.Report(scale, localNow);
+    }
 }

@@ -8,24 +8,26 @@
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel MaxWidth="980" HorizontalAlignment="Left" Margin="8">
-            <TextBlock Text="Leads" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
-            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12">
-                <TextBlock.Text>
-                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. The ticked names are saved on this PC. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work effort counts everyone in your groups."/>
-                </TextBlock.Text>
-            </TextBlock>
-
+            <TextBlock Text="Leads" Style="{StaticResource SectionTitle}" Margin="0,0,0,10"/>
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                <RadioButton GroupName="LeadArea" Content="My team" Margin="0,0,18,0"
+                <RadioButton GroupName="LeadArea" Content="My team" Style="{StaticResource QueueChoice}"
+                             Padding="14,8" Margin="0,0,8,0" FontSize="14" FontWeight="SemiBold"
                              IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=Team}"
                              AutomationProperties.Name="My team"/>
-                <RadioButton GroupName="LeadArea" Content="Regional" Margin="0,0,18,0"
+                <RadioButton GroupName="LeadArea" Content="Regional" Style="{StaticResource QueueChoice}"
+                             Padding="14,8" Margin="0,0,8,0" FontSize="14" FontWeight="SemiBold"
                              IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=Regional}"
                              AutomationProperties.Name="Regional"/>
-                <RadioButton GroupName="LeadArea" Content="Work effort"
+                <RadioButton GroupName="LeadArea" Content="Work Effort" Style="{StaticResource QueueChoice}"
+                             Padding="14,8" Margin="0,0,8,0" FontSize="14" FontWeight="SemiBold"
                              IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=WorkEffort}"
-                             AutomationProperties.Name="Work effort"/>
+                             AutomationProperties.Name="Work Effort"/>
             </StackPanel>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12">
+                <TextBlock.Text>
+                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. The ticked names are saved on this PC. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work Effort counts everyone in your groups."/>
+                </TextBlock.Text>
+            </TextBlock>
 
             <StackPanel Visibility="{Binding ShowQueues, Converter={StaticResource BoolVis}}">
                 <TextBlock Text="{Binding RosterNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
@@ -138,8 +140,9 @@
             </StackPanel>
 
             <StackPanel Visibility="{Binding ShowWorkEffort, Converter={StaticResource BoolVis}}">
+                <TextBlock Text="Work Effort" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                           Text="Everyone in your groups, including you, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. An update that did not open, close, or resolve that record is 0.3. Closing counts as the resolve when that person did not also resolve it. Figures load the first time you open a time scale each day. Refresh reloads the scale you are looking at."/>
+                           Text="Everyone in your groups, including you, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. An update that did not open, close, or resolve that record is 0.3. Closing counts as the resolve when that person did not also resolve it. Figures load the first time you open a time scale each day. Refresh reloads the scale you are looking at. Leaving this page does not stop the load."/>
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -151,7 +154,7 @@
                             Command="{Binding WorkEffort.RefreshCommand}"
                             AutomationProperties.Name="Refresh work effort"/>
                 </Grid>
-                <WrapPanel Margin="0,0,0,12" AutomationProperties.Name="Work effort time scale">
+                <WrapPanel Margin="0,0,0,12" AutomationProperties.Name="Work Effort time scale">
                     <RadioButton GroupName="WorkEffortScale" Content="Today" Margin="0,0,16,8"
                                  IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=Today}"
                                  AutomationProperties.Name="Today"/>
@@ -171,6 +174,26 @@
                                  IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=TwelveMonths}"
                                  AutomationProperties.Name="12 months"/>
                 </WrapPanel>
+                <ProgressBar Minimum="0"
+                             Maximum="{Binding WorkEffort.ProgressMaximum}"
+                             Value="{Binding WorkEffort.ProgressValue}"
+                             Height="10"
+                             Margin="0,0,0,8"
+                             Background="{StaticResource DownloadTrackBrush}"
+                             Foreground="{StaticResource DownloadFillBrush}"
+                             BorderThickness="0"
+                             IsHitTestVisible="False"
+                             Visibility="{Binding WorkEffort.IsLoading, Converter={StaticResource BoolVis}}"
+                             AutomationProperties.Name="Work Effort progress">
+                    <ProgressBar.Template>
+                        <ControlTemplate TargetType="ProgressBar">
+                            <Grid>
+                                <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="3"/>
+                                <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="3"/>
+                            </Grid>
+                        </ControlTemplate>
+                    </ProgressBar.Template>
+                </ProgressBar>
                 <TextBlock Text="{Binding WorkEffort.Status}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding WorkEffort.Status, Converter={StaticResource StringVis}}"/>
                 <TextBlock Text="{Binding WorkEffort.EmptyMessage}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
@@ -207,7 +230,7 @@
                         <ListBox ItemsSource="{Binding WorkEffort.Rows}"
                                  Style="{StaticResource DeskList}"
                                  ItemContainerStyle="{StaticResource EffortRow}"
-                                 AutomationProperties.Name="Work effort"
+                                 AutomationProperties.Name="Work Effort"
                                  BorderThickness="1">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>

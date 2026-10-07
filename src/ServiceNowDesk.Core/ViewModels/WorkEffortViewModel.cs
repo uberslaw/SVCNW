@@ -21,18 +21,27 @@ public partial class WorkEffortViewModel : ObservableObject
 
     public event EventHandler? RefreshRequested;
 
+    private WorkEffortScale? _loadingScale;
+
     [ObservableProperty] private WorkEffortScale scale = WorkEffortScale.Today;
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string emptyMessage = "";
     [ObservableProperty] private string asOf = "";
     [ObservableProperty] private bool hasRows;
+    [ObservableProperty] private bool isLoading;
+    [ObservableProperty] private int progressValue;
+    [ObservableProperty] private int progressMaximum = WorkEffortProgress.Steps;
 
     /// <summary>
     /// True when the screen needs a query. A cached scale from the same local day is shown and returns false.
-    /// A new local day drops every cached scale. Force reloads only the scale that is selected.
+    /// A load already running for the selected scale also returns false, so leaving the page and coming back
+    /// does not start a second query. A new local day drops every cached scale. Force reloads only the scale
+    /// that is selected.
     /// </summary>
     public bool BeginLoad(DateTime localNow, bool force)
     {
+        if (!force && IsLoading && _loadingScale == Scale)
+            return false;
         if (!force && TryShowCached(localNow))
             return false;
 
@@ -65,13 +74,45 @@ public partial class WorkEffortViewModel : ObservableObject
             ShowEntry(entry);
     }
 
+    public void Apply(WorkEffortScale scale, WorkEffortProgress progress)
+    {
+        if (!IsLoading || _loadingScale != scale)
+            return;
+        ProgressMaximum = progress.Total < 1 ? WorkEffortProgress.Steps : progress.Total;
+        var value = progress.Completed;
+        if (value < 0)
+            value = 0;
+        if (value > ProgressMaximum)
+            value = ProgressMaximum;
+        ProgressValue = value;
+        if (!string.IsNullOrWhiteSpace(progress.Status))
+            Status = progress.Status;
+    }
+
+    /// <summary>
+    /// Drops the running flag after the query is cancelled because the connection went away.
+    /// Cached figures for the day stay put.
+    /// </summary>
+    public void AbandonLoad()
+    {
+        if (!IsLoading)
+            return;
+        IsLoading = false;
+        _loadingScale = null;
+        Status = "";
+    }
+
     public void MarkLoading()
     {
         Rows.Clear();
         HasRows = false;
         EmptyMessage = "";
         AsOf = "";
-        Status = "Loading work effort…";
+        _loadingScale = Scale;
+        ProgressValue = 0;
+        ProgressMaximum = WorkEffortProgress.Steps;
+        IsLoading = true;
+        Status = WorkEffortProgress.Loading(Scale, 0).Status;
     }
 
     public void Show(WorkEffortReport report)
@@ -83,6 +124,8 @@ public partial class WorkEffortViewModel : ObservableObject
         HasRows = Rows.Count > 0;
         EmptyMessage = HasRows ? "" : report.EmptyMessage;
         Status = report.Status;
+        IsLoading = false;
+        _loadingScale = null;
     }
 
     public void ShowError(string message)
@@ -92,6 +135,8 @@ public partial class WorkEffortViewModel : ObservableObject
         EmptyMessage = "";
         AsOf = "";
         Status = message ?? "";
+        IsLoading = false;
+        _loadingScale = null;
     }
 
     public void Clear()
@@ -103,6 +148,10 @@ public partial class WorkEffortViewModel : ObservableObject
         EmptyMessage = "";
         AsOf = "";
         Status = "";
+        IsLoading = false;
+        ProgressValue = 0;
+        ProgressMaximum = WorkEffortProgress.Steps;
+        _loadingScale = null;
     }
 
     [RelayCommand]

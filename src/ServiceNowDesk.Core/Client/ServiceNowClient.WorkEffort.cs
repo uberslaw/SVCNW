@@ -11,11 +11,19 @@ public sealed partial class ServiceNowClient
     public Task<WorkEffortReport> GetWorkEffortAsync(WorkEffortScale scale, DateTime localNow, CancellationToken cancellationToken) =>
         GetWorkEffortAsync(scale, localNow, WorkEffortQuery.SafetyCap, cancellationToken);
 
+    public Task<WorkEffortReport> GetWorkEffortAsync(
+        WorkEffortScale scale,
+        DateTime localNow,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken) =>
+        GetWorkEffortAsync(scale, localNow, WorkEffortQuery.SafetyCap, cancellationToken, progress);
+
     internal async Task<WorkEffortReport> GetWorkEffortAsync(
         WorkEffortScale scale,
         DateTime localNow,
         int safetyCap,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<WorkEffortProgress>? progress = null)
     {
         var window = WorkEffortWindow.For(scale, localNow);
         var cap = Math.Max(1, safetyCap);
@@ -46,18 +54,21 @@ public sealed partial class ServiceNowClient
 
         var touches = new List<WorkEffortTouch>();
         var truncated = false;
+        progress?.Report(WorkEffortProgress.Loading(scale, 0));
         var incident = await LoadWorkEffortTableAsync([WorkEffortTablePlan.Incident], people, window, cap, cancellationToken).ConfigureAwait(false);
         touches.AddRange(incident.Touches);
         truncated |= incident.Truncated;
         if (incident.Problem is not null)
             problems.Add(incident.Problem);
 
+        progress?.Report(WorkEffortProgress.Loading(scale, 1));
         var items = await LoadWorkEffortTableAsync(WorkEffortTablePlan.RequestedItemAttempts, people, window, cap, cancellationToken).ConfigureAwait(false);
         touches.AddRange(items.Touches);
         truncated |= items.Truncated;
         if (items.Problem is not null)
             problems.Add(items.Problem);
 
+        progress?.Report(WorkEffortProgress.Loading(scale, 2));
         var interactions = await LoadWorkEffortTableAsync(WorkEffortTablePlan.InteractionAttempts, people, window, cap, cancellationToken).ConfigureAwait(false);
         touches.AddRange(interactions.Touches);
         truncated |= interactions.Truncated;

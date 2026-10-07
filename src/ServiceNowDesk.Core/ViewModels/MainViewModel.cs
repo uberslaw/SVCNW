@@ -1088,6 +1088,7 @@ public partial class MainViewModel : ObservableObject
         Knowledge.Clear();
         _returnStack.Clear();
         UpdateBack();
+        CancelWorkEffortLoad();
         _client?.Dispose();
         _client = client;
         if (client is null)
@@ -1398,8 +1399,14 @@ public partial class MainViewModel : ObservableObject
             _rows.Paint(row);
     }
 
-    private readonly Dictionary<WorkEffortScale, int> _workEffortTokens = [];
+    private CancellationTokenSource? _workEffortCts;
+    private int _workEffortGeneration;
 
+    /// <summary>
+    /// Loads the selected scale. Leaving Leads or switching to My team or Regional does not cancel it.
+    /// Refresh, or choosing another time scale, cancels only the previous Work Effort query.
+    /// A finished background load is cached for the local day.
+    /// </summary>
     private async Task LoadWorkEffortAsync(bool force)
     {
         if (Leads.Area != LeadArea.WorkEffort)
@@ -1417,18 +1424,21 @@ public partial class MainViewModel : ObservableObject
         if (!Leads.WorkEffort.BeginLoad(localNow, force))
             return;
 
-        var token = NextWorkEffortToken(scale);
+        var generation = BeginWorkEffortLoad();
+        var cts = new CancellationTokenSource();
+        _workEffortCts = cts;
+        var sink = new WorkEffortProgressSink(this, generation, client, scale);
         try
         {
-            var report = await client.GetWorkEffortAsync(scale, localNow, CancellationToken.None).ConfigureAwait(false);
+            var report = await client.GetWorkEffortAsync(scale, localNow, sink, cts.Token).ConfigureAwait(false);
             PostToUi(() =>
             {
-                if (!ReferenceEquals(client, _client) || !IsCurrentWorkEffortToken(scale, token))
+                if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
                     return;
                 Leads.WorkEffort.Remember(scale, localNow, report);
             });
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
         }
         catch (Exception ex)
@@ -1436,25 +1446,65 @@ public partial class MainViewModel : ObservableObject
             var message = WorkspaceMessages.Describe(ex);
             PostToUi(() =>
             {
-                if (!ReferenceEquals(client, _client) || !IsCurrentWorkEffortToken(scale, token))
+                if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
                     return;
-                if (Leads.WorkEffort.Scale != scale)
+                if (Leads.Area != LeadArea.WorkEffort || Leads.WorkEffort.Scale != scale)
                     return;
                 Leads.WorkEffort.ShowError(message);
             });
         }
     }
 
-    private int NextWorkEffortToken(WorkEffortScale scale)
+    /// <summary>
+    /// Cancels the in-flight Work Effort query so a refresh or a different scale can replace it.
+    /// </summary>
+    private int BeginWorkEffortLoad()
     {
-        _workEffortTokens.TryGetValue(scale, out var current);
-        var next = current + 1;
-        _workEffortTokens[scale] = next;
-        return next;
+        var generation = ++_workEffortGeneration;
+        CancelWorkEffortSource();
+        return generation;
     }
 
-    private bool IsCurrentWorkEffortToken(WorkEffortScale scale, int token) =>
-        _workEffortTokens.TryGetValue(scale, out var current) && current == token;
+    /// <summary>
+    /// Stops an in-flight query because the client is going away. Navigation does not call this.
+    /// </summary>
+    private void CancelWorkEffortLoad()
+    {
+        _workEffortGeneration++;
+        CancelWorkEffortSource();
+        Leads.WorkEffort.AbandonLoad();
+    }
+
+    private void CancelWorkEffortSource()
+    {
+        var cts = _workEffortCts;
+        _workEffortCts = null;
+        if (cts is null)
+            return;
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        cts.Dispose();
+    }
+
+    private sealed class WorkEffortProgressSink(
+        MainViewModel owner,
+        int generation,
+        IServiceNowClient client,
+        WorkEffortScale scale) : IProgress<WorkEffortProgress>
+    {
+        public void Report(WorkEffortProgress value) => owner.PostToUi(() =>
+        {
+            if (generation != owner._workEffortGeneration || !ReferenceEquals(client, owner._client))
+                return;
+            owner.Leads.WorkEffort.Apply(scale, value);
+        });
+    }
 
     private async Task LoadLeadRosterAsync()
     {
