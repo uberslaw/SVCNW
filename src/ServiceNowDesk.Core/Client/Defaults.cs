@@ -157,8 +157,8 @@ public static class PresetCatalog
 {
     public static IReadOnlyList<PresetOption> Incidents { get; } =
     [
-        new(AssignmentScope.Mine, ActivityFilter.Open, "My open"),
-        new(AssignmentScope.MyGroups, ActivityFilter.Open, "My groups"),
+        new(AssignmentScope.Mine, ActivityFilter.Open, "My Tickets"),
+        new(AssignmentScope.MyGroups, ActivityFilter.Open, "My Team"),
         new(AssignmentScope.Unassigned, ActivityFilter.Open, "Unassigned"),
         new(AssignmentScope.Any, ActivityFilter.Open, "All open"),
         new(AssignmentScope.Any, ActivityFilter.Closed, "Closed"),
@@ -177,6 +177,16 @@ public static class PresetCatalog
     public static IReadOnlyList<PresetOption> RequestedItems { get; } = Incidents;
 
     public static IReadOnlyList<PresetOption> WalkUps { get; } = Incidents;
+
+    /// <summary>
+    /// The combined list uses the same three actions. My Team is the default selection.
+    /// </summary>
+    public static IReadOnlyList<PresetOption> Mix { get; } =
+    [
+        new(AssignmentScope.Mine, ActivityFilter.Open, "My Tickets"),
+        new(AssignmentScope.MyGroups, ActivityFilter.Open, "My Team"),
+        new(AssignmentScope.Unassigned, ActivityFilter.Open, "Unassigned")
+    ];
 }
 
 public static class ServiceNowLinks

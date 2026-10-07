@@ -337,6 +337,26 @@
 
             <Grid>
                 <!-- Visibility stays on the wrapper. A DataContext on the same element would resolve SelectedSection against the page, and every page would stay visible. -->
+                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=InTheMix}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="420"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <views:MixView DataContext="{Binding Mix}"/>
+                        <Grid Grid.Column="2">
+                            <TextBlock Text="Select a ticket." FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding Mix.HasMixEditor, Converter={StaticResource InverseBoolVis}}"/>
+                            <views:IncidentView EditorOnly="True" DataContext="{Binding Incidents}"
+                                                Visibility="{Binding Mix.EditorKey, Converter={StaticResource SectionVis}, ConverterParameter=Incidents}"/>
+                            <views:RequestedItemView EditorOnly="True" DataContext="{Binding RequestedItems}"
+                                                     Visibility="{Binding Mix.EditorKey, Converter={StaticResource SectionVis}, ConverterParameter=RequestedItems}"/>
+                            <views:InteractionView EditorOnly="True" DataContext="{Binding WalkUps}"
+                                                   Visibility="{Binding Mix.EditorKey, Converter={StaticResource SectionVis}, ConverterParameter=WalkUps}"/>
+                        </Grid>
+                    </Grid>
+                </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Incidents}">
                     <views:IncidentView DataContext="{Binding Incidents}"/>
                 </Grid>

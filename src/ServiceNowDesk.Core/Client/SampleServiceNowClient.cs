@@ -420,7 +420,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             DeskSection.Incidents,
             record.State,
             record.StateLabel,
-            record.OpenedAtDisplay));
+            record.OpenedAtDisplay,
+            location: record.Location));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -642,7 +643,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                 DeskSection.RequestedItems,
                 record.State,
                 record.StateLabel,
-                record.OpenedAtDisplay));
+                record.OpenedAtDisplay,
+                location: record.Location));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -1078,7 +1080,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                 DeskSection.WalkUps,
                 record.State,
                 record.StateLabel,
-                record.OpenedAtDisplay));
+                record.OpenedAtDisplay,
+                location: record.Location));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -1998,6 +2001,153 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             UpdatedAtValue = "2026-10-06 08:00:00",
             Active = true
         });
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-mix-bne",
+            Number = "INC0010019",
+            ShortDescription = "Team laptop in the Brisbane office",
+            Description = "Assigned to a teammate at Brisbane Office.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "5",
+            PriorityLabel = "5 - Planning",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Sam,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            ServiceOffering = new ReferenceValue("offering-euc", "End-user computing"),
+            Location = "Brisbane Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtValue = "2099-01-01 00:00:00",
+            Active = true
+        });
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-mix-syd",
+            Number = "INC0010020",
+            ShortDescription = "Unassigned group ticket in Sydney",
+            Description = "Same group, another city.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "5",
+            PriorityLabel = "5 - Planning",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "email",
+            ContactTypeLabel = "Email",
+            Caller = Sam,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = ClientServices,
+            Location = "Sydney",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:01",
+            UpdatedAtValue = "2099-01-01 00:01:00",
+            Active = true
+        });
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-mix-free",
+            Number = "INC0010021",
+            ShortDescription = "Unassigned group ticket in Brisbane",
+            Description = "The location name is the city, not the office suffix.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "5",
+            PriorityLabel = "5 - Planning",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = ClientServices,
+            Location = "Brisbane",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:02",
+            UpdatedAtValue = "2099-01-01 00:02:00",
+            Active = true
+        });
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-mix-blank",
+            Number = "INC0010022",
+            ShortDescription = "Unassigned group ticket with no location",
+            Description = "No office is stored, so the office queue leaves it out.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "5",
+            PriorityLabel = "5 - Planning",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "inquiry",
+            CategoryLabel = "Inquiry / Help",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:03",
+            UpdatedAtValue = "2099-01-01 00:03:00",
+            Active = true
+        });
+        _items.Add(new RequestedItemRecord
+        {
+            SysId = "ritm-mix-bne",
+            Number = "RITM0010007",
+            ShortDescription = "Brisbane office dock for the team",
+            Description = "Request item in the same office as the team queue.",
+            State = "2",
+            StateLabel = "Work in Progress",
+            Priority = "5",
+            PriorityLabel = "5 - Planning",
+            Quantity = "1",
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:04",
+            UpdatedAtValue = "2099-01-01 00:04:00",
+            Active = true
+        });
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-mix-bne",
+            Number = "IMS0010005",
+            ShortDescription = "Walk-up at the Brisbane office",
+            Description = "Interaction in the same office as the team queue.",
+            State = "work_in_progress",
+            StateLabel = "Work in Progress",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Sam,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:05",
+            UpdatedAtValue = "2099-01-01 00:05:00",
+            Active = true
+        });
         SeedHardware();
     }
 
@@ -2168,7 +2318,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         string? stateValue = null,
         string? stateLabel = null,
         string? openedAt = null,
-        bool honorRecordFilters = true)
+        bool honorRecordFilters = true,
+        string? location = null)
     {
         if (query.Activity == ActivityFilter.Open)
         {
@@ -2208,6 +2359,15 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                 case AssignmentScope.MyGroups when groupId != ClientServices.SysId:
                     return false;
             }
+        }
+
+        if (query.OfficeLocations is not null
+            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+        {
+            if (query.Assignment == AssignmentScope.Unassigned && groupId != ClientServices.SysId)
+                return false;
+            if (!OfficeQueue.Matches(location, query.OfficeLocations))
+                return false;
         }
 
         return EncodedQuery.Matches(query.Text, number, haystack);

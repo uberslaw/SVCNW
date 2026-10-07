@@ -7,10 +7,21 @@ namespace ServiceNowDesk.Views;
 
 public partial class IncidentView
 {
+    public static readonly DependencyProperty EditorOnlyProperty =
+        DependencyProperty.Register(nameof(EditorOnly), typeof(bool), typeof(IncidentView), new PropertyMetadata(false, (d, _) => ((IncidentView)d).ApplyEditorOnly()));
+
     public IncidentView()
     {
         InitializeComponent();
     }
+
+    public bool EditorOnly
+    {
+        get => (bool)GetValue(EditorOnlyProperty);
+        set => SetValue(EditorOnlyProperty, value);
+    }
+
+    private void ApplyEditorOnly() => EditorPane.Apply(EditorOnly, Layout, ListPane);
 
     private void OpenAttachment_Click(object sender, RoutedEventArgs e)
     {
