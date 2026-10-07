@@ -2,11 +2,11 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:ServiceNowDesk.Controls">
-    <Grid x:Name="Layout" Margin="16,12,16,12">
+    <Grid x:Name="Layout" Margin="16,12,16,12" SizeChanged="Layout_SizeChanged">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="400"/>
+            <ColumnDefinition x:Name="ListColumn" Width="400"/>
             <ColumnDefinition Width="16"/>
-            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*" MinWidth="0"/>
         </Grid.ColumnDefinitions>
 
         <DockPanel x:Name="ListPane" Grid.Column="0">
@@ -52,7 +52,7 @@
                      Style="{StaticResource DeskList}"/>
         </DockPanel>
 
-        <Grid Grid.Column="2">
+        <Grid Grid.Column="2" MinWidth="0">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}">
                 <TextBlock Text="Select an incident, or create a new one." FontSize="16" HorizontalAlignment="Center"/>
                 <TextBlock Text="The list stays here while you work. Search from the box above." Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" HorizontalAlignment="Center"/>
@@ -99,8 +99,20 @@
                     </StackPanel>
                 </Border>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
+                <ScrollViewer x:Name="EditorScroll"
+                              MinWidth="0"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto"
+                              SizeChanged="EditorScroll_SizeChanged"
+                              ScrollChanged="EditorScroll_ScrollChanged">
+                    <StackPanel x:Name="EditorForm" HorizontalAlignment="Stretch">
+                        <StackPanel.Resources>
+                            <Style x:Key="IncidentLabel" TargetType="TextBlock" BasedOn="{StaticResource FieldLabel}">
+                                <Setter Property="TextWrapping" Value="Wrap"/>
+                            </Style>
+                        </StackPanel.Resources>
                         <DockPanel Margin="0,0,0,12">
                             <TextBlock DockPanel.Dock="Right" Text="{Binding OpenedAt, StringFormat=Opened {0}}" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
                             <WrapPanel VerticalAlignment="Center">
@@ -114,7 +126,7 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <TextBlock Margin="0,2,12,2" VerticalAlignment="Center" Background="Transparent">
+                                            <TextBlock Margin="0,2,12,2" VerticalAlignment="Center" Background="Transparent" TextWrapping="Wrap">
                                                 <Hyperlink Click="OpenAttachment_Click" Foreground="#0000EE" TextDecorations="Underline" ToolTip="Open this attachment">
                                                     <Run Text="{Binding FileName}"/>
                                                 </Hyperlink>
@@ -129,92 +141,78 @@
                             </WrapPanel>
                         </DockPanel>
 
-                        <TextBlock Text="Short description" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
+                        <TextBlock Text="Short description" Style="{StaticResource IncidentLabel}"/>
+                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
 
-                        <Grid Margin="0,0,0,12">
+                        <Grid Margin="0,0,0,12" HorizontalAlignment="Stretch">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*" MinWidth="0"/>
                                 <ColumnDefinition Width="16"/>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*" MinWidth="0"/>
                             </Grid.ColumnDefinitions>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="2*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Caller" Style="{StaticResource FieldLabel}"/>
-                                    <controls:ReferenceEditor DataContext="{Binding Caller}" Margin="0,0,0,10"/>
+                            <StackPanel HorizontalAlignment="Stretch">
+                                <TextBlock Text="Caller" Style="{StaticResource IncidentLabel}"/>
+                                <controls:ReferenceEditor DataContext="{Binding Caller}" Margin="0,0,0,10"/>
 
-                                    <TextBlock Text="Location" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox Text="{Binding LocationText, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
+                                <TextBlock Text="Location" Style="{StaticResource IncidentLabel}"/>
+                                <TextBox Text="{Binding LocationText, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
 
-                                    <TextBlock Text="Category" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox ItemsSource="{Binding CategoryChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Category}" Margin="0,0,0,10"/>
+                                <TextBlock Text="Category" Style="{StaticResource IncidentLabel}"/>
+                                <ComboBox ItemsSource="{Binding CategoryChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Category}" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
 
-                                    <TextBlock Text="Subcategory" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox ItemsSource="{Binding SubcategoryChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Subcategory}" Margin="0,0,0,10"/>
+                                <TextBlock Text="Subcategory" Style="{StaticResource IncidentLabel}"/>
+                                <ComboBox ItemsSource="{Binding SubcategoryChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Subcategory}" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
 
-                                    <TextBlock Text="Service offering" Style="{StaticResource FieldLabel}"/>
-                                    <controls:CachedChoiceBox DataContext="{Binding ServiceOffering}"/>
-                                    <TextBlock Text="Required once this incident has been created." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,10" TextWrapping="Wrap"/>
+                                <TextBlock Text="Service offering" Style="{StaticResource IncidentLabel}"/>
+                                <controls:CachedChoiceBox DataContext="{Binding ServiceOffering}"/>
+                                <TextBlock Text="Required once this incident has been created." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,10" TextWrapping="Wrap"/>
 
-                                    <TextBlock Text="Configuration item" Style="{StaticResource FieldLabel}"/>
-                                    <controls:CachedChoiceBox DataContext="{Binding ConfigurationItem}" Margin="0,0,0,10"/>
+                                <TextBlock Text="Configuration item" Style="{StaticResource IncidentLabel}"/>
+                                <controls:CachedChoiceBox DataContext="{Binding ConfigurationItem}" Margin="0,0,0,10"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Stretch">
+                                <TextBlock Text="Channel" Style="{StaticResource IncidentLabel}"/>
+                                <ComboBox ItemsSource="{Binding ContactChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ContactType}" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+
+                                <TextBlock Text="State" Style="{StaticResource IncidentLabel}"/>
+                                <ComboBox ItemsSource="{Binding StateChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding State}" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+
+                                <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowHoldReason, Converter={StaticResource BoolVis}}">
+                                    <TextBlock Text="On hold reason" Style="{StaticResource IncidentLabel}"/>
+                                    <ComboBox ItemsSource="{Binding HoldReasonChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding HoldReason}" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Follow up" Style="{StaticResource IncidentLabel}"/>
+                                    <controls:FollowUpBox Text="{Binding FollowUp, UpdateSourceTrigger=PropertyChanged}"/>
                                 </StackPanel>
-                            </Grid>
-                            <Grid Grid.Column="2">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="2*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="Channel" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox ItemsSource="{Binding ContactChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ContactType}" Margin="0,0,0,10"/>
 
-                                    <TextBlock Text="State" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox ItemsSource="{Binding StateChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding State}" Margin="0,0,0,10"/>
+                                <TextBlock Text="Impact" Style="{StaticResource IncidentLabel}"/>
+                                <ComboBox ItemsSource="{Binding ImpactChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Impact}" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
 
-                                    <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowHoldReason, Converter={StaticResource BoolVis}}">
-                                        <TextBlock Text="On hold reason" Style="{StaticResource FieldLabel}"/>
-                                        <ComboBox ItemsSource="{Binding HoldReasonChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding HoldReason}" Margin="0,0,0,10"/>
-                                        <TextBlock Text="Follow up" Style="{StaticResource FieldLabel}"/>
-                                        <controls:FollowUpBox Text="{Binding FollowUp, UpdateSourceTrigger=PropertyChanged}"/>
-                                    </StackPanel>
+                                <TextBlock Text="Urgency" Style="{StaticResource IncidentLabel}"/>
+                                <ComboBox ItemsSource="{Binding UrgencyChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Urgency}" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
 
-                                    <TextBlock Text="Impact" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox ItemsSource="{Binding ImpactChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Impact}" Margin="0,0,0,10"/>
+                                <TextBlock Text="Priority" Style="{StaticResource IncidentLabel}"/>
+                                <TextBox Text="{Binding PriorityLabel, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" HorizontalAlignment="Stretch"/>
+                                <TextBlock Text="Calculated by ServiceNow." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,10" TextWrapping="Wrap"/>
 
-                                    <TextBlock Text="Urgency" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox ItemsSource="{Binding UrgencyChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Urgency}" Margin="0,0,0,10"/>
+                                <TextBlock Text="Assignment group" Style="{StaticResource IncidentLabel}"/>
+                                <ComboBox ItemsSource="{Binding Assignment.Groups}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.GroupId}" HorizontalAlignment="Stretch" Margin="0,0,0,10"/>
 
-                                    <TextBlock Text="Priority" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox Text="{Binding PriorityLabel, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}"/>
-                                    <TextBlock Text="Calculated by ServiceNow." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,10" TextWrapping="Wrap"/>
-
-                                    <TextBlock Text="Assignment group" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox ItemsSource="{Binding Assignment.Groups}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.GroupId}" Margin="0,0,0,10"/>
-
-                                    <TextBlock Text="Assigned to" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox ItemsSource="{Binding Assignment.Members}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.MemberId}"/>
-                                    <TextBlock Text="{Binding Assignment.MemberHint}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding Assignment.MemberHint, Converter={StaticResource StringVis}}"/>
-                                </StackPanel>
-                            </Grid>
+                                <TextBlock Text="Assigned to" Style="{StaticResource IncidentLabel}"/>
+                                <ComboBox ItemsSource="{Binding Assignment.Members}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.MemberId}" HorizontalAlignment="Stretch"/>
+                                <TextBlock Text="{Binding Assignment.MemberHint}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding Assignment.MemberHint, Converter={StaticResource StringVis}}"/>
+                            </StackPanel>
                         </Grid>
 
-                        <TextBlock Text="Description" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Text="Description" Style="{StaticResource IncidentLabel}"/>
                         <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="68" VerticalScrollBarVisibility="Auto" Margin="0,0,0,12"/>
 
                         <ContentControl Content="{Binding}" ContentTemplate="{StaticResource JournalHistoryTemplate}" Focusable="False" IsTabStop="False"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <WrapPanel Margin="0,0,0,6">
                             <RadioButton Content="Work note" GroupName="IncidentJournal" Margin="0,0,16,0"
                                          IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=WorkNotes}"/>
                             <RadioButton Content="Customer comment" GroupName="IncidentJournal" Foreground="{StaticResource CustomerBrush}"
                                          IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=Comments}"/>
-                        </StackPanel>
+                        </WrapPanel>
                         <TextBlock Text="Visible to the caller." Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding JournalIsCustomerVisible, Converter={StaticResource BoolVis}}"/>
                         <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"/>
                         <Button Content="Post note" Style="{StaticResource SecondaryButton}" Command="{Binding PostJournalCommand}" HorizontalAlignment="Left"/>
