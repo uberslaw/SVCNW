@@ -109,6 +109,7 @@ public class InTheMixTests
 
         main.Incidents.ShortDescription = "Updated from the mix";
         await main.Incidents.SaveCommand.ExecuteAsync(null);
+        Assert.True(string.IsNullOrEmpty(main.Incidents.ErrorMessage), main.Incidents.ErrorMessage);
         var saved = await sample.GetIncidentAsync("inc-mix-bne", CancellationToken.None);
         Assert.Equal("Updated from the mix", saved.ShortDescription);
     }

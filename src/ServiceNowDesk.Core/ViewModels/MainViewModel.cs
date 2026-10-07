@@ -888,7 +888,7 @@ public partial class MainViewModel : ObservableObject
     private async Task OpenMixRowAsync(TicketRow row)
     {
         var generation = ++_mixOpenGeneration;
-        var workspace = row.Source switch
+        RecordWorkspaceViewModel workspace = row.Source switch
         {
             DeskSection.RequestedItems => RequestedItems,
             DeskSection.WalkUps => WalkUps,

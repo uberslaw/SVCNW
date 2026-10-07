@@ -522,7 +522,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             AlertClassifier.Bucket(AlertKind.ReturnedWithNotes, personalFolded, now, JoinNotes(journalStatus, shared)),
             AlertClassifier.Bucket(AlertKind.Unattended, personalFolded, now, viewer, shared));
         var daily = DailyWorkBoard.From(personalFolded, leadFolded, now, search.UserSysId, search.TeamMemberIds);
-        return new CategoryLoad(personal, LeadBoard.Build(leadFolded, now, search.TeamMemberIds, search.GroupName, search.Locations), daily);
+        return new CategoryLoad(personal, LeadBoard.Build(leadFolded, now, search.TeamMemberIds, search.GroupName), daily);
     }
 
     private static WatchedRecord[] DistinctWatched(IEnumerable<WatchedRecord> records) =>

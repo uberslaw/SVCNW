@@ -202,7 +202,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         });
         return new AlertReport(
             personal,
-            LeadBoard.Build(lead, now, search.TeamMemberIds, search.GroupName, search.Locations),
+            LeadBoard.Build(lead, now, search.TeamMemberIds, search.GroupName),
             DailyWorkBoard.From(watched, lead, now, userId, search.TeamMemberIds));
     }
 
@@ -2013,6 +2013,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             Caller = Sam,
             AssignedTo = Jordan,
             AssignmentGroup = ClientServices,
+            ServiceOffering = new ReferenceValue("offering-euc", "End-user computing"),
             Location = "Brisbane Office",
             OpenedAtDisplay = "2099-01-01 00:00",
             UpdatedAtDisplay = "2099-01-01 00:00",
