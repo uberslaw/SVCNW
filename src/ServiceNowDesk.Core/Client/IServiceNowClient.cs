@@ -1,5 +1,6 @@
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.WorkEffort;
 
 namespace ServiceNowDesk.Client;
 
@@ -79,4 +80,10 @@ public interface IServiceNowClient : IDisposable
         string? requestedForSysId,
         IReadOnlyDictionary<string, string> variables,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Opened, resolved, and updated counts for people in the signed-in user's groups.
+    /// IMS is the walk-up <c>interaction</c> table.
+    /// </summary>
+    Task<WorkEffortReport> GetWorkEffortAsync(WorkEffortScale scale, DateTime localNow, CancellationToken cancellationToken);
 }

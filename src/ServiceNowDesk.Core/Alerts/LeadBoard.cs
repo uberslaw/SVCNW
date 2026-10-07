@@ -3,7 +3,8 @@ namespace ServiceNowDesk.Alerts;
 public enum LeadArea
 {
     Team,
-    Regional
+    Regional,
+    WorkEffort
 }
 
 /// <summary>

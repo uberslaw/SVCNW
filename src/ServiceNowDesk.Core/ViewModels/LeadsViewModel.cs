@@ -21,13 +21,22 @@ public partial class LeadsViewModel : ObservableObject
                 AlertKind.Unattended
             ],
             alwaysShowAssignee: true);
+        WorkEffort.ScaleChanged += (_, _) =>
+        {
+            if (Area == LeadArea.WorkEffort)
+                WorkEffortRequested?.Invoke(this, EventArgs.Empty);
+        };
     }
 
     public NotificationWorkspaceViewModel Board { get; }
 
+    public WorkEffortViewModel WorkEffort { get; } = new();
+
     public ObservableCollection<LeadMemberModel> Members { get; } = [];
 
     public event EventHandler? TeamChanged;
+
+    public event EventHandler? WorkEffortRequested;
 
     [ObservableProperty] private LeadArea area = LeadArea.Team;
     [ObservableProperty] private string groupName = NotificationPreferences.DefaultGroupName;
@@ -35,7 +44,11 @@ public partial class LeadsViewModel : ObservableObject
 
     public bool ShowRoster => Area == LeadArea.Team;
 
-    public string TeamPrompt => Area == LeadArea.Regional
+    public bool ShowQueues => Area != LeadArea.WorkEffort;
+
+    public bool ShowWorkEffort => Area == LeadArea.WorkEffort;
+
+    public string TeamPrompt => Area != LeadArea.Team
         ? ""
         : Members.Count == 0
             ? ""
@@ -82,14 +95,20 @@ public partial class LeadsViewModel : ObservableObject
         _mute = false;
         RosterNote = "";
         Show(LeadBoard.Empty);
+        WorkEffort.Clear();
         OnPropertyChanged(nameof(TeamPrompt));
     }
 
     partial void OnAreaChanged(LeadArea value)
     {
         OnPropertyChanged(nameof(ShowRoster));
+        OnPropertyChanged(nameof(ShowQueues));
+        OnPropertyChanged(nameof(ShowWorkEffort));
         OnPropertyChanged(nameof(TeamPrompt));
-        Board.Show(_board.For(value));
+        if (value == LeadArea.WorkEffort)
+            WorkEffortRequested?.Invoke(this, EventArgs.Empty);
+        else
+            Board.Show(_board.For(value));
     }
 
     private void OnMemberChanged()

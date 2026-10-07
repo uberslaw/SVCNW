@@ -6,7 +6,7 @@ using ServiceNowDesk.Query;
 
 namespace ServiceNowDesk.Client;
 
-public sealed class SampleServiceNowClient : IServiceNowClient
+public sealed partial class SampleServiceNowClient : IServiceNowClient
 {
     private static readonly CurrentUser Me = new("sample-user", "Alex Rivera", "alex.rivera", "alex.rivera@example.com");
     private static readonly ReferenceValue Alex = new("sample-user", "Alex Rivera");

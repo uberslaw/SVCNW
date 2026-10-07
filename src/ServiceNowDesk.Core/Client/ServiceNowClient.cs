@@ -11,7 +11,7 @@ using ServiceNowDesk.Query;
 
 namespace ServiceNowDesk.Client;
 
-public sealed class ServiceNowClient : IServiceNowClient
+public sealed partial class ServiceNowClient : IServiceNowClient
 {
     private const string IncidentFields = "sys_id,number,short_description,description,state,priority,impact,urgency,category,subcategory,contact_type,caller_id,assigned_to,assignment_group,service_offering,cmdb_ci,location,opened_at,sys_updated_on,active,close_code,close_notes,hold_reason";
     private const string HardwareFields = "sys_id,serial_number,display_name,model,model_category,assigned_to,location,install_status,substatus,stockroom,comments";
