@@ -460,7 +460,7 @@ public class DeskListTests
     }
 
     [Fact]
-    public async Task PracticeAttachmentDownloadsWithoutCallingTheNetwork()
+    public async Task PracticeAttachmentAsksForALiveInstance()
     {
         var desktop = new RecordingDesktopServices();
         using var client = new SampleServiceNowClient();
@@ -474,19 +474,23 @@ public class DeskListTests
         await incidents.OpenFromSearchAsync("inc-printer");
         var file = Assert.Single(incidents.Attachments);
         Assert.Equal("practice-attachment.txt", file.FileName);
-        await incidents.OpenAttachmentCommand.ExecuteAsync(file);
-        var path = Assert.Single(desktop.OpenedFiles);
-        Assert.True(File.Exists(path));
-        Assert.Contains("Practice attachment", await File.ReadAllTextAsync(path));
+        Assert.Contains("live instance", incidents.AttachmentNote, StringComparison.OrdinalIgnoreCase);
+        incidents.OpenAttachmentCommand.Execute(file);
+        Assert.Empty(desktop.OpenedFiles);
+        Assert.Empty(desktop.OpenedUrls);
+        Assert.Empty(desktop.CopiedText);
+        Assert.Contains("live instance", incidents.EditorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("live instance", incidents.AttachmentNote, StringComparison.OrdinalIgnoreCase);
 
         var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
         items.Attach(client);
         await items.OpenFromSearchAsync("ritm-laptop");
         Assert.Equal("practice-attachment.txt", Assert.Single(items.Attachments).FileName);
+        Assert.Contains("live instance", items.AttachmentNote, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task AttachmentQueryUsesTheTableApiAndErrorsUseTheBanner()
+    public async Task AttachmentQueryUsesTheTableApiAndOpensTheInstanceUrl()
     {
         var handler = new StubHandler((request, _) =>
         {
@@ -516,10 +520,16 @@ public class DeskListTests
         await workspace.OpenFromSearchAsync("inc-printer");
 
         Assert.Equal("photo.png", Assert.Single(workspace.Attachments).FileName);
-        await workspace.OpenAttachmentCommand.ExecuteAsync(workspace.Attachments[0]);
-        Assert.Contains("Attachment download denied", workspace.ErrorMessage);
+        workspace.OpenAttachmentCommand.Execute(workspace.Attachments[0]);
+        Assert.Equal("https://example.service-now.com/sys_attachment.do?sys_id=att-1", Assert.Single(desktop.OpenedUrls));
         Assert.Empty(desktop.OpenedFiles);
-        Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("/api/now/attachment/att-1/file", StringComparison.Ordinal));
+        Assert.DoesNotContain(handler.Calls, call => call.PathAndQuery.Contains("/api/now/attachment/att-1/file", StringComparison.Ordinal));
+
+        workspace.OpenAttachmentCommand.Execute(new AttachmentSummary("att-1", "photo.png", "https://files.example.com/photo.png"));
+        Assert.Equal("https://files.example.com/photo.png", desktop.OpenedUrls[^1]);
+
+        workspace.OpenAttachmentCommand.Execute(new AttachmentSummary("att-2", "notes.txt", "/sys_attachment.do?sys_id=att-2"));
+        Assert.Equal("https://example.service-now.com/sys_attachment.do?sys_id=att-2", desktop.OpenedUrls[^1]);
     }
 
     private static async Task<RecordWorkspaceViewModel> OpenList(RecordWorkspaceViewModel workspace, IServiceNowClient client)

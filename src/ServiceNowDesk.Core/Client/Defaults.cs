@@ -191,6 +191,12 @@ public static class ServiceNowLinks
         var authority = instance.GetLeftPart(UriPartial.Authority);
         return authority + "/kb_view.do?sys_kb_id=" + Uri.EscapeDataString(sysId);
     }
+
+    public static string Attachment(Uri instance, string sysId)
+    {
+        var authority = instance.GetLeftPart(UriPartial.Authority);
+        return authority + "/sys_attachment.do?sys_id=" + Uri.EscapeDataString(sysId);
+    }
 }
 
 public static class StateTone
