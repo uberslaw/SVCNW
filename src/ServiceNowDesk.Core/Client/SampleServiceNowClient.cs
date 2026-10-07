@@ -2198,6 +2198,82 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             UpdatedAtValue = "2099-01-01 00:05:00",
             Active = true
         });
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-team-syd",
+            Number = "IMS0010006",
+            ShortDescription = "Team walk-up in Sydney",
+            Description = "Open walk-up on a team member outside the watched office.",
+            State = "work_in_progress",
+            StateLabel = "Work in Progress",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Sam,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            Location = "Sydney Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:06",
+            UpdatedAtValue = "2099-01-01 00:06:00",
+            Active = true
+        });
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-team-closed",
+            Number = "IMS0010007",
+            ShortDescription = "Closed team walk-up",
+            Description = "Closed walk-up on a team member must stay off My Team.",
+            State = "closed_complete",
+            StateLabel = "Closed Complete",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Sam,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:07",
+            UpdatedAtValue = "2099-01-01 00:07:00",
+            Active = false
+        });
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-unassigned-bne",
+            Number = "IMS0010008",
+            ShortDescription = "Unassigned walk-up in Brisbane",
+            Description = "Open unassigned walk-up in the office queue.",
+            State = "new",
+            StateLabel = "New",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Sam,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:08",
+            UpdatedAtValue = "2099-01-01 00:08:00",
+            Active = true
+        });
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-unassigned-hkg",
+            Number = "IMS0010009",
+            ShortDescription = "Unassigned walk-up in Hong Kong",
+            Description = "Open unassigned walk-up in another city.",
+            State = "new",
+            StateLabel = "New",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Sam,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = ClientServices,
+            Location = "Hong Kong Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:09",
+            UpdatedAtValue = "2099-01-01 00:09:00",
+            Active = true
+        });
         SeedHardware();
     }
 
@@ -2406,13 +2482,18 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                     return false;
                 case AssignmentScope.Unassigned when assignedTo.Length != 0:
                     return false;
+                case AssignmentScope.MyGroups when query.TeamMemberIds is not null:
+                    if (!TeamIncludes(query.TeamMemberIds, assignedTo))
+                        return false;
+                    break;
                 case AssignmentScope.MyGroups when groupId != ClientServices.SysId:
                     return false;
             }
         }
 
         if (query.OfficeLocations is not null
-            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
+            && query.TeamMemberIds is null)
         {
             if (query.Assignment == AssignmentScope.Unassigned && groupId != ClientServices.SysId)
                 return false;
@@ -2424,6 +2505,19 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     }
 
     private static string IdOf(ReferenceValue value) => value.SysId ?? "";
+
+    private static bool TeamIncludes(IReadOnlyList<string>? memberIds, string assignedTo)
+    {
+        if (assignedTo.Length == 0)
+            return false;
+        foreach (var id in memberIds ?? [])
+        {
+            if (string.Equals(id?.Trim(), assignedTo, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
 
     private string JournalText(string sysId) =>
         _journal.TryGetValue(sysId, out var notes) ? string.Join('\n', notes.Select(note => note.Text)) : "";

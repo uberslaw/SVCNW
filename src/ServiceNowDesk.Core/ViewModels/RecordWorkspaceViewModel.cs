@@ -19,6 +19,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     private int _openVersion;
     private bool _limitOffices;
     private IReadOnlyList<string> _officeCities = [];
+    private IReadOnlyList<string> _teamMemberIds = [];
+    private bool _useLeadTeam;
 
     protected RecordWorkspaceViewModel(IDesktopServices desktop, string tableName, string recordLabel, bool allowCreate, IReadOnlyList<PresetOption> presets, DeskSection section, bool attachments = false)
     {
@@ -89,6 +91,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     public IReadOnlyList<string> OfficeCities => _officeCities;
 
+    public IReadOnlyList<string> TeamMemberIds => _teamMemberIds;
+
     /// <summary>
     /// My Team and Unassigned keep tickets whose location is one of these cities.
     /// </summary>
@@ -96,6 +100,20 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     {
         _limitOffices = true;
         _officeCities = cities ?? [];
+    }
+
+    /// <summary>
+    /// Walk-up My Team uses these Leads people. Other workspaces leave this unset and keep
+    /// the assignment-group clause.
+    /// </summary>
+    public void UseTeamMembers(IReadOnlyList<string>? memberIds)
+    {
+        _useLeadTeam = true;
+        _teamMemberIds = (memberIds ?? [])
+            .Select(id => id?.Trim() ?? "")
+            .Where(id => id.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     public void Attach(IServiceNowClient client)
@@ -189,12 +207,25 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         {
             IsLoading = true;
             var trimmed = SearchText.Trim();
-            SearchHint = trimmed.Length is > 0 and < 2 && !EncodedQuery.IsNumberQuery(trimmed)
+            var searchHint = trimmed.Length is > 0 and < 2 && !EncodedQuery.IsNumberQuery(trimmed)
                 ? "Type at least 2 characters to search."
                 : "";
+            var query = BuildQuery();
+            if (SkipListQuery(query, out var emptyHint))
+            {
+                SearchHint = emptyHint;
+                _suppressSelection = true;
+                Items.Clear();
+                TotalCount = 0;
+                _suppressSelection = false;
+                HasLoaded = true;
+                return;
+            }
+
+            SearchHint = searchHint;
             var openAtStart = _openVersion;
             var editorAtStart = EditorSysId;
-            var page = await FetchPageAsync(BuildQuery(), CancellationToken.None);
+            var page = await FetchPageAsync(query, CancellationToken.None);
             if (version != _loadVersion)
                 return;
 
@@ -632,6 +663,17 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         _suppressSelection = false;
     }
 
+    protected virtual bool SkipListQuery(TicketQuery query, out string hint)
+    {
+        hint = "";
+        if (!_useLeadTeam || query.Assignment != AssignmentScope.MyGroups)
+            return false;
+        if (_teamMemberIds.Count > 0)
+            return false;
+        hint = WalkUpTeam.EmptyPrompt;
+        return true;
+    }
+
     protected TicketQuery BuildQuery()
     {
         var trimmed = SearchText.Trim();
@@ -641,8 +683,16 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
         var assignment = Preset?.Assignment ?? AssignmentScope.Any;
         IReadOnlyList<string>? offices = null;
-        if (_limitOffices && assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+        IReadOnlyList<string>? team = null;
+        if (_useLeadTeam && assignment == AssignmentScope.MyGroups)
+        {
+            // Walk-up My Team is the Leads people, including members outside the office.
+            team = _teamMemberIds;
+        }
+        else if (_limitOffices && assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+        {
             offices = _officeCities;
+        }
 
         return new TicketQuery
         {
@@ -651,6 +701,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             Activity = Preset?.Activity ?? ActivityFilter.Open,
             AssignmentClause = Preset?.AssignmentClause,
             OfficeLocations = offices,
+            TeamMemberIds = team,
             Limit = 50
         };
     }

@@ -19,6 +19,8 @@ public partial class MixWorkspaceViewModel : ObservableObject
     private IServiceNowClient? _client;
     private bool _limitOffices;
     private IReadOnlyList<string> _officeCities = [];
+    private bool _useLeadTeam;
+    private IReadOnlyList<string> _teamMemberIds = [];
     private int _loadVersion;
     private bool _suppressSelection;
     private TicketRow? _bound;
@@ -33,6 +35,8 @@ public partial class MixWorkspaceViewModel : ObservableObject
     public Action<TicketRow>? PrepareRow { get; set; }
     public RecordWorkspaceViewModel? Editor { get; private set; }
     public IReadOnlyList<string> OfficeCities => _officeCities;
+
+    public IReadOnlyList<string> TeamMemberIds => _teamMemberIds;
 
     [ObservableProperty] private TicketRow? selected;
     [ObservableProperty] private PresetOption preset;
@@ -64,6 +68,20 @@ public partial class MixWorkspaceViewModel : ObservableObject
     {
         _limitOffices = true;
         _officeCities = cities ?? [];
+    }
+
+    /// <summary>
+    /// Walk-up My Team in the mix uses the same Leads people as the Walk-ups page.
+    /// Incidents and request items keep the assignment-group My Team query.
+    /// </summary>
+    public void UseTeamMembers(IReadOnlyList<string>? memberIds)
+    {
+        _useLeadTeam = true;
+        _teamMemberIds = (memberIds ?? [])
+            .Select(id => id?.Trim() ?? "")
+            .Where(id => id.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     public void Attach(IServiceNowClient client) => _client = client;
@@ -119,6 +137,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
             IsLoading = true;
             ErrorMessage = "";
             var query = BuildQuery();
+            var walkQuery = BuildWalkUpQuery();
             var errors = new List<string>();
             var incidents = await LoadTableAsync(version, "Incidents", errors, async () =>
             {
@@ -130,11 +149,22 @@ public partial class MixWorkspaceViewModel : ObservableObject
                 var page = await _client.SearchRequestedItemsAsync(query, CancellationToken.None).ConfigureAwait(true);
                 return page.Items.Select(record => Tag(TicketRow.FromItem(record), "RITM", DeskSection.RequestedItems)).ToArray();
             }).ConfigureAwait(true);
-            var walks = await LoadTableAsync(version, "Walk-ups", errors, async () =>
+            TicketRow[] walks;
+            if (_useLeadTeam
+                && Preset.Assignment == AssignmentScope.MyGroups
+                && _teamMemberIds.Count == 0)
             {
-                var page = await _client.SearchInteractionsAsync(query, CancellationToken.None).ConfigureAwait(true);
-                return page.Items.Select(record => Tag(TicketRow.FromInteraction(record), "IMS", DeskSection.WalkUps)).ToArray();
-            }).ConfigureAwait(true);
+                walks = [];
+                errors.Add("Walk-ups: " + WalkUpTeam.EmptyPrompt);
+            }
+            else
+            {
+                walks = await LoadTableAsync(version, "Walk-ups", errors, async () =>
+                {
+                    var page = await _client.SearchInteractionsAsync(walkQuery, CancellationToken.None).ConfigureAwait(true);
+                    return page.Items.Select(record => Tag(TicketRow.FromInteraction(record), "IMS", DeskSection.WalkUps)).ToArray();
+                }).ConfigureAwait(true);
+            }
             if (version != _loadVersion)
                 return;
 
@@ -210,6 +240,23 @@ public partial class MixWorkspaceViewModel : ObservableObject
             Activity = Preset.Activity,
             OfficeLocations = offices,
             Limit = PageLimit
+        };
+    }
+
+    /// <summary>
+    /// Walk-up My Team matches the Walk-ups page: selected Leads people, no office limit.
+    /// Unassigned stays on the office queue like the other tables.
+    /// </summary>
+    private TicketQuery BuildWalkUpQuery()
+    {
+        var baseQuery = BuildQuery();
+        if (!_useLeadTeam || Preset.Assignment != AssignmentScope.MyGroups)
+            return baseQuery;
+
+        return baseQuery with
+        {
+            TeamMemberIds = _teamMemberIds,
+            OfficeLocations = null
         };
     }
 

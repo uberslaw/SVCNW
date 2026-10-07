@@ -101,6 +101,20 @@ public static class AlertQueryBuilder
         if (group.Length > 0)
             segments.Add("assignment_group.name=" + group + "^" + open);
 
+        var assignees = AssignedToAny(memberIds);
+        if (assignees is not null)
+            segments.Add(assignees + "^" + open);
+
+        return segments.Count == 0 ? null : string.Join("^NQ", segments);
+    }
+
+    /// <summary>
+    /// People on the selected Leads team. Null when the list is empty so the caller skips
+    /// an instance-wide query. Callers that must send a no-match clause use
+    /// <c>sys_id=NO_TEAM</c> themselves.
+    /// </summary>
+    public static string? AssignedToAny(IEnumerable<string>? memberIds)
+    {
         var ids = new List<string>();
         foreach (var id in memberIds ?? [])
         {
@@ -114,11 +128,9 @@ public static class AlertQueryBuilder
             {
             }
         }
-        var distinctIds = ids.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (distinctIds.Length > 0)
-            segments.Add("assigned_toIN" + string.Join(",", distinctIds) + "^" + open);
 
-        return segments.Count == 0 ? null : string.Join("^NQ", segments);
+        var distinct = ids.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return distinct.Length == 0 ? null : "assigned_toIN" + string.Join(",", distinct);
     }
 
     public const string SlaUnavailableStatus = "SLA data is not available to this user";

@@ -1641,6 +1641,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
                 AssignmentScope.Unassigned when query.OfficeLocations is not null =>
                     "assigned_toISEMPTY^" + await MyGroupsClauseAsync(cancellationToken).ConfigureAwait(false),
                 AssignmentScope.Unassigned => "assigned_toISEMPTY",
+                AssignmentScope.MyGroups when query.TeamMemberIds is not null =>
+                    AlertQueryBuilder.AssignedToAny(query.TeamMemberIds) ?? "sys_id=NO_TEAM",
                 AssignmentScope.MyGroups => await MyGroupsClauseAsync(cancellationToken).ConfigureAwait(false),
                 _ => ""
             };
@@ -1669,8 +1671,10 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             assignment,
             OpenListClause(query),
             extra);
+        // Walk-up My Team is people (TeamMemberIds), so office cities do not apply.
         if (query.OfficeLocations is not null
-            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
+            && query.TeamMemberIds is null)
             return OfficeQueue.ApplyTo(encoded, query.OfficeLocations);
         return encoded;
     }

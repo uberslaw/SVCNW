@@ -75,12 +75,15 @@ public class InTheMixTests
         Assert.False(mix.ShowRequestedItemEditor);
         Assert.False(mix.ShowWalkUpEditor);
 
+        mix.UseTeamMembers(["user-jordan"]);
         await mix.ApplyPresetCommand.ExecuteAsync(PresetCatalog.Mix.Single(preset => preset.Label == "My Team"));
 
         Assert.True(string.IsNullOrEmpty(mix.ErrorMessage), mix.ErrorMessage);
         Assert.Contains(mix.Items, row => row.Kind == "INC" && row.Number == "INC0010019");
         Assert.Contains(mix.Items, row => row.Kind == "RITM" && row.Number == "RITM0010007");
         Assert.Contains(mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010005");
+        Assert.Contains(mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010006");
+        Assert.DoesNotContain(mix.Items, row => row.Number == "IMS0010007");
         Assert.DoesNotContain(mix.Items, row => row.Number == "INC0010023");
         Assert.DoesNotContain(mix.Items, row => row.Number == "INC0010020");
         Assert.Equal(0, mix.OpenEditorCount);
@@ -111,7 +114,13 @@ public class InTheMixTests
             }
         };
         var store = new MemorySettingsStore();
-        store.Save(new DeskSettings { UseSampleData = true, OfficeLocations = [] });
+        store.Save(new DeskSettings
+        {
+            UseSampleData = true,
+            OfficeLocations = [],
+            LeadTeamMemberIds = ["user-jordan"],
+            LeadTeamSaved = true
+        });
         var main = new MainViewModel(store, new RecordingDesktopServices(), sampleClientFactory: () => sample);
         await main.InitializeAsync();
 
@@ -119,6 +128,8 @@ public class InTheMixTests
         Assert.Equal(["Brisbane"], main.RequestedItems.OfficeCities);
         Assert.Equal(["Brisbane"], main.WalkUps.OfficeCities);
         Assert.Equal(["Brisbane"], main.Mix.OfficeCities);
+        Assert.Equal(["user-jordan"], main.WalkUps.TeamMemberIds);
+        Assert.Equal(["user-jordan"], main.Mix.TeamMemberIds);
 
         main.Incidents.Preset = Preset(AssignmentScope.MyGroups);
         await main.Incidents.RefreshAsync();
@@ -131,6 +142,7 @@ public class InTheMixTests
         Assert.Contains(main.Mix.Items, row => row.Kind == "INC" && row.Number == "INC0010019");
         Assert.Contains(main.Mix.Items, row => row.Kind == "RITM" && row.Number == "RITM0010007");
         Assert.Contains(main.Mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010005");
+        Assert.Contains(main.Mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010006");
         Assert.DoesNotContain(main.Mix.Items, row => row.Number == "INC0010020");
         Assert.DoesNotContain(main.Mix.Items, row => row.Number == "INC0010023");
         Assert.DoesNotContain(main.Mix.Items, row => row.Kind == "INC" && row.Number == "INC0010011");
@@ -269,6 +281,7 @@ public class InTheMixTests
         using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
         var mix = new MixWorkspaceViewModel();
         mix.UseOfficeCities(["Brisbane"]);
+        mix.UseTeamMembers(["user-jordan"]);
         mix.Attach(client);
 
         await mix.ApplyPresetCommand.ExecuteAsync(PresetCatalog.Mix.Single(preset => preset.Label == "My Team"));
@@ -281,6 +294,48 @@ public class InTheMixTests
         Assert.Contains("Walk-ups", mix.ErrorMessage);
         Assert.Contains("location is not a field", mix.ErrorMessage);
         Assert.Equal(1, mix.TotalCount);
+    }
+
+    [Fact]
+    public async Task MixWalkUpMyTeamMatchesTheWalkUpsPageWithoutAnOfficeLimit()
+    {
+        using var client = new SampleServiceNowClient();
+        var mix = new MixWorkspaceViewModel();
+        mix.UseOfficeCities(["Brisbane"]);
+        mix.UseTeamMembers(["user-jordan"]);
+        mix.Attach(client);
+
+        await mix.ApplyPresetCommand.ExecuteAsync(PresetCatalog.Mix.Single(preset => preset.Label == "My Team"));
+
+        Assert.Contains(mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010006");
+        Assert.DoesNotContain(mix.Items, row => row.Number == "IMS0010007");
+        Assert.DoesNotContain(mix.Items, row => row.Number == "IMS0010008");
+    }
+
+    [Fact]
+    public async Task MixWalkUpMyTeamWithNoPeopleShowsThePromptAndSkipsTheQuery()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
+            if (path.Contains("/api/now/table/incident", StringComparison.Ordinal)
+                || path.Contains("/api/now/table/sc_req_item", StringComparison.Ordinal))
+                return Api.Json(Api.IncidentList());
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var mix = new MixWorkspaceViewModel();
+        mix.UseOfficeCities(["Brisbane"]);
+        mix.UseTeamMembers([]);
+        mix.Attach(client);
+
+        await mix.ApplyPresetCommand.ExecuteAsync(PresetCatalog.Mix.Single(preset => preset.Label == "My Team"));
+
+        Assert.Contains(WalkUpTeam.EmptyPrompt, mix.ErrorMessage);
+        Assert.DoesNotContain(handler.Calls, call => call.PathAndQuery.Contains("/table/interaction", StringComparison.Ordinal));
+        Assert.DoesNotContain(mix.Items, row => row.Kind == "IMS");
     }
 
     private static PresetOption Preset(AssignmentScope scope) =>

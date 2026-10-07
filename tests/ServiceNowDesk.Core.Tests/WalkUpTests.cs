@@ -308,6 +308,117 @@ public class WalkUpTests
         Assert.Contains("already linked", main.StatusMessage, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task MyTeamIncludesOpenWalkUpsForSelectedPeopleAndSkipsClosed()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenWalkUpsAsync(client, ["Brisbane"], ["user-jordan"]);
+        workspace.Preset = Preset(AssignmentScope.MyGroups);
+        await workspace.RefreshAsync();
+
+        Assert.Contains(workspace.Items, row => row.Number == "IMS0010005");
+        Assert.Contains(workspace.Items, row => row.Number == "IMS0010006");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010007");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010001");
+    }
+
+    [Fact]
+    public async Task MyTeamIncludesATeamMembersOpenWalkUpOutsideTheOffice()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenWalkUpsAsync(client, ["Brisbane"], ["user-jordan"]);
+        workspace.Preset = Preset(AssignmentScope.MyGroups);
+        await workspace.RefreshAsync();
+
+        Assert.Contains(workspace.Items, row => row.Number == "IMS0010006");
+        Assert.Equal("IMS0010006", (await client.GetInteractionAsync("ims-team-syd", CancellationToken.None)).Number);
+        Assert.Equal("Sydney Office", (await client.GetInteractionAsync("ims-team-syd", CancellationToken.None)).Location);
+    }
+
+    [Fact]
+    public async Task MyTeamWithNoSelectedPeopleShowsThePromptAndDoesNotQuery()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("{\"result\":[]}"));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var workspace = new InteractionWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.UseOfficeCities(["Brisbane"]);
+        workspace.UseTeamMembers([]);
+        workspace.Attach(client);
+        workspace.Preset = Preset(AssignmentScope.MyGroups);
+        await workspace.RefreshAsync();
+
+        Assert.Equal(WalkUpTeam.EmptyPrompt, workspace.SearchHint);
+        Assert.Empty(workspace.Items);
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task MyTeamQueryUsesAssignedPeopleAndSkipsOfficeAndGroupFilters()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("{\"result\":[]}"));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        await client.SearchInteractionsAsync(new TicketQuery
+        {
+            Assignment = AssignmentScope.MyGroups,
+            Activity = ActivityFilter.Open,
+            TeamMemberIds = ["user-jordan", "sample-user"],
+            OfficeLocations = ["Brisbane"]
+        }, CancellationToken.None);
+
+        var call = Assert.Single(handler.Calls);
+        Assert.DoesNotContain("sys_user_grmember", call.PathAndQuery);
+        var query = QueryOf(call.PathAndQuery);
+        Assert.Contains("assigned_toINuser-jordan,sample-user", query);
+        Assert.DoesNotContain("assignment_groupIN", query);
+        Assert.DoesNotContain("location.name", query);
+        Assert.Contains("type=walkup", query);
+        Assert.Contains("active=true", query);
+    }
+
+    [Fact]
+    public async Task UnassignedKeepsOfficeWalkUpsAndDropsOtherCitiesAndAssigned()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenWalkUpsAsync(client, ["Brisbane"], ["user-jordan"]);
+        workspace.Preset = Preset(AssignmentScope.Unassigned);
+        await workspace.RefreshAsync();
+
+        Assert.Contains(workspace.Items, row => row.Number == "IMS0010008");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010009");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010005");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010006");
+    }
+
+    [Fact]
+    public async Task MyTicketsStayWithTheSignedInUsersOpenWalkUps()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenWalkUpsAsync(client, ["Brisbane"], ["user-jordan"]);
+        Assert.Equal("My Tickets", workspace.Preset?.Label);
+        await workspace.RefreshAsync();
+
+        Assert.Contains(workspace.Items, row => row.Number == "IMS0010001");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010005");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010008");
+    }
+
+    private static PresetOption Preset(AssignmentScope scope) =>
+        PresetCatalog.WalkUps.Single(preset => preset.Assignment == scope && preset.Activity == ActivityFilter.Open && preset.AssignmentClause is null);
+
+    private static async Task<InteractionWorkspaceViewModel> OpenWalkUpsAsync(
+        SampleServiceNowClient client,
+        IReadOnlyList<string> cities,
+        IReadOnlyList<string> team)
+    {
+        var workspace = new InteractionWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.UseOfficeCities(cities);
+        workspace.UseTeamMembers(team);
+        workspace.Attach(client);
+        await workspace.EnsureChoicesAsync();
+        return workspace;
+    }
+
     private static async Task WaitUntilAsync(Func<bool> ready)
     {
         for (var attempt = 0; attempt < 40 && !ready(); attempt++)
