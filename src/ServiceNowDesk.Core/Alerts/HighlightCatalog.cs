@@ -147,11 +147,43 @@ public static class HighlightCatalog
 public sealed class HighlightPreferences
 {
     private readonly HashSet<string> _enabled;
+    private readonly Dictionary<string, int> _intensityOverrides;
+    private readonly Dictionary<string, string> _rowHex;
 
-    private HighlightPreferences(IEnumerable<string> keys) =>
+    private HighlightPreferences(
+        IEnumerable<string> keys,
+        int sharedIntensity = LegendColorIntensity.Full,
+        IReadOnlyDictionary<string, int>? perColour = null)
+    {
         _enabled = new HashSet<string>(keys, StringComparer.OrdinalIgnoreCase);
+        SharedIntensity = LegendColorIntensity.Clamp(sharedIntensity);
+        _intensityOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (perColour is not null)
+        {
+            foreach (var pair in perColour)
+            {
+                if (pair.Key is null || HighlightCatalog.Find(pair.Key) is null)
+                    continue;
+                var value = LegendColorIntensity.Clamp(pair.Value);
+                if (value == SharedIntensity)
+                    continue;
+                _intensityOverrides[pair.Key] = value;
+            }
+        }
+
+        _rowHex = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in HighlightCatalog.Entries)
+        {
+            var intensity = IntensityOf(entry.Key);
+            if (intensity == LegendColorIntensity.Full)
+                continue;
+            _rowHex[entry.Key] = LegendColorIntensity.Apply(entry.RowHex, intensity);
+        }
+    }
 
     public static HighlightPreferences Default { get; } = FromKeys(null);
+
+    public int SharedIntensity { get; }
 
     public IReadOnlyList<string> EnabledKeys =>
         HighlightCatalog.Entries.Where(entry => _enabled.Contains(entry.Key)).Select(entry => entry.Key).ToArray();
@@ -159,7 +191,8 @@ public sealed class HighlightPreferences
     public static HighlightPreferences From(DeskSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        return FromKeys(settings.EnabledHighlights);
+        return FromKeys(settings.EnabledHighlights)
+            .WithIntensity(settings.LegendIntensity, settings.LegendColorIntensities);
     }
 
     public static HighlightPreferences FromKeys(IReadOnlyList<string>? keys)
@@ -177,7 +210,13 @@ public sealed class HighlightPreferences
         return new HighlightPreferences(enabled);
     }
 
+    public HighlightPreferences WithIntensity(int? shared, IReadOnlyDictionary<string, int>? perColour) =>
+        new(EnabledKeys, shared ?? LegendColorIntensity.Full, perColour);
+
     public bool IsEnabled(string key) => key is not null && _enabled.Contains(key);
+
+    public int IntensityOf(string key) =>
+        key is not null && _intensityOverrides.TryGetValue(key, out var value) ? value : SharedIntensity;
 
     public string ChooseRowHex(bool unassigned, IEnumerable<AlertKind>? kinds)
     {
@@ -195,12 +234,12 @@ public sealed class HighlightPreferences
             if (entry.Kind is null)
             {
                 if (unassigned)
-                    return entry.RowHex;
+                    return RowColor(entry);
                 continue;
             }
 
             if (matched is not null && matched.Contains(entry.Kind.Value))
-                return entry.RowHex;
+                return RowColor(entry);
         }
 
         return "";
@@ -210,14 +249,22 @@ public sealed class HighlightPreferences
     {
         if (!assignedToViewer || !IsEnabled(HighlightCatalog.SlaAssignedToYou))
             return "";
-        return HighlightCatalog.Find(HighlightCatalog.SlaAssignedToYou)?.RowHex ?? "";
+        var entry = HighlightCatalog.Find(HighlightCatalog.SlaAssignedToYou);
+        return entry is null ? "" : RowColor(entry);
     }
 
     public void ApplyTo(DeskSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings.EnabledHighlights = [.. EnabledKeys];
+        settings.LegendIntensity = SharedIntensity == LegendColorIntensity.Full ? null : SharedIntensity;
+        settings.LegendColorIntensities = _intensityOverrides.Count == 0
+            ? null
+            : new Dictionary<string, int>(_intensityOverrides, StringComparer.OrdinalIgnoreCase);
     }
+
+    private string RowColor(HighlightEntry entry) =>
+        _rowHex.TryGetValue(entry.Key, out var hex) ? hex : entry.RowHex;
 }
 
 /// <summary>Paints list rows from the legend and the latest notification snapshot.</summary>

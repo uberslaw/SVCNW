@@ -1,17 +1,23 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
 
 namespace ServiceNowDesk.ViewModels;
 
 public sealed partial class LegendSettingsViewModel : ObservableObject
 {
+    private readonly Dictionary<string, int> _intensities = new(StringComparer.OrdinalIgnoreCase);
     private bool _ready;
     private bool _loading;
+    private bool _suspendSlider;
+    private int _sharedIntensity = LegendColorIntensity.Full;
 
     public LegendSettingsViewModel()
     {
         Entries = HighlightCatalog.Entries.Select(entry => new LegendEntryModel(this, entry)).ToArray();
+        foreach (var entry in Entries)
+            _intensities[entry.Key] = LegendColorIntensity.Full;
         _ready = true;
         RefreshShown();
     }
@@ -24,19 +30,57 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
 
     [ObservableProperty] private string emptyNote = "";
 
+    [ObservableProperty] private bool adjustIndividually;
+
+    [ObservableProperty] private int sliderValue = LegendColorIntensity.Full;
+
+    [ObservableProperty] private string? selectedKey;
+
+    [ObservableProperty] private string intensityCaption = "All colours";
+
     public event EventHandler<HighlightPreferences>? Changed;
 
-    public HighlightPreferences Current() =>
-        HighlightPreferences.FromKeys(Entries.Where(entry => entry.IsEnabled).Select(entry => entry.Key).ToArray());
+    public HighlightPreferences Current()
+    {
+        var preferences = HighlightPreferences.FromKeys(
+            Entries.Where(entry => entry.IsEnabled).Select(entry => entry.Key).ToArray());
+        return preferences.WithIntensity(_sharedIntensity, Overrides());
+    }
 
     public void Load(HighlightPreferences preferences)
     {
         ArgumentNullException.ThrowIfNull(preferences);
         _loading = true;
+        _suspendSlider = true;
         foreach (var entry in Entries)
             entry.IsEnabled = preferences.IsEnabled(entry.Key);
+        _sharedIntensity = preferences.SharedIntensity;
+        foreach (var entry in Entries)
+        {
+            _intensities[entry.Key] = preferences.IntensityOf(entry.Key);
+            entry.Paint(_intensities[entry.Key]);
+        }
+
+        AdjustIndividually = false;
+        SelectedKey = null;
+        SliderValue = _sharedIntensity;
+        _suspendSlider = false;
         _loading = false;
         RefreshShown();
+        RefreshSelection();
+        RefreshCaption();
+        SetIntensityCommand.NotifyCanExecuteChanged();
+    }
+
+    public void Select(string? key)
+    {
+        if (!AdjustIndividually || key is null || !_intensities.ContainsKey(key))
+            return;
+
+        _suspendSlider = true;
+        SelectedKey = key;
+        SliderValue = _intensities[key];
+        _suspendSlider = false;
     }
 
     internal void EntryChanged()
@@ -44,6 +88,104 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
         if (!_ready || _loading)
             return;
         RefreshShown();
+        Publish();
+    }
+
+    partial void OnAdjustIndividuallyChanged(bool value)
+    {
+        if (!_loading)
+        {
+            _suspendSlider = true;
+            if (!value)
+            {
+                SelectedKey = null;
+                SliderValue = _sharedIntensity;
+            }
+
+            _suspendSlider = false;
+        }
+
+        RefreshSelection();
+        RefreshCaption();
+        SetIntensityCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSliderValueChanged(int value)
+    {
+        if (_loading || _suspendSlider)
+            return;
+
+        var clamped = LegendColorIntensity.Clamp(value);
+        if (clamped != value)
+        {
+            _suspendSlider = true;
+            SliderValue = clamped;
+            _suspendSlider = false;
+            value = clamped;
+        }
+
+        if (AdjustIndividually)
+            return;
+
+        ApplyAll(value);
+    }
+
+    partial void OnSelectedKeyChanged(string? value)
+    {
+        _ = value;
+        RefreshSelection();
+        RefreshCaption();
+        SetIntensityCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanSetIntensity() =>
+        AdjustIndividually && SelectedKey is not null && _intensities.ContainsKey(SelectedKey);
+
+    [RelayCommand(CanExecute = nameof(CanSetIntensity))]
+    private void SetIntensity()
+    {
+        if (SelectedKey is null || !_intensities.ContainsKey(SelectedKey))
+            return;
+
+        _intensities[SelectedKey] = LegendColorIntensity.Clamp(SliderValue);
+        PaintAll();
+        Publish();
+    }
+
+    private void ApplyAll(int value)
+    {
+        _sharedIntensity = LegendColorIntensity.Clamp(value);
+        foreach (var entry in Entries)
+            _intensities[entry.Key] = _sharedIntensity;
+        PaintAll();
+        Publish();
+    }
+
+    private void PaintAll()
+    {
+        foreach (var entry in Entries)
+            entry.Paint(_intensities[entry.Key]);
+    }
+
+    private Dictionary<string, int>? Overrides()
+    {
+        Dictionary<string, int>? overrides = null;
+        foreach (var entry in Entries)
+        {
+            var value = _intensities[entry.Key];
+            if (value == _sharedIntensity)
+                continue;
+            overrides ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            overrides[entry.Key] = value;
+        }
+
+        return overrides;
+    }
+
+    private void Publish()
+    {
+        if (!_ready || _loading)
+            return;
         Changed?.Invoke(this, Current());
     }
 
@@ -61,11 +203,35 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
             ? ""
             : "Row colors are off. Open Legend in the left navigation to turn them on.";
     }
+
+    private void RefreshSelection()
+    {
+        foreach (var entry in Entries)
+        {
+            entry.IsSelected = AdjustIndividually
+                && string.Equals(entry.Key, SelectedKey, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private void RefreshCaption()
+    {
+        if (!AdjustIndividually)
+        {
+            IntensityCaption = "All colours";
+            return;
+        }
+
+        var selected = Entries.FirstOrDefault(entry =>
+            string.Equals(entry.Key, SelectedKey, StringComparison.OrdinalIgnoreCase));
+        IntensityCaption = selected is null ? "Click a colour swatch" : selected.Title;
+    }
 }
 
 public partial class LegendEntryModel : ObservableObject
 {
     private readonly LegendSettingsViewModel _owner;
+    private readonly string _baseSwatch;
+    private readonly string _baseRow;
 
     public LegendEntryModel(LegendSettingsViewModel owner, HighlightEntry entry)
     {
@@ -73,6 +239,8 @@ public partial class LegendEntryModel : ObservableObject
         Key = entry.Key;
         Title = entry.Title;
         Explanation = entry.Explanation;
+        _baseSwatch = entry.SwatchHex;
+        _baseRow = entry.RowHex;
         SwatchHex = entry.SwatchHex;
         RowHex = entry.RowHex;
         IsEnabled = entry.EnabledByDefault;
@@ -84,11 +252,22 @@ public partial class LegendEntryModel : ObservableObject
 
     public string Explanation { get; }
 
-    public string SwatchHex { get; }
+    [ObservableProperty] private string swatchHex;
 
-    public string RowHex { get; }
+    [ObservableProperty] private string rowHex;
+
+    [ObservableProperty] private bool isSelected;
 
     [ObservableProperty] private bool isEnabled;
+
+    internal void Paint(int intensity)
+    {
+        SwatchHex = LegendColorIntensity.Apply(_baseSwatch, intensity);
+        RowHex = LegendColorIntensity.Apply(_baseRow, intensity);
+    }
+
+    [RelayCommand]
+    private void Select() => _owner.Select(Key);
 
     partial void OnIsEnabledChanged(bool value)
     {
