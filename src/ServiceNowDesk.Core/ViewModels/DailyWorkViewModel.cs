@@ -14,6 +14,17 @@ public enum DailyWorkArea
     Team
 }
 
+public enum DailyWorkSortColumn
+{
+    Colour,
+    Number,
+    Priority,
+    Title,
+    Why,
+    State,
+    Assignee
+}
+
 public partial class DailyWorkViewModel : ObservableObject
 {
     private readonly IDailyWorkStore _store;
@@ -23,6 +34,13 @@ public partial class DailyWorkViewModel : ObservableObject
     private DateTime? _now;
     private IReadOnlyList<WatchedRecord> _groupTickets = [];
     private UnassignedSeen _groupSeen = UnassignedSeen.None;
+    private DailyWorkSortColumn? _sortColumn;
+    private bool _sortDescending;
+
+    public const string IntroText =
+        "What to attend to from the notification queues. "
+        + "Red = act first (priority 1 or SLA breaching). Yellow = next (caller update or follow-up passed). Green = after those. "
+        + "The report is saved once each local day.";
 
     public DailyWorkViewModel(IDailyWorkStore store, IPersonalTaskStore? personalTasks = null)
     {
@@ -55,6 +73,14 @@ public partial class DailyWorkViewModel : ObservableObject
 
     public string AfterThoseHex => DailyWorkRanker.AfterThoseHex;
 
+    public string ColourHeader => SortHeader("Colour", DailyWorkSortColumn.Colour);
+    public string NumberHeader => SortHeader("Number", DailyWorkSortColumn.Number);
+    public string PriorityHeader => SortHeader("Priority", DailyWorkSortColumn.Priority);
+    public string TitleHeader => SortHeader("Title", DailyWorkSortColumn.Title);
+    public string WhyHeader => SortHeader("Why", DailyWorkSortColumn.Why);
+    public string StateHeader => SortHeader("State", DailyWorkSortColumn.State);
+    public string AssigneeHeader => SortHeader("Assigned to", DailyWorkSortColumn.Assignee);
+
     public void Show(DailyWorkBoard? board, string? userSysId, IReadOnlyList<string>? teamMemberIds, DateTime? localNow = null)
     {
         _board = board ?? DailyWorkBoard.Empty;
@@ -80,6 +106,8 @@ public partial class DailyWorkViewModel : ObservableObject
         _teamIds = [];
         _groupTickets = [];
         _groupSeen = UnassignedSeen.None;
+        _sortColumn = null;
+        _sortDescending = false;
         NewUnassigned.Clear();
         Attend.Clear();
         Cleared.Clear();
@@ -92,6 +120,7 @@ public partial class DailyWorkViewModel : ObservableObject
         ReportNote = "";
         DifferenceNote = "";
         Headline = "Attend to these first";
+        NotifySortHeaders();
     }
 
     [RelayCommand]
@@ -104,9 +133,29 @@ public partial class DailyWorkViewModel : ObservableObject
         OpenRequested?.Invoke(this, row);
     }
 
+    [RelayCommand]
+    private void SortBy(string? column)
+    {
+        if (!Enum.TryParse<DailyWorkSortColumn>(column, ignoreCase: true, out var parsed))
+            return;
+        if (_sortColumn != parsed)
+        {
+            _sortColumn = parsed;
+            _sortDescending = false;
+        }
+        else
+        {
+            _sortDescending = !_sortDescending;
+        }
+
+        ApplySort();
+    }
+
     partial void OnAreaChanged(DailyWorkArea value)
     {
         _ = value;
+        _sortColumn = null;
+        _sortDescending = false;
         Apply();
     }
 
@@ -126,6 +175,7 @@ public partial class DailyWorkViewModel : ObservableObject
             Fill(teamView, teamWithoutPeople: teamKey is null && !disconnected, disconnected);
         else
             Fill(mineView, teamWithoutPeople: false, disconnected);
+        ApplySort();
     }
 
     private void Fill(DailyWorkView view, bool teamWithoutPeople, bool disconnected)
@@ -162,6 +212,44 @@ public partial class DailyWorkViewModel : ObservableObject
         DifferenceNote = HasCleared || HasArrived
             ? "Compared with today's report."
             : "Nothing has changed since today's report.";
+    }
+
+    private void ApplySort()
+    {
+        NotifySortHeaders();
+        if (_sortColumn is not DailyWorkSortColumn column)
+            return;
+        SortCollection(Attend, column);
+        SortCollection(Arrived, column);
+        SortCollection(Cleared, column);
+    }
+
+    private void SortCollection(ObservableCollection<DailyWorkRow> rows, DailyWorkSortColumn column)
+    {
+        if (rows.Count < 2 || _sortColumn is null)
+            return;
+        var sorted = rows.ToList();
+        sorted.Sort((left, right) => DailyWorkRowSort.Compare(left, right, column, _sortDescending));
+        for (var index = 0; index < sorted.Count; index++)
+        {
+            var current = rows.IndexOf(sorted[index]);
+            if (current != index)
+                rows.Move(current, index);
+        }
+    }
+
+    private string SortHeader(string title, DailyWorkSortColumn column) =>
+        _sortColumn == column ? title + (_sortDescending ? " ▼" : " ▲") : title;
+
+    private void NotifySortHeaders()
+    {
+        OnPropertyChanged(nameof(ColourHeader));
+        OnPropertyChanged(nameof(NumberHeader));
+        OnPropertyChanged(nameof(PriorityHeader));
+        OnPropertyChanged(nameof(TitleHeader));
+        OnPropertyChanged(nameof(WhyHeader));
+        OnPropertyChanged(nameof(StateHeader));
+        OnPropertyChanged(nameof(AssigneeHeader));
     }
 
     private IReadOnlyList<DailyWorkRow> QueueRows()
@@ -267,6 +355,8 @@ public sealed class DailyWorkRow
     public string AssigneeText { get; init; } = "";
     public string HighlightHex { get; init; } = "";
 
+    public int ColourTier => DailyWorkRanker.ColourTier(HighlightHex);
+
     public static DailyWorkRow From(WorkItem item) => new()
     {
         SysId = item.SysId,
@@ -274,6 +364,7 @@ public sealed class DailyWorkRow
         Number = item.Number,
         Title = item.Title,
         PriorityText = item.PriorityText,
+        PriorityRank = item.PriorityRank,
         Reasons = item.Reasons,
         State = item.State,
         AssigneeText = item.AssigneeText,
@@ -295,4 +386,72 @@ public sealed class DailyWorkRow
             AssigneeText = ""
         };
     }
+}
+
+public static class DailyWorkRowSort
+{
+    public static int Compare(DailyWorkRow left, DailyWorkRow right, DailyWorkSortColumn column, bool descending)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        var compared = column switch
+        {
+            DailyWorkSortColumn.Colour => left.ColourTier.CompareTo(right.ColourTier),
+            DailyWorkSortColumn.Priority => left.PriorityRank.CompareTo(right.PriorityRank),
+            DailyWorkSortColumn.Number => CompareNumber(left.Number, right.Number),
+            _ => CompareText(Text(left, column), Text(right, column))
+        };
+        if (compared == 0)
+            compared = string.Compare(left.Number, right.Number, StringComparison.OrdinalIgnoreCase);
+        return descending ? -compared : compared;
+    }
+
+    private static int CompareNumber(string left, string right)
+    {
+        var leftEmpty = string.IsNullOrWhiteSpace(left);
+        var rightEmpty = string.IsNullOrWhiteSpace(right);
+        if (leftEmpty || rightEmpty)
+        {
+            if (leftEmpty && rightEmpty)
+                return 0;
+            return leftEmpty ? 1 : -1;
+        }
+
+        if (TryDigits(left, out var leftNumber) && TryDigits(right, out var rightNumber))
+        {
+            var numeric = leftNumber.CompareTo(rightNumber);
+            return numeric != 0 ? numeric : string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CompareText(string left, string right)
+    {
+        var leftEmpty = string.IsNullOrWhiteSpace(left);
+        var rightEmpty = string.IsNullOrWhiteSpace(right);
+        if (leftEmpty || rightEmpty)
+        {
+            if (leftEmpty && rightEmpty)
+                return 0;
+            return leftEmpty ? 1 : -1;
+        }
+
+        return string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryDigits(string text, out long value)
+    {
+        var digits = new string(text.Where(char.IsDigit).ToArray());
+        return long.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out value) && digits.Length > 0;
+    }
+
+    private static string Text(DailyWorkRow row, DailyWorkSortColumn column) => column switch
+    {
+        DailyWorkSortColumn.Title => row.Title,
+        DailyWorkSortColumn.Why => row.Reasons,
+        DailyWorkSortColumn.State => row.State,
+        DailyWorkSortColumn.Assignee => row.AssigneeText,
+        _ => ""
+    };
 }
