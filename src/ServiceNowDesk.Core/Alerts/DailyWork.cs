@@ -110,6 +110,12 @@ public sealed class DailyWorkBoard
 
 public static class DailyWorkRanker
 {
+    public static IReadOnlyList<WorkItem> Order(IEnumerable<WorkItem> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        return items.OrderBy(item => item, WorkOrder.Instance).ToArray();
+    }
+
     public static IReadOnlyList<WorkItem> Rank(IEnumerable<WatchedRecord> records, DateTime now)
     {
         ArgumentNullException.ThrowIfNull(records);
@@ -284,11 +290,16 @@ public interface IDailyWorkStore
     DailyWorkDay? Find(string scopeKey, DateOnly day);
 
     void Save(DailyWorkDay day);
+
+    UnassignedSeen FindUnassigned(string scopeKey, DateOnly day);
+
+    void SaveUnassigned(string scopeKey, DateOnly day, UnassignedSeen seen);
 }
 
 public sealed class MemoryDailyWorkStore : IDailyWorkStore
 {
     private readonly Dictionary<string, DailyWorkDay> _days = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, UnassignedSeen> _unassigned = new(StringComparer.OrdinalIgnoreCase);
 
     public DailyWorkDay? Find(string scopeKey, DateOnly day) =>
         _days.TryGetValue(Key(scopeKey, day), out var dayRecord) ? dayRecord : null;
@@ -297,6 +308,16 @@ public sealed class MemoryDailyWorkStore : IDailyWorkStore
     {
         ArgumentNullException.ThrowIfNull(day);
         _days[Key(day.ScopeKey, day.LocalDate)] = day;
+    }
+
+    public UnassignedSeen FindUnassigned(string scopeKey, DateOnly day) =>
+        _unassigned.TryGetValue(Key(scopeKey, day), out var seen) ? seen : UnassignedSeen.None;
+
+    public void SaveUnassigned(string scopeKey, DateOnly day, UnassignedSeen seen)
+    {
+        if (string.IsNullOrWhiteSpace(scopeKey))
+            return;
+        _unassigned[Key(scopeKey, day)] = seen;
     }
 
     private static string Key(string scopeKey, DateOnly day) =>
@@ -360,12 +381,77 @@ public sealed class FileDailyWorkStore : IDailyWorkStore
                     Section = line.Section
                 }).ToList()
             });
-            var folder = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrWhiteSpace(folder))
-                Directory.CreateDirectory(folder);
-            File.WriteAllText(_path, JsonSerializer.Serialize(file, JsonOptions));
+            file.UnassignedSeen = KeepSeen(file.UnassignedSeen, keepAfter);
+            Write(file);
         }
     }
+
+    public UnassignedSeen FindUnassigned(string scopeKey, DateOnly day)
+    {
+        lock (_gate)
+        {
+            var stored = (Load().UnassignedSeen ?? [])
+                .FirstOrDefault(record => record is not null
+                    && string.Equals(record.ScopeKey, scopeKey, StringComparison.OrdinalIgnoreCase)
+                    && ParseDate(record.LocalDate) == day);
+            return ToSeen(stored);
+        }
+    }
+
+    public void SaveUnassigned(string scopeKey, DateOnly day, UnassignedSeen seen)
+    {
+        if (string.IsNullOrWhiteSpace(scopeKey))
+            return;
+
+        lock (_gate)
+        {
+            var file = Load();
+            var keepAfter = day.AddDays(-1);
+            file.Days = file.Days
+                .Where(stored => ParseDate(stored.LocalDate) is DateOnly saved && saved >= keepAfter)
+                .ToList();
+            file.UnassignedSeen = KeepSeen(file.UnassignedSeen, keepAfter)
+                .Where(stored => !(string.Equals(stored.ScopeKey, scopeKey, StringComparison.OrdinalIgnoreCase)
+                    && ParseDate(stored.LocalDate) == day))
+                .ToList();
+            file.UnassignedSeen.Add(new StoredUnassignedSeen
+            {
+                ScopeKey = scopeKey.Trim(),
+                LocalDate = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                BaselineTaken = seen.BaselineTaken,
+                Seen = CleanIds(seen.Seen),
+                Announced = CleanIds(seen.Announced)
+            });
+            Write(file);
+        }
+    }
+
+    private void Write(DailyWorkFile file)
+    {
+        var folder = Path.GetDirectoryName(_path);
+        if (!string.IsNullOrWhiteSpace(folder))
+            Directory.CreateDirectory(folder);
+        File.WriteAllText(_path, JsonSerializer.Serialize(file, JsonOptions));
+    }
+
+    private static List<StoredUnassignedSeen> KeepSeen(List<StoredUnassignedSeen>? rows, DateOnly keepAfter) =>
+        (rows ?? [])
+            .Where(stored => stored is not null && ParseDate(stored.LocalDate) is DateOnly saved && saved >= keepAfter)
+            .ToList();
+
+    private static UnassignedSeen ToSeen(StoredUnassignedSeen? stored)
+    {
+        if (stored is null || !stored.BaselineTaken)
+            return UnassignedSeen.None;
+        return new UnassignedSeen(true, CleanIds(stored.Seen), CleanIds(stored.Announced));
+    }
+
+    private static List<string> CleanIds(IEnumerable<string>? ids) =>
+        (ids ?? [])
+            .Select(id => id?.Trim() ?? "")
+            .Where(id => id.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private DailyWorkFile Load()
     {
@@ -403,6 +489,17 @@ public sealed class FileDailyWorkStore : IDailyWorkStore
     private sealed class DailyWorkFile
     {
         public List<DailyWorkStoredDay> Days { get; set; } = [];
+
+        public List<StoredUnassignedSeen> UnassignedSeen { get; set; } = [];
+    }
+
+    private sealed class StoredUnassignedSeen
+    {
+        public string ScopeKey { get; set; } = "";
+        public string LocalDate { get; set; } = "";
+        public bool BaselineTaken { get; set; }
+        public List<string> Seen { get; set; } = [];
+        public List<string> Announced { get; set; } = [];
     }
 
     private sealed class DailyWorkStoredDay

@@ -124,6 +124,7 @@ public sealed record WatchedRecord
     public DateTime? UpdatedAt { get; init; }
     public string PriorityValue { get; init; } = "";
     public string PriorityLabel { get; init; } = "";
+    public string Opened { get; init; } = "";
     public DateTime? FollowUp { get; init; }
     public bool SlaHasBreached { get; init; }
     public string SlaStage { get; init; } = "";

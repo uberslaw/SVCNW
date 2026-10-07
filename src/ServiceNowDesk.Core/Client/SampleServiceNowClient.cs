@@ -29,6 +29,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private readonly Dictionary<string, SampleAlertSignals> _signals = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ApiActivity> _activity = [];
     private int _sequence = 1000;
+    private int _unassignedQueueReads;
 
     public SampleServiceNowClient()
     {
@@ -57,6 +58,92 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     public Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken) =>
         Task.FromResult(BuildReport(search, cancellationToken));
+
+    public Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(string? watchedGroupName, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _unassignedQueueReads++;
+        if (_unassignedQueueReads > 1)
+            ReleaseLateQueueIncident();
+
+        Record("GET", "api/now/table/incident");
+        var watched = EncodedQuery.Sanitize(watchedGroupName);
+        var rows = _incidents
+            .Where(record => IsOpenUnassigned(record) && InGroupQueue(record, watched))
+            .Select(record => Describe(
+                DeskSection.Incidents,
+                record.SysId,
+                record.Number,
+                record.ShortDescription,
+                record.State,
+                record.StateLabel,
+                record.AssignmentGroup,
+                record.Location,
+                record.UpdatedAtDisplay,
+                record.Caller,
+                record.AssignedTo,
+                record.Priority,
+                record.PriorityLabel) with
+            {
+                Opened = record.OpenedAtDisplay
+            })
+            .ToArray();
+        return Task.FromResult<IReadOnlyList<WatchedRecord>>(rows);
+    }
+
+    /// <summary>
+    /// Practice stand-in for My Groups: the sample user is in Client Services only.
+    /// The watched group is included by the name the caller passes, with no location filter.
+    /// </summary>
+    private static bool InGroupQueue(IncidentRecord record, string watchedName)
+    {
+        if (record.AssignmentGroup.SysId == ClientServices.SysId
+            || record.AssignmentGroup.Display.Equals(ClientServices.Display, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (watchedName.Length == 0)
+            return false;
+        return record.AssignmentGroup.Display.Equals(watchedName, StringComparison.OrdinalIgnoreCase)
+            || record.AssignmentGroup.SysId.Equals(watchedName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOpenUnassigned(IncidentRecord record) =>
+        record.Active
+        && string.IsNullOrWhiteSpace(record.AssignedTo.SysId)
+        && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel);
+
+    private void ReleaseLateQueueIncident()
+    {
+        if (_incidents.Any(record => record.SysId == "inc-queue-new"))
+            return;
+
+        var now = Stamp();
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-queue-new",
+            Number = "INC0010017",
+            ShortDescription = "New unassigned priority 1 on the group queue",
+            Description = "This arrived after the first look at the group queue.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "1",
+            PriorityLabel = "1 - Critical",
+            Impact = "1",
+            ImpactLabel = "1 - High",
+            Urgency = "1",
+            UrgencyLabel = "1 - High",
+            Category = "inquiry",
+            CategoryLabel = "Inquiry / Help",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = now,
+            UpdatedAtDisplay = now,
+            UpdatedAtValue = now,
+            Active = true
+        });
+    }
 
     private AlertReport BuildReport(AlertSearch search, CancellationToken cancellationToken)
     {
@@ -1831,6 +1918,34 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Active = true
         });
         _signals["inc-sla-colleague"] = new SampleAlertSignals { SlaBreached = true };
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-aus-open",
+            Number = "INC0010018",
+            ShortDescription = "Unassigned in the watched group outside the office list",
+            Description = "The watched group queue includes this even though the location is not an office city.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "2",
+            PriorityLabel = "2 - High",
+            Impact = "2",
+            ImpactLabel = "2 - Medium",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = AusClientServices,
+            Location = "Melbourne",
+            OpenedAtDisplay = "2026-10-01 08:00",
+            UpdatedAtDisplay = "2026-10-06 08:00",
+            UpdatedAtValue = "2026-10-06 08:00:00",
+            Active = true
+        });
         SeedHardware();
     }
 

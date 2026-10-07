@@ -11,11 +11,15 @@ public partial class DailyWorkView
         InitializeComponent();
     }
 
+    private void NewUnassigned_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => OpenFromClick(sender, e);
+
     private void Attend_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => OpenFromClick(sender, e);
 
     private void Cleared_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => OpenFromClick(sender, e);
 
     private void Arrived_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => OpenFromClick(sender, e);
+
+    private void NewUnassigned_PreviewKeyDown(object sender, KeyEventArgs e) => OpenFromEnter(sender, e);
 
     private void Attend_PreviewKeyDown(object sender, KeyEventArgs e) => OpenFromEnter(sender, e);
 

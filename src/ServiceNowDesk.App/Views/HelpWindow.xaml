@@ -218,7 +218,7 @@
                         <StackPanel>
                             <TextBlock Text="Also" Style="{StaticResource HelpHeading}"/>
                             <TextBlock Style="{StaticResource HelpBody}"
-                                       Text="Daily Work ranks what you should attend to among tickets assigned to you: SLA breaching, updated by the caller, a follow-up that has passed, unattended, and returned with notes. My team uses the people ticked under Leads."/>
+                                       Text="Daily Work ranks what you should attend to among tickets assigned to you: SLA breaching, updated by the caller, a follow-up that has passed, unattended, and returned with notes. Every 5 minutes while connected, and when Daily Work opens, the desk checks for new unassigned incidents in your groups and the watched group and lists them at the top. The morning report is not replaced. My team uses the people ticked under Leads."/>
                             <TextBlock Style="{StaticResource HelpBody}" Margin="0"
                                        Text="Leads repeats SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets for the people you tick and for the whole watched group."/>
                         </StackPanel>

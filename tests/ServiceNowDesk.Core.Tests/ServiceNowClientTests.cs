@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 
@@ -441,6 +442,36 @@ public class ServiceNowClientTests
         Assert.Equal("2", body.RootElement.GetProperty("sysparm_quantity").GetString());
         Assert.Equal("user-jordan", body.RootElement.GetProperty("sysparm_requested_for").GetString());
         Assert.Equal("win11", body.RootElement.GetProperty("variables").GetProperty("preferred_os").GetString());
+    }
+
+    [Fact]
+    public async Task UnassignedGroupQueueUsesTheUsersGroupsAndTheWatchedNameWithoutLocation()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("sys_user_grmember", StringComparison.Ordinal))
+            {
+                return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var rows = await client.ListUnassignedGroupQueueAsync("Aus DT - Client Services", CancellationToken.None);
+        Assert.Empty(rows);
+
+        var incident = handler.Calls.Select(call => call.PathAndQuery).Last(path => path.Contains("/incident", StringComparison.Ordinal));
+        var query = QueryOf(incident);
+        Assert.Contains("assigned_toISEMPTY", query);
+        Assert.Contains("assignment_groupINgroup-cs", query);
+        Assert.Contains("assignment_group.name=\"Aus DT - Client Services\"", query);
+        Assert.Contains("active=true^stateNOT IN6,7,8", query);
+        Assert.Contains("^NQ", query);
+        Assert.DoesNotContain("location", query);
+        Assert.Equal(
+            "assigned_toISEMPTY^assignment_groupINgroup-cs^active=true^stateNOT IN6,7,8^NQassigned_toISEMPTY^assignment_group.name=\"Aus DT - Client Services\"^active=true^stateNOT IN6,7,8^ORDERBYDESCsys_updated_on",
+            AlertQueryBuilder.UnassignedInGroups(["group-cs"], "Aus DT - Client Services"));
+        Assert.Null(AlertQueryBuilder.UnassignedInGroups([], "  "));
     }
 
     private static string FieldsOf(string pathAndQuery)

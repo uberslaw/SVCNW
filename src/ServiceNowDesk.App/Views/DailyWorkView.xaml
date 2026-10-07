@@ -5,7 +5,83 @@
         <StackPanel MaxWidth="1040" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Daily Work" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                       Text="This is what to attend to from the notification queues: SLA breaching, updated by caller, follow-up passed, unattended, and returned with notes. Priority comes first, then SLA, then a caller update, then a passed follow-up. The report is saved once each local day, at the first check after midnight or the next time the desk opens. Later checks keep that report and show which tickets are no longer on it and which arrived. My team uses the people ticked under Leads. Click a row to open it."/>
+                       Text="This is what to attend to from the notification queues: SLA breaching, updated by caller, follow-up passed, unattended, and returned with notes. Priority comes first, then SLA, then a caller update, then a passed follow-up. The report is saved once each local day, at the first check after midnight or the next time the desk opens. Later checks keep that report and show which tickets are no longer on it and which arrived. Every 5 minutes while connected, and when this page opens, the desk looks for new unassigned incidents in your groups and the watched group. My team uses the people ticked under Leads. Click a row to open it."/>
+
+            <TextBlock Text="New unassigned in the group queue" FontWeight="SemiBold" Margin="0,0,0,4"
+                       Visibility="{Binding HasNewUnassigned, Converter={StaticResource BoolVis}}"/>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                       Text="These opened unassigned since the first look today. A priority 1 or 2 is marked. They stay here even when they are not yet on the attend list."
+                       Visibility="{Binding HasNewUnassigned, Converter={StaticResource BoolVis}}"/>
+            <Grid Margin="10,0,10,4" Visibility="{Binding HasNewUnassigned, Converter={StaticResource BoolVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="140"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="1" Text="Priority" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="2" Text="Title" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="3" Text="Group" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="4" Text="Opened" Style="{StaticResource FieldLabel}"/>
+            </Grid>
+            <ListBox ItemsSource="{Binding NewUnassigned}"
+                     Style="{StaticResource DeskList}"
+                     ItemContainerStyle="{StaticResource TicketListItem}"
+                     MaxHeight="220"
+                     MouseLeftButtonUp="NewUnassigned_MouseLeftButtonUp"
+                     PreviewKeyDown="NewUnassigned_PreviewKeyDown"
+                     AutomationProperties.Name="New unassigned in the group queue"
+                     Visibility="{Binding HasNewUnassigned, Converter={StaticResource BoolVis}}"
+                     Margin="0,0,0,12">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="180"/>
+                                <ColumnDefinition Width="140"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding PriorityBadge}" FontWeight="Bold" Margin="0,0,6,0" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PriorityBadge}" Value="P1">
+                                                    <Setter Property="Foreground" Value="#B42318"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PriorityBadge}" Value="P2">
+                                                    <Setter Property="Foreground" Value="#B54708"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Text="{Binding PriorityText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="FontWeight" Value="Normal"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding EmphasizePriority}" Value="True">
+                                                    <Setter Property="FontWeight" Value="Bold"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Text="{Binding When}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                 <RadioButton GroupName="DailyWorkArea" Content="My work" Margin="0,0,18,0"

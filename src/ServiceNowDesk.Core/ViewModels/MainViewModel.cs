@@ -28,13 +28,18 @@ public partial class MainViewModel : ObservableObject
     private readonly AlertWatchState _watch = new();
     private readonly RowHighlighter _rows = new();
     private readonly SemaphoreSlim _alertGate = new(1, 1);
+    private readonly SemaphoreSlim _queueGate = new(1, 1);
     private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
     private CancellationTokenSource? _alertCts;
+    private CancellationTokenSource? _queueCts;
     private int _alertGeneration;
+    private int _queueGeneration;
     private string _signedInUserId = "";
     private int _sessionEpoch;
 
     public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
+
+    public bool GroupQueueActive => _queueCts is { IsCancellationRequested: false };
     public StartupDownloadModel Startup { get; } = new();
     public ObservableCollection<CacheRowModel> Caches { get; } = new(
     [
@@ -262,6 +267,7 @@ public partial class MainViewModel : ObservableObject
                 ? "Practice data loaded. Nothing is sent to ServiceNow."
                 : "Connected as " + user.Name + ".";
             StartAlertLoop();
+            StartGroupQueueLoop();
             _loadedFor.Clear();
             ShowSavedKnowledge();
             if (settings.UseSampleData && !Knowledge.HasArticles)
@@ -410,8 +416,11 @@ public partial class MainViewModel : ObservableObject
                 break;
             case DeskSection.Notifications:
             case DeskSection.Leads:
+                RefreshAlerts();
+                break;
             case DeskSection.DailyWork:
                 RefreshAlerts();
+                RequestGroupQueuePoll();
                 break;
             case DeskSection.Connection:
             case DeskSection.Settings:
@@ -636,6 +645,7 @@ public partial class MainViewModel : ObservableObject
                 break;
             case DeskSection.DailyWork:
                 RefreshAlerts();
+                RequestGroupQueuePoll();
                 break;
             case DeskSection.Connection:
                 RefreshActivity();
@@ -1017,6 +1027,7 @@ public partial class MainViewModel : ObservableObject
     private void ReplaceClient(IServiceNowClient? client)
     {
         CancelAlertLoop();
+        CancelGroupQueueLoop();
         _watch.Reset();
         Notifications.Clear();
         Incidents.Detach();
@@ -1068,6 +1079,170 @@ public partial class MainViewModel : ObservableObject
             return;
         cts.Cancel();
         cts.Dispose();
+    }
+
+    private void StartGroupQueueLoop()
+    {
+        CancelGroupQueueLoop();
+        if (_client is null || string.IsNullOrWhiteSpace(_signedInUserId))
+            return;
+
+        var cts = new CancellationTokenSource();
+        _queueCts = cts;
+        var generation = _queueGeneration;
+        var client = _client;
+        var token = cts.Token;
+        _ = Task.Run(() => GroupQueueLoopAsync(client, generation, token));
+    }
+
+    private void CancelGroupQueueLoop()
+    {
+        _queueGeneration++;
+        var cts = _queueCts;
+        _queueCts = null;
+        if (cts is null)
+            return;
+        cts.Cancel();
+        cts.Dispose();
+    }
+
+    private void RequestGroupQueuePoll()
+    {
+        if (_client is null || _queueCts is not { IsCancellationRequested: false } cts)
+            return;
+
+        var client = _client;
+        var generation = _queueGeneration;
+        CancellationToken token;
+        try
+        {
+            token = cts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        _ = Task.Run(() => PollGroupQueueOnceAsync(client, generation, token));
+    }
+
+    private async Task GroupQueueLoopAsync(IServiceNowClient client, int generation, CancellationToken token)
+    {
+        while (!token.IsCancellationRequested && generation == _queueGeneration)
+        {
+            await PollGroupQueueOnceAsync(client, generation, token).ConfigureAwait(false);
+            if (token.IsCancellationRequested || generation != _queueGeneration)
+                return;
+
+            try
+            {
+                await Task.Delay(GroupQueueTracker.Interval, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private async Task PollGroupQueueOnceAsync(IServiceNowClient client, int generation, CancellationToken token)
+    {
+        try
+        {
+            await _queueGate.WaitAsync(token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (generation != _queueGeneration || !ReferenceEquals(client, _client))
+                return;
+
+            var localNow = DateTime.Now;
+            var search = NotificationSettings.Committed.ToSearch(_signedInUserId) with
+            {
+                TeamMemberIds = Connection.LeadTeamMemberIds
+            };
+
+            AlertReport? report = null;
+            Exception? reportError = null;
+            try
+            {
+                report = await client.GetAlertReportAsync(search, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                reportError = ex;
+            }
+
+            IReadOnlyList<WatchedRecord> queue = [];
+            Exception? queueError = null;
+            try
+            {
+                queue = await client.ListUnassignedGroupQueueAsync(search.GroupName, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                queueError = ex;
+            }
+
+            var scope = DailyWorkKeys.User(_signedInUserId);
+            GroupQueueStep? step = null;
+            if (scope is not null && queueError is null)
+            {
+                var day = DateOnly.FromDateTime(localNow);
+                var previous = _dailyWork.FindUnassigned(scope, day);
+                step = GroupQueueTracker.Compare(previous, queue.Select(record => record.SysId));
+                _dailyWork.SaveUnassigned(scope, day, step.State);
+            }
+
+            var status = GroupQueueTracker.StatusText(step?.NewIds.Count ?? 0);
+            PostToUi(() =>
+            {
+                if (generation != _queueGeneration || !ReferenceEquals(client, _client))
+                    return;
+
+                if (report is not null)
+                {
+                    Notifications.Apply(report.Personal, _watch);
+                    Leads.Show(report.Leads);
+                    DailyWork.Show(report.Daily, _signedInUserId, Connection.LeadTeamMemberIds, localNow);
+                    _rows.Use(report.Personal);
+                    RepaintRows();
+                }
+                else if (reportError is not null)
+                {
+                    Notifications.NotePollError(WorkspaceMessages.Describe(reportError));
+                }
+
+                if (step is not null)
+                    DailyWork.ShowGroupQueue(queue, step.State, localNow);
+
+                if (queueError is not null)
+                    Notifications.NotePollError(WorkspaceMessages.Describe(queueError));
+
+                if (!string.IsNullOrEmpty(status))
+                    StatusMessage = status;
+            });
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            _queueGate.Release();
+        }
     }
 
     private void RefreshAlerts()

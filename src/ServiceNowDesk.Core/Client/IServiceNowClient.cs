@@ -14,6 +14,12 @@ public interface IServiceNowClient : IDisposable
 
     Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Open incidents with an empty assignee in the signed-in user's groups, plus the watched group when its name is set.
+    /// Location is not applied.
+    /// </summary>
+    Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(string? watchedGroupName, CancellationToken cancellationToken);
+
     Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken);
     Task<IncidentRecord> GetIncidentAsync(string sysId, CancellationToken cancellationToken);
     Task<IncidentRecord> CreateIncidentAsync(IncidentChanges changes, CancellationToken cancellationToken);

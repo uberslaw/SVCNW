@@ -1,6 +1,7 @@
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.Services;
 using ServiceNowDesk.ViewModels;
 
 namespace ServiceNowDesk.Tests;
@@ -213,6 +214,8 @@ public class DailyWorkTests
             item => Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRow.From(item).HighlightHex));
         Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRow.From(report.Daily.Personal[5]).HighlightHex);
         Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRow.From(report.Daily.Personal[6]).HighlightHex);
+        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "INC0010017");
+        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "INC0010018");
         Assert.Contains(report.Daily.Personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.ActFirstHex);
         Assert.Contains(report.Daily.Personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.AfterThoseHex);
 
@@ -268,6 +271,202 @@ public class DailyWorkTests
         Assert.Equal(1, fired);
         Assert.Equal(2, leads.SelectedMemberIds.Count);
     }
+
+    [Fact]
+    public void ALaterPollReportsOnlyIdsThatWereNotAlreadySeen()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(5), GroupQueueTracker.Interval);
+        var seen = new[] { "inc-email", "inc-returned" };
+        var first = GroupQueueTracker.NewlyAppeared(seen, ["inc-returned", "inc-queue-new", "inc-queue-new"]);
+        Assert.Equal(["inc-queue-new"], first);
+
+        var remembered = seen.Concat(first).ToArray();
+        var second = GroupQueueTracker.NewlyAppeared(remembered, ["inc-email", "inc-returned", "inc-queue-new"]);
+        Assert.Empty(second);
+
+        var baseline = GroupQueueTracker.Compare(UnassignedSeen.None, ["inc-email", "inc-returned"]);
+        Assert.Empty(baseline.NewIds);
+        Assert.True(baseline.State.BaselineTaken);
+        var arrived = GroupQueueTracker.Compare(baseline.State, ["inc-email", "inc-returned", "inc-queue-new"]);
+        Assert.Equal(["inc-queue-new"], arrived.NewIds);
+        var again = GroupQueueTracker.Compare(arrived.State, ["inc-email", "inc-returned", "inc-queue-new"]);
+        Assert.Empty(again.NewIds);
+        Assert.Contains("inc-queue-new", again.State.Announced);
+        Assert.Equal("1 new unassigned in the group queue.", GroupQueueTracker.StatusText(1));
+        Assert.Null(GroupQueueTracker.StatusText(0));
+    }
+
+    [Fact]
+    public void NewUnassignedStayOnDailyWorkAndTheMorningReportStaysPut()
+    {
+        var store = new MemoryDailyWorkStore();
+        var now = new DateTime(2026, 10, 7, 8, 0, 0);
+        var page = new DailyWorkViewModel(store);
+        page.Show(new DailyWorkBoard([Item("inc-a", "INC-A")], []), "sample-user", [], now);
+        var morning = store.Find("user:sample-user", new DateOnly(2026, 10, 7))!;
+        Assert.Equal("INC-A", Assert.Single(morning.Lines).Number);
+
+        var fresh = QueueRecord("inc-fresh", "INC-FRESH", "1", "1 - Critical", now);
+        var quiet = QueueRecord("inc-quiet-new", "INC-QUIET-NEW", "3", "3 - Moderate", now.AddDays(-3));
+        var high = QueueRecord("inc-high", "INC-HIGH", "2", "2 - High", now);
+        var baseline = GroupQueueTracker.Compare(store.FindUnassigned("user:sample-user", morning.LocalDate), ["inc-old"]);
+        store.SaveUnassigned("user:sample-user", morning.LocalDate, baseline.State);
+        var step = GroupQueueTracker.Compare(baseline.State, ["inc-old", fresh.SysId, quiet.SysId, high.SysId]);
+        page.ShowGroupQueue([fresh, quiet, high], step.State, now.AddHours(1));
+
+        Assert.Equal(["INC-FRESH", "INC-HIGH", "INC-QUIET-NEW"], page.NewUnassigned.Select(row => row.Number).ToArray());
+        Assert.Equal("P1", page.NewUnassigned[0].PriorityBadge);
+        Assert.Equal(DailyWorkRanker.ActFirstHex, page.NewUnassigned[0].HighlightHex);
+        Assert.True(page.NewUnassigned[0].EmphasizePriority);
+        Assert.Equal("P2", page.NewUnassigned[1].PriorityBadge);
+        Assert.Equal(DailyWorkRanker.NextHex, page.NewUnassigned[1].HighlightHex);
+        Assert.True(page.NewUnassigned[1].EmphasizePriority);
+        Assert.Equal("", page.NewUnassigned[2].PriorityBadge);
+        Assert.False(page.NewUnassigned[2].EmphasizePriority);
+        Assert.Equal("Client Services", page.NewUnassigned[0].Group);
+        Assert.Equal("2026-10-07 08:00", page.NewUnassigned[0].When);
+        Assert.Contains(page.Attend, row => row.Number == "INC-QUIET-NEW");
+        Assert.Equal("INC-QUIET-NEW", Assert.Single(page.Arrived).Number);
+        Assert.DoesNotContain(page.Arrived, row => row.Number == "INC-FRESH");
+        Assert.DoesNotContain(page.Arrived, row => row.Number == "INC-HIGH");
+        Assert.Equal(["INC-A"], store.Find("user:sample-user", morning.LocalDate)!.Lines.Select(line => line.Number).ToArray());
+
+        DailyWorkRow? opened = null;
+        page.OpenRequested += (_, row) => opened = row;
+        page.OpenCommand.Execute(page.NewUnassigned[0]);
+        Assert.Equal("inc-fresh", opened!.SysId);
+        Assert.Equal(DeskSection.Incidents, opened.Section);
+
+        var repeat = GroupQueueTracker.Compare(step.State, ["inc-old", fresh.SysId, quiet.SysId, high.SysId]);
+        Assert.Empty(repeat.NewIds);
+        page.ShowGroupQueue([fresh, quiet, high], repeat.State, now.AddHours(2));
+        Assert.Equal(3, page.NewUnassigned.Count);
+        Assert.Equal(["INC-A"], store.Find("user:sample-user", morning.LocalDate)!.Lines.Select(line => line.Number).ToArray());
+    }
+
+    [Fact]
+    public void SeenUnassignedIdsSurviveARestartAndDoNotReplaceTheSnapshot()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "svcnw-queue-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var day = new DateTime(2026, 10, 7, 9, 0, 0);
+            var store = new FileDailyWorkStore(path);
+            DailyWorkReportBuilder.Build("user:sample-user", day, [Item("inc-a", "INC-A")], store);
+            var baseline = GroupQueueTracker.Compare(UnassignedSeen.None, ["inc-email"]);
+            store.SaveUnassigned("user:sample-user", DateOnly.FromDateTime(day), baseline.State);
+            var arrived = GroupQueueTracker.Compare(store.FindUnassigned("user:sample-user", DateOnly.FromDateTime(day)), ["inc-email", "inc-queue-new"]);
+            store.SaveUnassigned("user:sample-user", DateOnly.FromDateTime(day), arrived.State);
+
+            var reloaded = new FileDailyWorkStore(path);
+            var again = GroupQueueTracker.Compare(
+                reloaded.FindUnassigned("user:sample-user", DateOnly.FromDateTime(day)),
+                ["inc-email", "inc-queue-new"]);
+            Assert.Empty(again.NewIds);
+            Assert.Contains("inc-queue-new", again.State.Announced);
+            var report = DailyWorkReportBuilder.Build("user:sample-user", day.AddHours(2), [Item("inc-a", "INC-A")], reloaded);
+            Assert.False(report.CreatedNow);
+            Assert.Empty(report.Arrived);
+            Assert.Equal("INC-A", Assert.Single(reloaded.Find("user:sample-user", DateOnly.FromDateTime(day))!.Lines).Number);
+            Assert.Contains("inc-queue-new", reloaded.FindUnassigned("user:sample-user", DateOnly.FromDateTime(day)).Announced);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task PracticeDataShowsAGroupQueueArrivalAfterTheFirstLook()
+    {
+        using var client = new SampleServiceNowClient();
+        var watched = "Aus DT - Client Services";
+        var first = await client.ListUnassignedGroupQueueAsync(watched, CancellationToken.None);
+        Assert.Contains(first, row => row.Number == "INC0010004");
+        Assert.Contains(first, row => row.Number == "INC0010013");
+        Assert.Contains(first, row => row.Number == "INC0010018" && row.Location == "Melbourne");
+        Assert.DoesNotContain(first, row => row.Number == "INC0010017");
+        Assert.DoesNotContain(first, row => row.Number == "INC0010005");
+        Assert.DoesNotContain(first, row => row.Number == "INC0010007");
+        Assert.All(first, row => Assert.True(string.IsNullOrWhiteSpace(row.AssignedToSysId)));
+
+        using var mineOnly = new SampleServiceNowClient();
+        var withoutWatched = await mineOnly.ListUnassignedGroupQueueAsync(null, CancellationToken.None);
+        Assert.DoesNotContain(withoutWatched, row => row.Number == "INC0010018");
+        Assert.Contains(withoutWatched, row => row.Number == "INC0010004");
+
+        var store = new MemoryDailyWorkStore();
+        var now = new DateTime(2026, 10, 7, 9, 30, 0);
+        var day = DateOnly.FromDateTime(now);
+        var step = GroupQueueTracker.Compare(UnassignedSeen.None, first.Select(row => row.SysId));
+        Assert.Empty(step.NewIds);
+        store.SaveUnassigned("user:sample-user", day, step.State);
+
+        var page = new DailyWorkViewModel(store);
+        var report = await client.GetAlertReportAsync(
+            new AlertSearch("sample-user", watched, NotificationPreferences.DefaultLocations),
+            CancellationToken.None);
+        page.Show(report.Daily, "sample-user", [], now);
+        var morning = store.Find("user:sample-user", day)!.Lines.Select(line => line.SysId).ToArray();
+
+        var second = await client.ListUnassignedGroupQueueAsync(watched, CancellationToken.None);
+        var arrived = GroupQueueTracker.Compare(store.FindUnassigned("user:sample-user", day), second.Select(row => row.SysId));
+        Assert.Equal(["inc-queue-new"], arrived.NewIds);
+        store.SaveUnassigned("user:sample-user", day, arrived.State);
+        page.ShowGroupQueue(second, arrived.State, now.AddMinutes(5));
+
+        var row = Assert.Single(page.NewUnassigned);
+        Assert.Equal("INC0010017", row.Number);
+        Assert.Equal("P1", row.PriorityBadge);
+        Assert.True(row.EmphasizePriority);
+        Assert.Equal(DailyWorkRanker.ActFirstHex, row.HighlightHex);
+        Assert.Equal("Client Services", row.Group);
+        Assert.False(string.IsNullOrWhiteSpace(row.When));
+        Assert.DoesNotContain(page.Arrived, item => item.Number == "INC0010017");
+        Assert.DoesNotContain(page.Attend, item => item.Number == "INC0010017");
+        Assert.Equal(morning, store.Find("user:sample-user", day)!.Lines.Select(line => line.SysId).ToArray());
+
+        var third = await client.ListUnassignedGroupQueueAsync(watched, CancellationToken.None);
+        var repeat = GroupQueueTracker.Compare(store.FindUnassigned("user:sample-user", day), third.Select(item => item.SysId));
+        Assert.Empty(repeat.NewIds);
+        page.ShowGroupQueue(third, repeat.State, now.AddMinutes(10));
+        Assert.Equal("INC0010017", Assert.Single(page.NewUnassigned).Number);
+    }
+
+    [Fact]
+    public async Task TheGroupQueueCheckStartsWithTheConnectionAndStopsOnDisconnect()
+    {
+        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices(), dailyWork: new MemoryDailyWorkStore());
+        main.Connection.UseSampleData = true;
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.True(main.IsSample);
+        Assert.True(main.GroupQueueActive);
+
+        main.DisconnectCommand.Execute(null);
+        Assert.False(main.GroupQueueActive);
+        Assert.False(main.IsConnected);
+        Assert.Empty(main.DailyWork.NewUnassigned);
+    }
+
+    private static WatchedRecord QueueRecord(string sysId, string number, string priority, string label, DateTime updated) => new()
+    {
+        Section = DeskSection.Incidents,
+        SysId = sysId,
+        Number = number,
+        Title = number,
+        State = "New",
+        StateValue = "1",
+        Group = "Client Services",
+        AssignmentGroupSysId = "group-cs",
+        CallerUserName = "jordan.lee",
+        AssignedToSysId = "",
+        PriorityValue = priority,
+        PriorityLabel = label,
+        Opened = "2026-10-07 08:00",
+        Updated = "2026-10-07 08:00",
+        UpdatedAt = updated
+    };
 
     private static WorkItem Item(string sysId, string number) => new(
         sysId,
