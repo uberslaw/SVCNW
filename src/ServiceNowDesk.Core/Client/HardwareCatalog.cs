@@ -144,26 +144,30 @@ public static class HardwareCatalog
             return true;
 
         var display = asset.Location.Display ?? "";
-        return names.Any(name => display.Contains(name, StringComparison.OrdinalIgnoreCase));
+        return names.Any(name => HardwareOfficeNames.SamePlace(display, name));
     }
 
     /// <summary>
-    /// Computer rows, restricted to the selected location names, ordered by serial.
-    /// Each office is its own complete clause joined with ^NQ. A parenthesized OR is not
-    /// used: ServiceNow drops that group, then sysparm_limit returns the first computers
-    /// in serial order from every city.
+    /// Computer rows, restricted to the selected offices, ordered by serial.
+    /// Each checked office is queried as its own name and as the same place with or without
+    /// a trailing " Office", one complete clause per label joined by ^NQ. A parenthesized
+    /// OR is not used: ServiceNow drops that group and the row cap then returns other cities.
     /// </summary>
     public static string ListQuery(string? text, IReadOnlyList<string>? locations = null)
     {
         var term = EncodedQuery.Sanitize(text);
         var places = OfficeNames(locations);
+        var labels = places
+            .SelectMany(HardwareOfficeNames.FilterLabels)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var branches = new List<string>();
-        if (places.Length == 0)
+        if (labels.Length == 0)
             branches.AddRange(TextBranches("model_category.name=Computer", term));
         else
         {
-            foreach (var place in places)
-                branches.AddRange(TextBranches("model_category.name=Computer^location.nameLIKE" + Quote(place), term));
+            foreach (var label in labels)
+                branches.AddRange(TextBranches("model_category.name=Computer^location.name=" + Quote(label), term));
         }
 
         return string.Join("^NQ", branches) + "^ORDERBYserial_number";
@@ -226,6 +230,26 @@ public static class HardwareOfficeNames
             return true;
 
         return IsLongerOfficeName(a, b) || IsLongerOfficeName(b, a);
+    }
+
+    /// <summary>
+    /// The checkbox label and the same place written with or without a trailing " Office".
+    /// </summary>
+    public static IReadOnlyList<string> FilterLabels(string? name)
+    {
+        var trimmed = Normalize(name);
+        if (trimmed.Length == 0)
+            return [];
+
+        const string suffix = " Office";
+        if (trimmed.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && trimmed.Length > suffix.Length)
+        {
+            var stem = trimmed[..^suffix.Length].TrimEnd();
+            if (stem.Length > 0 && IsLongerOfficeName(trimmed, stem))
+                return [trimmed, stem];
+        }
+
+        return [trimmed, trimmed + suffix];
     }
 
     /// <summary>

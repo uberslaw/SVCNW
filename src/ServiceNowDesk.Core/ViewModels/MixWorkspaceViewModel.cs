@@ -11,7 +11,6 @@ namespace ServiceNowDesk.ViewModels;
 /// One list of open incidents, request items, and walk-up interactions.
 /// Each table is queried on its own with the same assignment and office clause, at most
 /// <see cref="PageLimit"/> rows, so the page does not load every ticket in the instance.
-/// Selecting a row opens the existing editor for that type.
 /// </summary>
 public partial class MixWorkspaceViewModel : ObservableObject
 {

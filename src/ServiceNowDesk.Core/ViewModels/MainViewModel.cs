@@ -38,8 +38,8 @@ public partial class MainViewModel : ObservableObject
     private int _queueGeneration;
     private string _signedInUserId = "";
     private string _signedInUserLocation = "";
-    private int _mixOpenGeneration;
     private int _sessionEpoch;
+    private int _mixOpenGeneration;
 
     public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
 

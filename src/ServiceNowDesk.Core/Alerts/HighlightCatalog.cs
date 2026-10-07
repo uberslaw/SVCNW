@@ -167,7 +167,7 @@ public sealed class HighlightPreferences
                 if (entry is null || key is null)
                     continue;
                 var value = LegendColorIntensity.Clamp(pair.Value);
-                var baseline = SharedIntensity ?? LegendColorIntensity.Measure(entry.SwatchHex);
+                var baseline = SharedIntensity ?? LegendColorIntensity.Closest(entry.SwatchHex);
                 if (value == baseline)
                     continue;
                 _intensityOverrides[key] = value;
@@ -177,7 +177,8 @@ public sealed class HighlightPreferences
         _rowHex = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in HighlightCatalog.Entries)
         {
-            var row = LegendColorIntensity.Row(entry.SwatchHex, entry.RowHex, IntensityOf(entry.Key));
+            var applied = SharedIntensity is not null || _intensityOverrides.ContainsKey(entry.Key);
+            var row = LegendColorIntensity.Row(entry.SwatchHex, entry.RowHex, IntensityOf(entry.Key), applied);
             if (!string.Equals(row, entry.RowHex, StringComparison.OrdinalIgnoreCase))
                 _rowHex[entry.Key] = row;
         }
@@ -193,8 +194,11 @@ public sealed class HighlightPreferences
     public static HighlightPreferences From(DeskSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        return FromKeys(settings.EnabledHighlights)
-            .WithIntensity(settings.LegendIntensity, settings.LegendColorIntensities);
+        var preferences = FromKeys(settings.EnabledHighlights);
+        if (settings.LegendIntensityVersion != LegendColorIntensity.Version)
+            return preferences;
+
+        return preferences.WithIntensity(settings.LegendIntensity, settings.LegendColorIntensities);
     }
 
     public static HighlightPreferences FromKeys(IReadOnlyList<string>? keys)
@@ -225,7 +229,7 @@ public sealed class HighlightPreferences
             return shared;
 
         var entry = HighlightCatalog.Find(key);
-        return entry is null ? LegendColorIntensity.White : LegendColorIntensity.Measure(entry.SwatchHex);
+        return entry is null ? LegendColorIntensity.Minimum : LegendColorIntensity.Closest(entry.SwatchHex);
     }
 
     public string ChooseRowHex(bool unassigned, IEnumerable<AlertKind>? kinds)
@@ -267,6 +271,7 @@ public sealed class HighlightPreferences
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings.EnabledHighlights = [.. EnabledKeys];
+        settings.LegendIntensityVersion = LegendColorIntensity.Version;
         settings.LegendIntensity = SharedIntensity;
         settings.LegendColorIntensities = _intensityOverrides.Count == 0
             ? null

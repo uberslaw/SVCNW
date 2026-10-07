@@ -1,73 +1,103 @@
 namespace ServiceNowDesk.Alerts;
 
 /// <summary>
-/// Legend lightness on a white–black scale. 0 is white and 100 is black.
-/// Hue and saturation stay with the original swatch. A missing saved value uses the measured percent.
+/// Legend slider curve. Position 0 is a light wash, 70 is fully saturated, and 100 is a step darker.
+/// Hue stays with the original swatch. Saved positions use <see cref="Version"/>; older lightness numbers are ignored.
 /// </summary>
 public static class LegendColorIntensity
 {
-    public const int White = 0;
-    public const int Black = 100;
+    public const int Version = 2;
+    public const int Minimum = 0;
+    public const int Maximum = 100;
+    public const int Vivid = 70;
 
-    public static int Clamp(int value) => Math.Clamp(value, White, Black);
+    public const string NeutralTrackStart = "#E6E6E6";
+    public const string NeutralTrackEnd = "#1A1A1A";
 
-    /// <summary>How far <paramref name="hex"/> sits from white toward black, as a whole percent.</summary>
-    public static int Measure(string hex)
+    public readonly record struct Hsl(double Hue, double Saturation, double Lightness);
+
+    public static int Clamp(int value) => Math.Clamp(value, Minimum, Maximum);
+
+    public static int Average(IEnumerable<int> positions)
     {
-        var (red, green, blue) = Parse(Normalize(hex));
-        var lightness = Lightness(red, green, blue);
-        var towardBlack = (1d - lightness) * 100d;
-        return Clamp((int)Math.Round(towardBlack, MidpointRounding.AwayFromZero));
-    }
-
-    public static int Average(IEnumerable<int> percents)
-    {
-        ArgumentNullException.ThrowIfNull(percents);
+        ArgumentNullException.ThrowIfNull(positions);
         var count = 0;
         var total = 0;
-        foreach (var percent in percents)
+        foreach (var position in positions)
         {
-            total += Clamp(percent);
+            total += Clamp(position);
             count++;
         }
 
         if (count == 0)
-            return White;
+            return Minimum;
 
         return Clamp((int)Math.Round(total / (double)count, MidpointRounding.AwayFromZero));
     }
 
-    /// <summary>
-    /// Sets the original swatch to <paramref name="percent"/> lightness. The measured percent returns the original hex.
-    /// </summary>
-    public static string Swatch(string originalHex, int percent)
+    /// <summary>Saturation and lightness at <paramref name="position"/>, before the swatch hue is applied.</summary>
+    public static Hsl Sample(int position)
+    {
+        position = Clamp(position);
+        if (position <= Vivid)
+        {
+            var span = position / (double)Vivid;
+            return new Hsl(0d, Lerp(0.20d, 1.00d, span), Lerp(0.90d, 0.46d, span));
+        }
+
+        var tail = (position - Vivid) / (double)(Maximum - Vivid);
+        return new Hsl(0d, 1.00d, Lerp(0.46d, 0.32d, tail));
+    }
+
+    public static Hsl Describe(string hex)
+    {
+        var (hue, saturation, lightness) = ToHsl(Parse(Normalize(hex)));
+        return new Hsl(hue, saturation, lightness);
+    }
+
+    /// <summary>Paints <paramref name="originalHex"/> at <paramref name="position"/> on the curve.</summary>
+    public static string Curve(string originalHex, int position)
+    {
+        var (hue, _, _) = ToHsl(Parse(Normalize(originalHex)));
+        var sample = Sample(position);
+        return FromHsl(hue, sample.Saturation, sample.Lightness);
+    }
+
+    /// <summary>Whole-number position whose curve colour is nearest the original swatch in RGB.</summary>
+    public static int Closest(string originalHex)
     {
         var text = Normalize(originalHex);
-        percent = Clamp(percent);
-        if (Measure(text) == percent)
-            return text;
+        var target = Parse(text);
+        var best = Minimum;
+        var bestDistance = long.MaxValue;
+        for (var position = Minimum; position <= Maximum; position++)
+        {
+            var sample = Parse(Curve(text, position));
+            var distance = Square(sample.Red - target.Red)
+                + Square(sample.Green - target.Green)
+                + Square(sample.Blue - target.Blue);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = position;
+            }
+        }
 
-        var (hue, saturation, _) = ToHsl(Parse(text));
-        return FromHsl(hue, saturation, 1d - percent / 100d);
+        return best;
     }
 
-    /// <summary>
-    /// Row tint for a swatch at <paramref name="percent"/>. The measured percent keeps today's row hex.
-    /// </summary>
-    public static string Row(string originalSwatch, string originalRow, int percent)
+    /// <summary>Light row tint for an applied curve colour. An unapplied position keeps today's row hex.</summary>
+    public static string Row(string originalSwatch, string originalRow, int position, bool applied)
     {
-        var swatch = Swatch(originalSwatch, percent);
-        if (string.Equals(swatch, Normalize(originalSwatch), StringComparison.OrdinalIgnoreCase))
+        if (!applied)
             return Normalize(originalRow);
 
-        return HighlightCatalog.Lighten(swatch);
+        return HighlightCatalog.Lighten(Curve(originalSwatch, position));
     }
 
-    private static double Lightness(byte red, byte green, byte blue)
-    {
-        var (_, _, lightness) = ToHsl((red, green, blue));
-        return lightness;
-    }
+    private static double Lerp(double start, double end, double span) => start + (end - start) * span;
+
+    private static long Square(int value) => (long)value * value;
 
     private static (double Hue, double Saturation, double Lightness) ToHsl((byte Red, byte Green, byte Blue) color)
     {

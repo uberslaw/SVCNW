@@ -49,6 +49,11 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     public string LastHardwareQuery { get; private set; } = "";
 
+    /// <summary>
+    /// When false, hardware search returns every computer so the workspace can tell a dropped location filter from an empty office.
+    /// </summary>
+    internal bool ApplyHardwareLocationFilter { get; set; } = true;
+
     public CurrentUser SignedInUser { get; set; } = Me;
 
     public IReadOnlyList<Choice>? ContactTypeChoices { get; set; }
@@ -799,7 +804,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         LastHardwareQuery = encoded;
         var matches = _hardware
             .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
-            .Where(asset => HardwareCatalog.MatchesLocation(asset, query.Locations))
+            .Where(asset => !ApplyHardwareLocationFilter || HardwareCatalog.MatchesLocation(asset, query.Locations))
             .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         Record("GET", "api/now/table/alm_hardware?sysparm_query=" + Uri.EscapeDataString(encoded));
@@ -859,7 +864,12 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     internal void AddLocation(string sysId, string display) =>
         _locations.Add(new ReferenceSuggestion(sysId, display, ""));
 
+    internal void RemoveLocation(string display) =>
+        _locations.RemoveAll(place => string.Equals(place.Display, display, StringComparison.OrdinalIgnoreCase));
+
     internal void AddComputer(HardwareAsset asset) => _hardware.Add(asset);
+
+    internal void RemoveHardware(Predicate<HardwareAsset> match) => _hardware.RemoveAll(match);
 
     private static ReferenceValue PlaceRef(IReadOnlyList<ReferenceSuggestion> places, string? sysId)
     {
@@ -2098,33 +2108,6 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             OpenedAtDisplay = "2099-01-01 00:00",
             UpdatedAtDisplay = "2099-01-01 00:03",
             UpdatedAtValue = "2099-01-01 00:03:00",
-            Active = true
-        });
-        AddIncident(new IncidentRecord
-        {
-            SysId = "inc-mix-other-group",
-            Number = "INC0010023",
-            ShortDescription = "Unassigned Brisbane ticket in another group",
-            Description = "The office matches, but the signed-in user is not in this group.",
-            State = "1",
-            StateLabel = "New",
-            Priority = "5",
-            PriorityLabel = "5 - Planning",
-            Impact = "3",
-            ImpactLabel = "3 - Low",
-            Urgency = "3",
-            UrgencyLabel = "3 - Low",
-            Category = "network",
-            CategoryLabel = "Network",
-            ContactType = "phone",
-            ContactTypeLabel = "Phone",
-            Caller = Sam,
-            AssignedTo = ReferenceValue.Empty,
-            AssignmentGroup = Network,
-            Location = "Brisbane",
-            OpenedAtDisplay = "2099-01-01 00:00",
-            UpdatedAtDisplay = "2099-01-01 00:06",
-            UpdatedAtValue = "2099-01-01 00:06:00",
             Active = true
         });
         _items.Add(new RequestedItemRecord

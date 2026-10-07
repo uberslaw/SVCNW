@@ -19,6 +19,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     private bool _officesReady;
     private bool _suppressOffice;
     private bool _missingLocationNotice;
+    private bool _locationFilterIgnored;
     private string _signedInLocation = "";
     private int _substateGeneration;
 
@@ -157,6 +158,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         {
             IsLoading = true;
             ErrorMessage = "";
+            _locationFilterIgnored = false;
             if (!_officesReady)
                 await PrepareOfficesAsync();
             await EnsureChoicesAsync();
@@ -164,11 +166,18 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             var page = await LoadHardwarePageAsync(offices);
             var keep = Selected?.SysId ?? _loaded?.SysId;
             _loadedRows.Clear();
+            var outsideSelection = 0;
             foreach (var asset in page.Items)
             {
-                if (HardwareCatalog.MatchesLocation(asset, offices) && HardwareCatalog.MatchesSearch(asset, SearchText))
+                var inOffice = HardwareCatalog.MatchesLocation(asset, offices);
+                if (inOffice && HardwareCatalog.MatchesSearch(asset, SearchText))
                     _loadedRows.Add(asset);
+                else if (offices.Count > 0 && !inOffice)
+                    outsideSelection++;
             }
+
+            if (offices.Count > 0 && _loadedRows.Count == 0 && outsideSelection > 0)
+                _locationFilterIgnored = true;
 
             ApplyColumnFilters(keep);
             PublishScope(offices);
@@ -771,7 +780,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     private void PublishScope(IReadOnlyList<string> offices)
     {
-        if (offices.Count == 0 && _missingLocationNotice)
+        if (_locationFilterIgnored && offices.Count > 0)
+            OfficeStatus = "The location filter did not apply. This page is not limited to " + string.Join(", ", offices) + ".";
+        else if (offices.Count == 0 && _missingLocationNotice)
             OfficeStatus = "No location on the signed-in account. Showing all locations.";
         else if (offices.Count == 0)
             OfficeStatus = "Showing all locations.";

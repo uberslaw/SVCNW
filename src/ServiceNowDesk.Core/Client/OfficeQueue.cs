@@ -5,8 +5,7 @@ namespace ServiceNowDesk.Client;
 /// <summary>
 /// Offices for My Team and Unassigned. The list is the watched notification offices when
 /// that setting is non-empty, otherwise the signed-in user's city. Tickets are matched on
-/// <c>location.name</c>, the same location the notification group queue already uses, with
-/// the same place rule as hardware ("Brisbane" and "Brisbane Office").
+/// the record location with the same place rule as hardware ("Brisbane" and "Brisbane Office").
 /// </summary>
 public static class OfficeQueue
 {

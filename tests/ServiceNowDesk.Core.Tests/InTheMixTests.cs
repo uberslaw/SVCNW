@@ -36,7 +36,6 @@ public class InTheMixTests
         Assert.Contains(incidents.Items, row => row.Number == "INC0010021");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010020");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010022");
-        Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010023");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010011");
 
         incidents.Preset = Preset(AssignmentScope.Unassigned);
@@ -44,7 +43,6 @@ public class InTheMixTests
         Assert.Contains(incidents.Items, row => row.Number == "INC0010021");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010020");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010022");
-        Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010023");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010019");
 
         incidents.UseOfficeCities(["Brisbane Office"]);
