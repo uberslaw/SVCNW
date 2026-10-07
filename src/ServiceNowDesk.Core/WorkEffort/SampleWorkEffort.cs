@@ -28,16 +28,39 @@ public static class SampleWorkEffort
     public static IReadOnlyList<WorkEffortTouch> Touches(DateTime localNow)
     {
         var now = WorkEffortWindow.Clock(localNow);
+        var earlierToday = now.Date.AddHours(9);
+        var midToday = now.Date.AddHours(11);
+        var twoDaysAgo = now.Date.AddDays(-2).AddHours(10);
         var tenDays = now.AddDays(-10);
+        var dayAfterOpen = tenDays.Date.AddDays(1).AddHours(9);
         var fortyDays = now.AddDays(-40);
         return
         [
             new("inc-today", WorkEffortKind.Incident, "sample-user", now, "sample-user", now, null, null, "alex.rivera", now),
-            new("ritm-update", WorkEffortKind.RequestedItem, null, null, null, null, null, null, "alex.rivera", now),
+            // Alex updated one request item on two local days, and twice on the later day.
+            // The header moment is repeated in the history so it is counted once.
+            new("ritm-update", WorkEffortKind.RequestedItem, null, null, null, null, null, null, "alex.rivera", now,
+                new WorkEffortUpdate[]
+                {
+                    new("alex.rivera", twoDaysAgo),
+                    new("alex.rivera", earlierToday),
+                    new("alex.rivera", now)
+                }),
             new("ims-close", WorkEffortKind.Interaction, null, null, null, null, "sample-user", now, "alex.rivera", now),
-            new("inc-ten", WorkEffortKind.Incident, "sample-user", tenDays, null, null, null, null, "alex.rivera", tenDays),
+            // Opened ten days ago. That day's header update is not a second credit. The next day is.
+            new("inc-ten", WorkEffortKind.Incident, "sample-user", tenDays, null, null, null, null, "alex.rivera", tenDays,
+                new WorkEffortUpdate[]
+                {
+                    new("alex.rivera", dayAfterOpen)
+                }),
             new("inc-forty", WorkEffortKind.Incident, null, null, null, null, null, null, "alex.rivera", fortyDays),
-            new("inc-jordan", WorkEffortKind.Incident, null, null, null, null, null, null, "jordan.lee", now),
+            // Jordan saved one incident several times on the same local day.
+            new("inc-jordan", WorkEffortKind.Incident, null, null, null, null, null, null, "jordan.lee", now,
+                new WorkEffortUpdate[]
+                {
+                    new("jordan.lee", earlierToday),
+                    new("jordan.lee", midToday)
+                }),
             new("inc-sam", WorkEffortKind.Incident, "user-sam", now, "user-sam", now, null, null, "sam.patel", now)
         ];
     }
@@ -46,8 +69,9 @@ public static class SampleWorkEffort
     {
         var window = WorkEffortWindow.For(scale, localNow);
         var people = WorkEffortRoster.Collect(Memberships(), SignedIn);
-        var rows = WorkEffortScore.Build(people, Touches(localNow), window);
-        return new WorkEffortReport(rows, WorkEffortWindow.CountsLabel(scale), "");
+        var touches = Touches(localNow);
+        var rows = WorkEffortScore.Build(people, touches, window, WorkEffortUpdateMode.Daily);
+        return new WorkEffortReport(rows, WorkEffortWindow.CountsLabel(scale), "", new WorkEffortLedger(people, touches, window));
     }
 
     public static IReadOnlyList<WorkEffortPerson> WithLogins(IReadOnlyList<WorkEffortPerson>? team)
