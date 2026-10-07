@@ -123,7 +123,7 @@ public static class DeskSettingsFile
             SignedInAt = SignedInAt,
             SessionExpiresAt = SessionExpiresAt,
             UseSampleData = UseSampleData,
-            JiggleFrequency = string.IsNullOrWhiteSpace(JiggleFrequency) ? "00:01:00" : JiggleFrequency,
+            JiggleFrequency = NormalizeJiggleFrequency(JiggleFrequency),
             JiggleDurationSeconds = JiggleDurationSeconds ?? 2,
             JiggleSpeed = JiggleSpeed is null ? JiggleMotion.DefaultMovesPerSecond : JiggleMotion.Snap(JiggleSpeed.Value),
             ShowDesktopWidget = ShowDesktopWidget ?? DesktopWidgetWhen.WhileOpen,
@@ -149,6 +149,15 @@ public static class DeskSettingsFile
             GuidedSetupOffer = GuidedSetupOffer,
             GuidedSetupFinished = GuidedSetupFinished
         };
+
+        private static string NormalizeJiggleFrequency(string? frequency)
+        {
+            if (string.IsNullOrWhiteSpace(frequency))
+                return NotificationPreferences.DefaultFrequency;
+            if (!NotificationPreferences.TryParseFrequency(frequency, out var parsed))
+                return frequency;
+            return NotificationPreferences.FormatFrequency(parsed);
+        }
 
         private static Dictionary<string, int>? CopyIntensities(Dictionary<string, int>? intensities) =>
             intensities is null ? null : new Dictionary<string, int>(intensities, StringComparer.OrdinalIgnoreCase);
