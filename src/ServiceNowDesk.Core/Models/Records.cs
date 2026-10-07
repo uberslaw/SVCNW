@@ -134,7 +134,28 @@ public sealed record CatalogVariableDefinition(
     bool Mandatory,
     IReadOnlyList<Choice> Choices);
 
-public sealed record CatalogOrderResult(string RequestSysId, string RequestNumber);
+public sealed record CatalogOrderResult(
+    string RequestSysId,
+    string RequestNumber,
+    string RequestedItemSysId = "",
+    string RequestedItemNumber = "")
+{
+    public string Numbers
+    {
+        get
+        {
+            var request = (RequestNumber ?? "").Trim();
+            var item = (RequestedItemNumber ?? "").Trim();
+            if (request.Length > 0 && item.Length > 0)
+                return request + " · " + item;
+            if (request.Length > 0)
+                return request;
+            if (item.Length > 0)
+                return item;
+            return "";
+        }
+    }
+}
 
 public sealed record AttachmentSummary(string SysId, string FileName);
 

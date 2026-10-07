@@ -41,6 +41,11 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     public string LastHardwarePayload { get; private set; } = "";
 
+    public string LastOrderedItemId { get; private set; } = "";
+
+    public IReadOnlyDictionary<string, string> LastOrderedVariables { get; private set; } =
+        new Dictionary<string, string>();
+
     public IReadOnlyList<Choice>? ContactTypeChoices { get; set; }
 
     public IReadOnlyList<ApiActivity> RecentActivity => _activity.ToArray();
@@ -843,6 +848,12 @@ public sealed class SampleServiceNowClient : IServiceNowClient
                 new("preferred_os", "Preferred operating system", true, [new("win11", "Windows 11"), new("macos", "macOS")])
             ],
             "cat-monitor" => [new("location", "Desk location", true, [])],
+            GenericRequestItem.SysId =>
+            [
+                new(GenericRequestItem.RequestedForVariable, GenericRequestItem.RequestedForLabel, true, []),
+                new(GenericRequestItem.TitleVariable, GenericRequestItem.TitleLabel, true, []),
+                new(GenericRequestItem.DescriptionVariable, GenericRequestItem.DescriptionLabel, true, [])
+            ],
             _ => []
         };
         return Task.FromResult(variables);
@@ -852,12 +863,16 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     {
         var item = Catalog.FirstOrDefault(candidate => candidate.SysId == itemSysId)
             ?? throw new ServiceNowException(404, "ServiceNow could not find that catalog item.", null);
+        LastOrderedItemId = itemSysId;
+        LastOrderedVariables = new Dictionary<string, string>(variables, StringComparer.Ordinal);
+        var title = GenericRequestVariables.Read(variables, GenericRequestItem.TitleVariable, "title");
+        var description = GenericRequestVariables.Read(variables, GenericRequestItem.DescriptionVariable, "description");
         var request = new RequestRecord
         {
             SysId = NextId("req"),
             Number = NextNumber("REQ"),
-            ShortDescription = item.Name,
-            Description = item.ShortDescription,
+            ShortDescription = title.Length > 0 ? title : item.Name,
+            Description = description.Length > 0 ? description : item.ShortDescription,
             RequestState = "requested",
             RequestStateLabel = "Requested",
             RequestedFor = UserRef(requestedForSysId),
@@ -871,12 +886,12 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             StageLabel = "Requested"
         };
         _requests.Insert(0, request);
-        _items.Insert(0, new RequestedItemRecord
+        var orderedItem = new RequestedItemRecord
         {
             SysId = NextId("ritm"),
             Number = NextNumber("RITM"),
-            ShortDescription = item.Name,
-            Description = item.ShortDescription,
+            ShortDescription = title.Length > 0 ? title : item.Name,
+            Description = description.Length > 0 ? description : item.ShortDescription,
             State = "1",
             StateLabel = "Open",
             Request = new ReferenceValue(request.SysId, request.Number),
@@ -888,9 +903,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             UpdatedAtValue = Stamp(),
             Active = true,
             StageLabel = "Waiting for approval"
-        });
+        };
+        _items.Insert(0, orderedItem);
         Record("POST", "api/sn_sc/servicecatalog/items/" + itemSysId + "/order_now");
-        return Task.FromResult(new CatalogOrderResult(request.SysId, request.Number));
+        return Task.FromResult(new CatalogOrderResult(request.SysId, request.Number, orderedItem.SysId, orderedItem.Number));
     }
 
     public Task<PagedResult<KnowledgeArticle>> SearchKnowledgeAsync(TicketQuery query, CancellationToken cancellationToken)
@@ -1984,7 +2000,8 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private static readonly CatalogItemSummary[] Catalog =
     [
         new("cat-laptop", "Standard laptop", "Windows or macOS laptop with a dock"),
-        new("cat-monitor", "27 inch monitor", "Desk monitor for an existing computer")
+        new("cat-monitor", "27 inch monitor", "Desk monitor for an existing computer"),
+        new(GenericRequestItem.SysId, GenericRequestItem.Name, GenericRequestItem.Summary)
     ];
 
     private bool Passes(

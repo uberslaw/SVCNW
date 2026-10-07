@@ -437,10 +437,51 @@ public class ServiceNowClientTests
 
         Assert.Equal("REQ0090001", result.RequestNumber);
         Assert.Equal("req-9", result.RequestSysId);
+        Assert.Equal("", result.RequestedItemNumber);
+        Assert.Equal("", result.RequestedItemSysId);
         using var body = JsonDocument.Parse(handler.Calls.Single().Body);
         Assert.Equal("2", body.RootElement.GetProperty("sysparm_quantity").GetString());
         Assert.Equal("user-jordan", body.RootElement.GetProperty("sysparm_requested_for").GetString());
         Assert.Equal("win11", body.RootElement.GetProperty("variables").GetProperty("preferred_os").GetString());
+    }
+
+    [Fact]
+    public async Task CatalogOrderReadsTheRequestItemBesideTheRequest()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""
+            {"result":{
+              "request_id":"req-9",
+              "request_number":"REQ0090001",
+              "sys_id":"req-9",
+              "number":"REQ0090001",
+              "items":[{"sys_id":"ritm-9","number":"RITM0090001"}]
+            }}
+            """));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        var result = await client.OrderCatalogItemAsync("cat-laptop", 1, "user-jordan", new Dictionary<string, string>(), CancellationToken.None);
+
+        Assert.Equal("REQ0090001", result.RequestNumber);
+        Assert.Equal("req-9", result.RequestSysId);
+        Assert.Equal("RITM0090001", result.RequestedItemNumber);
+        Assert.Equal("ritm-9", result.RequestedItemSysId);
+        Assert.Equal("REQ0090001 · RITM0090001", result.Numbers);
+    }
+
+    [Fact]
+    public async Task CatalogOrderKeepsARitmNumberWhenItIsNotInsideItems()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""
+            {"result":{"request_id":"req-9","request_number":"REQ0090002","number":"RITM0090002","request_item_id":"ritm-2"}}
+            """));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        var result = await client.OrderCatalogItemAsync("cat-laptop", 1, null, new Dictionary<string, string>(), CancellationToken.None);
+
+        Assert.Equal("REQ0090002", result.RequestNumber);
+        Assert.Equal("req-9", result.RequestSysId);
+        Assert.Equal("RITM0090002", result.RequestedItemNumber);
+        Assert.Equal("ritm-2", result.RequestedItemSysId);
     }
 
     private static string FieldsOf(string pathAndQuery)

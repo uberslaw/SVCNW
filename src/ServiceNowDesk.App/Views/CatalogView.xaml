@@ -24,26 +24,52 @@
         </DockPanel>
         <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}"/>
-                <TextBlock Text="{Binding SelectedItem.Name}" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                <TextBlock Text="{Binding SelectedItem.ShortDescription}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"/>
-                <TextBlock Text="Order for" Style="{StaticResource FieldLabel}"/>
-                <controls:ReferenceEditor DataContext="{Binding RequestedFor}" Margin="0,0,0,10"/>
-                <TextBlock Text="Quantity" Style="{StaticResource FieldLabel}"/>
-                <TextBox Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left" Margin="0,0,0,12"/>
-                <TextBlock Text="Variables" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                <ItemsControl ItemsSource="{Binding Variables}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Margin="0,0,0,10">
-                                <TextBlock Text="{Binding DisplayLabel}" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding Choices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Value}" Visibility="{Binding HasChoices, Converter={StaticResource BoolVis}}"/>
-                                <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding HasChoices, Converter={StaticResource InverseBoolVis}}"/>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <Button Content="Order item" Style="{StaticResource PrimaryButton}" Command="{Binding OrderCommand}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                <TextBlock Text="Other Request" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <TextBlock Text="{Binding GenericSummary}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"/>
+                <Border Style="{StaticResource Banner}" Background="{StaticResource WarningSoftBrush}">
+                    <TextBlock Text="{Binding GenericWarning}" TextWrapping="Wrap" Foreground="{StaticResource CustomerBrush}"/>
+                </Border>
+                <TextBlock Text="* Indicates required" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,10"/>
+                <TextBlock Text="{Binding GenericError}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding GenericError, Converter={StaticResource StringVis}}"/>
+                <TextBlock Text="Requested for *" Style="{StaticResource FieldLabel}"/>
+                <controls:ReferenceEditor DataContext="{Binding GenericRequestedFor}" Margin="0,0,0,10"/>
+                <TextBlock Text="Request Title *" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding GenericTitle, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                <TextBlock Text="Request Description *" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding GenericDescription, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MinHeight="96"
+                         VerticalScrollBarVisibility="Auto"
+                         Margin="0,0,0,10"/>
+                <Button Content="Request" Style="{StaticResource PrimaryButton}" Command="{Binding SubmitGenericRequestCommand}" HorizontalAlignment="Left"/>
+                <TextBlock Text="{Binding GenericMessage}" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="{Binding GenericMessage, Converter={StaticResource StringVis}}"/>
+
+                <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,20,0,0" Padding="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Selected catalog item" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}"/>
+                        <TextBlock Text="{Binding SelectedItem.Name}" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <TextBlock Text="{Binding SelectedItem.ShortDescription}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"/>
+                        <TextBlock Text="Order for" Style="{StaticResource FieldLabel}"/>
+                        <controls:ReferenceEditor DataContext="{Binding RequestedFor}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Quantity" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" Width="80" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+                        <TextBlock Text="Variables" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <ItemsControl ItemsSource="{Binding Variables}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,10">
+                                        <TextBlock Text="{Binding DisplayLabel}" Style="{StaticResource FieldLabel}"/>
+                                        <ComboBox ItemsSource="{Binding Choices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Value}" Visibility="{Binding HasChoices, Converter={StaticResource BoolVis}}"/>
+                                        <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding HasChoices, Converter={StaticResource InverseBoolVis}}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="Order item" Style="{StaticResource PrimaryButton}" Command="{Binding OrderCommand}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
     </Grid>

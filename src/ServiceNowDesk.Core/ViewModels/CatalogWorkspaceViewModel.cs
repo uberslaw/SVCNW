@@ -21,13 +21,26 @@ public partial class CatalogVariableInput : ObservableObject
 public partial class CatalogWorkspaceViewModel : ObservableObject
 {
     private IServiceNowClient? _client;
+    private GenericRequestVariables _genericVariables = GenericRequestVariables.Fallback;
+    private Task? _prepare;
+    private bool _genericPersonEdited;
+    private bool _applyingGenericPerson;
 
     public CatalogWorkspaceViewModel()
     {
         RequestedFor = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
+        GenericRequestedFor = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
+        GenericRequestedFor.Changed += (_, _) =>
+        {
+            if (!_applyingGenericPerson)
+                _genericPersonEdited = true;
+        };
     }
 
     public ReferenceFieldModel RequestedFor { get; }
+    public ReferenceFieldModel GenericRequestedFor { get; }
+    public string GenericSummary => GenericRequestItem.Summary;
+    public string GenericWarning => GenericRequestItem.Warning;
     public ObservableCollection<CatalogItemSummary> Items { get; } = [];
     public ObservableCollection<CatalogVariableInput> Variables { get; } = [];
 
@@ -36,10 +49,27 @@ public partial class CatalogWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool isBusy;
     [ObservableProperty] private string message = "Search the catalog, fill the variables, and order it for the caller.";
     [ObservableProperty] private string errorMessage = "";
+    [ObservableProperty] private string genericTitle = "";
+    [ObservableProperty] private string genericDescription = "";
+    [ObservableProperty] private string genericMessage = "";
+    [ObservableProperty] private string genericError = "";
 
     public event EventHandler<CatalogOrderResult>? RequestOrdered;
 
-    public void Attach(IServiceNowClient? client) => _client = client;
+    public void Attach(IServiceNowClient? client)
+    {
+        _client = client;
+        _genericVariables = GenericRequestVariables.Fallback;
+        if (client is null)
+            return;
+        _ = PrepareGenericRequestAsync();
+    }
+
+    public Task PrepareGenericRequestAsync()
+    {
+        _prepare = PrepareGenericRequestCoreAsync();
+        return _prepare;
+    }
 
     public async Task RunAsync(IServiceNowClient? client, string? text)
     {
@@ -106,9 +136,9 @@ public partial class CatalogWorkspaceViewModel : ObservableObject
             ErrorMessage = "";
             var values = Variables.ToDictionary(variable => variable.Name, variable => variable.Value.Trim());
             var result = await _client.OrderCatalogItemAsync(SelectedItem.SysId, Quantity, FieldDiff.NullIfEmpty(RequestedFor.SysId), values, CancellationToken.None);
-            Message = string.IsNullOrWhiteSpace(result.RequestNumber)
+            Message = result.Numbers.Length == 0
                 ? "Catalog item ordered."
-                : "Ordered " + result.RequestNumber + ".";
+                : "Ordered " + result.Numbers + ".";
             RequestOrdered?.Invoke(this, result);
         }
         catch (Exception ex)
@@ -121,7 +151,152 @@ public partial class CatalogWorkspaceViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task SubmitGenericRequestAsync()
+    {
+        if (_client is null || IsBusy)
+            return;
+
+        GenericError = "";
+        if (_prepare is not null)
+            await _prepare;
+
+        await GenericRequestedFor.AcceptExactUserAsync();
+        if (string.IsNullOrEmpty(GenericRequestedFor.SysId))
+        {
+            GenericError = string.IsNullOrWhiteSpace(GenericRequestedFor.Text)
+                ? "Choose who this request is for."
+                : "Choose the requested-for person from the list.";
+            return;
+        }
+
+        var title = GenericTitle.Trim();
+        var description = GenericDescription.Trim();
+        if (title.Length == 0)
+        {
+            GenericError = "Enter a request title.";
+            return;
+        }
+
+        if (description.Length == 0)
+        {
+            GenericError = "Enter a request description.";
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            GenericMessage = "";
+            var values = _genericVariables.ToPayload(GenericRequestedFor.SysId, title, description);
+            var result = await _client.OrderCatalogItemAsync(
+                GenericRequestItem.SysId,
+                1,
+                GenericRequestedFor.SysId,
+                values,
+                CancellationToken.None);
+            result = await FindRequestedItemAsync(result);
+            GenericTitle = "";
+            GenericDescription = "";
+            GenericMessage = result.Numbers.Length == 0 ? "Request submitted." : "Submitted " + result.Numbers + ".";
+            RequestOrdered?.Invoke(this, result);
+        }
+        catch (Exception ex)
+        {
+            GenericError = WorkspaceMessages.Describe(ex);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     partial void OnSelectedItemChanged(CatalogItemSummary? value) => _ = LoadVariablesAsync(value);
+
+    private async Task PrepareGenericRequestCoreAsync()
+    {
+        var client = _client;
+        if (client is null)
+            return;
+
+        try
+        {
+            var user = await client.GetCurrentUserAsync(CancellationToken.None);
+            if (ReferenceEquals(_client, client) && !_genericPersonEdited && string.IsNullOrWhiteSpace(GenericRequestedFor.Text))
+            {
+                _applyingGenericPerson = true;
+                GenericRequestedFor.Set(user.SysId, user.Name);
+                _applyingGenericPerson = false;
+            }
+        }
+        catch
+        {
+            // The signed-in person stays blank. The field can still be searched.
+        }
+
+        try
+        {
+            var definitions = await client.GetCatalogVariablesAsync(GenericRequestItem.SysId, CancellationToken.None);
+            if (ReferenceEquals(_client, client))
+                _genericVariables = GenericRequestVariables.Resolve(definitions);
+        }
+        catch
+        {
+            if (ReferenceEquals(_client, client))
+                _genericVariables = GenericRequestVariables.Fallback;
+        }
+    }
+
+    private async Task<CatalogOrderResult> FindRequestedItemAsync(CatalogOrderResult result)
+    {
+        if (_client is null || !string.IsNullOrWhiteSpace(result.RequestedItemSysId))
+            return result;
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(result.RequestSysId))
+            {
+                var page = await _client.SearchRequestedItemsAsync(new TicketQuery
+                {
+                    ParentRequestId = result.RequestSysId,
+                    Activity = ActivityFilter.Any,
+                    Assignment = AssignmentScope.Any,
+                    Limit = 5,
+                    ExtraClause = "ORDERBYDESCsys_created_on"
+                }, CancellationToken.None);
+                var item = page.Items.FirstOrDefault();
+                if (item is not null)
+                {
+                    return result with
+                    {
+                        RequestedItemSysId = item.SysId,
+                        RequestedItemNumber = string.IsNullOrWhiteSpace(result.RequestedItemNumber) ? item.Number : result.RequestedItemNumber
+                    };
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.RequestedItemNumber))
+            {
+                var page = await _client.SearchRequestedItemsAsync(new TicketQuery
+                {
+                    Text = result.RequestedItemNumber,
+                    Activity = ActivityFilter.Any,
+                    Assignment = AssignmentScope.Any,
+                    Limit = 5
+                }, CancellationToken.None);
+                var item = page.Items.FirstOrDefault(row =>
+                    row.Number.Equals(result.RequestedItemNumber, StringComparison.OrdinalIgnoreCase));
+                if (item is not null)
+                    return result with { RequestedItemSysId = item.SysId };
+            }
+        }
+        catch
+        {
+            // The order succeeded. Show the numbers already in hand.
+        }
+
+        return result;
+    }
 
     private async Task LoadVariablesAsync(CatalogItemSummary? item)
     {

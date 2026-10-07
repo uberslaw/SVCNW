@@ -1460,18 +1460,97 @@ public sealed class ServiceNowClient : IServiceNowClient
             if (!TryGetResult(result.Document, out var body) || body.ValueKind != JsonValueKind.Object)
                 throw new ServiceNowException(200, "ServiceNow ordered the item but did not return the request number.", null);
 
-            var sysId = FirstValue(body, "request_id", "sys_id");
-            var number = FirstValue(body, "request_number", "number");
-            if (body.TryGetProperty("request", out var request) && request.ValueKind == JsonValueKind.Object)
-            {
-                if (sysId.Length == 0)
-                    sysId = FirstValue(request, "sys_id");
-                if (number.Length == 0)
-                    number = FirstValue(request, "number");
-            }
-
-            return new CatalogOrderResult(sysId, number);
+            var ordered = ReadCatalogOrder(body);
+            return new CatalogOrderResult(ordered.RequestSysId, ordered.RequestNumber, ordered.ItemSysId, ordered.ItemNumber);
         }
+    }
+
+    private static (string RequestSysId, string RequestNumber, string ItemSysId, string ItemNumber) ReadCatalogOrder(JsonElement body)
+    {
+        var (itemSysId, itemNumber) = ReadOrderedItem(body);
+        var requestSysId = FirstValue(body, "request_id");
+        var requestNumber = FirstValue(body, "request_number");
+        if (body.TryGetProperty("request", out var request) && request.ValueKind == JsonValueKind.Object)
+        {
+            if (requestSysId.Length == 0)
+                requestSysId = FirstValue(request, "sys_id", "request_id");
+            if (requestNumber.Length == 0)
+                requestNumber = FirstValue(request, "number", "request_number");
+        }
+
+        var sysId = FirstValue(body, "sys_id");
+        var number = FirstValue(body, "number");
+        if (requestSysId.Length == 0)
+            requestSysId = sysId;
+        else if (itemSysId.Length == 0 && sysId.Length > 0 && !sysId.Equals(requestSysId, StringComparison.OrdinalIgnoreCase))
+            itemSysId = sysId;
+
+        if (requestNumber.Length == 0)
+        {
+            if (number.StartsWith("RITM", StringComparison.OrdinalIgnoreCase))
+            {
+                if (itemNumber.Length == 0)
+                    itemNumber = number;
+            }
+            else
+            {
+                requestNumber = number;
+            }
+        }
+        else if (itemNumber.Length == 0 && number.StartsWith("RITM", StringComparison.OrdinalIgnoreCase))
+        {
+            itemNumber = number;
+        }
+
+        return (requestSysId, requestNumber, itemSysId, itemNumber);
+    }
+
+    private static (string SysId, string Number) ReadOrderedItem(JsonElement body)
+    {
+        if (body.TryGetProperty("items", out var items))
+        {
+            if (items.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in items.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.Object)
+                        continue;
+                    var read = ReadOneOrderedItem(item);
+                    if (read.SysId.Length > 0 || read.Number.Length > 0)
+                        return read;
+                }
+            }
+            else if (items.ValueKind == JsonValueKind.Object)
+            {
+                var read = ReadOneOrderedItem(items);
+                if (read.SysId.Length > 0 || read.Number.Length > 0)
+                    return read;
+            }
+        }
+
+        if (body.TryGetProperty("request_item", out var requestItem) && requestItem.ValueKind == JsonValueKind.Object)
+        {
+            var read = ReadOneOrderedItem(requestItem);
+            if (read.SysId.Length > 0 || read.Number.Length > 0)
+                return read;
+        }
+
+        return (
+            FirstValue(body, "request_item_id", "req_item_sys_id", "ritm_sys_id"),
+            FirstValue(body, "request_item_number", "req_item_number", "ritm_number"));
+    }
+
+    private static (string SysId, string Number) ReadOneOrderedItem(JsonElement item)
+    {
+        var sysId = FirstValue(item, "sys_id", "request_item_id");
+        var number = FirstValue(item, "number", "request_item_number", "req_item_number", "ritm_number");
+        if (!number.StartsWith("RITM", StringComparison.OrdinalIgnoreCase))
+        {
+            var named = FirstValue(item, "request_item_number", "req_item_number", "ritm_number");
+            number = named.StartsWith("REQ", StringComparison.OrdinalIgnoreCase) ? "" : named;
+        }
+
+        return (sysId, number);
     }
 
     private async Task<PagedResult<T>> SearchAsync<T>(

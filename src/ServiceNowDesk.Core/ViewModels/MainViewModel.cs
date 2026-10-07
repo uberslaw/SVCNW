@@ -849,9 +849,29 @@ public partial class MainViewModel : ObservableObject
 
     private async Task OpenOrderedRequestAsync(CatalogOrderResult result)
     {
+        var numbers = result.Numbers;
+        if (!string.IsNullOrWhiteSpace(result.RequestedItemSysId))
+        {
+            await OpenHitAsync(new SearchHit
+            {
+                Section = DeskSection.RequestedItems,
+                TableLabel = "Request item",
+                SysId = result.RequestedItemSysId,
+                Number = result.RequestedItemNumber,
+                Title = "",
+                StateLabel = "",
+                Tone = "new",
+                Meta = "",
+                When = "",
+                SortKey = ""
+            }, fromSearch: false);
+            StatusMessage = numbers.Length == 0 ? "Catalog item ordered." : "Opened " + numbers + ".";
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(result.RequestSysId))
         {
-            StatusMessage = "Catalog item ordered.";
+            StatusMessage = numbers.Length == 0 ? "Catalog item ordered." : numbers + ".";
             return;
         }
 
@@ -868,7 +888,7 @@ public partial class MainViewModel : ObservableObject
             When = "",
             SortKey = ""
         }, fromSearch: false);
-        StatusMessage = "Opened " + result.RequestNumber + ".";
+        StatusMessage = numbers.Length == 0 ? "Catalog item ordered." : "Opened " + numbers + ".";
     }
 
     private async Task OpenConvertedIncidentAsync(InteractionConversion conversion)
