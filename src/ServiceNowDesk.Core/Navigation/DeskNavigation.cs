@@ -16,6 +16,7 @@ public static class DeskNavigation
     public static IReadOnlyList<DeskNavItem> Items { get; } =
     [
         new(DeskSection.DailyWork, "Daily Work", "\uE787"),
+        new(DeskSection.InTheMix, "In The Mix", "\uE71D"),
         new(DeskSection.Incidents, "Incidents", "\uE7BA"),
         new(DeskSection.RequestedItems, "Request items", "\uE8FD"),
         new(DeskSection.Requests, "Requests", "\uE7BF", ShownInNav: false),

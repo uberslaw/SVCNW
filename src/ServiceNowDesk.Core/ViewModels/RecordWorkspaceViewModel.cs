@@ -17,6 +17,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     private bool _suppressSelection;
     private int _loadVersion;
     private int _openVersion;
+    private bool _limitOffices;
+    private IReadOnlyList<string> _officeCities = [];
 
     protected RecordWorkspaceViewModel(IDesktopServices desktop, string tableName, string recordLabel, bool allowCreate, IReadOnlyList<PresetOption> presets, DeskSection section, bool attachments = false)
     {
@@ -83,6 +85,17 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     public bool HasJournalText => !string.IsNullOrWhiteSpace(JournalText);
 
     public bool HasJournal => Journal.Count > 0;
+
+    public IReadOnlyList<string> OfficeCities => _officeCities;
+
+    /// <summary>
+    /// My Team and Unassigned keep tickets whose location is one of these cities.
+    /// </summary>
+    public void UseOfficeCities(IReadOnlyList<string>? cities)
+    {
+        _limitOffices = true;
+        _officeCities = cities ?? [];
+    }
 
     public void Attach(IServiceNowClient client)
     {
@@ -618,12 +631,18 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         if (trimmed.Length >= 2 || EncodedQuery.IsNumberQuery(trimmed))
             text = trimmed;
 
+        var assignment = Preset?.Assignment ?? AssignmentScope.Any;
+        IReadOnlyList<string>? offices = null;
+        if (_limitOffices && assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+            offices = _officeCities;
+
         return new TicketQuery
         {
             Text = text,
-            Assignment = Preset?.Assignment ?? AssignmentScope.Any,
+            Assignment = assignment,
             Activity = Preset?.Activity ?? ActivityFilter.Open,
             AssignmentClause = Preset?.AssignmentClause,
+            OfficeLocations = offices,
             Limit = 50
         };
     }
