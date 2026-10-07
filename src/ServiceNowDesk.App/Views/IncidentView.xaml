@@ -129,67 +129,78 @@
                             </WrapPanel>
                         </DockPanel>
 
+                        <TextBlock Text="Short description" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
+
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="16"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Text="{Binding Number, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Caller" Style="{StaticResource FieldLabel}"/>
+                                    <controls:ReferenceEditor DataContext="{Binding Caller}" Margin="0,0,0,10"/>
 
-                                <TextBlock Text="Caller" Style="{StaticResource FieldLabel}"/>
-                                <controls:ReferenceEditor DataContext="{Binding Caller}" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Location" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox Text="{Binding LocationText, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
 
-                                <TextBlock Text="Location" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Text="{Binding LocationText, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Category" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox ItemsSource="{Binding CategoryChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Category}" Margin="0,0,0,10"/>
 
-                                <TextBlock Text="Category" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding CategoryChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Category}" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Subcategory" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox ItemsSource="{Binding SubcategoryChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Subcategory}" Margin="0,0,0,10"/>
 
-                                <TextBlock Text="Subcategory" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding SubcategoryChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Subcategory}" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Service offering" Style="{StaticResource FieldLabel}"/>
+                                    <controls:CachedChoiceBox DataContext="{Binding ServiceOffering}"/>
+                                    <TextBlock Text="Required once this incident has been created." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,10" TextWrapping="Wrap"/>
 
-                                <TextBlock Text="Service offering" Style="{StaticResource FieldLabel}"/>
-                                <controls:CachedChoiceBox DataContext="{Binding ServiceOffering}"/>
-                                <TextBlock Text="Required once this incident has been created." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,10" TextWrapping="Wrap"/>
-
-                                <TextBlock Text="Configuration item" Style="{StaticResource FieldLabel}"/>
-                                <controls:CachedChoiceBox DataContext="{Binding ConfigurationItem}" Margin="0,0,0,10"/>
-
-                                <TextBlock Text="Short description" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}"/>
-                            </StackPanel>
-                            <StackPanel Grid.Column="2">
-                                <TextBlock Text="Channel" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding ContactChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ContactType}" Margin="0,0,0,10"/>
-
-                                <TextBlock Text="State" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding StateChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding State}" Margin="0,0,0,10"/>
-
-                                <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowHoldReason, Converter={StaticResource BoolVis}}">
-                                    <TextBlock Text="On hold reason" Style="{StaticResource FieldLabel}"/>
-                                    <ComboBox ItemsSource="{Binding HoldReasonChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding HoldReason}"/>
+                                    <TextBlock Text="Configuration item" Style="{StaticResource FieldLabel}"/>
+                                    <controls:CachedChoiceBox DataContext="{Binding ConfigurationItem}" Margin="0,0,0,10"/>
                                 </StackPanel>
+                            </Grid>
+                            <Grid Grid.Column="2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="2*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Channel" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox ItemsSource="{Binding ContactChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ContactType}" Margin="0,0,0,10"/>
 
-                                <TextBlock Text="Impact" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding ImpactChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Impact}" Margin="0,0,0,10"/>
+                                    <TextBlock Text="State" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox ItemsSource="{Binding StateChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding State}" Margin="0,0,0,10"/>
 
-                                <TextBlock Text="Urgency" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding UrgencyChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Urgency}" Margin="0,0,0,10"/>
+                                    <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowHoldReason, Converter={StaticResource BoolVis}}">
+                                        <TextBlock Text="On hold reason" Style="{StaticResource FieldLabel}"/>
+                                        <ComboBox ItemsSource="{Binding HoldReasonChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding HoldReason}"/>
+                                    </StackPanel>
 
-                                <TextBlock Text="Priority" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Text="{Binding PriorityLabel, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}"/>
-                                <TextBlock Text="Calculated by ServiceNow." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,10" TextWrapping="Wrap"/>
+                                    <TextBlock Text="Impact" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox ItemsSource="{Binding ImpactChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Impact}" Margin="0,0,0,10"/>
 
-                                <TextBlock Text="Assignment group" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding Assignment.Groups}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.GroupId}" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Urgency" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox ItemsSource="{Binding UrgencyChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Urgency}" Margin="0,0,0,10"/>
 
-                                <TextBlock Text="Assigned to" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding Assignment.Members}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.MemberId}"/>
-                                <TextBlock Text="{Binding Assignment.MemberHint}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding Assignment.MemberHint, Converter={StaticResource StringVis}}"/>
-                            </StackPanel>
+                                    <TextBlock Text="Priority" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox Text="{Binding PriorityLabel, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}"/>
+                                    <TextBlock Text="Calculated by ServiceNow." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,10" TextWrapping="Wrap"/>
+
+                                    <TextBlock Text="Assignment group" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox ItemsSource="{Binding Assignment.Groups}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.GroupId}" Margin="0,0,0,10"/>
+
+                                    <TextBlock Text="Assigned to" Style="{StaticResource FieldLabel}"/>
+                                    <ComboBox ItemsSource="{Binding Assignment.Members}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.MemberId}"/>
+                                    <TextBlock Text="{Binding Assignment.MemberHint}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding Assignment.MemberHint, Converter={StaticResource StringVis}}"/>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
 
                         <TextBlock Text="Description" Style="{StaticResource FieldLabel}"/>
