@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 
@@ -272,6 +273,46 @@ public class ServiceNowClientTests
         Assert.Equal("user-alex", body.RootElement.GetProperty("requested_for").GetString());
         Assert.False(body.RootElement.TryGetProperty("cat_item", out _));
         Assert.False(body.RootElement.TryGetProperty("request", out _));
+        Assert.False(body.RootElement.TryGetProperty("hold_reason", out _));
+        Assert.False(body.RootElement.TryGetProperty("follow_up", out _));
+    }
+
+    [Fact]
+    public async Task UpdateRequestedItemSendsHoldReasonAndFollowUp()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""
+            {"result":{
+              "sys_id":{"value":"ritm-hold","display_value":"ritm-hold"},
+              "number":{"value":"RITM0010006","display_value":"RITM0010006"},
+              "short_description":{"value":"120 Headsets for Brisbane","display_value":"120 Headsets for Brisbane"},
+              "state":{"value":"on_hold","display_value":"On Hold"},
+              "hold_reason":{"value":"awaiting_vendor","display_value":"Awaiting Vendor"},
+              "follow_up":{"value":"2026-11-20 10:10:23","display_value":"2026-11-20 10:10:23"},
+              "active":{"value":"true","display_value":"true"}
+            }}
+            """));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        var updated = await client.UpdateRequestedItemAsync("ritm-hold", new RequestedItemChanges
+        {
+            State = "on_hold",
+            HoldReason = "awaiting_vendor",
+            FollowUp = "2026-11-20 10:10:23"
+        }, CancellationToken.None);
+
+        Assert.Equal("awaiting_vendor", updated.HoldReason);
+        Assert.Equal("Awaiting Vendor", updated.HoldReasonLabel);
+        Assert.Equal("2026-11-20 10:10:23", updated.FollowUp);
+        Assert.Equal("On Hold", updated.StateLabel);
+        var call = handler.Calls.Single();
+        Assert.Equal("PATCH", call.Method);
+        Assert.Contains("/api/now/table/sc_req_item/ritm-hold", call.PathAndQuery);
+        Assert.Contains("hold_reason", Uri.UnescapeDataString(call.PathAndQuery));
+        Assert.Contains("follow_up", Uri.UnescapeDataString(call.PathAndQuery));
+        using var body = JsonDocument.Parse(call.Body);
+        Assert.Equal("on_hold", body.RootElement.GetProperty("state").GetString());
+        Assert.Equal("awaiting_vendor", body.RootElement.GetProperty("hold_reason").GetString());
+        Assert.Equal("2026-11-20 10:10:23", body.RootElement.GetProperty("follow_up").GetString());
     }
 
     [Fact]
@@ -482,6 +523,36 @@ public class ServiceNowClientTests
         Assert.Equal("req-9", result.RequestSysId);
         Assert.Equal("RITM0090002", result.RequestedItemNumber);
         Assert.Equal("ritm-2", result.RequestedItemSysId);
+    }
+
+    [Fact]
+    public async Task UnassignedGroupQueueUsesTheUsersGroupsAndTheWatchedNameWithoutLocation()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("sys_user_grmember", StringComparison.Ordinal))
+            {
+                return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var rows = await client.ListUnassignedGroupQueueAsync("Aus DT - Client Services", CancellationToken.None);
+        Assert.Empty(rows);
+
+        var incident = handler.Calls.Select(call => call.PathAndQuery).Last(path => path.Contains("/incident", StringComparison.Ordinal));
+        var query = QueryOf(incident);
+        Assert.Contains("assigned_toISEMPTY", query);
+        Assert.Contains("assignment_groupINgroup-cs", query);
+        Assert.Contains("assignment_group.name=\"Aus DT - Client Services\"", query);
+        Assert.Contains("active=true^stateNOT IN6,7,8", query);
+        Assert.Contains("^NQ", query);
+        Assert.DoesNotContain("location", query);
+        Assert.Equal(
+            "assigned_toISEMPTY^assignment_groupINgroup-cs^active=true^stateNOT IN6,7,8^NQassigned_toISEMPTY^assignment_group.name=\"Aus DT - Client Services\"^active=true^stateNOT IN6,7,8^ORDERBYDESCsys_updated_on",
+            AlertQueryBuilder.UnassignedInGroups(["group-cs"], "Aus DT - Client Services"));
+        Assert.Null(AlertQueryBuilder.UnassignedInGroups([], "  "));
     }
 
     private static string FieldsOf(string pathAndQuery)

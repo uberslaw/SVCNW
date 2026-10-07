@@ -379,6 +379,110 @@ public class WorkspaceTests
     }
 
     [Fact]
+    public async Task OnHoldRequestedItemStoresReasonAndFollowUp()
+    {
+        using var client = new SampleServiceNowClient();
+        var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
+        items.Attach(client);
+        await items.EnsureChoicesAsync();
+        await items.OpenFromSearchAsync("ritm-hold");
+
+        Assert.True(items.ShowHoldReason);
+        Assert.Equal("on_hold", items.State);
+        Assert.Equal("awaiting_vendor", items.HoldReason);
+        Assert.Equal("2026-10-01 11:00:00", items.FollowUp);
+        Assert.Contains(items.HoldReasonChoices, choice => choice.Value == "awaiting_vendor" && choice.Label == "Awaiting Vendor");
+
+        items.FollowUp = "2026-11-20 10:10:23";
+        await items.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("", items.ErrorMessage);
+        var saved = await client.GetRequestedItemAsync("ritm-hold", CancellationToken.None);
+        Assert.Equal("on_hold", saved.State);
+        Assert.Equal("awaiting_vendor", saved.HoldReason);
+        Assert.Equal("Awaiting Vendor", saved.HoldReasonLabel);
+        Assert.Equal("2026-11-20 10:10:23", saved.FollowUp);
+
+        items.State = "2";
+        Assert.False(items.ShowHoldReason);
+        Assert.Equal("awaiting_vendor", items.HoldReason);
+        Assert.Equal("2026-11-20 10:10:23", items.FollowUp);
+        await items.SaveCommand.ExecuteAsync(null);
+
+        var released = await client.GetRequestedItemAsync("ritm-hold", CancellationToken.None);
+        Assert.Equal("2", released.State);
+        Assert.Equal("awaiting_vendor", released.HoldReason);
+        Assert.Equal("2026-11-20 10:10:23", released.FollowUp);
+    }
+
+    [Fact]
+    public async Task OnHoldRequestedItemRequiresReasonAndFollowUpBeforeSave()
+    {
+        using var client = new SampleServiceNowClient();
+        var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
+        items.Attach(client);
+        await items.EnsureChoicesAsync();
+        await items.OpenFromSearchAsync("ritm-dock");
+
+        items.StateChoices.Add(new Choice("8", "On Hold"));
+        items.State = "8";
+        Assert.True(items.ShowHoldReason);
+        items.State = "2";
+        Assert.False(items.ShowHoldReason);
+
+        items.State = "on_hold";
+        items.HoldReason = "";
+        items.FollowUp = "";
+        Assert.True(items.ShowHoldReason);
+        var patches = ItemPatches(client);
+        await items.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal(patches, ItemPatches(client));
+        Assert.Contains("on hold reason", items.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("follow up", items.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        var unchanged = await client.GetRequestedItemAsync("ritm-dock", CancellationToken.None);
+        Assert.Equal("1", unchanged.State);
+
+        items.HoldReason = "awaiting_vendor";
+        await items.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(patches, ItemPatches(client));
+        Assert.Contains("follow up", items.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+
+        items.HoldReason = "";
+        items.FollowUp = "2026-11-20 10:10:23";
+        await items.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(patches, ItemPatches(client));
+        Assert.Contains("on hold reason", items.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RequestItemOffHoldDoesNotRequireReasonOrFollowUp()
+    {
+        using var client = new SampleServiceNowClient();
+        var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
+        items.Attach(client);
+        await items.EnsureChoicesAsync();
+        await items.OpenFromSearchAsync("ritm-dock");
+
+        Assert.False(items.ShowHoldReason);
+        Assert.Equal("", items.HoldReason);
+        Assert.Equal("", items.FollowUp);
+        items.ShortDescription = "USB-C dock for finance";
+        await items.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("", items.ErrorMessage);
+        Assert.StartsWith("Saved ", items.EditorMessage);
+        var saved = await client.GetRequestedItemAsync("ritm-dock", CancellationToken.None);
+        Assert.Equal("1", saved.State);
+        Assert.Equal("USB-C dock for finance", saved.ShortDescription);
+        Assert.Equal("", saved.HoldReason);
+        Assert.Equal("", saved.FollowUp);
+    }
+
+    private static int ItemPatches(SampleServiceNowClient client) =>
+        client.RecentActivity.Count(entry => entry.Method == "PATCH" && entry.Path.Contains("sc_req_item", StringComparison.Ordinal));
+
+    [Fact]
     public async Task UnifiedSearchFindsOldIncidentsByNumberOrText()
     {
         using var client = new SampleServiceNowClient();

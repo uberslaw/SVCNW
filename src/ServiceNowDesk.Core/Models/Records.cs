@@ -74,6 +74,9 @@ public sealed record RequestedItemRecord
     public string StageLabel { get; init; } = "";
     public string Quantity { get; init; } = "";
     public string CloseNotes { get; init; } = "";
+    public string HoldReason { get; init; } = "";
+    public string HoldReasonLabel { get; init; } = "";
+    public string FollowUp { get; init; } = "";
     public ReferenceValue Request { get; init; }
     public ReferenceValue CatalogItem { get; init; }
     public ReferenceValue AssignedTo { get; init; }
@@ -157,7 +160,7 @@ public sealed record CatalogOrderResult(
     }
 }
 
-public sealed record AttachmentSummary(string SysId, string FileName);
+public sealed record AttachmentSummary(string SysId, string FileName, string? Url = null);
 
 public sealed class IncidentChanges
 {
@@ -267,6 +270,8 @@ public sealed class RequestedItemChanges
     public string? ConfigurationItemId { get; init; }
     public bool ClearConfigurationItem { get; init; }
     public string? RequestedForId { get; init; }
+    public string? HoldReason { get; init; }
+    public string? FollowUp { get; init; }
 
     public bool HasChanges =>
         ShortDescription is not null
@@ -282,5 +287,7 @@ public sealed class RequestedItemChanges
         || ClearServiceOffering
         || ConfigurationItemId is not null
         || ClearConfigurationItem
-        || RequestedForId is not null;
+        || RequestedForId is not null
+        || HoldReason is not null
+        || FollowUp is not null;
 }

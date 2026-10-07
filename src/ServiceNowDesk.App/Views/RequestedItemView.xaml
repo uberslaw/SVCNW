@@ -56,12 +56,30 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <DockPanel Margin="0,0,0,12">
-                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                            <WrapPanel VerticalAlignment="Center">
                                 <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
                                 <Button Content="Copy" Style="{StaticResource QuietButton}" Command="{Binding CopyNumberCommand}" Margin="4,0,0,0" VerticalAlignment="Center" ToolTip="Copy the request item number"/>
-                            </StackPanel>
-                            <TextBlock Text="{Binding StateLabel}" Margin="12,6,0,0"/>
-                            <TextBlock Text="{Binding RequestNumber, StringFormat=Request {0}}" Margin="12,6,0,0" Foreground="{StaticResource MutedBrush}"/>
+                                <ItemsControl ItemsSource="{Binding Attachments}" Margin="12,0,0,0" VerticalAlignment="Center">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Margin="0,2,12,2" VerticalAlignment="Center" Background="Transparent">
+                                                <Hyperlink Click="OpenAttachment_Click" Foreground="#0000EE" TextDecorations="Underline" ToolTip="Open this attachment">
+                                                    <Run Text="{Binding FileName}"/>
+                                                </Hyperlink>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="{Binding AttachmentNote}" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"
+                                           Visibility="{Binding AttachmentNote, Converter={StaticResource StringVis}}"/>
+                                <TextBlock Text="{Binding StateLabel}" Margin="12,6,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding RequestNumber, StringFormat=Request {0}}" Margin="12,6,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+                            </WrapPanel>
                         </DockPanel>
                         <TextBlock Text="{Binding CatalogItem, StringFormat=Catalog item: {0}}" Margin="0,0,0,8" Visibility="{Binding CatalogItem, Converter={StaticResource StringVis}}"/>
                         <TextBlock Text="{Binding Quantity, StringFormat=Quantity: {0}}" Margin="0,0,0,8" Foreground="{StaticResource MutedBrush}" Visibility="{Binding Quantity, Converter={StaticResource StringVis}}"/>
@@ -114,20 +132,23 @@
                                 <ComboBox ItemsSource="{Binding PriorityChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Priority}"/>
                             </StackPanel>
                         </Grid>
+                        <Grid Margin="0,0,0,10" Visibility="{Binding ShowHoldReason, Converter={StaticResource BoolVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="On hold reason" Style="{StaticResource FieldLabel}"/>
+                                <ComboBox ItemsSource="{Binding HoldReasonChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding HoldReason}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Follow up" Style="{StaticResource FieldLabel}"/>
+                                <TextBox Text="{Binding FollowUp, UpdateSourceTrigger=PropertyChanged}" ToolTip="Use the date format your instance expects, for example 2026-11-20 10:10:23"/>
+                            </StackPanel>
+                        </Grid>
                         <TextBlock Text="Description" Style="{StaticResource FieldLabel}"/>
                         <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" Margin="0,0,0,10"/>
-                        <TextBlock Text="Attachments" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding AttachmentNote}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6" Visibility="{Binding AttachmentNote, Converter={StaticResource StringVis}}"/>
-                        <ItemsControl ItemsSource="{Binding Attachments}" Margin="0,0,0,12">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Content="{Binding FileName}" Style="{StaticResource QuietButton}" HorizontalAlignment="Left" Margin="0,0,0,2"
-                                            Command="{Binding DataContext.OpenAttachmentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}"
-                                            ToolTip="Download and open this file"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
                         <TextBlock Text="Close notes" Style="{StaticResource FieldLabel}"/>
                         <TextBox Text="{Binding CloseNotes, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" Margin="0,0,0,12"/>
                         <ContentControl Content="{Binding}" ContentTemplate="{StaticResource JournalHistoryTemplate}" Focusable="False" IsTabStop="False"/>

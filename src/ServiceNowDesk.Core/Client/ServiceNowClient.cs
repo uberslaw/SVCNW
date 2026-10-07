@@ -11,18 +11,19 @@ using ServiceNowDesk.Query;
 
 namespace ServiceNowDesk.Client;
 
-public sealed class ServiceNowClient : IServiceNowClient
+public sealed partial class ServiceNowClient : IServiceNowClient
 {
     private const string IncidentFields = "sys_id,number,short_description,description,state,priority,impact,urgency,category,subcategory,contact_type,caller_id,assigned_to,assignment_group,service_offering,cmdb_ci,location,opened_at,sys_updated_on,active,close_code,close_notes,hold_reason";
     private const string HardwareFields = "sys_id,serial_number,display_name,model,model_category,assigned_to,location,install_status,substatus,stockroom,comments";
     private const string RequestFields = "sys_id,number,short_description,description,request_state,requested_for,opened_by,opened_at,due_date,priority,special_instructions,approval,stage,active,sys_updated_on";
-    private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,priority,close_notes";
+    private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,priority,close_notes,hold_reason,follow_up";
     private const string KnowledgeFields = "sys_id,number,short_description,text,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
     private const string KnowledgeListFields = "sys_id,number,short_description,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
     private const string AlertIncidentFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
     private const string AlertRequestFields = "sys_id,number,short_description,request_state,assigned_to,assignment_group,sys_updated_on,active";
     private const string AlertItemFields = "sys_id,number,short_description,state,assigned_to,assignment_group,sys_updated_on,active";
     private const string PopulationIncidentFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,caller_id,caller_id.user_name,follow_up";
+    private const string UnassignedQueueFields = PopulationIncidentFields + ",opened_at";
     private const string PopulationItemFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,requested_for,requested_for.user_name,request.requested_for,request.requested_for.user_name,follow_up";
     private const string PopulationInteractionFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name,follow_up";
     private const string PopulationInteractionFieldsWithoutFollowUp = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name";
@@ -257,7 +258,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     {
         var result = await GetListAsync(
             "sys_user",
-            "sys_id,name,user_name,email",
+            "sys_id,name,user_name,email,location",
             "user_name=javascript:gs.getUserName()",
             1,
             0,
@@ -275,7 +276,10 @@ public sealed class ServiceNowClient : IServiceNowClient
                 SnowField.Read(row, "sys_id").Value,
                 string.IsNullOrWhiteSpace(name) ? userName : name,
                 userName,
-                SnowField.Read(row, "email").Display);
+                SnowField.Read(row, "email").Display)
+            {
+                Location = SnowField.Read(row, "location").Display
+            };
         }
     }
 
@@ -308,6 +312,51 @@ public sealed class ServiceNowClient : IServiceNowClient
             [AlertKind.Unattended] = categories.Personal.Unattended
         });
         return new AlertReport(personal, categories.Leads, categories.Daily);
+    }
+
+    public async Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(string? watchedGroupName, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<string> groupIds;
+        try
+        {
+            groupIds = await MemberGroupIdsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException)
+        {
+            groupIds = [];
+        }
+
+        var query = AlertQueryBuilder.UnassignedInGroups(groupIds, watchedGroupName);
+        if (query is null)
+            return [];
+
+        var rows = await LoadPopulationAsync("incident", UnassignedQueueFields, query, DeskSection.Incidents, cancellationToken).ConfigureAwait(false);
+        var open = rows.Where(record => string.IsNullOrWhiteSpace(record.AssignedToSysId)).ToArray();
+        if (open.Length == 0)
+            return [];
+
+        var ids = open.Select(record => record.SysId).ToArray();
+        IReadOnlyDictionary<string, IReadOnlyList<SlaSignal>> sla;
+        try
+        {
+            sla = await LoadSlaAsync(ids, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException)
+        {
+            sla = new Dictionary<string, IReadOnlyList<SlaSignal>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        IReadOnlyDictionary<string, string> authors;
+        try
+        {
+            authors = await LoadLatestJournalAuthorsAsync(ids, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException)
+        {
+            authors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return DistinctWatched(open.Select(record => FoldSignals(record, sla, authors)));
     }
 
     private async Task<AlertBucket> QueryAlertsAsync(
@@ -555,6 +604,7 @@ public sealed class ServiceNowClient : IServiceNowClient
             UpdatedAt = AlertClassifier.TryParseInstant(updatedText, out var updatedAt) ? updatedAt : null,
             PriorityValue = priority.Value,
             PriorityLabel = priority.Display.Length > 0 ? priority.Display : priority.Value,
+            Opened = OpenedText(row),
             UpdatedBy = FirstText(row, "sys_updated_by"),
             CallerUserName = FirstText(row, "caller_id.user_name", "opened_for.user_name", "requested_for.user_name", "request.requested_for.user_name"),
             AssigneeUserName = FirstText(row, "assigned_to.user_name"),
@@ -652,6 +702,12 @@ public sealed class ServiceNowClient : IServiceNowClient
             SlaPlannedEnd = progress?.PlannedEnd,
             LatestJournalAuthor = authors.TryGetValue(record.SysId, out var author) ? author : ""
         };
+    }
+
+    private static string OpenedText(JsonElement row)
+    {
+        var opened = SnowField.Read(row, "opened_at");
+        return opened.Display.Length > 0 ? opened.Display : opened.Value;
     }
 
     private static string AssigneeName(JsonElement row)
@@ -1268,7 +1324,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         ArgumentNullException.ThrowIfNull(query);
         var limit = Math.Clamp(query.Limit, 1, 100);
         var offset = Math.Max(0, query.Offset);
-        var result = await GetListAsync("alm_hardware", HardwareFields, HardwareCatalog.ListQuery(query.Text), limit, offset, cancellationToken).ConfigureAwait(false);
+        var result = await GetListAsync("alm_hardware", HardwareFields, HardwareCatalog.ListQuery(query.Text, query.Locations), limit, offset, cancellationToken).ConfigureAwait(false);
         using (result)
         {
             var items = RequireArray(result.Document)

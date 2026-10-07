@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Services;
@@ -28,14 +29,30 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     public ReferenceChoiceField ConfigurationItem { get; }
     public ObservableCollection<Choice> StateChoices { get; } = [];
     public ObservableCollection<Choice> PriorityChoices { get; } = [];
+    public ObservableCollection<Choice> HoldReasonChoices { get; } = [];
 
     [ObservableProperty] private string state = "1";
     [ObservableProperty] private string priority = "";
     [ObservableProperty] private string closeNotes = "";
+    [ObservableProperty] private string holdReason = "";
+    [ObservableProperty] private string followUp = "";
     [ObservableProperty] private string stageLabel = "";
     [ObservableProperty] private string quantity = "";
     [ObservableProperty] private string requestNumber = "";
     [ObservableProperty] private string catalogItem = "";
+
+    public bool ShowHoldReason => AlertClassifier.IsOnHold(DeskSection.RequestedItems, State, SelectedStateLabel);
+
+    private string SelectedStateLabel
+    {
+        get
+        {
+            var match = StateChoices.FirstOrDefault(choice => choice.Value == State);
+            if (match is not null)
+                return match.Label;
+            return _loaded is not null && _loaded.State == State ? _loaded.StateLabel : "";
+        }
+    }
 
     public override async Task EnsureChoicesAsync()
     {
@@ -60,9 +77,11 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         _choicesReady = true;
         await FillChoicesAsync(StateChoices, "sc_req_item", "state", DefaultChoices.ItemStates);
         await FillChoicesAsync(PriorityChoices, "sc_req_item", "priority", DefaultChoices.Priorities, includeBlank: true, blankLabel: "Unchanged");
+        await LoadHoldReasonsAsync();
         ResolveChoices.Clear();
         foreach (var choice in DefaultChoices.ItemOutcomes)
             ResolveChoices.Add(choice);
+        OnPropertyChanged(nameof(ShowHoldReason));
     }
 
     protected override async Task<PagedResult<TicketRow>> FetchPageAsync(TicketQuery query, CancellationToken cancellationToken)
@@ -94,6 +113,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             || State != record.State
             || Priority != record.Priority
             || CloseNotes != record.CloseNotes
+            || HoldReason != record.HoldReason
+            || FollowUp != record.FollowUp
             || Assignment.MemberId != record.AssignedTo.SysId
             || Assignment.GroupId != record.AssignmentGroup.SysId
             || !SameId(ServiceOffering.Id, record.ServiceOffering.SysId)
@@ -122,6 +143,29 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             return false;
         }
 
+        if (ShowHoldReason)
+        {
+            var missingReason = string.IsNullOrWhiteSpace(HoldReason);
+            var missingFollowUp = string.IsNullOrWhiteSpace(FollowUp);
+            if (missingReason && missingFollowUp)
+            {
+                message = "Choose an on hold reason and enter a follow up.";
+                return false;
+            }
+
+            if (missingReason)
+            {
+                message = "Choose an on hold reason.";
+                return false;
+            }
+
+            if (missingFollowUp)
+            {
+                message = "Enter a follow up.";
+                return false;
+            }
+        }
+
         message = "";
         return true;
     }
@@ -139,6 +183,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             State = FieldDiff.Changed(State, record.State),
             Priority = FieldDiff.Changed(Priority, record.Priority),
             CloseNotes = FieldDiff.Changed(CloseNotes, record.CloseNotes),
+            HoldReason = FieldDiff.Changed(HoldReason, record.HoldReason),
+            FollowUp = FieldDiff.Changed((FollowUp ?? "").Trim(), record.FollowUp),
             AssignedToId = !string.IsNullOrEmpty(Assignment.MemberId) && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
             ClearAssignedTo = string.IsNullOrEmpty(Assignment.MemberId) && !record.AssignedTo.IsEmpty,
             AssignmentGroupId = !string.IsNullOrEmpty(Assignment.GroupId) && Assignment.GroupId != record.AssignmentGroup.SysId ? Assignment.GroupId : null,
@@ -172,12 +218,13 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         ConfigurationItem.Clear();
         StateChoices.Clear();
         PriorityChoices.Clear();
+        HoldReasonChoices.Clear();
         ResolveChoices.Clear();
     }
 
     partial void OnStateChanged(string value)
     {
-        if (!Applying && value is "3" or "4" or "7")
+        if (!Applying && (value is "3" or "4" or "7") && !AlertClassifier.IsOnHold(DeskSection.RequestedItems, value, SelectedStateLabel))
         {
             BeginResolve();
             Applying = true;
@@ -188,13 +235,50 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
 
         if (!Applying)
             Touch();
+        OnPropertyChanged(nameof(ShowHoldReason));
     }
 
     partial void OnPriorityChanged(string value) => Touch();
     partial void OnCloseNotesChanged(string value) => Touch();
+    partial void OnHoldReasonChanged(string value) => Touch();
+    partial void OnFollowUpChanged(string value) => Touch();
 
     private static bool SameId(string? left, string? right) =>
         string.Equals(left ?? "", right ?? "", StringComparison.Ordinal);
+
+    private async Task LoadHoldReasonsAsync()
+    {
+        var choices = await ReadHoldReasonsAsync("sc_req_item");
+        if (choices.Count == 0)
+            choices = await ReadHoldReasonsAsync("incident");
+        if (choices.Count == 0)
+            choices = DefaultChoices.HoldReasons;
+
+        HoldReasonChoices.Clear();
+        HoldReasonChoices.Add(new Choice("", "None"));
+        foreach (var choice in choices)
+        {
+            if (string.IsNullOrEmpty(choice.Value))
+                continue;
+            if (HoldReasonChoices.Any(existing => existing.Value == choice.Value))
+                continue;
+            HoldReasonChoices.Add(choice);
+        }
+    }
+
+    private async Task<IReadOnlyList<Choice>> ReadHoldReasonsAsync(string table)
+    {
+        if (Client is null)
+            return [];
+        try
+        {
+            return await Client.GetChoicesAsync(table, "hold_reason", null, CancellationToken.None);
+        }
+        catch
+        {
+            return [];
+        }
+    }
 
     private async Task LoadReferenceChoicesAsync()
     {
@@ -219,6 +303,9 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         State = string.IsNullOrEmpty(record.State) ? "1" : record.State;
         Priority = record.Priority;
         CloseNotes = record.CloseNotes;
+        EnsureChoice(HoldReasonChoices, record.HoldReason, record.HoldReasonLabel);
+        HoldReason = record.HoldReason;
+        FollowUp = record.FollowUp;
         StageLabel = record.StageLabel;
         Quantity = record.Quantity;
         RequestNumber = record.Request.Display;

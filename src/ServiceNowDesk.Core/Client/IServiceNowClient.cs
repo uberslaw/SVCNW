@@ -1,5 +1,6 @@
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.WorkEffort;
 
 namespace ServiceNowDesk.Client;
 
@@ -13,6 +14,12 @@ public interface IServiceNowClient : IDisposable
     Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken);
 
     Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Open incidents with an empty assignee in the signed-in user's groups, plus the watched group when its name is set.
+    /// Location is not applied.
+    /// </summary>
+    Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(string? watchedGroupName, CancellationToken cancellationToken);
 
     Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken);
     Task<IncidentRecord> GetIncidentAsync(string sysId, CancellationToken cancellationToken);
@@ -73,4 +80,10 @@ public interface IServiceNowClient : IDisposable
         string? requestedForSysId,
         IReadOnlyDictionary<string, string> variables,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Opened, resolved, and updated counts for people in the signed-in user's groups.
+    /// IMS is the walk-up <c>interaction</c> table.
+    /// </summary>
+    Task<WorkEffortReport> GetWorkEffortAsync(WorkEffortScale scale, DateTime localNow, CancellationToken cancellationToken);
 }

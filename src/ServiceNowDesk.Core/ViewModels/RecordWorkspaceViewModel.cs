@@ -11,6 +11,7 @@ namespace ServiceNowDesk.ViewModels;
 
 public abstract partial class RecordWorkspaceViewModel : ObservableObject
 {
+    private const string LiveInstanceMessage = "Connect to a live instance to open this record in the browser.";
     private CancellationTokenSource? _openCts;
     private TicketRow? _boundRow;
     private bool _suppressSelection;
@@ -399,7 +400,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     {
         if (Client?.InstanceUri is null || string.IsNullOrEmpty(EditorSysId))
         {
-            EditorMessage = "Connect to a live instance to open this record in the browser.";
+            EditorMessage = LiveInstanceMessage;
             return;
         }
 
@@ -407,7 +408,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task OpenAttachmentAsync(AttachmentSummary? attachment)
+    private void OpenAttachment(AttachmentSummary? attachment)
     {
         if (attachment is null || Client is null)
             return;
@@ -417,23 +418,34 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             return;
         }
 
-        try
+        var url = ResolveAttachmentUrl(attachment);
+        if (url is null)
         {
-            IsEditorBusy = true;
-            ErrorMessage = "";
-            var bytes = await Client.DownloadAttachmentAsync(attachment.SysId, CancellationToken.None);
-            var path = AttachmentStorage.Write(attachment.FileName, bytes);
-            Desktop.OpenFile(path);
-            EditorMessage = "Opened " + attachment.FileName + ".";
+            EditorMessage = LiveInstanceMessage;
+            AttachmentNote = LiveInstanceMessage;
+            return;
         }
-        catch (Exception ex)
+
+        Desktop.OpenUrl(url);
+    }
+
+    private string? ResolveAttachmentUrl(AttachmentSummary attachment)
+    {
+        var given = attachment.Url?.Trim() ?? "";
+        if (given.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            || given.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            return given;
+
+        if (Client?.InstanceUri is null)
+            return null;
+
+        if (given.Length > 0)
         {
-            ErrorMessage = WorkspaceMessages.Describe(ex);
+            var authority = Client.InstanceUri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+            return authority + (given.StartsWith('/') ? given : "/" + given);
         }
-        finally
-        {
-            IsEditorBusy = false;
-        }
+
+        return ServiceNowLinks.Attachment(Client.InstanceUri, attachment.SysId);
     }
 
     [RelayCommand]
@@ -653,7 +665,12 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         Attachments.Clear();
         foreach (var file in files)
             Attachments.Add(file);
-        AttachmentNote = Attachments.Count == 0 ? "No attachments." : "";
+        if (Attachments.Count == 0)
+            AttachmentNote = "No attachments.";
+        else if (Client.InstanceUri is null)
+            AttachmentNote = LiveInstanceMessage;
+        else
+            AttachmentNote = "";
     }
 
     protected void ReplaceJournal(IEnumerable<JournalEntry> notes)

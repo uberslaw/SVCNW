@@ -3,19 +3,28 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.Services;
 
 namespace ServiceNowDesk.ViewModels;
 
 public partial class HardwareWorkspaceViewModel : ObservableObject
 {
+    private readonly ISettingsStore? _settings;
+    private readonly List<HardwareAsset> _loadedRows = [];
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private IServiceNowClient? _client;
     private HardwareAsset? _loaded;
     private bool _choicesReady;
     private bool _suppressSelection;
+    private bool _officesReady;
+    private bool _suppressOffice;
+    private bool _missingLocationNotice;
+    private string _signedInLocation = "";
     private int _substateGeneration;
 
-    public HardwareWorkspaceViewModel()
+    public HardwareWorkspaceViewModel(ISettingsStore? settings = null)
     {
+        _settings = settings;
         AssignedTo = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
         Location = new ReferenceFieldModel(SearchLocationsAsync);
         Stockroom = new ReferenceFieldModel(SearchStockroomsAsync);
@@ -36,6 +45,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     public ReferenceFieldModel Stockroom { get; }
     public ReferenceFieldModel ReceiveStockroom { get; }
     public ObservableCollection<HardwareAsset> Items { get; } = [];
+    public ObservableCollection<HardwareOfficeOption> Offices { get; } = [];
     public ObservableCollection<Choice> InstallStatuses { get; } = [];
     public ObservableCollection<Choice> Substatuses { get; } = [];
     public ObservableCollection<HardwareScanRow> Batch { get; } = [];
@@ -49,8 +59,19 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     public Task SubstateLoad { get; private set; } = Task.CompletedTask;
     public Task OpenTask { get; private set; } = Task.CompletedTask;
     public Task StockroomApply { get; private set; } = Task.CompletedTask;
+    public Task OfficeLoad { get; private set; } = Task.CompletedTask;
+
+    public event EventHandler? DefaultSaved;
 
     [ObservableProperty] private string searchText = "";
+    [ObservableProperty] private string officeStatus = "";
+    [ObservableProperty] private string serialFilter = "";
+    [ObservableProperty] private string modelFilter = "";
+    [ObservableProperty] private string assignedFilter = "";
+    [ObservableProperty] private string locationFilter = "";
+    [ObservableProperty] private string stateFilter = "";
+    [ObservableProperty] private string substatusFilter = "";
+    [ObservableProperty] private string commentsFilter = "";
     [ObservableProperty] private HardwareAsset? selected;
     [ObservableProperty] private bool hasEditor;
     [ObservableProperty] private bool isDirty;
@@ -72,16 +93,27 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     {
         _client = client;
         _choicesReady = false;
+        _officesReady = false;
     }
+
+    public void RememberViewer(CurrentUser? user) =>
+        _signedInLocation = user?.Location?.Trim() ?? "";
 
     public void Detach()
     {
         _client = null;
         _choicesReady = false;
+        _officesReady = false;
+        _missingLocationNotice = false;
+        _signedInLocation = "";
         _loaded = null;
         HasEditor = false;
         IsDirty = false;
+        _loadedRows.Clear();
         Items.Clear();
+        _suppressOffice = true;
+        Offices.Clear();
+        _suppressOffice = false;
         InstallStatuses.Clear();
         Substatuses.Clear();
         AssignedTo.Clear();
@@ -89,26 +121,46 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         Stockroom.Clear();
         ReceiveStockroom.Clear();
         Batch.Clear();
+        SerialFilter = "";
+        ModelFilter = "";
+        AssignedFilter = "";
+        LocationFilter = "";
+        StateFilter = "";
+        SubstatusFilter = "";
+        CommentsFilter = "";
+        OfficeStatus = "";
     }
 
-    public async Task RefreshAsync()
+    public Task RefreshAsync() => RefreshCoreAsync();
+
+    private async Task RefreshCoreAsync()
     {
         if (_client is null)
             return;
 
+        await _refreshGate.WaitAsync();
         try
         {
             IsLoading = true;
             ErrorMessage = "";
+            if (!_officesReady)
+                await PrepareOfficesAsync();
             await EnsureChoicesAsync();
-            var page = await _client.SearchHardwareAsync(new TicketQuery { Text = SearchText, Limit = 100, Activity = ActivityFilter.Any }, CancellationToken.None);
+            var offices = SelectedOfficeNames();
+            var page = await _client.SearchHardwareAsync(new TicketQuery
+            {
+                Text = SearchText,
+                Limit = 100,
+                Activity = ActivityFilter.Any,
+                Locations = offices
+            }, CancellationToken.None);
             var keep = Selected?.SysId ?? _loaded?.SysId;
-            _suppressSelection = true;
-            Items.Clear();
+            _loadedRows.Clear();
+            _loadedRows.AddRange(page.Items);
             foreach (var asset in page.Items)
-                Items.Add(asset);
-            Selected = string.IsNullOrEmpty(keep) ? null : Items.FirstOrDefault(asset => asset.SysId == keep);
-            _suppressSelection = false;
+                EnsureOffice(asset.Location.Display, false);
+            ApplyColumnFilters(keep);
+            PublishScope(offices);
         }
         catch (Exception ex)
         {
@@ -117,6 +169,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+            _refreshGate.Release();
         }
     }
 
@@ -340,6 +393,48 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             Touch();
     }
 
+    partial void OnSerialFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+
+    partial void OnModelFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+
+    partial void OnAssignedFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+
+    partial void OnLocationFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+
+    partial void OnStateFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+
+    partial void OnSubstatusFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+
+    partial void OnCommentsFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+
+    [RelayCommand]
+    private async Task SearchAllLocationsAsync()
+    {
+        _missingLocationNotice = false;
+        _suppressOffice = true;
+        foreach (var office in Offices)
+            office.IsSelected = false;
+        _suppressOffice = false;
+        await RefreshCoreAsync();
+    }
+
+    [RelayCommand]
+    private void SetDefaultOffices()
+    {
+        var names = SelectedOfficeNames();
+        if (_settings is not null)
+        {
+            var settings = _settings.Load();
+            settings.HardwareOfficeLocations = names;
+            _settings.Save(settings);
+        }
+
+        OfficeStatus = names.Count == 0
+            ? "Default saved: all locations."
+            : "Default saved: " + string.Join(", ", names) + ".";
+        DefaultSaved?.Invoke(this, EventArgs.Empty);
+    }
+
     private async Task OpenCoreAsync(string sysId)
     {
         if (_client is null || string.IsNullOrWhiteSpace(sysId))
@@ -497,25 +592,172 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     private void ReplaceItem(HardwareAsset updated)
     {
-        var index = -1;
-        for (var i = 0; i < Items.Count; i++)
-        {
-            if (Items[i].SysId == updated.SysId)
-            {
-                index = i;
-                break;
-            }
-        }
-
+        var index = _loadedRows.FindIndex(asset => asset.SysId == updated.SysId);
         if (index < 0)
             return;
 
+        _loadedRows[index] = updated;
+        ApplyColumnFilters(updated.SysId);
+    }
+
+    private async Task PrepareOfficesAsync()
+    {
+        _suppressOffice = true;
+        try
+        {
+            Offices.Clear();
+            foreach (var name in HardwareCatalog.KnownOfficeNames)
+                EnsureOffice(name, false);
+            EnsureOffice(_signedInLocation, false);
+            await AddReferenceLocationsAsync();
+
+            var saved = ReadSavedOffices();
+            if (saved is not null)
+            {
+                _missingLocationNotice = false;
+                foreach (var name in saved)
+                    EnsureOffice(name, true);
+            }
+            else if (!string.IsNullOrWhiteSpace(_signedInLocation))
+            {
+                _missingLocationNotice = false;
+                EnsureOffice(_signedInLocation, true);
+            }
+            else
+            {
+                _missingLocationNotice = true;
+            }
+        }
+        finally
+        {
+            _suppressOffice = false;
+            _officesReady = true;
+        }
+    }
+
+    private async Task AddReferenceLocationsAsync()
+    {
+        if (_client is null)
+            return;
+
+        var seeds = HardwareCatalog.KnownOfficeNames
+            .Append(_signedInLocation)
+            .Select(name => (name ?? "").Trim())
+            .Where(name => name.Length >= 2)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var seed in seeds)
+        {
+            IReadOnlyList<ReferenceSuggestion> found;
+            try
+            {
+                found = await _client.SearchLocationsAsync(seed, CancellationToken.None);
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var place in found)
+                EnsureOffice(place.Display, false);
+        }
+    }
+
+    private IReadOnlyList<string>? ReadSavedOffices()
+    {
+        if (_settings is null)
+            return null;
+
+        var saved = _settings.Load().HardwareOfficeLocations;
+        if (saved is null)
+            return null;
+
+        return saved
+            .Select(name => name?.Trim() ?? "")
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private void EnsureOffice(string? name, bool selected)
+    {
+        var trimmed = (name ?? "").Trim();
+        if (trimmed.Length == 0)
+            return;
+
+        var existing = Offices.FirstOrDefault(office => office.Name.Equals(trimmed, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            var option = new HardwareOfficeOption(trimmed);
+            option.SelectionChanged += OnOfficeSelectionChanged;
+            Offices.Add(option);
+            if (selected)
+                option.IsSelected = true;
+            return;
+        }
+
+        if (selected && !existing.IsSelected)
+            existing.IsSelected = true;
+    }
+
+    private void OnOfficeSelectionChanged(object? sender, EventArgs e)
+    {
+        if (_suppressOffice || _client is null)
+            return;
+
+        _missingLocationNotice = false;
+        OfficeLoad = RefreshCoreAsync();
+    }
+
+    private List<string> SelectedOfficeNames() =>
+        Offices
+            .Where(office => office.IsSelected)
+            .Select(office => office.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private void PublishScope(IReadOnlyList<string> offices)
+    {
+        if (offices.Count == 0 && _missingLocationNotice)
+            OfficeStatus = "No location on the signed-in account. Showing all locations.";
+        else if (offices.Count == 0)
+            OfficeStatus = "Showing all locations.";
+        else
+            OfficeStatus = "Showing " + string.Join(", ", offices) + ".";
+    }
+
+    private void ApplyColumnFilters(string? keepSysId)
+    {
         _suppressSelection = true;
-        var wasSelected = Selected?.SysId == updated.SysId;
-        Items[index] = updated;
-        if (wasSelected)
-            Selected = updated;
+        Items.Clear();
+        foreach (var asset in _loadedRows)
+        {
+            if (PassesColumnFilters(asset))
+                Items.Add(asset);
+        }
+
+        Selected = string.IsNullOrEmpty(keepSysId)
+            ? null
+            : Items.FirstOrDefault(asset => asset.SysId == keepSysId);
         _suppressSelection = false;
+    }
+
+    private bool PassesColumnFilters(HardwareAsset asset) =>
+        ColumnMatch(asset.SerialNumber, SerialFilter)
+        && ColumnMatch(asset.Model, ModelFilter)
+        && ColumnMatch(asset.AssignedTo.Display, AssignedFilter)
+        && ColumnMatch(asset.Location.Display, LocationFilter)
+        && ColumnMatch(asset.InstallStatusLabel, StateFilter)
+        && ColumnMatch(asset.SubstatusLabel, SubstatusFilter)
+        && ColumnMatch(asset.Comments, CommentsFilter);
+
+    private static bool ColumnMatch(string? value, string? filter)
+    {
+        var term = (filter ?? "").Trim();
+        if (term.Length == 0)
+            return true;
+
+        return (value ?? "").Contains(term, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<IReadOnlyList<Choice>> ReadChoicesAsync(string element, string? dependent, IReadOnlyList<Choice> fallback)
@@ -562,6 +804,22 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _client is null
             ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
             : _client.SearchStockroomsAsync(text, cancellationToken);
+}
+
+public partial class HardwareOfficeOption : ObservableObject
+{
+    public HardwareOfficeOption(string name)
+    {
+        Name = name;
+    }
+
+    public string Name { get; }
+
+    [ObservableProperty] private bool isSelected;
+
+    public event EventHandler? SelectionChanged;
+
+    partial void OnIsSelectedChanged(bool value) => SelectionChanged?.Invoke(this, EventArgs.Empty);
 }
 
 public partial class HardwareScanRow : ObservableObject

@@ -347,6 +347,176 @@ public class HardwareDeskTests
         Assert.Equal("Jordan Lee", assigned.AssignedTo.Display);
     }
 
+    [Fact]
+    public async Task DefaultOfficeFallsBackToTheSignedInUsersLocation()
+    {
+        using var client = new SampleServiceNowClient();
+        client.SignedInUser = ViewerAt("Sydney Office");
+        var workspace = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+        workspace.Attach(client);
+        workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
+        await workspace.RefreshAsync();
+
+        Assert.Contains("location.nameLIKE", client.LastHardwareQuery);
+        Assert.Contains("Sydney Office", client.LastHardwareQuery);
+        Assert.DoesNotContain("Hong Kong", client.LastHardwareQuery);
+        Assert.DoesNotContain("Maroochydore", client.LastHardwareQuery);
+        Assert.Equal(2, workspace.Items.Count);
+        Assert.All(workspace.Items, asset => Assert.Contains("Sydney", asset.Location.Display, StringComparison.OrdinalIgnoreCase));
+        Assert.True(workspace.Offices.Single(office => office.Name == "Sydney Office").IsSelected);
+        foreach (var city in HardwareCatalog.KnownOfficeNames)
+            Assert.Contains(workspace.Offices, office => office.Name == city);
+        Assert.Equal(1, HardwareGets(client));
+
+        using var open = new SampleServiceNowClient();
+        var anywhere = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+        anywhere.Attach(open);
+        anywhere.RememberViewer(await open.GetCurrentUserAsync(CancellationToken.None));
+        await anywhere.RefreshAsync();
+
+        Assert.Contains("No location on the signed-in account", anywhere.OfficeStatus);
+        Assert.DoesNotContain("location.name", open.LastHardwareQuery);
+        Assert.Equal(5, anywhere.Items.Count);
+        foreach (var city in HardwareCatalog.KnownOfficeNames)
+            Assert.Contains(anywhere.Offices, office => office.Name == city);
+    }
+
+    [Fact]
+    public async Task SavedMultiOfficeDefaultIsWhatTheInitialHardwareQueryUses()
+    {
+        using var client = new SampleServiceNowClient();
+        client.SignedInUser = ViewerAt("Hong Kong Office");
+        var store = new MemorySettingsStore();
+        store.Save(new DeskSettings
+        {
+            HardwareOfficeLocations = ["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"]
+        });
+        var workspace = new HardwareWorkspaceViewModel(store);
+        workspace.Attach(client);
+        workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
+        await workspace.RefreshAsync();
+
+        Assert.Contains("location.nameLIKE\"Brisbane\"", client.LastHardwareQuery);
+        Assert.Contains("Maroochydore", client.LastHardwareQuery);
+        Assert.Contains("Gold Coast", client.LastHardwareQuery);
+        Assert.Contains("Townsville", client.LastHardwareQuery);
+        Assert.Contains("Cairns", client.LastHardwareQuery);
+        Assert.DoesNotContain("Hong Kong", client.LastHardwareQuery);
+        Assert.Equal(2, workspace.Items.Count);
+        Assert.All(workspace.Items, asset => Assert.Contains("Brisbane", asset.Location.Display, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(1, HardwareGets(client));
+        Assert.False(workspace.Offices.Single(office => office.Name == "Hong Kong Office").IsSelected);
+    }
+
+    [Fact]
+    public async Task FullListSearchDoesNotSendTheOfficeRestriction()
+    {
+        using var client = new SampleServiceNowClient();
+        client.SignedInUser = ViewerAt("Sydney Office");
+        var workspace = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+        workspace.Attach(client);
+        workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
+        await workspace.RefreshAsync();
+        Assert.Contains("location.name", client.LastHardwareQuery);
+
+        await workspace.SearchAllLocationsCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        Assert.Contains("model_category.name=Computer", client.LastHardwareQuery);
+        Assert.Equal(5, workspace.Items.Count);
+        Assert.Contains("Showing all locations.", workspace.OfficeStatus);
+
+        var sydney = workspace.Offices.Single(office => office.Name == "Sydney Office");
+        sydney.IsSelected = true;
+        await workspace.OfficeLoad;
+        Assert.Contains("Sydney Office", client.LastHardwareQuery);
+        Assert.Equal(2, workspace.Items.Count);
+
+        sydney.IsSelected = false;
+        await workspace.OfficeLoad;
+        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        Assert.Equal(5, workspace.Items.Count);
+    }
+
+    [Fact]
+    public async Task ColumnFiltersNarrowTheVisibleRowsAndCombine()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenHardwareAsync(client);
+        Assert.Equal(5, workspace.Items.Count);
+        var gets = HardwareGets(client);
+
+        workspace.LocationFilter = "Brisbane";
+        workspace.StateFilter = "In transit";
+        Assert.Equal(2, workspace.Items.Count);
+        Assert.All(workspace.Items, asset =>
+        {
+            Assert.Contains("Brisbane", asset.Location.Display, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("transit", asset.InstallStatusLabel, StringComparison.OrdinalIgnoreCase);
+        });
+
+        workspace.SerialFilter = "5CD";
+        Assert.Equal("5CD6220GYW", Assert.Single(workspace.Items).SerialNumber);
+
+        workspace.CommentsFilter = "shelf";
+        Assert.Empty(workspace.Items);
+
+        workspace.SerialFilter = "";
+        workspace.CommentsFilter = "";
+        Assert.Equal(2, workspace.Items.Count);
+        Assert.Equal(gets, HardwareGets(client));
+    }
+
+    [Fact]
+    public async Task SetAsDefaultPersistsAndIsReadBack()
+    {
+        using var client = new SampleServiceNowClient();
+        var store = new MemorySettingsStore();
+        var workspace = new HardwareWorkspaceViewModel(store);
+        workspace.Attach(client);
+        await workspace.RefreshAsync();
+
+        workspace.Offices.Single(office => office.Name == "Brisbane").IsSelected = true;
+        workspace.Offices.Single(office => office.Name == "Cairns").IsSelected = true;
+        await workspace.OfficeLoad;
+        workspace.SetDefaultOfficesCommand.Execute(null);
+
+        Assert.Equal(["Brisbane", "Cairns"], store.Load().HardwareOfficeLocations);
+        Assert.Contains("Default saved: Brisbane, Cairns.", workspace.OfficeStatus);
+
+        var json = DeskSettingsFile.Serialize(store.Load(), value => value ?? "");
+        var roundTrip = DeskSettingsFile.Deserialize(json, value => value ?? "");
+        Assert.Equal(["Brisbane", "Cairns"], roundTrip.HardwareOfficeLocations);
+        Assert.Equal(["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"], roundTrip.OfficeLocations);
+
+        var connection = new ConnectionViewModel();
+        connection.Load(roundTrip);
+        var built = connection.BuildSettings();
+        Assert.Equal(["Brisbane", "Cairns"], built.HardwareOfficeLocations);
+        Assert.Equal(["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"], built.OfficeLocations);
+
+        client.SignedInUser = ViewerAt("Hong Kong Office");
+        var again = new HardwareWorkspaceViewModel(store);
+        again.Attach(client);
+        again.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
+        await again.RefreshAsync();
+
+        Assert.Contains("location.nameLIKE\"Brisbane\"", client.LastHardwareQuery);
+        Assert.Contains("Cairns", client.LastHardwareQuery);
+        Assert.DoesNotContain("Hong Kong", client.LastHardwareQuery);
+        Assert.DoesNotContain("Maroochydore", client.LastHardwareQuery);
+        Assert.True(again.Offices.Single(office => office.Name == "Brisbane").IsSelected);
+        Assert.True(again.Offices.Single(office => office.Name == "Cairns").IsSelected);
+        Assert.False(again.Offices.Single(office => office.Name == "Gold Coast").IsSelected);
+        Assert.Equal(2, again.Items.Count);
+    }
+
+    private static CurrentUser ViewerAt(string location) =>
+        new("sample-user", "Alex Rivera", "alex.rivera", "alex.rivera@example.com") { Location = location };
+
+    private static int HardwareGets(SampleServiceNowClient client) =>
+        client.RecentActivity.Count(activity => activity.Method == "GET" && activity.Path.Contains("alm_hardware", StringComparison.Ordinal));
+
     private static async Task<HardwareWorkspaceViewModel> OpenHardwareAsync(SampleServiceNowClient client)
     {
         var workspace = new HardwareWorkspaceViewModel();

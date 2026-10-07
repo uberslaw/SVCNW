@@ -90,6 +90,8 @@ public static class RecordMapper
     {
         var state = SnowField.Read(record, "state");
         var priority = SnowField.Read(record, "priority");
+        var hold = SnowField.Read(record, "hold_reason");
+        var followUp = SnowField.Read(record, "follow_up");
         var updated = SnowField.Read(record, "sys_updated_on");
         return new RequestedItemRecord
         {
@@ -104,6 +106,9 @@ public static class RecordMapper
             StageLabel = SnowField.Read(record, "stage").Display,
             Quantity = SnowField.Read(record, "quantity").Display,
             CloseNotes = SnowField.Read(record, "close_notes").Display,
+            HoldReason = hold.Value,
+            HoldReasonLabel = LabelOrValue(hold),
+            FollowUp = followUp.Display,
             Request = Reference(record, "request"),
             CatalogItem = Reference(record, "cat_item"),
             AssignedTo = Reference(record, "assigned_to"),
@@ -513,7 +518,9 @@ public static class ChangeJson
             ["close_notes"] = changes.CloseNotes,
             ["service_offering"] = changes.ClearServiceOffering ? "" : changes.ServiceOfferingId,
             ["cmdb_ci"] = changes.ClearConfigurationItem ? "" : changes.ConfigurationItemId,
-            ["requested_for"] = changes.RequestedForId
+            ["requested_for"] = changes.RequestedForId,
+            ["hold_reason"] = changes.HoldReason,
+            ["follow_up"] = changes.FollowUp
         });
     }
 }

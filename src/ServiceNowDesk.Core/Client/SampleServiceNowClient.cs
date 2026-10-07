@@ -6,7 +6,7 @@ using ServiceNowDesk.Query;
 
 namespace ServiceNowDesk.Client;
 
-public sealed class SampleServiceNowClient : IServiceNowClient
+public sealed partial class SampleServiceNowClient : IServiceNowClient
 {
     private static readonly CurrentUser Me = new("sample-user", "Alex Rivera", "alex.rivera", "alex.rivera@example.com");
     private static readonly ReferenceValue Alex = new("sample-user", "Alex Rivera");
@@ -29,6 +29,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     private readonly Dictionary<string, SampleAlertSignals> _signals = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ApiActivity> _activity = [];
     private int _sequence = 1000;
+    private int _unassignedQueueReads;
 
     public SampleServiceNowClient()
     {
@@ -46,6 +47,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     public IReadOnlyDictionary<string, string> LastOrderedVariables { get; private set; } =
         new Dictionary<string, string>();
 
+    public string LastHardwareQuery { get; private set; } = "";
+
+    public CurrentUser SignedInUser { get; set; } = Me;
+
     public IReadOnlyList<Choice>? ContactTypeChoices { get; set; }
 
     public IReadOnlyList<ApiActivity> RecentActivity => _activity.ToArray();
@@ -55,13 +60,99 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     }
 
     public Task<CurrentUser> GetCurrentUserAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(Me);
+        Task.FromResult(SignedInUser);
 
     public Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken) =>
         Task.FromResult(BuildReport(search, cancellationToken).Personal);
 
     public Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken) =>
         Task.FromResult(BuildReport(search, cancellationToken));
+
+    public Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(string? watchedGroupName, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _unassignedQueueReads++;
+        if (_unassignedQueueReads > 1)
+            ReleaseLateQueueIncident();
+
+        Record("GET", "api/now/table/incident");
+        var watched = EncodedQuery.Sanitize(watchedGroupName);
+        var rows = _incidents
+            .Where(record => IsOpenUnassigned(record) && InGroupQueue(record, watched))
+            .Select(record => Describe(
+                DeskSection.Incidents,
+                record.SysId,
+                record.Number,
+                record.ShortDescription,
+                record.State,
+                record.StateLabel,
+                record.AssignmentGroup,
+                record.Location,
+                record.UpdatedAtDisplay,
+                record.Caller,
+                record.AssignedTo,
+                record.Priority,
+                record.PriorityLabel) with
+            {
+                Opened = record.OpenedAtDisplay
+            })
+            .ToArray();
+        return Task.FromResult<IReadOnlyList<WatchedRecord>>(rows);
+    }
+
+    /// <summary>
+    /// Practice stand-in for My Groups: the sample user is in Client Services only.
+    /// The watched group is included by the name the caller passes, with no location filter.
+    /// </summary>
+    private static bool InGroupQueue(IncidentRecord record, string watchedName)
+    {
+        if (record.AssignmentGroup.SysId == ClientServices.SysId
+            || record.AssignmentGroup.Display.Equals(ClientServices.Display, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (watchedName.Length == 0)
+            return false;
+        return record.AssignmentGroup.Display.Equals(watchedName, StringComparison.OrdinalIgnoreCase)
+            || record.AssignmentGroup.SysId.Equals(watchedName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOpenUnassigned(IncidentRecord record) =>
+        record.Active
+        && string.IsNullOrWhiteSpace(record.AssignedTo.SysId)
+        && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel);
+
+    private void ReleaseLateQueueIncident()
+    {
+        if (_incidents.Any(record => record.SysId == "inc-queue-new"))
+            return;
+
+        var now = Stamp();
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-queue-new",
+            Number = "INC0010017",
+            ShortDescription = "New unassigned priority 1 on the group queue",
+            Description = "This arrived after the first look at the group queue.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "1",
+            PriorityLabel = "1 - Critical",
+            Impact = "1",
+            ImpactLabel = "1 - High",
+            Urgency = "1",
+            UrgencyLabel = "1 - High",
+            Category = "inquiry",
+            CategoryLabel = "Inquiry / Help",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = ClientServices,
+            OpenedAtDisplay = now,
+            UpdatedAtDisplay = now,
+            UpdatedAtValue = now,
+            Active = true
+        });
+    }
 
     private AlertReport BuildReport(AlertSearch search, CancellationToken cancellationToken)
     {
@@ -564,7 +655,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             ShortDescription = changes.ShortDescription.Trim(),
             Description = changes.Description?.Trim() ?? "",
             State = state,
-            StateLabel = Label(DefaultChoices.ItemStates, state, "Open"),
+            StateLabel = Label(DefaultChoices.ItemStates, state, state.Contains("hold", StringComparison.OrdinalIgnoreCase) ? "On Hold" : "Open"),
             Priority = changes.Priority ?? "",
             PriorityLabel = Label(DefaultChoices.Priorities, changes.Priority, ""),
             Quantity = "",
@@ -574,6 +665,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             AssignmentGroup = changes.AssignmentGroupId is null ? ReferenceValue.Empty : GroupRef(changes.AssignmentGroupId),
             ServiceOffering = changes.ServiceOfferingId is null ? ReferenceValue.Empty : NamedRef(changes.ServiceOfferingId, SampleOfferings),
             ConfigurationItem = changes.ConfigurationItemId is null ? ReferenceValue.Empty : NamedRef(changes.ConfigurationItemId, AllConfigurationItems),
+            HoldReason = changes.HoldReason ?? "",
+            HoldReasonLabel = Label(DefaultChoices.HoldReasons, changes.HoldReason, ""),
+            FollowUp = changes.FollowUp ?? "",
             OpenedAtDisplay = now,
             UpdatedAtDisplay = now,
             UpdatedAtValue = now,
@@ -598,7 +692,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             ShortDescription = changes.ShortDescription?.Trim() ?? current.ShortDescription,
             Description = changes.Description ?? current.Description,
             State = state,
-            StateLabel = changes.State is null ? current.StateLabel : Label(DefaultChoices.ItemStates, state, state),
+            StateLabel = changes.State is null ? current.StateLabel : Label(DefaultChoices.ItemStates, state, state.Contains("hold", StringComparison.OrdinalIgnoreCase) ? "On Hold" : state),
             Priority = changes.Priority ?? current.Priority,
             PriorityLabel = changes.Priority is null ? current.PriorityLabel : Label(DefaultChoices.Priorities, changes.Priority, changes.Priority),
             AssignedTo = changes.ClearAssignedTo ? ReferenceValue.Empty : changes.AssignedToId is null ? current.AssignedTo : UserRef(changes.AssignedToId),
@@ -606,6 +700,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             ServiceOffering = changes.ClearServiceOffering ? ReferenceValue.Empty : changes.ServiceOfferingId is null ? current.ServiceOffering : NamedRef(changes.ServiceOfferingId, SampleOfferings),
             ConfigurationItem = changes.ClearConfigurationItem ? ReferenceValue.Empty : changes.ConfigurationItemId is null ? current.ConfigurationItem : NamedRef(changes.ConfigurationItemId, AllConfigurationItems),
             CloseNotes = changes.CloseNotes ?? current.CloseNotes,
+            HoldReason = changes.HoldReason ?? current.HoldReason,
+            HoldReasonLabel = changes.HoldReason is null ? current.HoldReasonLabel : Label(DefaultChoices.HoldReasons, changes.HoldReason, changes.HoldReason),
+            FollowUp = changes.FollowUp ?? current.FollowUp,
             Active = state is "3" or "4" or "7" ? false : current.Active,
             UpdatedAtDisplay = Stamp(),
             UpdatedAtValue = Stamp()
@@ -692,11 +789,14 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     public Task<PagedResult<HardwareAsset>> SearchHardwareAsync(TicketQuery query, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
+        var encoded = HardwareCatalog.ListQuery(query.Text, query.Locations);
+        LastHardwareQuery = encoded;
         var matches = _hardware
             .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
+            .Where(asset => HardwareCatalog.MatchesLocation(asset, query.Locations))
             .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        Record("GET", "api/now/table/alm_hardware");
+        Record("GET", "api/now/table/alm_hardware?sysparm_query=" + Uri.EscapeDataString(encoded));
         var limit = Math.Clamp(query.Limit, 1, 100);
         return Task.FromResult(new PagedResult<HardwareAsset>(matches.Take(limit).ToArray(), matches.Length));
     }
@@ -1673,6 +1773,9 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Description = "The dock is on hold and the follow-up was yesterday.",
             State = "on_hold",
             StateLabel = "On Hold",
+            HoldReason = "awaiting_vendor",
+            HoldReasonLabel = "Awaiting Vendor",
+            FollowUp = "2026-10-01 11:00:00",
             Priority = "4",
             PriorityLabel = "4 - Low",
             Quantity = "1",
@@ -1847,6 +1950,34 @@ public sealed class SampleServiceNowClient : IServiceNowClient
             Active = true
         });
         _signals["inc-sla-colleague"] = new SampleAlertSignals { SlaBreached = true };
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-aus-open",
+            Number = "INC0010018",
+            ShortDescription = "Unassigned in the watched group outside the office list",
+            Description = "The watched group queue includes this even though the location is not an office city.",
+            State = "1",
+            StateLabel = "New",
+            Priority = "2",
+            PriorityLabel = "2 - High",
+            Impact = "2",
+            ImpactLabel = "2 - Medium",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Jordan,
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = AusClientServices,
+            Location = "Melbourne",
+            OpenedAtDisplay = "2026-10-01 08:00",
+            UpdatedAtDisplay = "2026-10-06 08:00",
+            UpdatedAtValue = "2026-10-06 08:00:00",
+            Active = true
+        });
         SeedHardware();
     }
 

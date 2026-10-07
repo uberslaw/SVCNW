@@ -50,9 +50,12 @@ public static class DeskSettingsFile
         public string? AlertSoundPath { get; set; }
         public string? WatchedGroupName { get; set; }
         public List<string>? OfficeLocations { get; set; }
+        public List<string>? HardwareOfficeLocations { get; set; }
         public int? NotificationPollSeconds { get; set; }
         public bool? DownloadCacheOnLaunch { get; set; }
         public List<string>? EnabledHighlights { get; set; }
+        public int? LegendIntensity { get; set; }
+        public Dictionary<string, int>? LegendColorIntensities { get; set; }
         public List<string>? LeadTeamMemberIds { get; set; }
         public bool LeadsEnabled { get; set; }
 
@@ -80,9 +83,12 @@ public static class DeskSettingsFile
             AlertSoundPath = settings.AlertSoundPath,
             WatchedGroupName = settings.WatchedGroupName,
             OfficeLocations = settings.OfficeLocations is null ? null : [.. settings.OfficeLocations],
+            HardwareOfficeLocations = settings.HardwareOfficeLocations is null ? null : [.. settings.HardwareOfficeLocations],
             NotificationPollSeconds = settings.NotificationPollSeconds,
             DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch,
             EnabledHighlights = settings.EnabledHighlights is null ? null : [.. settings.EnabledHighlights],
+            LegendIntensity = settings.LegendIntensity,
+            LegendColorIntensities = CopyIntensities(settings.LegendColorIntensities),
             LeadTeamMemberIds = settings.LeadTeamMemberIds is null ? [] : [.. settings.LeadTeamMemberIds],
             LeadsEnabled = settings.LeadsEnabled
         };
@@ -111,11 +117,17 @@ public static class DeskSettingsFile
             AlertSoundPath = AlertSoundPath ?? "",
             WatchedGroupName = WatchedGroupName,
             OfficeLocations = OfficeLocations,
+            HardwareOfficeLocations = HardwareOfficeLocations is null ? null : [.. HardwareOfficeLocations],
             NotificationPollSeconds = NotificationPollSeconds ?? 60,
             DownloadCacheOnLaunch = DownloadCacheOnLaunch ?? true,
             EnabledHighlights = EnabledHighlights is null ? null : [.. EnabledHighlights],
+            LegendIntensity = LegendIntensity,
+            LegendColorIntensities = CopyIntensities(LegendColorIntensities),
             LeadTeamMemberIds = LeadTeamMemberIds is null ? [] : [.. LeadTeamMemberIds],
             LeadsEnabled = LeadsEnabled
         };
+
+        private static Dictionary<string, int>? CopyIntensities(Dictionary<string, int>? intensities) =>
+            intensities is null ? null : new Dictionary<string, int>(intensities, StringComparer.OrdinalIgnoreCase);
     }
 }

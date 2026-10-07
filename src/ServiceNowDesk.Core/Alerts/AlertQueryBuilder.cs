@@ -56,6 +56,40 @@ public static class AlertQueryBuilder
     }
 
     /// <summary>
+    /// Open incidents with an empty assignee whose group is one of the user's groups,
+    /// or the watched group by name. My Groups does not filter location, so this check does not either.
+    /// Null when both scopes are blank, so the caller sends no request.
+    /// </summary>
+    public static string? UnassignedInGroups(IReadOnlyList<string>? groupIds, string? watchedGroupName)
+    {
+        var open = StillWorking(DeskSection.Incidents);
+        var groups = new List<string>();
+        foreach (var id in groupIds ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+            try
+            {
+                groups.Add(EncodedQuery.SafeToken(id, "group id"));
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        var segments = new List<string>();
+        var distinct = groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (distinct.Length > 0)
+            segments.Add("assigned_toISEMPTY^assignment_groupIN" + string.Join(",", distinct) + "^" + open);
+
+        var watched = Quote(watchedGroupName);
+        if (watched.Length > 0)
+            segments.Add("assigned_toISEMPTY^assignment_group.name=" + watched + "^" + open);
+
+        return segments.Count == 0 ? null : string.Join("^NQ", segments) + "^ORDERBYDESCsys_updated_on";
+    }
+
+    /// <summary>
     /// Open tickets in the watched group, plus open tickets assigned to the selected team.
     /// Null when both scopes are blank, so the caller sends no request.
     /// </summary>
