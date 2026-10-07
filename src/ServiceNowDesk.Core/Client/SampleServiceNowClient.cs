@@ -850,6 +850,11 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     public Task<IReadOnlyList<ReferenceSuggestion>> SearchLocationsAsync(string text, CancellationToken cancellationToken) =>
         Task.FromResult(SearchPeople(text, _locations));
 
+    internal void AddLocation(string sysId, string display) =>
+        _locations.Add(new ReferenceSuggestion(sysId, display, ""));
+
+    internal void AddComputer(HardwareAsset asset) => _hardware.Add(asset);
+
     private static ReferenceValue PlaceRef(IReadOnlyList<ReferenceSuggestion> places, string? sysId)
     {
         if (string.IsNullOrWhiteSpace(sysId))
