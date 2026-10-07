@@ -165,6 +165,20 @@ public static class DailyWorkRanker
         return AfterThoseHex;
     }
 
+    /// <summary>
+    /// Traffic-light urgency for sorting. Lower is sooner: red (act first), yellow (next), green (after those).
+    /// </summary>
+    public static int ColourTier(string? highlightHex)
+    {
+        if (string.Equals(highlightHex, ActFirstHex, StringComparison.OrdinalIgnoreCase))
+            return 0;
+        if (string.Equals(highlightHex, NextHex, StringComparison.OrdinalIgnoreCase))
+            return 1;
+        if (string.Equals(highlightHex, AfterThoseHex, StringComparison.OrdinalIgnoreCase))
+            return 2;
+        return 3;
+    }
+
     /// <summary>ServiceNow priority 1 is the most urgent. A blank priority sorts last.</summary>
     public static int PriorityRank(string? value, string? label)
     {

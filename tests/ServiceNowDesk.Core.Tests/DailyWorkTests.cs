@@ -151,6 +151,90 @@ public class DailyWorkTests
     }
 
     [Fact]
+    public void IntroTextExplainsThePriorityColoursBriefly()
+    {
+        Assert.True(DailyWorkViewModel.IntroText.Length < 320);
+        Assert.Contains("act first", DailyWorkViewModel.IntroText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Yellow", DailyWorkViewModel.IntroText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Green", DailyWorkViewModel.IntroText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SLA", DailyWorkViewModel.IntroText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Every 5 minutes", DailyWorkViewModel.IntroText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void FirstClickSortsAscendingAndSecondClickSortsDescending()
+    {
+        var store = new MemoryDailyWorkStore();
+        var now = new DateTime(2026, 10, 6, 9, 0, 0);
+        var zebra = Item("inc-z", "INC0010") with { Title = "Zebra" };
+        var alpha = Item("inc-a", "INC0002") with { Title = "Alpha" };
+        var page = new DailyWorkViewModel(store);
+        page.Show(new DailyWorkBoard([zebra, alpha], []), "sample-user", [], now);
+
+        page.SortByCommand.Execute("Number");
+        Assert.Equal("Number ▲", page.NumberHeader);
+        Assert.Equal(["INC0002", "INC0010"], page.Attend.Select(row => row.Number).ToArray());
+
+        page.SortByCommand.Execute("Number");
+        Assert.Equal("Number ▼", page.NumberHeader);
+        Assert.Equal(["INC0010", "INC0002"], page.Attend.Select(row => row.Number).ToArray());
+
+        page.SortByCommand.Execute("Title");
+        Assert.Equal("Title ▲", page.TitleHeader);
+        Assert.Equal("Number", page.NumberHeader);
+        Assert.Equal(["Alpha", "Zebra"], page.Attend.Select(row => row.Title).ToArray());
+    }
+
+    [Fact]
+    public void ColourSortOrdersRedBeforeYellowBeforeGreen()
+    {
+        var store = new MemoryDailyWorkStore();
+        var now = new DateTime(2026, 10, 6, 9, 0, 0);
+        var green = Item("inc-green", "INC-GREEN");
+        var yellow = Item("inc-yellow", "INC-YELLOW") with { UpdatedByCaller = true, Unattended = false };
+        var red = Item("inc-red", "INC-RED") with { PriorityValue = "1", PriorityLabel = "1 - Critical" };
+        var page = new DailyWorkViewModel(store);
+        page.Show(new DailyWorkBoard([green, yellow, red], []), "sample-user", [], now);
+        Assert.Equal(DailyWorkRanker.ActFirstHex, page.Attend.Single(row => row.Number == "INC-RED").HighlightHex);
+        Assert.Equal(DailyWorkRanker.NextHex, page.Attend.Single(row => row.Number == "INC-YELLOW").HighlightHex);
+        Assert.Equal(DailyWorkRanker.AfterThoseHex, page.Attend.Single(row => row.Number == "INC-GREEN").HighlightHex);
+
+        page.SortByCommand.Execute("Colour");
+        Assert.Equal("Colour ▲", page.ColourHeader);
+        Assert.Equal(["INC-RED", "INC-YELLOW", "INC-GREEN"], page.Attend.Select(row => row.Number).ToArray());
+
+        page.SortByCommand.Execute("Colour");
+        Assert.Equal("Colour ▼", page.ColourHeader);
+        Assert.Equal(["INC-GREEN", "INC-YELLOW", "INC-RED"], page.Attend.Select(row => row.Number).ToArray());
+    }
+
+    [Fact]
+    public void SwitchingMineAndTeamRestoresTheDefaultOrder()
+    {
+        var store = new MemoryDailyWorkStore();
+        var now = new DateTime(2026, 10, 6, 9, 0, 0);
+        var first = Item("inc-a", "INC-A") with { PriorityValue = "2", PriorityLabel = "2 - High" };
+        var second = Item("inc-b", "INC-B") with { PriorityValue = "4", PriorityLabel = "4 - Low" };
+        var teamOnly = Item("inc-team", "INC-TEAM");
+        var page = new DailyWorkViewModel(store);
+        page.Show(new DailyWorkBoard([first, second], [teamOnly]), "sample-user", ["user-jordan"], now);
+        Assert.Equal(["INC-A", "INC-B"], page.Attend.Select(row => row.Number).ToArray());
+
+        page.SortByCommand.Execute("Number");
+        page.SortByCommand.Execute("Number");
+        Assert.Equal("Number ▼", page.NumberHeader);
+        Assert.Equal(["INC-B", "INC-A"], page.Attend.Select(row => row.Number).ToArray());
+
+        page.Area = DailyWorkArea.Team;
+        Assert.Equal("Number", page.NumberHeader);
+        Assert.Equal("INC-TEAM", Assert.Single(page.Attend).Number);
+
+        page.Area = DailyWorkArea.Mine;
+        Assert.Equal("Number", page.NumberHeader);
+        Assert.Equal(["INC-A", "INC-B"], page.Attend.Select(row => row.Number).ToArray());
+    }
+
+    [Fact]
     public void DailyWorkRowsUseTrafficLightHues()
     {
         var quiet = Item("inc-quiet", "INC-QUIET");

@@ -1,11 +1,12 @@
 <UserControl x:Class="ServiceNowDesk.Views.DailyWorkView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:ServiceNowDesk.ViewModels;assembly=ServiceNowDesk.Core">
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel MaxWidth="1040" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Daily Work" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                       Text="This is what to attend to from the notification queues: SLA breaching, updated by caller, follow-up passed, unattended, and returned with notes. Priority comes first, then SLA, then a caller update, then a passed follow-up. The report is saved once each local day, at the first check after midnight or the next time the desk opens. Later checks keep that report and show which tickets are no longer on it and which arrived. Every 5 minutes while connected, and when this page opens, the desk looks for new unassigned incidents in your groups and the watched group. My team uses the people ticked under Leads. Click a row to open it."/>
+                       Text="{x:Static vm:DailyWorkViewModel.IntroText}"/>
 
             <TextBlock Text="New unassigned in the group queue" FontWeight="SemiBold" Margin="0,0,0,4"
                        Visibility="{Binding HasNewUnassigned, Converter={StaticResource BoolVis}}"/>
@@ -122,6 +123,7 @@
 
             <Grid Margin="10,0,10,4" Visibility="{Binding HasAttend, Converter={StaticResource BoolVis}}">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72"/>
                     <ColumnDefinition Width="110"/>
                     <ColumnDefinition Width="120"/>
                     <ColumnDefinition Width="*"/>
@@ -129,12 +131,20 @@
                     <ColumnDefinition Width="110"/>
                     <ColumnDefinition Width="140"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="1" Text="Priority" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="2" Text="Title" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="3" Text="Why" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="4" Text="State" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="5" Text="Assigned to" Style="{StaticResource FieldLabel}"/>
+                <Button Content="{Binding ColourHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Colour" AutomationProperties.Name="Sort by colour"/>
+                <Button Grid.Column="1" Content="{Binding NumberHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Number" AutomationProperties.Name="Sort by number"/>
+                <Button Grid.Column="2" Content="{Binding PriorityHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Priority" AutomationProperties.Name="Sort by priority"/>
+                <Button Grid.Column="3" Content="{Binding TitleHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Title" AutomationProperties.Name="Sort by title"/>
+                <Button Grid.Column="4" Content="{Binding WhyHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Why" AutomationProperties.Name="Sort by why"/>
+                <Button Grid.Column="5" Content="{Binding StateHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="State" AutomationProperties.Name="Sort by state"/>
+                <Button Grid.Column="6" Content="{Binding AssigneeHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Assignee" AutomationProperties.Name="Sort by assigned to"/>
             </Grid>
             <ListBox ItemsSource="{Binding Attend}"
                      Style="{StaticResource DeskList}"
@@ -149,6 +159,7 @@
                     <DataTemplate>
                         <Grid>
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="72"/>
                                 <ColumnDefinition Width="110"/>
                                 <ColumnDefinition Width="120"/>
                                 <ColumnDefinition Width="*"/>
@@ -156,12 +167,15 @@
                                 <ColumnDefinition Width="110"/>
                                 <ColumnDefinition Width="140"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding PriorityText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Reasons}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="5" Text="{Binding AssigneeText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <Border Width="28" Height="12" CornerRadius="2" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="8,0,0,0"
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                    Background="{Binding HighlightHex, Converter={StaticResource HexBrush}}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding PriorityText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding Reasons}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="5" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="6" Text="{Binding AssigneeText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -174,6 +188,16 @@
 
             <TextBlock Text="No longer on today's report" FontWeight="SemiBold" Margin="0,0,0,4"
                        Visibility="{Binding HasCleared, Converter={StaticResource BoolVis}}"/>
+            <Grid Margin="10,0,10,4" Visibility="{Binding HasCleared, Converter={StaticResource BoolVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Content="{Binding NumberHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Number" AutomationProperties.Name="Sort cleared by number"/>
+                <Button Grid.Column="1" Content="{Binding TitleHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Title" AutomationProperties.Name="Sort cleared by title"/>
+            </Grid>
             <ListBox ItemsSource="{Binding Cleared}"
                      Style="{StaticResource DeskList}"
                      ItemContainerStyle="{StaticResource TicketListItem}"
@@ -199,6 +223,25 @@
 
             <TextBlock Text="New since today's report" FontWeight="SemiBold" Margin="0,0,0,4"
                        Visibility="{Binding HasArrived, Converter={StaticResource BoolVis}}"/>
+            <Grid Margin="10,0,10,4" Visibility="{Binding HasArrived, Converter={StaticResource BoolVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="210"/>
+                </Grid.ColumnDefinitions>
+                <Button Content="{Binding ColourHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Colour" AutomationProperties.Name="Sort arrived by colour"/>
+                <Button Grid.Column="1" Content="{Binding NumberHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Number" AutomationProperties.Name="Sort arrived by number"/>
+                <Button Grid.Column="2" Content="{Binding PriorityHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Priority" AutomationProperties.Name="Sort arrived by priority"/>
+                <Button Grid.Column="3" Content="{Binding TitleHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Title" AutomationProperties.Name="Sort arrived by title"/>
+                <Button Grid.Column="4" Content="{Binding WhyHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Why" AutomationProperties.Name="Sort arrived by why"/>
+            </Grid>
             <ListBox ItemsSource="{Binding Arrived}"
                      Style="{StaticResource DeskList}"
                      ItemContainerStyle="{StaticResource TicketListItem}"
@@ -212,15 +255,19 @@
                     <DataTemplate>
                         <Grid>
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="72"/>
                                 <ColumnDefinition Width="110"/>
                                 <ColumnDefinition Width="120"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="210"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding PriorityText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Reasons}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <Border Width="28" Height="12" CornerRadius="2" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="8,0,0,0"
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                    Background="{Binding HighlightHex, Converter={StaticResource HexBrush}}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding PriorityText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding Reasons}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
