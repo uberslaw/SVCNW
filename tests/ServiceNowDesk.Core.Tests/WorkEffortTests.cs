@@ -246,6 +246,82 @@ public class WorkEffortTests
     }
 
     [Fact]
+    public async Task FirstOpenLoadsAndASecondViewTheSameDayDoesNotQuery()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        var queries = new Dictionary<WorkEffortScale, int>();
+
+        await OpenWorkEffortAsync(page, client, Now, force: false, queries);
+        Assert.Equal(1, queries[WorkEffortScale.Today]);
+        Assert.Equal("As of 15:00", page.AsOf);
+        Assert.True(page.HasRows);
+        Assert.Equal("Alex Rivera", page.Rows[0].Name);
+
+        await OpenWorkEffortAsync(page, client, Now.AddHours(1), force: false, queries);
+        Assert.Equal(1, queries[WorkEffortScale.Today]);
+        Assert.Equal("As of 15:00", page.AsOf);
+        Assert.Equal("Alex Rivera", page.Rows[0].Name);
+    }
+
+    [Fact]
+    public async Task ANewLocalDayQueriesAgain()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        var queries = new Dictionary<WorkEffortScale, int>();
+
+        await OpenWorkEffortAsync(page, client, Now, force: false, queries);
+        await OpenWorkEffortAsync(page, client, Now.AddDays(1), force: false, queries);
+
+        Assert.Equal(2, queries[WorkEffortScale.Today]);
+        Assert.Equal("As of 15:00", page.AsOf);
+    }
+
+    [Fact]
+    public async Task ManualRefreshQueriesOnlyTheSelectedScaleAgain()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        var queries = new Dictionary<WorkEffortScale, int>();
+        var refreshRequests = 0;
+        page.RefreshRequested += (_, _) => refreshRequests++;
+
+        await OpenWorkEffortAsync(page, client, Now, force: false, queries);
+        page.Scale = WorkEffortScale.ThisWeek;
+        await OpenWorkEffortAsync(page, client, Now, force: false, queries);
+
+        page.RefreshCommand.Execute(null);
+        Assert.Equal(1, refreshRequests);
+
+        page.Scale = WorkEffortScale.Today;
+        await OpenWorkEffortAsync(page, client, Now.AddMinutes(30), force: true, queries);
+
+        Assert.Equal(2, queries[WorkEffortScale.Today]);
+        Assert.Equal(1, queries[WorkEffortScale.ThisWeek]);
+        Assert.Equal("As of 15:30", page.AsOf);
+    }
+
+    [Fact]
+    public async Task SwitchingToAnUncachedTimeScaleLoadsThatScale()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        var queries = new Dictionary<WorkEffortScale, int>();
+
+        await OpenWorkEffortAsync(page, client, Now, force: false, queries);
+        page.Scale = WorkEffortScale.SixMonths;
+        await OpenWorkEffortAsync(page, client, Now, force: false, queries);
+        page.Scale = WorkEffortScale.Today;
+        await OpenWorkEffortAsync(page, client, Now.AddHours(2), force: false, queries);
+
+        Assert.Equal(1, queries[WorkEffortScale.Today]);
+        Assert.Equal(1, queries[WorkEffortScale.SixMonths]);
+        Assert.Equal("As of 15:00", page.AsOf);
+        Assert.Equal(2.9m, page.Rows[0].Weighted);
+    }
+
+    [Fact]
     public async Task HittingTheSafetyCapSaysTheFiguresArePartial()
     {
         var handler = new StubHandler(GroupResponder(includeMembers: true, incidentTotal: 9, rejectInteractionResolve: false));
@@ -253,6 +329,22 @@ public class WorkEffortTests
         var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None);
         Assert.Contains("safety cap", report.Status, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+    }
+
+    private static async Task OpenWorkEffortAsync(
+        WorkEffortViewModel page,
+        SampleServiceNowClient client,
+        DateTime localNow,
+        bool force,
+        Dictionary<WorkEffortScale, int> queries)
+    {
+        var scale = page.Scale;
+        if (!page.BeginLoad(localNow, force))
+            return;
+
+        queries[scale] = queries.GetValueOrDefault(scale) + 1;
+        var report = await client.GetWorkEffortAsync(scale, localNow, CancellationToken.None);
+        page.Remember(scale, localNow, report);
     }
 
     private static Func<HttpRequestMessage, string, HttpResponseMessage> GroupResponder(bool includeMembers, int? incidentTotal, bool rejectInteractionResolve) =>

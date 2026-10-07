@@ -5,6 +5,7 @@ using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Services;
+using ServiceNowDesk.WorkEffort;
 
 namespace ServiceNowDesk.ViewModels;
 
@@ -107,7 +108,8 @@ public partial class MainViewModel : ObservableObject
             if (IsConnected)
                 RefreshAlerts();
         };
-        Leads.WorkEffortRequested += (_, _) => _ = LoadWorkEffortAsync();
+        Leads.WorkEffortRequested += (_, _) => _ = LoadWorkEffortAsync(force: false);
+        Leads.WorkEffort.RefreshRequested += (_, _) => _ = LoadWorkEffortAsync(force: true);
         Leads.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(LeadsViewModel.Area) && SelectedSection == DeskSection.Leads)
@@ -296,7 +298,7 @@ public partial class MainViewModel : ObservableObject
             {
                 _ = LoadLeadRosterAsync();
                 if (SelectedSection == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
-                    _ = LoadWorkEffortAsync();
+                    _ = LoadWorkEffortAsync(force: false);
             }
 
             if (epoch != _sessionEpoch)
@@ -655,7 +657,7 @@ public partial class MainViewModel : ObservableObject
                 RefreshAlerts();
                 _ = LoadLeadRosterAsync();
                 if (Leads.Area == LeadArea.WorkEffort)
-                    _ = LoadWorkEffortAsync();
+                    _ = LoadWorkEffortAsync(force: false);
                 break;
             case DeskSection.DailyWork:
                 RefreshAlerts();
@@ -1365,9 +1367,9 @@ public partial class MainViewModel : ObservableObject
             _rows.Paint(row);
     }
 
-    private int _workEffortGeneration;
+    private readonly Dictionary<WorkEffortScale, int> _workEffortTokens = [];
 
-    private async Task LoadWorkEffortAsync()
+    private async Task LoadWorkEffortAsync(bool force)
     {
         if (Leads.Area != LeadArea.WorkEffort)
             return;
@@ -1379,20 +1381,20 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        var generation = ++_workEffortGeneration;
         var scale = Leads.WorkEffort.Scale;
         var localNow = DateTime.Now;
-        Leads.WorkEffort.MarkLoading();
+        if (!Leads.WorkEffort.BeginLoad(localNow, force))
+            return;
+
+        var token = NextWorkEffortToken(scale);
         try
         {
             var report = await client.GetWorkEffortAsync(scale, localNow, CancellationToken.None).ConfigureAwait(false);
             PostToUi(() =>
             {
-                if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
+                if (!ReferenceEquals(client, _client) || !IsCurrentWorkEffortToken(scale, token))
                     return;
-                if (Leads.Area != LeadArea.WorkEffort || Leads.WorkEffort.Scale != scale)
-                    return;
-                Leads.WorkEffort.Show(report);
+                Leads.WorkEffort.Remember(scale, localNow, report);
             });
         }
         catch (OperationCanceledException)
@@ -1403,12 +1405,25 @@ public partial class MainViewModel : ObservableObject
             var message = WorkspaceMessages.Describe(ex);
             PostToUi(() =>
             {
-                if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
+                if (!ReferenceEquals(client, _client) || !IsCurrentWorkEffortToken(scale, token))
+                    return;
+                if (Leads.WorkEffort.Scale != scale)
                     return;
                 Leads.WorkEffort.ShowError(message);
             });
         }
     }
+
+    private int NextWorkEffortToken(WorkEffortScale scale)
+    {
+        _workEffortTokens.TryGetValue(scale, out var current);
+        var next = current + 1;
+        _workEffortTokens[scale] = next;
+        return next;
+    }
+
+    private bool IsCurrentWorkEffortToken(WorkEffortScale scale, int token) =>
+        _workEffortTokens.TryGetValue(scale, out var current) && current == token;
 
     private async Task LoadLeadRosterAsync()
     {

@@ -139,7 +139,18 @@
 
             <StackPanel Visibility="{Binding ShowWorkEffort, Converter={StaticResource BoolVis}}">
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                           Text="Everyone in your groups, including you, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. An update that did not open, close, or resolve that record is 0.3. Closing counts as the resolve when that person did not also resolve it."/>
+                           Text="Everyone in your groups, including you, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. An update that did not open, close, or resolve that record is 0.3. Closing counts as the resolve when that person did not also resolve it. Figures load the first time you open a time scale each day. Refresh reloads the scale you are looking at."/>
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding WorkEffort.AsOf}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"
+                               Visibility="{Binding WorkEffort.AsOf, Converter={StaticResource StringVis}}"/>
+                    <Button Grid.Column="1" Content="Refresh" Style="{StaticResource SecondaryButton}" MinWidth="88"
+                            Command="{Binding WorkEffort.RefreshCommand}"
+                            AutomationProperties.Name="Refresh work effort"/>
+                </Grid>
                 <WrapPanel Margin="0,0,0,12" AutomationProperties.Name="Work effort time scale">
                     <RadioButton GroupName="WorkEffortScale" Content="Today" Margin="0,0,16,8"
                                  IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=Today}"
