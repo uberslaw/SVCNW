@@ -63,7 +63,10 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     [ObservableProperty] private string subcategoryLabel = "";
     [ObservableProperty] private string contactType = ContactTypeCatalog.DirectValue;
     [ObservableProperty] private string holdReason = "";
+    [ObservableProperty] private string followUp = "";
     [ObservableProperty] private string locationText = "";
+
+    internal Func<DateTime> FollowUpNow { get; set; } = static () => DateTime.Now;
 
     public bool ShowHoldReason => State == "3";
 
@@ -136,6 +139,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             || Subcategory != record.Subcategory
             || ContactType != record.ContactType
             || HoldReason != record.HoldReason
+            || FollowUp != record.FollowUp
             || Caller.SysId != record.Caller.SysId
             || Assignment.MemberId != record.AssignedTo.SysId
             || Assignment.GroupId != record.AssignmentGroup.SysId
@@ -158,6 +162,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         LocationText = "";
         ContactType = ContactTypeCatalog.DefaultValue(ContactChoices);
         HoldReason = "";
+        FollowUp = "";
         Caller.Clear();
         Assignment.ClearSelection();
         ServiceOffering.Show("", "");
@@ -207,6 +212,9 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             return false;
         }
 
+        if (ShowHoldReason && !FollowUpValue.TryValidateHold(HoldReason, FollowUp, out message))
+            return false;
+
         message = "";
         return true;
     }
@@ -228,6 +236,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             Subcategory = FieldDiff.NullIfEmpty(Subcategory),
             ContactType = ContactType,
             HoldReason = State == "3" ? FieldDiff.NullIfEmpty(HoldReason) : null,
+            FollowUp = FieldDiff.NullIfEmpty(FollowUp),
             ServiceOfferingId = FieldDiff.NullIfEmpty(ServiceOffering.Id),
             ConfigurationItemId = FieldDiff.NullIfEmpty(ConfigurationItem.Id)
         }, cancellationToken);
@@ -287,7 +296,11 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         }
 
         if (!Applying)
+        {
+            EnsureFollowUpDefault();
             Touch();
+        }
+
         OnPropertyChanged(nameof(ShowHoldReason));
     }
 
@@ -300,6 +313,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         Touch();
     }
     partial void OnHoldReasonChanged(string value) => Touch();
+    partial void OnFollowUpChanged(string value) => Touch();
     partial void OnSubcategoryChanged(string value) => Touch();
 
     partial void OnCategoryChanged(string value)
@@ -340,6 +354,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         LocationText = record.Location;
         ContactType = record.ContactType;
         HoldReason = record.HoldReason;
+        FollowUp = record.FollowUp;
         Caller.Set(record.Caller.SysId, record.Caller.Display);
         ServiceOffering.Show(record.ServiceOffering.SysId, record.ServiceOffering.Display);
         ConfigurationItem.Show(record.ConfigurationItem.SysId, record.ConfigurationItem.Display);
@@ -360,6 +375,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             Subcategory = FieldDiff.Changed(Subcategory, record.Subcategory),
             ContactType = FieldDiff.Changed(ContactType, record.ContactType),
             HoldReason = FieldDiff.Changed(HoldReason, record.HoldReason),
+            FollowUp = FieldDiff.Changed((FollowUp ?? "").Trim(), record.FollowUp),
             CallerId = Caller.SysId != record.Caller.SysId ? Caller.SysId : null,
             AssignedToId = !string.IsNullOrEmpty(Assignment.MemberId) && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
             ClearAssignedTo = string.IsNullOrEmpty(Assignment.MemberId) && !record.AssignedTo.IsEmpty,
@@ -405,6 +421,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
                 ? ContactTypeCatalog.DefaultValue(ContactChoices)
                 : template.ContactType;
             HoldReason = template.HoldReason ?? "";
+            FollowUp = "";
             Caller.Set(template.CallerId, template.CallerDisplay);
             await Assignment.ShowAsync(
                 template.AssignmentGroupId,
@@ -413,6 +430,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
                 template.AssignedToDisplay);
             await LoadSubcategoriesAsync(template.Category ?? "", template.Subcategory ?? "", template.SubcategoryLabel ?? "");
             SubcategoryLabel = template.SubcategoryLabel ?? "";
+            EnsureFollowUpDefault();
             EditorMessage = "New incident from " + template.Name + ". Nothing is sent until you save.";
             TemplateMessage = "";
         }
@@ -533,7 +551,15 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         || !string.IsNullOrEmpty(Category)
         || !string.IsNullOrEmpty(Subcategory)
         || ContactType != ContactTypeCatalog.DefaultValue(ContactChoices)
-        || !string.IsNullOrEmpty(HoldReason);
+        || !string.IsNullOrEmpty(HoldReason)
+        || !string.IsNullOrWhiteSpace(FollowUp);
+
+    private void EnsureFollowUpDefault()
+    {
+        var next = FollowUpValue.BlankHoldDefault(ShowHoldReason, FollowUp, FollowUpNow());
+        if (next is not null)
+            FollowUp = next;
+    }
 
     private static bool SameId(string? left, string? right) =>
         string.Equals(left ?? "", right ?? "", StringComparison.Ordinal);

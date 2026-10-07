@@ -25,6 +25,7 @@ public sealed record IncidentRecord
     public string CloseNotes { get; init; } = "";
     public string HoldReason { get; init; } = "";
     public string HoldReasonLabel { get; init; } = "";
+    public string FollowUp { get; init; } = "";
     public ReferenceValue Caller { get; init; }
     public ReferenceValue AssignedTo { get; init; }
     public ReferenceValue AssignmentGroup { get; init; }
@@ -181,6 +182,7 @@ public sealed class IncidentChanges
     public string? CloseCode { get; init; }
     public string? CloseNotes { get; init; }
     public string? HoldReason { get; init; }
+    public string? FollowUp { get; init; }
     public string? ServiceOfferingId { get; init; }
     public bool ClearServiceOffering { get; init; }
     public string? ConfigurationItemId { get; init; }
@@ -204,6 +206,7 @@ public sealed class IncidentChanges
         || CloseCode is not null
         || CloseNotes is not null
         || HoldReason is not null
+        || FollowUp is not null
         || ServiceOfferingId is not null
         || ClearServiceOffering
         || ConfigurationItemId is not null

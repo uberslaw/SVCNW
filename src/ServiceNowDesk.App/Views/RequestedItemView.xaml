@@ -144,7 +144,7 @@
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="Follow up" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Text="{Binding FollowUp, UpdateSourceTrigger=PropertyChanged}" ToolTip="Use the date format your instance expects, for example 2026-11-20 10:10:23"/>
+                                <controls:FollowUpBox Text="{Binding FollowUp, UpdateSourceTrigger=PropertyChanged}"/>
                             </StackPanel>
                         </Grid>
                         <TextBlock Text="Description" Style="{StaticResource FieldLabel}"/>
