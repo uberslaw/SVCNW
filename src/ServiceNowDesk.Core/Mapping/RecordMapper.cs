@@ -19,6 +19,7 @@ public static class RecordMapper
         var contact = SnowField.Read(record, "contact_type");
         var closeCode = SnowField.Read(record, "close_code");
         var hold = SnowField.Read(record, "hold_reason");
+        var followUp = SnowField.Read(record, "follow_up");
         var updated = SnowField.Read(record, "sys_updated_on");
         return new IncidentRecord
         {
@@ -45,6 +46,7 @@ public static class RecordMapper
             CloseNotes = SnowField.Read(record, "close_notes").Display,
             HoldReason = hold.Value,
             HoldReasonLabel = LabelOrValue(hold),
+            FollowUp = followUp.Display,
             Caller = Reference(record, "caller_id"),
             AssignedTo = Reference(record, "assigned_to"),
             AssignmentGroup = Reference(record, "assignment_group"),
@@ -455,6 +457,7 @@ public static class ChangeJson
             ["close_code"] = changes.CloseCode,
             ["close_notes"] = changes.CloseNotes,
             ["hold_reason"] = changes.HoldReason,
+            ["follow_up"] = changes.FollowUp,
             ["service_offering"] = changes.ClearServiceOffering ? "" : changes.ServiceOfferingId,
             ["cmdb_ci"] = changes.ClearConfigurationItem ? "" : changes.ConfigurationItemId
         });

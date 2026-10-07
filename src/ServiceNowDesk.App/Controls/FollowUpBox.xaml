@@ -1,0 +1,62 @@
+<UserControl x:Class="ServiceNowDesk.Controls.FollowUpBox"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBox x:Name="ValueBox"
+                 Text="{Binding Text, ElementName=Root, UpdateSourceTrigger=PropertyChanged}"
+                 ToolTip="Type a date and time, for example 2026-11-20 10:10:23, or press Modify to pick one."/>
+        <Button Grid.Column="1"
+                Content="Modify"
+                Style="{StaticResource SecondaryButton}"
+                Margin="8,0,0,0"
+                Padding="10,6"
+                Click="Modify_Click"
+                ToolTip="Pick a follow-up date and time"/>
+        <Popup x:Name="PickerPopup"
+               PlacementTarget="{Binding ElementName=ValueBox}"
+               Placement="Bottom"
+               StaysOpen="False"
+               AllowsTransparency="True"
+               PopupAnimation="Slide"
+               Closed="PickerPopup_Closed">
+            <Border Background="{StaticResource CardBrush}"
+                    BorderBrush="{StaticResource LineBrush}"
+                    BorderThickness="1"
+                    Padding="10"
+                    Width="280">
+                <StackPanel>
+                    <Calendar x:Name="DayCalendar" SelectionMode="SingleDate"/>
+                    <Grid Margin="0,8,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Hour" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox x:Name="HourBox"
+                                      DropDownOpened="Time_DropDownOpened"
+                                      DropDownClosed="Time_DropDownClosed"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="Minute" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox x:Name="MinuteBox"
+                                      DropDownOpened="Time_DropDownOpened"
+                                      DropDownClosed="Time_DropDownClosed"/>
+                        </StackPanel>
+                    </Grid>
+                    <Button Content="OK"
+                            Style="{StaticResource PrimaryButton}"
+                            HorizontalAlignment="Right"
+                            Click="Ok_Click"
+                            ToolTip="Use this date and time"/>
+                </StackPanel>
+            </Border>
+        </Popup>
+    </Grid>
+</UserControl>

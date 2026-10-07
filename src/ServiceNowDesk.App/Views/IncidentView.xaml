@@ -180,7 +180,9 @@
 
                                     <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowHoldReason, Converter={StaticResource BoolVis}}">
                                         <TextBlock Text="On hold reason" Style="{StaticResource FieldLabel}"/>
-                                        <ComboBox ItemsSource="{Binding HoldReasonChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding HoldReason}"/>
+                                        <ComboBox ItemsSource="{Binding HoldReasonChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding HoldReason}" Margin="0,0,0,10"/>
+                                        <TextBlock Text="Follow up" Style="{StaticResource FieldLabel}"/>
+                                        <controls:FollowUpBox Text="{Binding FollowUp, UpdateSourceTrigger=PropertyChanged}"/>
                                     </StackPanel>
 
                                     <TextBlock Text="Impact" Style="{StaticResource FieldLabel}"/>

@@ -37,6 +37,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     [ObservableProperty] private string holdReason = "";
     [ObservableProperty] private string followUp = "";
     [ObservableProperty] private string stageLabel = "";
+
+    internal Func<DateTime> FollowUpNow { get; set; } = static () => DateTime.Now;
     [ObservableProperty] private string quantity = "";
     [ObservableProperty] private string requestNumber = "";
     [ObservableProperty] private string catalogItem = "";
@@ -143,28 +145,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             return false;
         }
 
-        if (ShowHoldReason)
-        {
-            var missingReason = string.IsNullOrWhiteSpace(HoldReason);
-            var missingFollowUp = string.IsNullOrWhiteSpace(FollowUp);
-            if (missingReason && missingFollowUp)
-            {
-                message = "Choose an on hold reason and enter a follow up.";
-                return false;
-            }
-
-            if (missingReason)
-            {
-                message = "Choose an on hold reason.";
-                return false;
-            }
-
-            if (missingFollowUp)
-            {
-                message = "Enter a follow up.";
-                return false;
-            }
-        }
+        if (ShowHoldReason && !FollowUpValue.TryValidateHold(HoldReason, FollowUp, out message))
+            return false;
 
         message = "";
         return true;
@@ -234,8 +216,19 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         }
 
         if (!Applying)
+        {
+            EnsureFollowUpDefault();
             Touch();
+        }
+
         OnPropertyChanged(nameof(ShowHoldReason));
+    }
+
+    private void EnsureFollowUpDefault()
+    {
+        var next = FollowUpValue.BlankHoldDefault(ShowHoldReason, FollowUp, FollowUpNow());
+        if (next is not null)
+            FollowUp = next;
     }
 
     partial void OnPriorityChanged(string value) => Touch();
