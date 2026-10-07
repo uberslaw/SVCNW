@@ -11,6 +11,7 @@ public partial class NavigationOrderTests
     private static readonly string[] MainOrder =
     [
         "Daily Work",
+        "In The Mix",
         "Incidents",
         "Request items",
         "Walk-up",
@@ -27,6 +28,9 @@ public partial class NavigationOrderTests
     {
         var labels = DeskNavigation.Visible(leadsEnabled: false).Select(item => item.Label).ToArray();
         Assert.Equal([.. MainOrder, "Legend"], labels);
+        var incidents = Array.IndexOf(labels, "Incidents");
+        Assert.True(incidents > 0);
+        Assert.Equal("In The Mix", labels[incidents - 1]);
 
         Assert.DoesNotContain(DeskNavigation.Items, item => item.Section == DeskSection.Catalog);
         Assert.Equal(DeskSection.Catalog, DeskNavigation.OrderCatalogSection);
