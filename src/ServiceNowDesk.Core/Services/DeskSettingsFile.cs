@@ -59,7 +59,9 @@ public static class DeskSettingsFile
         public int? LegendIntensity { get; set; }
         public Dictionary<string, int>? LegendColorIntensities { get; set; }
         public List<string>? LeadTeamMemberIds { get; set; }
+        public bool LeadTeamSaved { get; set; }
         public bool LeadsEnabled { get; set; }
+        public bool LeadsTeamLocked { get; set; }
 
         public static Stored From(DeskSettings settings, Func<string?, string> protect) => new()
         {
@@ -93,7 +95,9 @@ public static class DeskSettingsFile
             LegendIntensity = settings.LegendIntensity,
             LegendColorIntensities = CopyIntensities(settings.LegendColorIntensities),
             LeadTeamMemberIds = settings.LeadTeamMemberIds is null ? [] : [.. settings.LeadTeamMemberIds],
-            LeadsEnabled = settings.LeadsEnabled
+            LeadTeamSaved = settings.LeadTeamSaved,
+            LeadsEnabled = settings.LeadsEnabled,
+            LeadsTeamLocked = settings.LeadsTeamLocked
         };
 
         public DeskSettings ToSettings(Func<string?, string> unprotect) => new()
@@ -128,7 +132,9 @@ public static class DeskSettingsFile
             LegendIntensity = LegendIntensity,
             LegendColorIntensities = CopyIntensities(LegendColorIntensities),
             LeadTeamMemberIds = LeadTeamMemberIds is null ? [] : [.. LeadTeamMemberIds],
-            LeadsEnabled = LeadsEnabled
+            LeadTeamSaved = LeadTeamSaved,
+            LeadsEnabled = LeadsEnabled,
+            LeadsTeamLocked = LeadsTeamLocked
         };
 
         private static Dictionary<string, int>? CopyIntensities(Dictionary<string, int>? intensities) =>

@@ -25,15 +25,37 @@
             </StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12">
                 <TextBlock.Text>
-                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. The ticked names are saved on this PC. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work Effort counts only the people you tick."/>
+                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. Save team stores the ticked names on this PC and hides the checkboxes. Edit team brings the ticks back. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work Effort counts only the people on the team."/>
                 </TextBlock.Text>
             </TextBlock>
 
             <StackPanel Visibility="{Binding ShowQueues, Converter={StaticResource BoolVis}}">
                 <TextBlock Text="{Binding RosterNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding RosterNote, Converter={StaticResource StringVis}}"/>
+                <TextBlock Text="{Binding LockedTeamNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                           Visibility="{Binding ShowLockedTeam, Converter={StaticResource BoolVis}}"/>
+                <ItemsControl ItemsSource="{Binding LockedNames}" Margin="0,0,0,8"
+                              Visibility="{Binding ShowLockedTeam, Converter={StaticResource BoolVis}}"
+                              AutomationProperties.Name="Locked team">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Margin="0,0,0,4"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{Binding TeamSavedNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                           Visibility="{Binding ShowSavedNames, Converter={StaticResource BoolVis}}"/>
+                <ItemsControl ItemsSource="{Binding SavedNames}" Margin="0,0,0,8"
+                              Visibility="{Binding ShowSavedNames, Converter={StaticResource BoolVis}}"
+                              AutomationProperties.Name="Saved team">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Margin="0,0,0,4"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <ItemsControl ItemsSource="{Binding Members}" Margin="0,0,0,8"
-                              Visibility="{Binding ShowRoster, Converter={StaticResource BoolVis}}">
+                              Visibility="{Binding ShowCheckboxes, Converter={StaticResource BoolVis}}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel/>
@@ -46,6 +68,16 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Content="Save team" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"
+                            Command="{Binding SaveTeamCommand}"
+                            Visibility="{Binding ShowSaveTeam, Converter={StaticResource BoolVis}}"
+                            AutomationProperties.Name="Save team"/>
+                    <Button Content="Edit team" Style="{StaticResource SecondaryButton}"
+                            Command="{Binding EditTeamCommand}"
+                            Visibility="{Binding ShowEditTeam, Converter={StaticResource BoolVis}}"
+                            AutomationProperties.Name="Edit team"/>
+                </StackPanel>
                 <TextBlock Text="{Binding TeamPrompt}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
                            Visibility="{Binding TeamPrompt, Converter={StaticResource StringVis}}"/>
 
@@ -141,6 +173,8 @@
 
             <StackPanel Visibility="{Binding ShowWorkEffort, Converter={StaticResource BoolVis}}">
                 <TextBlock Text="Work Effort" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="{Binding LockedTeamNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                           Visibility="{Binding LockedTeamNote, Converter={StaticResource StringVis}}"/>
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
                            Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. An update that did not open, close, or resolve that record is 0.3. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Figures load the first time you open a time scale each day. Refresh reloads the scale you are looking at. Leaving this page does not stop the load."/>
                 <Grid Margin="0,0,0,12">

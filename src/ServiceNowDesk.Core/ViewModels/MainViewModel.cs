@@ -36,6 +36,7 @@ public partial class MainViewModel : ObservableObject
     private int _alertGeneration;
     private int _queueGeneration;
     private string _signedInUserId = "";
+    private string _signedInUserLocation = "";
     private int _sessionEpoch;
 
     public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
@@ -105,7 +106,20 @@ public partial class MainViewModel : ObservableObject
         DailyWork.RequestedItemRequested += (_, row) => NoteConvertTask = ConvertNoteAsync(row, incident: false);
         Leads.TeamChanged += (_, _) =>
         {
+            if (Leads.TeamLocked)
+                return;
             Connection.RememberLeadTeam(Leads.SelectedMemberIds);
+            _store.Save(Connection.BuildSettings());
+            if (IsConnected)
+                RefreshAlerts();
+        };
+        Leads.TeamPersisted += (_, _) =>
+        {
+            if (Leads.TeamLocked)
+                return;
+            if (Leads.Members.Count > 0)
+                Connection.RememberLeadTeam(Leads.SelectedMemberIds);
+            Connection.RememberLeadTeamSaved(true);
             _store.Save(Connection.BuildSettings());
             if (IsConnected)
                 RefreshAlerts();
@@ -163,8 +177,11 @@ public partial class MainViewModel : ObservableObject
         Connection.LeadsAccessChanged += (_, _) =>
         {
             _store.Save(Connection.BuildSettings());
+            Leads.ApplyTeamState(Connection.LeadTeamSaved, Connection.LeadsTeamLocked);
             if (!Connection.LeadsEnabled && SelectedSection == DeskSection.Leads)
                 SelectedSection = DeskSection.Incidents;
+            else if (Connection.LeadsEnabled)
+                _ = ReloadLeadTeamAsync();
         };
     }
 
@@ -223,6 +240,7 @@ public partial class MainViewModel : ObservableObject
     {
         var settings = _store.Load();
         Connection.Load(settings);
+        Leads.ApplyTeamState(Connection.LeadTeamSaved, Connection.LeadsTeamLocked);
         NotificationSettings.Load(Connection.Notifications);
         Legend.Load(Connection.Highlights);
         _rows.Use(Connection.Highlights);
@@ -277,6 +295,7 @@ public partial class MainViewModel : ObservableObject
             WindowTitle = "ServiceNow Desk — " + InstanceLabel;
             IsConnected = true;
             _signedInUserId = user.SysId;
+            _signedInUserLocation = user.Location ?? "";
             Catalog.RememberSignedInUser(user);
             Notifications.RememberViewer(_signedInUserId, Connection.Highlights);
             Leads.Board.RememberViewer(_signedInUserId, Connection.Highlights);
@@ -1053,6 +1072,7 @@ public partial class MainViewModel : ObservableObject
     private void DropConnection(string status)
     {
         _signedInUserId = "";
+        _signedInUserLocation = "";
         Notifications.RememberViewer("", Connection.Highlights);
         Leads.Board.RememberViewer("", Connection.Highlights);
         Leads.Clear();
@@ -1212,7 +1232,7 @@ public partial class MainViewModel : ObservableObject
             var localNow = DateTime.Now;
             var search = NotificationSettings.Committed.ToSearch(_signedInUserId) with
             {
-                TeamMemberIds = Connection.LeadTeamMemberIds
+                TeamMemberIds = TeamIdsForAlerts()
             };
 
             AlertReport? report = null;
@@ -1265,7 +1285,7 @@ public partial class MainViewModel : ObservableObject
                 {
                     Notifications.Apply(report.Personal, _watch);
                     Leads.Show(report.Leads);
-                    DailyWork.Show(report.Daily, _signedInUserId, Connection.LeadTeamMemberIds, localNow);
+                    DailyWork.Show(report.Daily, _signedInUserId, TeamIdsForAlerts(), localNow);
                     _rows.Use(report.Personal);
                     RepaintRows();
                 }
@@ -1350,7 +1370,7 @@ public partial class MainViewModel : ObservableObject
 
             var search = NotificationSettings.Committed.ToSearch(_signedInUserId) with
             {
-                TeamMemberIds = Connection.LeadTeamMemberIds
+                TeamMemberIds = TeamIdsForAlerts()
             };
             var report = await client.GetAlertReportAsync(search, token).ConfigureAwait(false);
             PostToUi(() =>
@@ -1359,7 +1379,7 @@ public partial class MainViewModel : ObservableObject
                     return;
                 Notifications.Apply(report.Personal, _watch);
                 Leads.Show(report.Leads);
-                DailyWork.Show(report.Daily, _signedInUserId, Connection.LeadTeamMemberIds);
+                DailyWork.Show(report.Daily, _signedInUserId, TeamIdsForAlerts());
                 _rows.Use(report.Personal);
                 RepaintRows();
             });
@@ -1418,7 +1438,10 @@ public partial class MainViewModel : ObservableObject
         {
             if (Leads.WorkEffort.IsLoading)
                 return;
-            Leads.WorkEffort.Show(WorkEffortReport.NoTeam());
+            var note = Connection.LeadsTeamLocked && Leads.LockedTeamNote.Length > 0
+                ? Leads.LockedTeamNote
+                : WorkEffortReport.DefineTeamMessage;
+            Leads.WorkEffort.Show(new WorkEffortReport([], "", note));
             return;
         }
 
@@ -1527,11 +1550,30 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
+    private IReadOnlyList<string> TeamIdsForAlerts() =>
+        Connection.LeadsTeamLocked ? Leads.LockedMemberIds : Connection.LeadTeamMemberIds;
+
+    private async Task ReloadLeadTeamAsync()
+    {
+        await LoadLeadRosterAsync().ConfigureAwait(false);
+        if (!IsConnected)
+            return;
+        if (Leads.Area == LeadArea.WorkEffort)
+            await LoadWorkEffortAsync(force: false).ConfigureAwait(false);
+        RefreshAlerts();
+    }
+
     private async Task LoadLeadRosterAsync()
     {
         var client = _client;
         if (client is null)
             return;
+
+        if (Connection.LeadsTeamLocked)
+        {
+            await LoadLockedLeadTeamAsync(client).ConfigureAwait(false);
+            return;
+        }
 
         var name = NotificationSettings.Committed.WatchedGroupName;
         try
@@ -1545,7 +1587,7 @@ public partial class MainViewModel : ObservableObject
                 : await client.ListGroupMembersAsync(group.Value, CancellationToken.None).ConfigureAwait(false);
             PostToUi(() =>
             {
-                if (!ReferenceEquals(client, _client))
+                if (!ReferenceEquals(client, _client) || Connection.LeadsTeamLocked)
                     return;
                 Leads.SetGroupName(name);
                 Leads.SetRoster(members, Connection.LeadTeamMemberIds);
@@ -1560,8 +1602,45 @@ public partial class MainViewModel : ObservableObject
         {
             PostToUi(() =>
             {
-                if (ReferenceEquals(client, _client))
+                if (ReferenceEquals(client, _client) && !Connection.LeadsTeamLocked)
                     Leads.RosterNote = WorkspaceMessages.Describe(ex);
+            });
+        }
+    }
+
+    private async Task LoadLockedLeadTeamAsync(IServiceNowClient client)
+    {
+        if (!LockedLeadTeam.HasCity(_signedInUserLocation))
+        {
+            PostToUi(() =>
+            {
+                if (!ReferenceEquals(client, _client) || !Connection.LeadsTeamLocked)
+                    return;
+                Leads.UseLockedRoster([], LockedLeadTeam.NoLocationPrompt);
+            });
+            return;
+        }
+
+        try
+        {
+            var people = await client.ListLockedLeadTeamAsync(_signedInUserLocation, CancellationToken.None).ConfigureAwait(false);
+            var note = people.Count == 0 ? LockedLeadTeam.EmptyPrompt : LockedLeadTeam.Explanation;
+            PostToUi(() =>
+            {
+                if (!ReferenceEquals(client, _client) || !Connection.LeadsTeamLocked)
+                    return;
+                Leads.UseLockedRoster(people, note);
+                if (Leads.Area == LeadArea.WorkEffort)
+                    _ = LoadWorkEffortAsync(force: false);
+                RefreshAlerts();
+            });
+        }
+        catch (Exception ex)
+        {
+            PostToUi(() =>
+            {
+                if (ReferenceEquals(client, _client) && Connection.LeadsTeamLocked)
+                    Leads.UseLockedRoster([], WorkspaceMessages.Describe(ex));
             });
         }
     }

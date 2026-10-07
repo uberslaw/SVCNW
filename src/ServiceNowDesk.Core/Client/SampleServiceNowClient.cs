@@ -921,6 +921,29 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>(matches);
     }
 
+    public int LockedTeamQueries { get; private set; }
+
+    public Task<IReadOnlyList<LockedLeadPerson>> ListLockedLeadTeamAsync(string? city, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!LockedLeadTeam.HasCity(city))
+            return Task.FromResult<IReadOnlyList<LockedLeadPerson>>([]);
+
+        LockedTeamQueries++;
+        Record("GET", "api/now/table/sys_user_grmember?sysparm_query=" + Uri.EscapeDataString(LockedLeadTeam.MembershipQuery));
+        return Task.FromResult(LockedLeadTeam.Select(city, SampleLockedMemberships()));
+    }
+
+    private static IReadOnlyList<LockedLeadMembership> SampleLockedMemberships() =>
+    [
+        new("Client Services", "sample-user", "Alex Rivera", "Brisbane Office"),
+        new("Aus DT - Client Services", "user-jordan", "Jordan Lee", "Brisbane"),
+        new("Aus DT - Client Services", "user-jordan", "Jordan Lee", "Brisbane"),
+        new("APAC DT - Client Services", "user-sam", "Sam Patel", "Sydney Office"),
+        new("Network", "user-casey", "Casey Ng", "Brisbane Office"),
+        new("Client Services", "user-blank", "No Location", "")
+    ];
+
     public Task<IReadOnlyList<Choice>> ListGroupMembersAsync(string groupSysId, CancellationToken cancellationToken)
     {
         var token = (groupSysId ?? "").Trim();

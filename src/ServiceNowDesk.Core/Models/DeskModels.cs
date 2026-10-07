@@ -192,8 +192,17 @@ public sealed class DeskSettings
     /// <summary>People ticked on Leads, My team. Null and an empty list both mean nobody is selected.</summary>
     public List<string>? LeadTeamMemberIds { get; set; }
 
+    /// <summary>When true, My team hides the checkboxes and shows the saved names until Edit team.</summary>
+    public bool LeadTeamSaved { get; set; }
+
     /// <summary>When true, Leads is in the left navigation. The password that turns this on is not stored.</summary>
     public bool LeadsEnabled { get; set; }
+
+    /// <summary>
+    /// When true, Leads was unlocked in the locked city team. The password that turns this on is not stored.
+    /// Hide Leads clears it. The other password replaces it.
+    /// </summary>
+    public bool LeadsTeamLocked { get; set; }
 
     /// <summary>
     /// Legend keys that paint list rows. Null means the built-in defaults. An empty list means every highlight is off.

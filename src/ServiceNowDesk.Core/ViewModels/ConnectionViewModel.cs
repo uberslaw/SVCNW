@@ -54,6 +54,12 @@ public partial class ConnectionViewModel : ObservableObject
 
     public List<string> LeadTeamMemberIds { get; private set; } = [];
 
+    /// <summary>True after Save team. Checkboxes stay hidden across restart until Edit team.</summary>
+    public bool LeadTeamSaved { get; private set; }
+
+    /// <summary>True when the locked leads password is the mode currently in effect.</summary>
+    public bool LeadsTeamLocked { get; private set; }
+
     /// <summary>Null when the hardware tab has no saved office default.</summary>
     public List<string>? HardwareOfficeLocations { get; private set; }
 
@@ -88,7 +94,9 @@ public partial class ConnectionViewModel : ObservableObject
         Notifications.ApplyTo(settings);
         Highlights.ApplyTo(settings);
         settings.LeadTeamMemberIds = [.. LeadTeamMemberIds];
+        settings.LeadTeamSaved = LeadTeamSaved;
         settings.LeadsEnabled = LeadsEnabled;
+        settings.LeadsTeamLocked = LeadsTeamLocked;
         settings.HardwareOfficeLocations = CopyHardwareOffices(HardwareOfficeLocations);
         return settings;
     }
@@ -96,9 +104,10 @@ public partial class ConnectionViewModel : ObservableObject
     [RelayCommand]
     public void UnlockLeads()
     {
-        if (!LeadsAccess.Unlocks(LeadsPassword))
+        var entered = LeadsPassword;
+        if (!LeadsAccess.Unlocks(entered))
         {
-            if (string.IsNullOrEmpty(LeadsPassword))
+            if (string.IsNullOrEmpty(entered))
                 return;
 
             LeadsAccessStatus = LeadsAccess.WrongPasswordMessage;
@@ -108,6 +117,7 @@ public partial class ConnectionViewModel : ObservableObject
         LeadsPassword = "";
         LeadsAccessStatus = "";
         LeadsEnabled = true;
+        LeadsTeamLocked = LeadsAccess.IsLocked(entered);
         LeadsAccessChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -117,6 +127,7 @@ public partial class ConnectionViewModel : ObservableObject
         LeadsPassword = "";
         LeadsAccessStatus = "";
         LeadsEnabled = false;
+        LeadsTeamLocked = false;
         LeadsAccessChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -138,6 +149,8 @@ public partial class ConnectionViewModel : ObservableObject
             .Where(id => id.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    public void RememberLeadTeamSaved(bool saved) => LeadTeamSaved = saved;
 
     public void RememberHardwareOffices(IReadOnlyList<string>? offices) =>
         HardwareOfficeLocations = CopyHardwareOffices(offices);
@@ -164,7 +177,9 @@ public partial class ConnectionViewModel : ObservableObject
         LeadTeamMemberIds = settings.LeadTeamMemberIds is null
             ? []
             : settings.LeadTeamMemberIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        LeadTeamSaved = settings.LeadTeamSaved;
         LeadsEnabled = settings.LeadsEnabled;
+        LeadsTeamLocked = settings.LeadsEnabled && settings.LeadsTeamLocked;
         HardwareOfficeLocations = CopyHardwareOffices(settings.HardwareOfficeLocations);
         LeadsPassword = "";
         LeadsAccessStatus = "";

@@ -101,4 +101,10 @@ public interface IServiceNowClient : IDisposable
         IReadOnlyList<WorkEffortPerson> team,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Members of client services groups in <paramref name="city"/>.
+    /// A blank city returns an empty list and does not query the instance.
+    /// </summary>
+    Task<IReadOnlyList<LockedLeadPerson>> ListLockedLeadTeamAsync(string? city, CancellationToken cancellationToken);
 }

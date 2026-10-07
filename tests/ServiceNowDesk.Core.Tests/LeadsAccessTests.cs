@@ -19,7 +19,7 @@ public class LeadsAccessTests
         Assert.False(connection.LeadsEnabled);
         Assert.Equal("", connection.LeadsAccessStatus);
 
-        foreach (var wrong in new[] { "IDDQD", "Iddqd", "iddqD", " iddqd", "iddqd ", "idkfa", "nope" })
+        foreach (var wrong in new[] { "IDDQD", "Iddqd", "iddqD", " iddqd", "iddqd ", "IDKFA", "Idkfa", " idkfa", "idkfa ", "nope" })
         {
             connection.LeadsPassword = wrong;
             connection.UnlockLeads();
@@ -35,7 +35,52 @@ public class LeadsAccessTests
 
         connection.HideLeads();
         Assert.False(connection.LeadsEnabled);
+        Assert.False(connection.LeadsTeamLocked);
         Assert.Equal("", connection.LeadsPassword);
+    }
+
+    [Fact]
+    public void IdkfaLocksTheTeamAndIddqdStaysEditable()
+    {
+        var connection = new ConnectionViewModel();
+        connection.LeadsPassword = LeadsAccess.Password;
+        connection.UnlockLeads();
+        Assert.True(connection.LeadsEnabled);
+        Assert.False(connection.LeadsTeamLocked);
+        Assert.Equal("", connection.LeadsPassword);
+
+        connection.LeadsPassword = LeadsAccess.LockedPassword;
+        connection.UnlockLeads();
+        Assert.True(connection.LeadsEnabled);
+        Assert.True(connection.LeadsTeamLocked);
+        Assert.Equal("", connection.LeadsPassword);
+
+        var json = DeskSettingsFile.Serialize(connection.BuildSettings(), Protect);
+        Assert.Contains("\"LeadsTeamLocked\": true", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("idkfa", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("iddqd", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("LeadsPassword", json, StringComparison.Ordinal);
+
+        var again = new ConnectionViewModel();
+        again.Load(DeskSettingsFile.Deserialize(json, Unprotect));
+        Assert.True(again.LeadsEnabled);
+        Assert.True(again.LeadsTeamLocked);
+        Assert.Equal("", again.LeadsPassword);
+
+        again.LeadsPassword = "iddqd";
+        again.UnlockLeads();
+        Assert.True(again.LeadsEnabled);
+        Assert.False(again.LeadsTeamLocked);
+
+        again.LeadsPassword = "idkfa";
+        again.UnlockLeads();
+        again.HideLeads();
+        Assert.False(again.LeadsEnabled);
+        Assert.False(again.LeadsTeamLocked);
+        var hidden = DeskSettingsFile.Serialize(again.BuildSettings(), Protect);
+        Assert.Contains("\"LeadsEnabled\": false", hidden, StringComparison.Ordinal);
+        Assert.Contains("\"LeadsTeamLocked\": false", hidden, StringComparison.Ordinal);
+        Assert.DoesNotContain("idkfa", hidden, StringComparison.Ordinal);
     }
 
     [Fact]
