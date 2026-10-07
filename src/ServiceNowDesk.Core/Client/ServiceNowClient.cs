@@ -1330,6 +1330,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             var items = RequireArray(result.Document)
                 .EnumerateArray()
                 .Select(RecordMapper.Hardware)
+                .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
+                .Where(asset => HardwareCatalog.MatchesLocation(asset, query.Locations))
                 .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             return new PagedResult<HardwareAsset>(items, result.TotalCount);

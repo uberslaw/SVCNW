@@ -19,8 +19,9 @@ public static class HardwareCatalog
     public const string Computer = "Computer";
 
     /// <summary>
-    /// Offered on the hardware page even when the current asset page does not contain them.
-    /// They are choices, not a saved default.
+    /// City seeds offered before ServiceNow has been asked. They are not a saved default.
+    /// A seed that names the same place as a location record ("Brisbane" and "Brisbane Office")
+    /// is collapsed to the name stored on that location.
     /// </summary>
     public static readonly string[] KnownOfficeNames =
     [
@@ -146,39 +147,39 @@ public static class HardwareCatalog
         return names.Any(name => display.Contains(name, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Computer rows, restricted to the selected location names, ordered by serial.
+    /// Each office is its own complete clause joined with ^NQ. A parenthesized OR is not
+    /// used: ServiceNow drops that group, then sysparm_limit returns the first computers
+    /// in serial order from every city.
+    /// </summary>
     public static string ListQuery(string? text, IReadOnlyList<string>? locations = null)
     {
         var term = EncodedQuery.Sanitize(text);
-        var scope = ComputerScope(locations);
+        var places = OfficeNames(locations);
+        var branches = new List<string>();
+        if (places.Length == 0)
+            branches.AddRange(TextBranches("model_category.name=Computer", term));
+        else
+        {
+            foreach (var place in places)
+                branches.AddRange(TextBranches("model_category.name=Computer^location.nameLIKE" + Quote(place), term));
+        }
+
+        return string.Join("^NQ", branches) + "^ORDERBYserial_number";
+    }
+
+    private static IEnumerable<string> TextBranches(string scope, string term)
+    {
         if (term.Length == 0)
-            return scope + "^ORDERBYserial_number";
+        {
+            yield return scope;
+            yield break;
+        }
 
-        return string.Join("^NQ",
-        [
-            scope + "^serial_numberLIKE" + term,
-            scope + "^model.nameLIKE" + term,
-            scope + "^assigned_to.nameLIKE" + term
-        ]);
-    }
-
-    /// <summary>
-    /// Encoded location restriction. Empty when every office should be queried.
-    /// </summary>
-    public static string LocationClause(IReadOnlyList<string>? locations)
-    {
-        var names = OfficeNames(locations);
-        if (names.Length == 0)
-            return "";
-
-        var parts = names.Select(name => "location.nameLIKE" + Quote(name));
-        return names.Length == 1 ? parts.First() : "(" + string.Join("^OR", parts) + ")";
-    }
-
-    private static string ComputerScope(IReadOnlyList<string>? locations)
-    {
-        const string computers = "model_category.name=Computer";
-        var place = LocationClause(locations);
-        return place.Length == 0 ? computers : computers + "^" + place;
+        yield return scope + "^serial_numberLIKE" + term;
+        yield return scope + "^model.nameLIKE" + term;
+        yield return scope + "^assigned_to.nameLIKE" + term;
     }
 
     private static string[] OfficeNames(IReadOnlyList<string>? locations) =>
@@ -193,4 +194,86 @@ public static class HardwareCatalog
         var escaped = value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
         return "\"" + escaped + "\"";
     }
+}
+
+/// <summary>
+/// Where a hardware office label was first seen. Asset locations outrank the location
+/// table, which outranks the hardcoded city seeds.
+/// </summary>
+public enum HardwareOfficeLabelKind
+{
+    Seed = 0,
+    Account = 1,
+    Reference = 2,
+    Asset = 3
+}
+
+/// <summary>
+/// One checkbox per place. "Brisbane" and "Brisbane Office" are the same office.
+/// </summary>
+public static class HardwareOfficeNames
+{
+    public static string Normalize(string? name) => (name ?? "").Trim();
+
+    public static bool SamePlace(string? left, string? right)
+    {
+        var a = Normalize(left);
+        var b = Normalize(right);
+        if (a.Length == 0 || b.Length == 0)
+            return false;
+
+        if (a.Equals(b, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return IsLongerOfficeName(a, b) || IsLongerOfficeName(b, a);
+    }
+
+    /// <summary>
+    /// True when <paramref name="longer"/> is <paramref name="shorter"/> plus " Office".
+    /// </summary>
+    public static bool IsLongerOfficeName(string? longer, string? shorter)
+    {
+        var full = Normalize(longer);
+        var stem = Normalize(shorter);
+        if (full.Length == 0 || stem.Length == 0 || full.Length <= stem.Length)
+            return false;
+
+        const string suffix = " Office";
+        if (!full.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var without = full[..^suffix.Length].TrimEnd();
+        return without.Equals(stem, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="incoming"/> should replace the label already on the checkbox.
+    /// The name stored on a hardware asset wins. Otherwise a ServiceNow location name wins
+    /// over a hardcoded seed, and within that tier the "Office" form wins over the bare city.
+    /// </summary>
+    public static bool UseIncomingLabel(
+        string current,
+        HardwareOfficeLabelKind currentKind,
+        string incoming,
+        HardwareOfficeLabelKind incomingKind)
+    {
+        if (Normalize(current).Equals(Normalize(incoming), StringComparison.Ordinal))
+            return false;
+
+        var currentTier = Tier(currentKind);
+        var incomingTier = Tier(incomingKind);
+        if (incomingTier > currentTier)
+            return true;
+        if (incomingTier < currentTier)
+            return false;
+
+        return incomingTier > 0 && IsLongerOfficeName(incoming, current);
+    }
+
+    public static int Tier(HardwareOfficeLabelKind kind) => kind switch
+    {
+        HardwareOfficeLabelKind.Asset => 2,
+        HardwareOfficeLabelKind.Seed => 0,
+        _ => 1
+    };
 }
