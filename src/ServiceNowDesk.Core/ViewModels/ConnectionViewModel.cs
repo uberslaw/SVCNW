@@ -20,7 +20,7 @@ public partial class ConnectionViewModel : ObservableObject
         new(ServiceNowAuthMode.BrowserSession, "Browser sign-in (SSO)")
     ];
 
-    [ObservableProperty] private string instanceUrl = "";
+    [ObservableProperty] private string instanceUrl = DeskSettings.DefaultInstanceUrl;
     [ObservableProperty] private ServiceNowAuthMode authMode = ServiceNowAuthMode.Basic;
     [ObservableProperty] private string username = "";
     [ObservableProperty] private string password = "";
@@ -60,8 +60,11 @@ public partial class ConnectionViewModel : ObservableObject
     /// <summary>True when the locked leads password is the mode currently in effect.</summary>
     public bool LeadsTeamLocked { get; private set; }
 
-    /// <summary>Null when the hardware tab has no saved office default.</summary>
+    /// <summary>Null when the hardware tab has no saved office override.</summary>
     public List<string>? HardwareOfficeLocations { get; private set; }
+
+    /// <summary>True when <see cref="HardwareOfficeLocations"/> was set with Override office.</summary>
+    public bool HardwareOfficeOverride { get; private set; }
 
     partial void OnAuthModeChanged(ServiceNowAuthMode value) => SyncFlags();
     partial void OnUseSampleDataChanged(bool value) => SyncFlags();
@@ -77,7 +80,7 @@ public partial class ConnectionViewModel : ObservableObject
     {
         var settings = new DeskSettings
         {
-            InstanceUrl = InstanceUrl.Trim(),
+            InstanceUrl = string.IsNullOrWhiteSpace(InstanceUrl) ? DeskSettings.DefaultInstanceUrl : InstanceUrl.Trim(),
             AuthMode = AuthMode,
             Username = Username.Trim(),
             Password = Password,
@@ -97,7 +100,10 @@ public partial class ConnectionViewModel : ObservableObject
         settings.LeadTeamSaved = LeadTeamSaved;
         settings.LeadsEnabled = LeadsEnabled;
         settings.LeadsTeamLocked = LeadsTeamLocked;
-        settings.HardwareOfficeLocations = CopyHardwareOffices(HardwareOfficeLocations);
+        settings.HardwareOfficeLocations = HardwareOfficeOverride
+            ? CopyHardwareOffices(HardwareOfficeLocations) ?? []
+            : CopyHardwareOffices(HardwareOfficeLocations);
+        settings.HardwareOfficeOverride = HardwareOfficeOverride;
         return settings;
     }
 
@@ -152,14 +158,21 @@ public partial class ConnectionViewModel : ObservableObject
 
     public void RememberLeadTeamSaved(bool saved) => LeadTeamSaved = saved;
 
-    public void RememberHardwareOffices(IReadOnlyList<string>? offices) =>
-        HardwareOfficeLocations = CopyHardwareOffices(offices);
+    public void RememberHardwareOffices(IReadOnlyList<string>? offices, bool overridden)
+    {
+        HardwareOfficeOverride = overridden;
+        HardwareOfficeLocations = overridden
+            ? CopyHardwareOffices(offices) ?? []
+            : CopyHardwareOffices(offices);
+    }
 
     public void Load(DeskSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         _loadingSettings = true;
-        InstanceUrl = settings.InstanceUrl ?? "";
+        InstanceUrl = string.IsNullOrWhiteSpace(settings.InstanceUrl)
+            ? DeskSettings.DefaultInstanceUrl
+            : settings.InstanceUrl.Trim();
         AuthMode = settings.AuthMode;
         Username = settings.Username ?? "";
         Password = settings.Password ?? "";
@@ -181,6 +194,7 @@ public partial class ConnectionViewModel : ObservableObject
         LeadsEnabled = settings.LeadsEnabled;
         LeadsTeamLocked = settings.LeadsEnabled && settings.LeadsTeamLocked;
         HardwareOfficeLocations = CopyHardwareOffices(settings.HardwareOfficeLocations);
+        HardwareOfficeOverride = settings.HardwareOfficeOverride;
         LeadsPassword = "";
         LeadsAccessStatus = "";
         SyncFlags();

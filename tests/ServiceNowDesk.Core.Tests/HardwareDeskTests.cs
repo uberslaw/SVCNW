@@ -384,7 +384,7 @@ public class HardwareDeskTests
     }
 
     [Fact]
-    public async Task SavedMultiOfficeDefaultIsWhatTheInitialHardwareQueryUses()
+    public async Task SavedMultiOfficeListDoesNotReplaceTheAccountOffice()
     {
         using var client = new SampleServiceNowClient();
         client.SignedInUser = ViewerAt("Hong Kong Office");
@@ -398,18 +398,16 @@ public class HardwareDeskTests
         workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
         await workspace.RefreshAsync();
 
-        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
-        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
-        Assert.True(workspace.Offices.Single(office => office.Name == "Brisbane Office").IsSelected);
-        Assert.Contains("Maroochydore", client.LastHardwareQuery);
-        Assert.Contains("Gold Coast", client.LastHardwareQuery);
-        Assert.Contains("Townsville", client.LastHardwareQuery);
-        Assert.Contains("Cairns", client.LastHardwareQuery);
-        Assert.DoesNotContain("Hong Kong", client.LastHardwareQuery);
-        Assert.Equal(2, workspace.Items.Count);
-        Assert.All(workspace.Items, asset => Assert.Contains("Brisbane", asset.Location.Display, StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(1, HardwareGets(client));
-        Assert.False(workspace.Offices.Single(office => office.Name == "Hong Kong Office").IsSelected);
+        Assert.Equal("Your office: Hong Kong Office", workspace.AccountOfficeText);
+        Assert.Contains("Showing your office: Hong Kong Office.", workspace.OfficeStatus);
+        Assert.Contains("location.name=\"Hong Kong Office\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Hong Kong\"", client.LastHardwareQuery);
+        Assert.DoesNotContain("location.nameIN", client.LastHardwareQuery);
+        Assert.DoesNotContain("Maroochydore", client.LastHardwareQuery);
+        Assert.DoesNotContain("Brisbane", client.LastHardwareQuery);
+        Assert.Equal("Hong Kong Office", Assert.Single(workspace.Items).Location.Display);
+        Assert.True(workspace.Offices.Single(office => office.Name == "Hong Kong Office").IsSelected);
+        Assert.False(workspace.Offices.Single(office => office.Name == "Brisbane Office").IsSelected);
     }
 
     [Fact]
@@ -486,20 +484,23 @@ public class HardwareDeskTests
         workspace.Offices.Single(office => office.Name == "Brisbane Office").IsSelected = true;
         workspace.Offices.Single(office => office.Name == "Cairns").IsSelected = true;
         await workspace.OfficeLoad;
-        workspace.SetDefaultOfficesCommand.Execute(null);
+        await workspace.OverrideOfficeCommand.ExecuteAsync(null);
 
         Assert.Equal(["Brisbane Office", "Cairns"], store.Load().HardwareOfficeLocations);
-        Assert.Contains("Default saved: Brisbane Office, Cairns.", workspace.OfficeStatus);
+        Assert.True(store.Load().HardwareOfficeOverride);
+        Assert.Contains("Showing override: Brisbane Office, Cairns.", workspace.OfficeStatus);
 
         var json = DeskSettingsFile.Serialize(store.Load(), value => value ?? "");
         var roundTrip = DeskSettingsFile.Deserialize(json, value => value ?? "");
         Assert.Equal(["Brisbane Office", "Cairns"], roundTrip.HardwareOfficeLocations);
+        Assert.True(roundTrip.HardwareOfficeOverride);
         Assert.Equal(["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"], roundTrip.OfficeLocations);
 
         var connection = new ConnectionViewModel();
         connection.Load(roundTrip);
         var built = connection.BuildSettings();
         Assert.Equal(["Brisbane Office", "Cairns"], built.HardwareOfficeLocations);
+        Assert.True(built.HardwareOfficeOverride);
         Assert.Equal(["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"], built.OfficeLocations);
 
         client.SignedInUser = ViewerAt("Hong Kong Office");
@@ -568,7 +569,8 @@ public class HardwareDeskTests
         var store = new MemorySettingsStore();
         store.Save(new DeskSettings
         {
-            HardwareOfficeLocations = ["  brisbane ", "Townsville", "Cairns"]
+            HardwareOfficeLocations = ["  brisbane ", "Townsville", "Cairns"],
+            HardwareOfficeOverride = true
         });
         var workspace = new HardwareWorkspaceViewModel(store);
         workspace.Attach(client);
@@ -650,7 +652,7 @@ public class HardwareDeskTests
         using var client = new SampleServiceNowClient();
         client.AddComputer(HongKongVm("0000-0000-0353"));
         var store = new MemorySettingsStore();
-        store.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane"] });
+        store.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane"], HardwareOfficeOverride = true });
         var workspace = new HardwareWorkspaceViewModel(store);
         workspace.Attach(client);
         await workspace.RefreshAsync();
@@ -689,7 +691,8 @@ public class HardwareDeskTests
         Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
         Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
         Assert.DoesNotContain("(", client.LastHardwareQuery);
-        Assert.Contains("Showing Brisbane.", workspace.OfficeStatus);
+        Assert.Equal("Your office: Brisbane", workspace.AccountOfficeText);
+        Assert.Contains("Showing your office: Brisbane.", workspace.OfficeStatus);
         Assert.True(HardwareCatalog.MatchesLocation(new HardwareAsset
         {
             Location = new ReferenceValue("loc", "Brisbane Office"),
@@ -718,7 +721,7 @@ public class HardwareDeskTests
             InstallStatusLabel = HardwareCatalog.InUse
         });
         var store = new MemorySettingsStore();
-        store.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane Office"] });
+        store.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane Office"], HardwareOfficeOverride = true });
         var workspace = new HardwareWorkspaceViewModel(store);
         workspace.Attach(client);
         await workspace.RefreshAsync();
@@ -738,7 +741,7 @@ public class HardwareDeskTests
         client.RemoveHardware(asset => HardwareOfficeNames.SamePlace(asset.Location.Display, "Brisbane"));
         client.AddComputer(HongKongVm("0000-0000-0999"));
         var store = new MemorySettingsStore();
-        store.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane"] });
+        store.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane"], HardwareOfficeOverride = true });
         var workspace = new HardwareWorkspaceViewModel(store);
         workspace.Attach(client);
         await workspace.RefreshAsync();
@@ -787,6 +790,107 @@ public class HardwareDeskTests
         Assert.True(HardwareGets(client) > afterSelect);
         Assert.Equal("All locations", workspace.OfficeSelectionSummary);
         Assert.Contains(workspace.Items, asset => asset.Location.Display == "Hong Kong Office");
+    }
+
+    [Fact]
+    public async Task AccountOfficeIsTheDefaultAndOverrideCanReplaceIt()
+    {
+        using var client = new SampleServiceNowClient();
+        client.AddComputer(new HardwareAsset
+        {
+            SysId = "hw-cns",
+            SerialNumber = "CNS0001",
+            Model = "HP ZBook",
+            ModelCategory = HardwareCatalog.Computer,
+            Location = new ReferenceValue("loc-cns", "Cairns"),
+            InstallStatus = HardwareCatalog.InUse,
+            InstallStatusLabel = HardwareCatalog.InUse
+        });
+        client.SignedInUser = ViewerAt("Brisbane");
+        var store = new MemorySettingsStore();
+        var workspace = new HardwareWorkspaceViewModel(store);
+        workspace.Attach(client);
+        workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
+        await workspace.RefreshAsync();
+
+        Assert.Equal("Your office: Brisbane", workspace.AccountOfficeText);
+        Assert.Contains("Showing your office: Brisbane.", workspace.OfficeStatus);
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.DoesNotContain("location.nameIN", client.LastHardwareQuery);
+        Assert.DoesNotContain("Hong Kong", client.LastHardwareQuery);
+        Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
+        Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
+
+        foreach (var office in workspace.Offices.Where(office => office.IsSelected).ToArray())
+            office.IsSelected = false;
+        await workspace.OfficeLoad;
+        workspace.Offices.Single(office => office.Name == "Cairns").IsSelected = true;
+        await workspace.OfficeLoad;
+        await workspace.OverrideOfficeCommand.ExecuteAsync(null);
+
+        Assert.Contains("Showing override: Cairns.", workspace.OfficeStatus);
+        Assert.Contains("location.name=\"Cairns\"", client.LastHardwareQuery);
+        Assert.DoesNotContain("location.nameIN", client.LastHardwareQuery);
+        Assert.DoesNotContain("Hong Kong", client.LastHardwareQuery);
+        Assert.Equal("CNS0001", Assert.Single(workspace.Items).SerialNumber);
+        Assert.Equal(["Cairns"], store.Load().HardwareOfficeLocations);
+        Assert.True(store.Load().HardwareOfficeOverride);
+
+        await workspace.ClearOverrideCommand.ExecuteAsync(null);
+
+        Assert.Contains("Showing your office: Brisbane.", workspace.OfficeStatus);
+        Assert.Contains("location.name=\"Brisbane\"", client.LastHardwareQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
+        Assert.DoesNotContain(workspace.Items, asset => asset.SerialNumber == "CNS0001");
+        Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
+        Assert.False(store.Load().HardwareOfficeOverride);
+        Assert.Null(store.Load().HardwareOfficeLocations);
+
+        using var open = new SampleServiceNowClient();
+        var anywhere = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+        anywhere.Attach(open);
+        anywhere.RememberViewer(await open.GetCurrentUserAsync(CancellationToken.None));
+        await anywhere.RefreshAsync();
+
+        Assert.Equal("No location on the signed-in account.", anywhere.AccountOfficeText);
+        Assert.Contains("No location on the signed-in account", anywhere.OfficeStatus);
+        Assert.DoesNotContain("location.name", open.LastHardwareQuery);
+        Assert.Contains(anywhere.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
+
+        anywhere.Offices.Single(office => office.Name == "Cairns").IsSelected = true;
+        await anywhere.OfficeLoad;
+        await anywhere.OverrideOfficeCommand.ExecuteAsync(null);
+        Assert.Contains("Showing override: Cairns.", anywhere.OfficeStatus);
+        Assert.Contains("location.name=\"Cairns\"", open.LastHardwareQuery);
+        Assert.DoesNotContain("Hong Kong", open.LastHardwareQuery);
+    }
+
+    [Fact]
+    public void BlankInstanceUrlBecomesArupAndASavedUrlIsKept()
+    {
+        var connection = new ConnectionViewModel();
+        connection.Load(new DeskSettings { InstanceUrl = "   " });
+        Assert.Equal("https://arup.service-now.com", connection.InstanceUrl);
+
+        connection.Load(DeskSettingsFile.Deserialize("{\"InstanceUrl\":\"\"}", value => value ?? ""));
+        Assert.Equal(DeskSettings.DefaultInstanceUrl, connection.InstanceUrl);
+        Assert.Equal(
+            ServiceNowSession.NormalizeInstance("https://arup.service-now.com/"),
+            ServiceNowSession.NormalizeInstance(connection.InstanceUrl));
+
+        connection.InstanceUrl = "https://kept.service-now.com/";
+        var saved = connection.BuildSettings();
+        Assert.Equal("https://kept.service-now.com/", saved.InstanceUrl);
+
+        var again = new ConnectionViewModel();
+        again.Load(saved);
+        Assert.Equal("https://kept.service-now.com/", again.InstanceUrl);
+        Assert.Equal(
+            ServiceNowSession.NormalizeInstance("https://kept.service-now.com/"),
+            ServiceNowSession.NormalizeInstance("https://kept.service-now.com"));
+        Assert.NotEqual(DeskSettings.DefaultInstanceUrl, again.BuildSettings().InstanceUrl);
     }
 
     private static HardwareAsset HongKongVm(string serial) => new()

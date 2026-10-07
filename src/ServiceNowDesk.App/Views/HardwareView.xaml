@@ -81,7 +81,8 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <TextBlock Text="Offices" Style="{StaticResource FieldLabel}"/>
-                    <TextBlock Text="Type to find an office. Check one or more to load that portion. All locations searches the full asset list. Set as default remembers the selection on this PC." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <TextBlock Text="{Binding AccountOfficeText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <TextBlock Text="The list starts at the office on the signed-in account. Type to find an office. Check one or more to load that portion. Override office remembers the checked offices, or every location when none are checked, on this PC. Clear override returns to your office. All locations searches the full asset list." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <TextBox Text="{Binding OfficeSearchText, UpdateSourceTrigger=PropertyChanged}"
                              MinHeight="28" Padding="6,4" Margin="0,0,0,6"
                              AutomationProperties.Name="Find office"/>
@@ -100,7 +101,8 @@
                     <TextBlock Text="{Binding OfficeSelectionSummary}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                         <Button Content="All locations" Style="{StaticResource SecondaryButton}" Command="{Binding SearchAllLocationsCommand}" Margin="0,0,8,0"/>
-                        <Button Content="Set as default" Style="{StaticResource SecondaryButton}" Command="{Binding SetDefaultOfficesCommand}"/>
+                        <Button Content="Override office" Style="{StaticResource SecondaryButton}" Command="{Binding OverrideOfficeCommand}" Margin="0,0,8,0"/>
+                        <Button Content="Clear override" Style="{StaticResource SecondaryButton}" Command="{Binding ClearOverrideCommand}"/>
                     </StackPanel>
                     <TextBlock Text="{Binding OfficeStatus}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                Visibility="{Binding OfficeStatus, Converter={StaticResource StringVis}}"/>

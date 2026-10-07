@@ -186,6 +186,7 @@ public class EncodedQueryTests
 
     [Theory]
     [InlineData("company.service-now.com", "https://company.service-now.com/")]
+    [InlineData("https://company.service-now.com/", "https://company.service-now.com/")]
     [InlineData("https://company.service-now.com/incident.do?sys_id=abc", "https://company.service-now.com/")]
     public void InstanceUrlDropsThePageAndKeepsTheHost(string input, string expected)
     {
