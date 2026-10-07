@@ -54,6 +54,8 @@ public static class DeskSettingsFile
         public int? NotificationPollSeconds { get; set; }
         public bool? DownloadCacheOnLaunch { get; set; }
         public List<string>? EnabledHighlights { get; set; }
+        public int? LegendIntensity { get; set; }
+        public Dictionary<string, int>? LegendColorIntensities { get; set; }
         public List<string>? LeadTeamMemberIds { get; set; }
         public bool LeadsEnabled { get; set; }
 
@@ -85,6 +87,8 @@ public static class DeskSettingsFile
             NotificationPollSeconds = settings.NotificationPollSeconds,
             DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch,
             EnabledHighlights = settings.EnabledHighlights is null ? null : [.. settings.EnabledHighlights],
+            LegendIntensity = settings.LegendIntensity,
+            LegendColorIntensities = CopyIntensities(settings.LegendColorIntensities),
             LeadTeamMemberIds = settings.LeadTeamMemberIds is null ? [] : [.. settings.LeadTeamMemberIds],
             LeadsEnabled = settings.LeadsEnabled
         };
@@ -117,8 +121,13 @@ public static class DeskSettingsFile
             NotificationPollSeconds = NotificationPollSeconds ?? 60,
             DownloadCacheOnLaunch = DownloadCacheOnLaunch ?? true,
             EnabledHighlights = EnabledHighlights is null ? null : [.. EnabledHighlights],
+            LegendIntensity = LegendIntensity,
+            LegendColorIntensities = CopyIntensities(LegendColorIntensities),
             LeadTeamMemberIds = LeadTeamMemberIds is null ? [] : [.. LeadTeamMemberIds],
             LeadsEnabled = LeadsEnabled
         };
+
+        private static Dictionary<string, int>? CopyIntensities(Dictionary<string, int>? intensities) =>
+            intensities is null ? null : new Dictionary<string, int>(intensities, StringComparer.OrdinalIgnoreCase);
     }
 }

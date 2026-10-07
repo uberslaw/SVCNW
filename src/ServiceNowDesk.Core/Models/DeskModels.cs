@@ -191,6 +191,18 @@ public sealed class DeskSettings
     /// Legend keys that paint list rows. Null means the built-in defaults. An empty list means every highlight is off.
     /// </summary>
     public List<string>? EnabledHighlights { get; set; }
+
+    /// <summary>
+    /// Shared legend colour intensity, 0–100. Null means today's colours (100).
+    /// All-at-once writes this and clears <see cref="LegendColorIntensities"/>.
+    /// </summary>
+    public int? LegendIntensity { get; set; }
+
+    /// <summary>
+    /// Intensity for one legend colour, 0–100, keyed by highlight catalog key.
+    /// Null means every colour uses <see cref="LegendIntensity"/>.
+    /// </summary>
+    public Dictionary<string, int>? LegendColorIntensities { get; set; }
 }
 
 public sealed class ServiceNowSession

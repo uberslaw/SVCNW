@@ -8,6 +8,27 @@
                 <StackPanel DataContext="{Binding Legend}">
                     <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
                                Text="The light red row is Unassigned: nobody is assigned. The other colors are light tints of the notification circles, and they follow the tickets in those queues. Turn any highlight on or off. The choice is saved on this PC. When a ticket matches more than one highlight that is on, the entry higher in this list is the color on the row. Hover and the selected row keep the usual teal. In the SLA breaching notification list, Assigned to names the person, and SLA assigned to you paints that row light green. The same colors sit above Incidents, Request items, Walk-up, Search, Notifications, and Leads."/>
+                    <DockPanel Margin="0,0,0,4" LastChildFill="True">
+                        <CheckBox DockPanel.Dock="Right" Content="Adjust individually" VerticalAlignment="Center" Margin="12,0,0,0"
+                                  IsChecked="{Binding AdjustIndividually}"
+                                  AutomationProperties.Name="Adjust legend colours individually"/>
+                        <TextBlock Text="{Binding IntensityCaption}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,6" LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="Set" Style="{StaticResource ChipButton}" Margin="8,0,0,0"
+                                VerticalAlignment="Center" Padding="12,4"
+                                Command="{Binding SetIntensityCommand}"
+                                Visibility="{Binding AdjustIndividually, Converter={StaticResource BoolVis}}"
+                                AutomationProperties.Name="Set colour intensity"/>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding SliderValue}" Width="28" Margin="8,0,0,0"
+                                   VerticalAlignment="Center" FontWeight="SemiBold" TextAlignment="Right"/>
+                        <Slider Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" IsMoveToPointEnabled="True"
+                                SmallChange="1" LargeChange="10" VerticalAlignment="Center"
+                                Value="{Binding SliderValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                AutomationProperties.Name="Legend colour intensity"/>
+                    </DockPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,14"
+                               Text="100 matches today's colours. Moving the slider washes every swatch and row tint toward white. Tick Adjust individually, click a colour, move the slider, then press Set. Only that colour changes, and only when Set is pressed."/>
                     <ItemsControl ItemsSource="{Binding Entries}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -15,11 +36,34 @@
                                     <CheckBox DockPanel.Dock="Right" Content="Show on rows" VerticalAlignment="Center" Margin="12,0,0,0"
                                               IsChecked="{Binding IsEnabled}"
                                               AutomationProperties.Name="{Binding Title, StringFormat=Show {0} highlight}"/>
-                                    <Border DockPanel.Dock="Left" Width="14" Height="14" CornerRadius="7" Margin="0,3,8,0" VerticalAlignment="Top"
-                                            Background="{Binding SwatchHex, Converter={StaticResource HexBrush}}"/>
-                                    <Border DockPanel.Dock="Left" Width="44" Height="18" CornerRadius="4" Margin="0,2,12,0" VerticalAlignment="Top"
-                                            BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                                            Background="{Binding RowHex, Converter={StaticResource HexBrush}}"/>
+                                    <Button DockPanel.Dock="Left" Command="{Binding SelectCommand}" Cursor="Hand"
+                                            Margin="0,0,12,0" VerticalAlignment="Top" HorizontalAlignment="Left"
+                                            Padding="2" Focusable="True"
+                                            AutomationProperties.Name="{Binding Title, StringFormat=Select {0} colour}">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="Transparent" BorderThickness="2" CornerRadius="6" Padding="2">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="BorderBrush" Value="Transparent"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border Width="14" Height="14" CornerRadius="7" Margin="0,2,8,0" VerticalAlignment="Center"
+                                                                Background="{Binding SwatchHex, Converter={StaticResource HexBrush}}"/>
+                                                        <Border Width="44" Height="18" CornerRadius="4" VerticalAlignment="Center"
+                                                                BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                                                Background="{Binding RowHex, Converter={StaticResource HexBrush}}"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
                                     <StackPanel>
                                         <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
                                         <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0"/>
