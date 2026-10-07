@@ -4,6 +4,7 @@ using System.Text;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.Services;
 using ServiceNowDesk.ViewModels;
 
 namespace ServiceNowDesk.Tests;
@@ -413,6 +414,48 @@ public class AlertTests
         Assert.False(schedule.Arm(TimeSpan.FromSeconds(10)));
         Assert.Equal(1, schedule.ArmCount);
         Assert.True(schedule.IsRunning);
+    }
+
+    [Fact]
+    public void JiggleFrequencyCapsAtOneHour()
+    {
+        Assert.Equal(TimeSpan.FromHours(1), NotificationPreferences.MaximumFrequency);
+        Assert.Equal("01:00:00", NotificationPreferences.MaximumFrequencyText);
+        Assert.True(NotificationPreferences.TryParseFrequency("01:00:00", out var oneHour));
+        Assert.Equal(TimeSpan.FromHours(1), oneHour);
+        Assert.Equal("01:00:00", NotificationPreferences.FormatFrequency(TimeSpan.FromHours(2)));
+
+        var settings = new NotificationSettingsViewModel();
+        settings.FrequencyText = "01:00:00";
+        settings.SaveSettingsCommand.Execute(null);
+        Assert.Equal("01:00:00", settings.Committed.JiggleFrequency);
+        Assert.Equal(TimeSpan.FromHours(1), settings.ActiveJiggleInterval);
+        Assert.Contains("saved", settings.SettingsMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("cannot exceed", settings.SettingsMessage, StringComparison.OrdinalIgnoreCase);
+
+        settings.FrequencyText = "01:00:01";
+        settings.SaveSettingsCommand.Execute(null);
+        Assert.Equal("01:00:00", settings.Committed.JiggleFrequency);
+        Assert.Equal("01:00:00", settings.FrequencyText);
+        Assert.Equal(TimeSpan.FromHours(1), settings.ActiveJiggleInterval);
+        Assert.Contains("cannot exceed 01:00:00", settings.SettingsMessage, StringComparison.Ordinal);
+        Assert.Contains("previous value", settings.SettingsMessage, StringComparison.OrdinalIgnoreCase);
+
+        settings.FrequencyText = "02:00:00";
+        settings.SaveSettingsCommand.Execute(null);
+        Assert.Equal("01:00:00", settings.Committed.JiggleFrequency);
+        Assert.Equal("01:00:00", settings.FrequencyText);
+        Assert.Contains("cannot exceed 01:00:00", settings.SettingsMessage, StringComparison.Ordinal);
+
+        var loaded = NotificationPreferences.From(new DeskSettings { JiggleFrequency = "03:30:00" });
+        Assert.Equal("01:00:00", loaded.JiggleFrequency);
+        Assert.Equal(TimeSpan.FromHours(1), loaded.JiggleInterval);
+
+        var fromFile = DeskSettingsFile.Deserialize(
+            """{"JiggleFrequency":"02:15:00"}""",
+            text => text ?? "");
+        Assert.Equal("01:00:00", fromFile.JiggleFrequency);
+        Assert.Equal("01:00:00", NotificationPreferences.From(fromFile).JiggleFrequency);
     }
 
     [Fact]

@@ -6,6 +6,8 @@ namespace ServiceNowDesk.Alerts;
 public sealed class NotificationPreferences
 {
     public const string DefaultFrequency = "00:01:00";
+    public const string MaximumFrequencyText = "01:00:00";
+    public static readonly TimeSpan MaximumFrequency = TimeSpan.FromHours(1);
     public const int DefaultDurationSeconds = 2;
     public const int DefaultPollSeconds = 60;
     public const int MinimumDurationSeconds = 1;
@@ -35,7 +37,9 @@ public sealed class NotificationPreferences
     public int PollSeconds { get; set; } = DefaultPollSeconds;
 
     public TimeSpan JiggleInterval =>
-        TryParseFrequency(JiggleFrequency, out var frequency) ? frequency : TimeSpan.FromMinutes(1);
+        TryParseFrequency(JiggleFrequency, out var frequency)
+            ? ClampFrequency(frequency)
+            : TimeSpan.FromMinutes(1);
 
     public static bool TryParseFrequency(string? text, out TimeSpan frequency)
     {
@@ -49,6 +53,12 @@ public sealed class NotificationPreferences
 
         return frequency > TimeSpan.Zero;
     }
+
+    public static TimeSpan ClampFrequency(TimeSpan frequency) =>
+        frequency > MaximumFrequency ? MaximumFrequency : frequency;
+
+    public static string FormatFrequency(TimeSpan frequency) =>
+        ClampFrequency(frequency).ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
 
     public static bool TryParseDuration(string? text, out int seconds) =>
         TryParseMinimum(text, MinimumDurationSeconds, out seconds);
@@ -75,7 +85,7 @@ public sealed class NotificationPreferences
         if (!TryParseFrequency(frequency, out var parsed))
             frequency = DefaultFrequency;
         else
-            frequency = parsed.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+            frequency = FormatFrequency(parsed);
 
         return new NotificationPreferences
         {

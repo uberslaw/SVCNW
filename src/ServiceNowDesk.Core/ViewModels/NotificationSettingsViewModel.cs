@@ -72,13 +72,18 @@ public partial class NotificationSettingsViewModel : ObservableObject
     {
         var next = _committed.Copy();
         var errors = new List<string>();
-        if (NotificationPreferences.TryParseFrequency(FrequencyText, out var frequency))
-            next.JiggleFrequency = frequency.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
-        else
+        if (!NotificationPreferences.TryParseFrequency(FrequencyText, out var frequency))
         {
             errors.Add("Jiggle frequency must be HH:MM:SS.");
             FrequencyText = _committed.JiggleFrequency;
         }
+        else if (frequency > NotificationPreferences.MaximumFrequency)
+        {
+            errors.Add("Jiggle frequency cannot exceed 01:00:00 (1 hour).");
+            FrequencyText = _committed.JiggleFrequency;
+        }
+        else
+            next.JiggleFrequency = NotificationPreferences.FormatFrequency(frequency);
 
         if (NotificationPreferences.TryParseDuration(DurationText, out var duration))
             next.JiggleDurationSeconds = duration;
