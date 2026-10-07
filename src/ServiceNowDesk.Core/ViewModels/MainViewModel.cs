@@ -107,6 +107,12 @@ public partial class MainViewModel : ObservableObject
             if (IsConnected)
                 RefreshAlerts();
         };
+        Leads.WorkEffortRequested += (_, _) => _ = LoadWorkEffortAsync();
+        Leads.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(LeadsViewModel.Area) && SelectedSection == DeskSection.Leads)
+                ShowRowLegend = Leads.Area != LeadArea.WorkEffort;
+        };
         Incidents.PrepareRow = _rows.Paint;
         Requests.PrepareRow = _rows.Paint;
         RequestedItems.PrepareRow = _rows.Paint;
@@ -287,7 +293,11 @@ public partial class MainViewModel : ObservableObject
             }
 
             if (epoch == _sessionEpoch)
+            {
                 _ = LoadLeadRosterAsync();
+                if (SelectedSection == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
+                    _ = LoadWorkEffortAsync();
+            }
 
             if (epoch != _sessionEpoch)
                 return;
@@ -554,6 +564,8 @@ public partial class MainViewModel : ObservableObject
             or DeskSection.Search
             or DeskSection.Notifications
             or DeskSection.Leads;
+        if (value == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
+            ShowRowLegend = false;
         UpdateBack();
         if (IsConnected && !_openingRecord && !_preserveNavigation && !_startupGate)
             _ = EnsureSectionAsync();
@@ -642,6 +654,8 @@ public partial class MainViewModel : ObservableObject
             case DeskSection.Leads:
                 RefreshAlerts();
                 _ = LoadLeadRosterAsync();
+                if (Leads.Area == LeadArea.WorkEffort)
+                    _ = LoadWorkEffortAsync();
                 break;
             case DeskSection.DailyWork:
                 RefreshAlerts();
@@ -1349,6 +1363,51 @@ public partial class MainViewModel : ObservableObject
     {
         foreach (var row in rows)
             _rows.Paint(row);
+    }
+
+    private int _workEffortGeneration;
+
+    private async Task LoadWorkEffortAsync()
+    {
+        if (Leads.Area != LeadArea.WorkEffort)
+            return;
+
+        var client = _client;
+        if (client is null || !IsConnected)
+        {
+            Leads.WorkEffort.ShowError("Connect to load work effort.");
+            return;
+        }
+
+        var generation = ++_workEffortGeneration;
+        var scale = Leads.WorkEffort.Scale;
+        var localNow = DateTime.Now;
+        Leads.WorkEffort.MarkLoading();
+        try
+        {
+            var report = await client.GetWorkEffortAsync(scale, localNow, CancellationToken.None).ConfigureAwait(false);
+            PostToUi(() =>
+            {
+                if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
+                    return;
+                if (Leads.Area != LeadArea.WorkEffort || Leads.WorkEffort.Scale != scale)
+                    return;
+                Leads.WorkEffort.Show(report);
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            var message = WorkspaceMessages.Describe(ex);
+            PostToUi(() =>
+            {
+                if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
+                    return;
+                Leads.WorkEffort.ShowError(message);
+            });
+        }
     }
 
     private async Task LoadLeadRosterAsync()

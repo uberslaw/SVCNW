@@ -1,12 +1,17 @@
 <UserControl x:Class="ServiceNowDesk.Views.LeadsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="EffortRow" TargetType="ListBoxItem" BasedOn="{StaticResource DeskListItem}">
+            <Setter Property="Cursor" Value="Arrow"/>
+        </Style>
+    </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel MaxWidth="980" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Leads" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12">
                 <TextBlock.Text>
-                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. The ticked names are saved on this PC. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report."/>
+                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. The ticked names are saved on this PC. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work effort counts everyone in your groups."/>
                 </TextBlock.Text>
             </TextBlock>
 
@@ -14,118 +19,219 @@
                 <RadioButton GroupName="LeadArea" Content="My team" Margin="0,0,18,0"
                              IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=Team}"
                              AutomationProperties.Name="My team"/>
-                <RadioButton GroupName="LeadArea" Content="Regional"
+                <RadioButton GroupName="LeadArea" Content="Regional" Margin="0,0,18,0"
                              IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=Regional}"
                              AutomationProperties.Name="Regional"/>
+                <RadioButton GroupName="LeadArea" Content="Work effort"
+                             IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=WorkEffort}"
+                             AutomationProperties.Name="Work effort"/>
             </StackPanel>
 
-            <TextBlock Text="{Binding RosterNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                       Visibility="{Binding RosterNote, Converter={StaticResource StringVis}}"/>
-            <ItemsControl ItemsSource="{Binding Members}" Margin="0,0,0,8"
-                          Visibility="{Binding ShowRoster, Converter={StaticResource BoolVis}}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,0,16,8"
-                                  AutomationProperties.Name="{Binding Name, StringFormat=Team {0}}"/>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <TextBlock Text="{Binding TeamPrompt}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                       Visibility="{Binding TeamPrompt, Converter={StaticResource StringVis}}"/>
+            <StackPanel Visibility="{Binding ShowQueues, Converter={StaticResource BoolVis}}">
+                <TextBlock Text="{Binding RosterNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                           Visibility="{Binding RosterNote, Converter={StaticResource StringVis}}"/>
+                <ItemsControl ItemsSource="{Binding Members}" Margin="0,0,0,8"
+                              Visibility="{Binding ShowRoster, Converter={StaticResource BoolVis}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,0,16,8"
+                                      AutomationProperties.Name="{Binding Name, StringFormat=Team {0}}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{Binding TeamPrompt}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                           Visibility="{Binding TeamPrompt, Converter={StaticResource StringVis}}"/>
 
-            <ItemsControl ItemsSource="{Binding Board.Circles}" Margin="0,0,0,8">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Button Margin="0,0,8,8" Cursor="Hand" Padding="10,6"
-                                Command="{Binding DataContext.Board.SelectQueueCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                CommandParameter="{Binding Kind}"
-                                AutomationProperties.Name="{Binding StatusLabel}">
-                            <Button.Template>
-                                <ControlTemplate TargetType="Button">
-                                    <Border x:Name="Bd" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Ellipse Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
-                                            <ContentPresenter/>
-                                        </StackPanel>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
-                                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                        </DataTrigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Button.Template>
-                            <TextBlock Text="{Binding StatusLabel}"/>
-                        </Button>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <TextBlock Text="{Binding Board.SelectedStatus}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
-                       Visibility="{Binding Board.SelectedStatus, Converter={StaticResource StringVis}}"/>
+                <ItemsControl ItemsSource="{Binding Board.Circles}" Margin="0,0,0,8">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Margin="0,0,8,8" Cursor="Hand" Padding="10,6"
+                                    Command="{Binding DataContext.Board.SelectQueueCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding Kind}"
+                                    AutomationProperties.Name="{Binding StatusLabel}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bd" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="14" Height="14" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{Binding Kind, Converter={StaticResource AlertBrush}}"/>
+                                                <ContentPresenter/>
+                                            </StackPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                            </DataTrigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <TextBlock Text="{Binding StatusLabel}"/>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="{Binding Board.SelectedStatus}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Visibility="{Binding Board.SelectedStatus, Converter={StaticResource StringVis}}"/>
 
-            <Grid Margin="10,0,10,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="110"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="110"/>
-                    <ColumnDefinition Width="150"/>
-                    <ColumnDefinition Width="140"/>
-                    <ColumnDefinition Width="130"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="1" Text="Title" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="2" Text="State" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="3" Text="Assigned to" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="4" Text="Group" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="5" Text="Queue" Style="{StaticResource FieldLabel}"/>
-            </Grid>
-            <TextBlock Text="No open records in this queue." Foreground="{StaticResource MutedBrush}" Margin="10,0,0,12"
-                       Visibility="{Binding Board.HasDashboardRows, Converter={StaticResource InverseBoolVis}}"/>
-            <ListBox ItemsSource="{Binding Board.DashboardRows}"
-                     Style="{StaticResource DeskList}"
-                     ItemContainerStyle="{StaticResource TicketListItem}"
-                     MaxHeight="360"
-                     MouseLeftButtonUp="Rows_MouseLeftButtonUp"
-                     PreviewKeyDown="Rows_PreviewKeyDown"
-                     AutomationProperties.Name="Lead dashboard"
-                     Visibility="{Binding Board.HasDashboardRows, Converter={StaticResource BoolVis}}"
-                     Margin="0,0,0,8">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Grid>
+                <Grid Margin="10,0,10,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="140"/>
+                        <ColumnDefinition Width="130"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Column="1" Text="Title" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Column="2" Text="State" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Column="3" Text="Assigned to" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Column="4" Text="Group" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Column="5" Text="Queue" Style="{StaticResource FieldLabel}"/>
+                </Grid>
+                <TextBlock Text="No open records in this queue." Foreground="{StaticResource MutedBrush}" Margin="10,0,0,12"
+                           Visibility="{Binding Board.HasDashboardRows, Converter={StaticResource InverseBoolVis}}"/>
+                <ListBox ItemsSource="{Binding Board.DashboardRows}"
+                         Style="{StaticResource DeskList}"
+                         ItemContainerStyle="{StaticResource TicketListItem}"
+                         MaxHeight="360"
+                         MouseLeftButtonUp="Rows_MouseLeftButtonUp"
+                         PreviewKeyDown="Rows_PreviewKeyDown"
+                         AutomationProperties.Name="Lead dashboard"
+                         Visibility="{Binding Board.HasDashboardRows, Converter={StaticResource BoolVis}}"
+                         Margin="0,0,0,8">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="110"/>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="130"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding AssigneeLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="5" Text="{Binding QueueLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock Text="{Binding Board.LastChecked}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"/>
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding ShowWorkEffort, Converter={StaticResource BoolVis}}">
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                           Text="Everyone in your groups, including you, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. An update that did not open, close, or resolve that record is 0.3. Closing counts as the resolve when that person did not also resolve it."/>
+                <WrapPanel Margin="0,0,0,12" AutomationProperties.Name="Work effort time scale">
+                    <RadioButton GroupName="WorkEffortScale" Content="Today" Margin="0,0,16,8"
+                                 IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=Today}"
+                                 AutomationProperties.Name="Today"/>
+                    <RadioButton GroupName="WorkEffortScale" Content="This week" Margin="0,0,16,8"
+                                 IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=ThisWeek}"
+                                 AutomationProperties.Name="This week"/>
+                    <RadioButton GroupName="WorkEffortScale" Content="This month" Margin="0,0,16,8"
+                                 IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=ThisMonth}"
+                                 AutomationProperties.Name="This month"/>
+                    <RadioButton GroupName="WorkEffortScale" Content="Last 4 weeks" Margin="0,0,16,8"
+                                 IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=Last4Weeks}"
+                                 AutomationProperties.Name="Last 4 weeks"/>
+                    <RadioButton GroupName="WorkEffortScale" Content="6 months" Margin="0,0,16,8"
+                                 IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=SixMonths}"
+                                 AutomationProperties.Name="6 months"/>
+                    <RadioButton GroupName="WorkEffortScale" Content="12 months" Margin="0,0,16,8"
+                                 IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=TwelveMonths}"
+                                 AutomationProperties.Name="12 months"/>
+                </WrapPanel>
+                <TextBlock Text="{Binding WorkEffort.Status}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                           Visibility="{Binding WorkEffort.Status, Converter={StaticResource StringVis}}"/>
+                <TextBlock Text="{Binding WorkEffort.EmptyMessage}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                           Visibility="{Binding WorkEffort.EmptyMessage, Converter={StaticResource StringVis}}"/>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              Visibility="{Binding WorkEffort.HasRows, Converter={StaticResource BoolVis}}">
+                    <StackPanel MinWidth="1040">
+                        <Grid Margin="10,0,10,4">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="110"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="110"/>
-                                <ColumnDefinition Width="150"/>
-                                <ColumnDefinition Width="140"/>
-                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="72"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding AssigneeLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="5" Text="{Binding QueueLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Text="Name" Style="{StaticResource FieldLabel}"/>
+                            <TextBlock Grid.Column="1" Text="INC opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                            <TextBlock Grid.Column="2" Text="INC resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                            <TextBlock Grid.Column="3" Text="INC updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                            <TextBlock Grid.Column="4" Text="RITM opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                            <TextBlock Grid.Column="5" Text="RITM resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                            <TextBlock Grid.Column="6" Text="RITM updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                            <TextBlock Grid.Column="7" Text="IMS opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                            <TextBlock Grid.Column="8" Text="IMS resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                            <TextBlock Grid.Column="9" Text="IMS updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                            <TextBlock Grid.Column="10" Text="Total" Style="{StaticResource FieldLabel}" TextAlignment="Right"/>
                         </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-            <TextBlock Text="{Binding Board.LastChecked}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"/>
+                        <ListBox ItemsSource="{Binding WorkEffort.Rows}"
+                                 Style="{StaticResource DeskList}"
+                                 ItemContainerStyle="{StaticResource EffortRow}"
+                                 AutomationProperties.Name="Work effort"
+                                 BorderThickness="1">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160"/>
+                                            <ColumnDefinition Width="84"/>
+                                            <ColumnDefinition Width="84"/>
+                                            <ColumnDefinition Width="84"/>
+                                            <ColumnDefinition Width="84"/>
+                                            <ColumnDefinition Width="84"/>
+                                            <ColumnDefinition Width="84"/>
+                                            <ColumnDefinition Width="84"/>
+                                            <ColumnDefinition Width="84"/>
+                                            <ColumnDefinition Width="84"/>
+                                            <ColumnDefinition Width="72"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding IncOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding IncResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding IncUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding RitmOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="5" Text="{Binding RitmResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="6" Text="{Binding RitmUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="7" Text="{Binding ImsOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="8" Text="{Binding ImsResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="9" Text="{Binding ImsUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="10" Text="{Binding WeightedText}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </UserControl>
