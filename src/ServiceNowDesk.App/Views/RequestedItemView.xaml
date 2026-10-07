@@ -3,20 +3,28 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:ServiceNowDesk.Controls">
     <Grid Margin="16,12,16,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="400"/>
             <ColumnDefinition Width="16"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <DockPanel Grid.Column="0">
+        <Button Grid.Row="0" Grid.ColumnSpan="3" Content="Create New" Style="{StaticResource PrimaryButton}"
+                Command="{Binding CreateNewCommand}" HorizontalAlignment="Left" Margin="0,0,0,12"
+                AutomationProperties.Name="Create New"/>
+
+        <DockPanel Grid.Row="1" Grid.Column="0">
             <controls:PresetBar DockPanel.Dock="Top"/>
             <TextBlock DockPanel.Dock="Top" Text="{Binding TotalCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"/>
             <TextBlock DockPanel.Dock="Bottom" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" Text="Items come from catalog orders. Assign them, add notes, and close them here."/>
             <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" ItemTemplate="{StaticResource TicketRowTemplate}" ItemContainerStyle="{StaticResource TicketListItem}" Style="{StaticResource DeskList}"/>
         </DockPanel>
 
-        <Grid Grid.Column="2">
+        <Grid Grid.Row="1" Grid.Column="2">
             <TextBlock Text="Select a request item." FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}"/>
             <DockPanel Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
                 <StackPanel DockPanel.Dock="Top">
