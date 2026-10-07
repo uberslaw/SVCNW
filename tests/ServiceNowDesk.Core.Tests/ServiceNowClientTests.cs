@@ -273,6 +273,46 @@ public class ServiceNowClientTests
         Assert.Equal("user-alex", body.RootElement.GetProperty("requested_for").GetString());
         Assert.False(body.RootElement.TryGetProperty("cat_item", out _));
         Assert.False(body.RootElement.TryGetProperty("request", out _));
+        Assert.False(body.RootElement.TryGetProperty("hold_reason", out _));
+        Assert.False(body.RootElement.TryGetProperty("follow_up", out _));
+    }
+
+    [Fact]
+    public async Task UpdateRequestedItemSendsHoldReasonAndFollowUp()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""
+            {"result":{
+              "sys_id":{"value":"ritm-hold","display_value":"ritm-hold"},
+              "number":{"value":"RITM0010006","display_value":"RITM0010006"},
+              "short_description":{"value":"120 Headsets for Brisbane","display_value":"120 Headsets for Brisbane"},
+              "state":{"value":"on_hold","display_value":"On Hold"},
+              "hold_reason":{"value":"awaiting_vendor","display_value":"Awaiting Vendor"},
+              "follow_up":{"value":"2026-11-20 10:10:23","display_value":"2026-11-20 10:10:23"},
+              "active":{"value":"true","display_value":"true"}
+            }}
+            """));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+
+        var updated = await client.UpdateRequestedItemAsync("ritm-hold", new RequestedItemChanges
+        {
+            State = "on_hold",
+            HoldReason = "awaiting_vendor",
+            FollowUp = "2026-11-20 10:10:23"
+        }, CancellationToken.None);
+
+        Assert.Equal("awaiting_vendor", updated.HoldReason);
+        Assert.Equal("Awaiting Vendor", updated.HoldReasonLabel);
+        Assert.Equal("2026-11-20 10:10:23", updated.FollowUp);
+        Assert.Equal("On Hold", updated.StateLabel);
+        var call = handler.Calls.Single();
+        Assert.Equal("PATCH", call.Method);
+        Assert.Contains("/api/now/table/sc_req_item/ritm-hold", call.PathAndQuery);
+        Assert.Contains("hold_reason", Uri.UnescapeDataString(call.PathAndQuery));
+        Assert.Contains("follow_up", Uri.UnescapeDataString(call.PathAndQuery));
+        using var body = JsonDocument.Parse(call.Body);
+        Assert.Equal("on_hold", body.RootElement.GetProperty("state").GetString());
+        Assert.Equal("awaiting_vendor", body.RootElement.GetProperty("hold_reason").GetString());
+        Assert.Equal("2026-11-20 10:10:23", body.RootElement.GetProperty("follow_up").GetString());
     }
 
     [Fact]

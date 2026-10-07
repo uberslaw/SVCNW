@@ -16,7 +16,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     private const string IncidentFields = "sys_id,number,short_description,description,state,priority,impact,urgency,category,subcategory,contact_type,caller_id,assigned_to,assignment_group,service_offering,cmdb_ci,location,opened_at,sys_updated_on,active,close_code,close_notes,hold_reason";
     private const string HardwareFields = "sys_id,serial_number,display_name,model,model_category,assigned_to,location,install_status,substatus,stockroom,comments";
     private const string RequestFields = "sys_id,number,short_description,description,request_state,requested_for,opened_by,opened_at,due_date,priority,special_instructions,approval,stage,active,sys_updated_on";
-    private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,priority,close_notes";
+    private const string ItemFields = "sys_id,number,short_description,description,state,stage,request,cat_item,quantity,assigned_to,assignment_group,service_offering,cmdb_ci,opened_at,sys_updated_on,active,priority,close_notes,hold_reason,follow_up";
     private const string KnowledgeFields = "sys_id,number,short_description,text,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
     private const string KnowledgeListFields = "sys_id,number,short_description,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
     private const string AlertIncidentFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";

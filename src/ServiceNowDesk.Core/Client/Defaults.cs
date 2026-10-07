@@ -146,6 +146,7 @@ public static class DefaultChoices
         ("sc_request", "priority") => Priorities,
         ("sc_req_item", "state") => ItemStates,
         ("sc_req_item", "priority") => Priorities,
+        ("sc_req_item", "hold_reason") => HoldReasons,
         ("interaction", "state") => InteractionStates,
         ("interaction", "type") => InteractionTypes,
         _ => []
