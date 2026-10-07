@@ -44,6 +44,8 @@ Resolved, closed, and cancelled records stay out of Notifications, Leads, Daily 
 
 Unattended tickets are still open, including on hold, and nobody has updated them for 24 hours. In Notifications that queue is only tickets assigned to the signed-in user.
 
+Assigned to me has a Days assigned column. The number is whole days on this PC since the ticket was assigned to you. Assigned today is 0, and yesterday is 1. That time is the audit of assigned to changing to you, not the last update and not when the ticket was opened. A missing time is blank and sorts last. The queue opens with the longest assignment at the top. Click a column heading to sort by that column, and click the same heading again to reverse it. The heading shows which way the list is sorted. The other notification queues stay in their current order until you click a heading.
+
 Daily Work, in the left navigation, lists what the signed-in user should attend to. A ticket is included when it matches a notification: SLA breaching, updated by caller, follow-up passed, unattended, or returned with notes. Priority comes first, then SLA, then a caller update, then a passed follow-up. The desk saves that list once each local day, at the first check after midnight or the next time the desk opens. Later checks keep the saved report and show which tickets left the list and which arrived. My team uses the people ticked under Leads. The reports are on this PC in `%AppData%\ServiceNowDesk\daily-work.json`.
 
 Leads, in the left navigation, repeats SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team uses the people you tick from the watched group (Aus DT - Client Services unless you change that name under Settings, Notifications). Regional uses every open ticket in that group. The ticked names are saved on this PC. Click a row to open the incident, request item, or walk-up. The Assigned to column is on every Leads queue.
@@ -90,6 +92,7 @@ The signed-in user needs the same rights they already use in the web UI, typical
 - read and write `incident`, `sc_request`, `sc_req_item`, and `interaction`
 - create `interaction_related_record` rows when converting a walk-up to an incident
 - read `sys_user`, `sys_user_group`, `sys_choice`, and `sys_journal_field`
+- read `sys_audit` for the Assigned to me days column. The queue still loads when that table is blocked
 - read attachments on incidents and request items (`/api/now/attachment`)
 - order from the service catalog if you use **Order catalog**
 

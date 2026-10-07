@@ -3,6 +3,31 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="clr-namespace:ServiceNowDesk.Converters">
     <UserControl.Resources>
+        <Style x:Key="ColumnHeaderButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" TextElement.Foreground="{TemplateBinding Foreground}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <DataTemplate x:Key="StandardAlertRow">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -21,6 +46,28 @@
                 <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="4" Text="{Binding QueueLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="AssignedAlertRow">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="118"/>
+                    <ColumnDefinition Width="120"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding AssignedLine}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"
+                               Visibility="{Binding AssignedLine, Converter={StaticResource StringVis}}"/>
+                </StackPanel>
+                <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding DaysAssigned}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="5" Text="{Binding QueueLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="SlaAlertRow">
@@ -43,6 +90,7 @@
         </DataTemplate>
         <conv:AlertRowTemplateSelector x:Key="AlertRowTemplate"
                                        StandardTemplate="{StaticResource StandardAlertRow}"
+                                       AssignedTemplate="{StaticResource AssignedAlertRow}"
                                        SlaTemplate="{StaticResource SlaAlertRow}"/>
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -124,7 +172,7 @@
             <TextBlock Text="{Binding SelectedStatus}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                        Visibility="{Binding SelectedStatus, Converter={StaticResource StringVis}}"/>
 
-            <Grid Margin="10,0,10,4" Visibility="{Binding ShowAssigneeColumn, Converter={StaticResource InverseBoolVis}}">
+            <Grid Margin="10,0,10,4" Visibility="{Binding ShowStandardColumns, Converter={StaticResource BoolVis}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120"/>
                     <ColumnDefinition Width="*"/>
@@ -132,11 +180,27 @@
                     <ColumnDefinition Width="160"/>
                     <ColumnDefinition Width="140"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="1" Text="Title" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="2" Text="State" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="3" Text="Group" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="4" Text="Queue" Style="{StaticResource FieldLabel}"/>
+                <Button Content="{Binding NumberHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Number" AutomationProperties.Name="Sort by number"/>
+                <Button Grid.Column="1" Content="{Binding TitleHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Title" AutomationProperties.Name="Sort by title"/>
+                <Button Grid.Column="2" Content="{Binding StateHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="State" AutomationProperties.Name="Sort by state"/>
+                <Button Grid.Column="3" Content="{Binding GroupHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Group" AutomationProperties.Name="Sort by group"/>
+                <Button Grid.Column="4" Content="{Binding QueueHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Queue" AutomationProperties.Name="Sort by queue"/>
+            </Grid>
+            <Grid Margin="10,0,10,4" Visibility="{Binding ShowDaysAssigned, Converter={StaticResource BoolVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="118"/>
+                    <ColumnDefinition Width="120"/>
+                </Grid.ColumnDefinitions>
+                <Button Content="{Binding NumberHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Number" AutomationProperties.Name="Sort by number"/>
+                <Button Grid.Column="1" Content="{Binding TitleHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Title" AutomationProperties.Name="Sort by title"/>
+                <Button Grid.Column="2" Content="{Binding StateHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="State" AutomationProperties.Name="Sort by state"/>
+                <Button Grid.Column="3" Content="{Binding GroupHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Group" AutomationProperties.Name="Sort by group"/>
+                <Button Grid.Column="4" Content="{Binding DaysAssignedHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="DaysAssigned" AutomationProperties.Name="Sort by days assigned"/>
+                <Button Grid.Column="5" Content="{Binding QueueHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Queue" AutomationProperties.Name="Sort by queue"/>
             </Grid>
             <Grid Margin="10,0,10,4" Visibility="{Binding ShowAssigneeColumn, Converter={StaticResource BoolVis}}">
                 <Grid.ColumnDefinitions>
@@ -147,12 +211,12 @@
                     <ColumnDefinition Width="140"/>
                     <ColumnDefinition Width="130"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="1" Text="Title" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="2" Text="State" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="3" Text="Assigned to" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="4" Text="Group" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="5" Text="Queue" Style="{StaticResource FieldLabel}"/>
+                <Button Content="{Binding NumberHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Number" AutomationProperties.Name="Sort by number"/>
+                <Button Grid.Column="1" Content="{Binding TitleHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Title" AutomationProperties.Name="Sort by title"/>
+                <Button Grid.Column="2" Content="{Binding StateHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="State" AutomationProperties.Name="Sort by state"/>
+                <Button Grid.Column="3" Content="{Binding AssigneeHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Assignee" AutomationProperties.Name="Sort by assigned to"/>
+                <Button Grid.Column="4" Content="{Binding GroupHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Group" AutomationProperties.Name="Sort by group"/>
+                <Button Grid.Column="5" Content="{Binding QueueHeader}" Style="{StaticResource ColumnHeaderButton}" Command="{Binding SortByCommand}" CommandParameter="Queue" AutomationProperties.Name="Sort by queue"/>
             </Grid>
             <TextBlock Text="No open records in this queue." Foreground="{StaticResource MutedBrush}" Margin="10,0,0,12"
                        Visibility="{Binding HasDashboardRows, Converter={StaticResource InverseBoolVis}}"/>

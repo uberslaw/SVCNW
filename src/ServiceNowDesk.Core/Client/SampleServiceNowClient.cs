@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Mapping;
@@ -27,6 +28,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     private readonly Dictionary<string, string> _relatedIncidents = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<JournalEntry>> _journal = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SampleAlertSignals> _signals = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _assignedOn = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ApiActivity> _activity = [];
     private int _sequence = 1000;
     private int _unassignedQueueReads;
@@ -367,7 +369,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         _ => ""
     };
 
-    private static AlertRecord ToAlert(IncidentRecord record, AlertKind kind) => new(
+    private AlertRecord ToAlert(IncidentRecord record, AlertKind kind) => new(
         kind,
         DeskSection.Incidents,
         record.SysId,
@@ -378,9 +380,10 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         record.Location,
         record.UpdatedAtDisplay,
         record.AssignedTo.Display?.Trim() ?? "",
-        record.AssignedTo.SysId ?? "");
+        record.AssignedTo.SysId ?? "",
+        AssignedOnOf(record.SysId));
 
-    private static AlertRecord ToAlert(RequestRecord record, AlertKind kind) => new(
+    private AlertRecord ToAlert(RequestRecord record, AlertKind kind) => new(
         kind,
         DeskSection.Requests,
         record.SysId,
@@ -391,9 +394,10 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         "",
         record.UpdatedAtDisplay,
         record.AssignedTo.Display?.Trim() ?? "",
-        record.AssignedTo.SysId ?? "");
+        record.AssignedTo.SysId ?? "",
+        AssignedOnOf(record.SysId));
 
-    private static AlertRecord ToAlert(RequestedItemRecord record, AlertKind kind) => new(
+    private AlertRecord ToAlert(RequestedItemRecord record, AlertKind kind) => new(
         kind,
         DeskSection.RequestedItems,
         record.SysId,
@@ -404,7 +408,18 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         "",
         record.UpdatedAtDisplay,
         record.AssignedTo.Display?.Trim() ?? "",
-        record.AssignedTo.SysId ?? "");
+        record.AssignedTo.SysId ?? "",
+        AssignedOnOf(record.SysId));
+
+    private string AssignedOnOf(string sysId) =>
+        _assignedOn.TryGetValue(sysId, out var when) ? when : "";
+
+    /// <summary>
+    /// Practice stand-in for the <c>sys_audit</c> row where assigned to became this user.
+    /// The stamp is not the opened time and not the last update.
+    /// </summary>
+    private void RememberAssignedOn(string sysId, int daysAgo) =>
+        _assignedOn[sysId] = DateTime.Today.AddDays(-daysAgo).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " 09:00:00";
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken)
     {
@@ -1202,6 +1217,12 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     private void Seed()
     {
+        RememberAssignedOn("inc-printer", 12);
+        RememberAssignedOn("inc-vpn", 1);
+        RememberAssignedOn("inc-bluescreen", 0);
+        RememberAssignedOn("req-laptop", 5);
+        RememberAssignedOn("ritm-laptop", 3);
+
         AddIncident(new IncidentRecord
         {
             SysId = "inc-printer",

@@ -92,7 +92,8 @@ public sealed record AlertRecord(
     string Location,
     string Updated,
     string Assignee = "",
-    string AssignedToSysId = "");
+    string AssignedToSysId = "",
+    string AssignedOn = "");
 
 public sealed record AlertBucket(IReadOnlyList<AlertRecord> Rows, int TotalCount, string Status = "")
 {

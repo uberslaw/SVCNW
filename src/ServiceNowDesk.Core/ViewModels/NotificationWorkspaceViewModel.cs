@@ -28,6 +28,8 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
             SelectedQueue = shown[0];
         else
             MarkSelectedQueue();
+
+        UseQueueSortDefault();
     }
 
     public ObservableCollection<AlertSectionModel> Sections { get; } = [];
@@ -45,6 +47,11 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     private bool _sortDescending;
 
     public bool ShowAssigneeColumn => _alwaysShowAssignee || SelectedQueue == AlertKind.SlaBreaching;
+
+    /// <summary>Days assigned is only on the personal Assigned to me queue.</summary>
+    public bool ShowDaysAssigned => !_alwaysShowAssignee && SelectedQueue == AlertKind.AssignedToMe;
+
+    public bool ShowStandardColumns => !ShowAssigneeColumn && !ShowDaysAssigned;
 
     public void Show(AlertSnapshot snapshot)
     {
@@ -261,8 +268,27 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     partial void OnSelectedQueueChanged(AlertKind value)
     {
         MarkSelectedQueue();
+        UseQueueSortDefault();
         RefreshDashboard();
         OnPropertyChanged(nameof(ShowAssigneeColumn));
+        OnPropertyChanged(nameof(ShowDaysAssigned));
+        OnPropertyChanged(nameof(ShowStandardColumns));
+    }
+
+    private void UseQueueSortDefault()
+    {
+        if (_alwaysShowAssignee)
+            return;
+        if (SelectedQueue == AlertKind.AssignedToMe)
+        {
+            _sortColumn = LeadSortColumn.DaysAssigned;
+            _sortDescending = true;
+        }
+        else
+        {
+            _sortColumn = null;
+            _sortDescending = false;
+        }
     }
 
     private void MarkSelectedQueue()
@@ -294,6 +320,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     public string AssigneeHeader => SortHeader("Assigned to", LeadSortColumn.Assignee);
     public string GroupHeader => SortHeader("Group", LeadSortColumn.Group);
     public string QueueHeader => SortHeader("Queue", LeadSortColumn.Queue);
+    public string DaysAssignedHeader => SortHeader("Days assigned", LeadSortColumn.DaysAssigned);
 
     [RelayCommand]
     private void SortBy(string? column)
@@ -333,11 +360,15 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         NotifySortHeaders();
         if (_sortColumn is not LeadSortColumn column || DashboardRows.Count < 2)
             return;
-        var sorted = DashboardRows.ToList();
-        sorted.Sort((left, right) => LeadRowSort.Compare(left, right, column, _sortDescending));
+        var sorted = DashboardRows.Select((row, index) => (row, index)).ToList();
+        sorted.Sort((left, right) =>
+        {
+            var compared = LeadRowSort.Compare(left.row, right.row, column, _sortDescending);
+            return compared != 0 ? compared : left.index.CompareTo(right.index);
+        });
         for (var index = 0; index < sorted.Count; index++)
         {
-            var current = DashboardRows.IndexOf(sorted[index]);
+            var current = DashboardRows.IndexOf(sorted[index].row);
             if (current != index)
                 DashboardRows.Move(current, index);
         }
@@ -354,6 +385,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
         OnPropertyChanged(nameof(AssigneeHeader));
         OnPropertyChanged(nameof(GroupHeader));
         OnPropertyChanged(nameof(QueueHeader));
+        OnPropertyChanged(nameof(DaysAssignedHeader));
     }
 
     private void PaintSlaAssignees()
@@ -469,7 +501,8 @@ public enum LeadSortColumn
     State,
     Assignee,
     Group,
-    Queue
+    Queue,
+    DaysAssigned
 }
 
 public static class LeadRowSort
@@ -525,6 +558,7 @@ public static class LeadRowSort
         LeadSortColumn.Assignee => row.AssigneeLabel,
         LeadSortColumn.Group => row.Group,
         LeadSortColumn.Queue => row.QueueLabel,
+        LeadSortColumn.DaysAssigned => row.DaysAssigned,
         _ => ""
     };
 }
@@ -557,6 +591,11 @@ public sealed class AlertRow : INotifyPropertyChanged
     public required string Group { get; init; }
     public required string Location { get; init; }
     public required string Updated { get; init; }
+
+    /// <summary>When this ticket was assigned to the signed-in user. Blank when that time is unknown.</summary>
+    public string AssignedOn { get; init; } = "";
+
+    public string DaysAssigned => AssignmentAge.Format(AssignedOn, DateTime.Today);
 
     public string Assignee
     {
@@ -657,7 +696,8 @@ public sealed class AlertRow : INotifyPropertyChanged
         Location = record.Location,
         Updated = record.Updated,
         Assignee = record.Assignee,
-        AssignedToSysId = record.AssignedToSysId
+        AssignedToSysId = record.AssignedToSysId,
+        AssignedOn = record.AssignedOn
     };
 }
 

@@ -93,10 +93,20 @@ public sealed class AlertRowTemplateSelector : DataTemplateSelector
 {
     public DataTemplate? StandardTemplate { get; set; }
 
+    public DataTemplate? AssignedTemplate { get; set; }
+
     public DataTemplate? SlaTemplate { get; set; }
 
-    public override DataTemplate? SelectTemplate(object item, DependencyObject container) =>
-        item is AlertRow { Kind: AlertKind.SlaBreaching } ? SlaTemplate : StandardTemplate;
+    public override DataTemplate? SelectTemplate(object item, DependencyObject container)
+    {
+        if (item is not AlertRow row)
+            return StandardTemplate;
+        if (row.Kind == AlertKind.SlaBreaching)
+            return SlaTemplate;
+        if (row.Kind == AlertKind.AssignedToMe)
+            return AssignedTemplate ?? StandardTemplate;
+        return StandardTemplate;
+    }
 }
 
 public sealed class HexBrushConverter : IValueConverter

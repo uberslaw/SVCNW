@@ -12,6 +12,58 @@ public static class AlertQueryBuilder
     }
 
     /// <summary>
+    /// Audit rows for the moment <paramref name="userSysId"/> became <c>assigned_to</c>.
+    /// Incidents have no assigned-on column. This is not <c>sys_updated_on</c> and not <c>opened_at</c>.
+    /// </summary>
+    public static IReadOnlyList<string> AssignmentAuditQueries(string userSysId, IEnumerable<string>? documentKeys)
+    {
+        string user;
+        try
+        {
+            user = EncodedQuery.SafeToken(userSysId, "user id");
+        }
+        catch (InvalidOperationException)
+        {
+            return [];
+        }
+
+        var ids = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in documentKeys ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                continue;
+            try
+            {
+                var token = EncodedQuery.SafeToken(key, "record id");
+                if (seen.Add(token))
+                    ids.Add(token);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        if (ids.Count == 0)
+            return [];
+
+        const int chunkSize = 40;
+        var queries = new List<string>();
+        for (var start = 0; start < ids.Count; start += chunkSize)
+        {
+            var chunk = string.Join(",", ids.Skip(start).Take(chunkSize));
+            queries.Add(
+                "tablenameINincident,sc_request,sc_req_item^fieldname=assigned_to^newvalue="
+                + user
+                + "^documentkeyIN"
+                + chunk
+                + "^ORDERBYDESCsys_created_on");
+        }
+
+        return queries;
+    }
+
+    /// <summary>
     /// Active, and not resolved, closed, or cancelled. On hold stays.
     /// Incident 6, 7, and 8 are Resolved, Closed, and Canceled. Request-item 3, 4, and 7 are the closed states.
     /// </summary>

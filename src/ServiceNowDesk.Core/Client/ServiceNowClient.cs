@@ -300,6 +300,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
 
         var assignedRows = incidents.Rows.Concat(requests.Rows).Concat(items.Rows).ToArray();
         var assignedTotal = incidents.TotalCount + requests.TotalCount + items.TotalCount;
+        assignedRows = (await AttachAssignmentTimesAsync(search.UserSysId, assignedRows, cancellationToken).ConfigureAwait(false)).ToArray();
         var categories = await LoadCategoryBucketsAsync(search, cancellationToken).ConfigureAwait(false);
         var personal = new AlertSnapshot(new Dictionary<AlertKind, AlertBucket>
         {
