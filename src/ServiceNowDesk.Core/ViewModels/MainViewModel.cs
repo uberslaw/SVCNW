@@ -83,7 +83,9 @@ public partial class MainViewModel : ObservableObject
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
-        Hardware = new HardwareWorkspaceViewModel();
+        Hardware = new HardwareWorkspaceViewModel(store);
+        Hardware.DefaultSaved += (_, _) =>
+            Connection.RememberHardwareOffices(_store.Load().HardwareOfficeLocations);
         Requests = new RequestWorkspaceViewModel(desktop);
         RequestedItems = new RequestedItemWorkspaceViewModel(desktop, recent);
         WalkUps = new InteractionWorkspaceViewModel(desktop, recent);
@@ -249,6 +251,7 @@ public partial class MainViewModel : ObservableObject
 
             var user = await created.GetCurrentUserAsync(CancellationToken.None);
             ReplaceClient(created);
+            Hardware.RememberViewer(user);
             created = null;
             BrowserSignInClock.Preserve(settings);
             Connection.SignedInAt = settings.SignedInAt;

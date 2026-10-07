@@ -54,6 +54,9 @@ public partial class ConnectionViewModel : ObservableObject
 
     public List<string> LeadTeamMemberIds { get; private set; } = [];
 
+    /// <summary>Null when the hardware tab has no saved office default.</summary>
+    public List<string>? HardwareOfficeLocations { get; private set; }
+
     partial void OnAuthModeChanged(ServiceNowAuthMode value) => SyncFlags();
     partial void OnUseSampleDataChanged(bool value) => SyncFlags();
     partial void OnSessionCookieChanged(string value) => UpdateBrowserStatus();
@@ -86,6 +89,7 @@ public partial class ConnectionViewModel : ObservableObject
         Highlights.ApplyTo(settings);
         settings.LeadTeamMemberIds = [.. LeadTeamMemberIds];
         settings.LeadsEnabled = LeadsEnabled;
+        settings.HardwareOfficeLocations = CopyHardwareOffices(HardwareOfficeLocations);
         return settings;
     }
 
@@ -135,6 +139,9 @@ public partial class ConnectionViewModel : ObservableObject
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+    public void RememberHardwareOffices(IReadOnlyList<string>? offices) =>
+        HardwareOfficeLocations = CopyHardwareOffices(offices);
+
     public void Load(DeskSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -158,6 +165,7 @@ public partial class ConnectionViewModel : ObservableObject
             ? []
             : settings.LeadTeamMemberIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         LeadsEnabled = settings.LeadsEnabled;
+        HardwareOfficeLocations = CopyHardwareOffices(settings.HardwareOfficeLocations);
         LeadsPassword = "";
         LeadsAccessStatus = "";
         SyncFlags();
@@ -170,6 +178,18 @@ public partial class ConnectionViewModel : ObservableObject
         ShowUserPassword = !UseSampleData && AuthMode is ServiceNowAuthMode.Basic or ServiceNowAuthMode.OAuthPassword;
         ShowBrowserSignIn = !UseSampleData && AuthMode == ServiceNowAuthMode.BrowserSession;
         UpdateBrowserStatus();
+    }
+
+    private static List<string>? CopyHardwareOffices(IReadOnlyList<string>? offices)
+    {
+        if (offices is null)
+            return null;
+
+        return offices
+            .Select(name => name?.Trim() ?? "")
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private void UpdateBrowserStatus()

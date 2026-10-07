@@ -18,6 +18,19 @@ public static class HardwareCatalog
     public const string Available = "Available";
     public const string Computer = "Computer";
 
+    /// <summary>
+    /// Offered on the hardware page even when the current asset page does not contain them.
+    /// They are choices, not a saved default.
+    /// </summary>
+    public static readonly string[] KnownOfficeNames =
+    [
+        "Brisbane",
+        "Maroochydore",
+        "Gold Coast",
+        "Townsville",
+        "Cairns"
+    ];
+
     public static IReadOnlyList<Choice> InstallStatuses { get; } =
     [
         new(InStock, InStock),
@@ -123,18 +136,61 @@ public static class HardwareCatalog
     private static bool Contains(string? value, string term) =>
         !string.IsNullOrEmpty(value) && value.Contains(term, StringComparison.OrdinalIgnoreCase);
 
-    public static string ListQuery(string? text)
+    public static bool MatchesLocation(HardwareAsset asset, IReadOnlyList<string>? locations)
+    {
+        var names = OfficeNames(locations);
+        if (names.Length == 0)
+            return true;
+
+        var display = asset.Location.Display ?? "";
+        return names.Any(name => display.Contains(name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static string ListQuery(string? text, IReadOnlyList<string>? locations = null)
     {
         var term = EncodedQuery.Sanitize(text);
-        const string computers = "model_category.name=Computer";
+        var scope = ComputerScope(locations);
         if (term.Length == 0)
-            return computers + "^ORDERBYserial_number";
+            return scope + "^ORDERBYserial_number";
 
         return string.Join("^NQ",
         [
-            computers + "^serial_numberLIKE" + term,
-            computers + "^model.nameLIKE" + term,
-            computers + "^assigned_to.nameLIKE" + term
+            scope + "^serial_numberLIKE" + term,
+            scope + "^model.nameLIKE" + term,
+            scope + "^assigned_to.nameLIKE" + term
         ]);
+    }
+
+    /// <summary>
+    /// Encoded location restriction. Empty when every office should be queried.
+    /// </summary>
+    public static string LocationClause(IReadOnlyList<string>? locations)
+    {
+        var names = OfficeNames(locations);
+        if (names.Length == 0)
+            return "";
+
+        var parts = names.Select(name => "location.nameLIKE" + Quote(name));
+        return names.Length == 1 ? parts.First() : "(" + string.Join("^OR", parts) + ")";
+    }
+
+    private static string ComputerScope(IReadOnlyList<string>? locations)
+    {
+        const string computers = "model_category.name=Computer";
+        var place = LocationClause(locations);
+        return place.Length == 0 ? computers : computers + "^" + place;
+    }
+
+    private static string[] OfficeNames(IReadOnlyList<string>? locations) =>
+        (locations ?? [])
+            .Select(EncodedQuery.Sanitize)
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static string Quote(string value)
+    {
+        var escaped = value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+        return "\"" + escaped + "\"";
     }
 }

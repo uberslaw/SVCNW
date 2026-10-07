@@ -79,11 +79,38 @@
             </Grid.ColumnDefinitions>
 
             <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <TextBlock Text="Offices" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Text="Pick one or more offices to load that portion. All locations searches the full asset list. Set as default remembers the selection on this PC." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <ItemsControl ItemsSource="{Binding Offices}" Margin="0,0,0,6">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,0,16,6"
+                                          AutomationProperties.Name="{Binding Name, StringFormat=Office {0}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="All locations" Style="{StaticResource SecondaryButton}" Command="{Binding SearchAllLocationsCommand}" Margin="0,0,8,0"/>
+                        <Button Content="Set as default" Style="{StaticResource SecondaryButton}" Command="{Binding SetDefaultOfficesCommand}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding OfficeStatus}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                               Visibility="{Binding OfficeStatus, Converter={StaticResource StringVis}}"/>
+                </StackPanel>
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
                     <TextBlock Text="{Binding Items.Count, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}"/>
                     <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
                 </StackPanel>
                 <Grid DockPanel.Dock="Top" Margin="8,0,8,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="120"/>
                         <ColumnDefinition Width="*"/>
@@ -100,6 +127,13 @@
                     <TextBlock Grid.Column="4" Text="State" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
                     <TextBlock Grid.Column="5" Text="Substate" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
                     <TextBlock Grid.Column="6" Text="Comments" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBox Grid.Row="1" Text="{Binding SerialFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter serial"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ModelFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter model"/>
+                    <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding AssignedFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter assigned to"/>
+                    <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding LocationFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter location"/>
+                    <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding StateFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter state"/>
+                    <TextBox Grid.Row="1" Grid.Column="5" Text="{Binding SubstatusFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter substate"/>
+                    <TextBox Grid.Row="1" Grid.Column="6" Text="{Binding CommentsFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter comments"/>
                 </Grid>
                 <ListBox ItemsSource="{Binding Items}"
                          SelectedItem="{Binding Selected}"

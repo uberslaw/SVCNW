@@ -258,7 +258,7 @@ public sealed class ServiceNowClient : IServiceNowClient
     {
         var result = await GetListAsync(
             "sys_user",
-            "sys_id,name,user_name,email",
+            "sys_id,name,user_name,email,location",
             "user_name=javascript:gs.getUserName()",
             1,
             0,
@@ -276,7 +276,10 @@ public sealed class ServiceNowClient : IServiceNowClient
                 SnowField.Read(row, "sys_id").Value,
                 string.IsNullOrWhiteSpace(name) ? userName : name,
                 userName,
-                SnowField.Read(row, "email").Display);
+                SnowField.Read(row, "email").Display)
+            {
+                Location = SnowField.Read(row, "location").Display
+            };
         }
     }
 
@@ -1321,7 +1324,7 @@ public sealed class ServiceNowClient : IServiceNowClient
         ArgumentNullException.ThrowIfNull(query);
         var limit = Math.Clamp(query.Limit, 1, 100);
         var offset = Math.Max(0, query.Offset);
-        var result = await GetListAsync("alm_hardware", HardwareFields, HardwareCatalog.ListQuery(query.Text), limit, offset, cancellationToken).ConfigureAwait(false);
+        var result = await GetListAsync("alm_hardware", HardwareFields, HardwareCatalog.ListQuery(query.Text, query.Locations), limit, offset, cancellationToken).ConfigureAwait(false);
         using (result)
         {
             var items = RequireArray(result.Document)

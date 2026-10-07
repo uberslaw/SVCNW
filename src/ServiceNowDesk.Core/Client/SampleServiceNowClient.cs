@@ -42,6 +42,10 @@ public sealed class SampleServiceNowClient : IServiceNowClient
 
     public string LastHardwarePayload { get; private set; } = "";
 
+    public string LastHardwareQuery { get; private set; } = "";
+
+    public CurrentUser SignedInUser { get; set; } = Me;
+
     public IReadOnlyList<Choice>? ContactTypeChoices { get; set; }
 
     public IReadOnlyList<ApiActivity> RecentActivity => _activity.ToArray();
@@ -51,7 +55,7 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     }
 
     public Task<CurrentUser> GetCurrentUserAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(Me);
+        Task.FromResult(SignedInUser);
 
     public Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken) =>
         Task.FromResult(BuildReport(search, cancellationToken).Personal);
@@ -780,11 +784,14 @@ public sealed class SampleServiceNowClient : IServiceNowClient
     public Task<PagedResult<HardwareAsset>> SearchHardwareAsync(TicketQuery query, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
+        var encoded = HardwareCatalog.ListQuery(query.Text, query.Locations);
+        LastHardwareQuery = encoded;
         var matches = _hardware
             .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
+            .Where(asset => HardwareCatalog.MatchesLocation(asset, query.Locations))
             .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        Record("GET", "api/now/table/alm_hardware");
+        Record("GET", "api/now/table/alm_hardware?sysparm_query=" + Uri.EscapeDataString(encoded));
         var limit = Math.Clamp(query.Limit, 1, 100);
         return Task.FromResult(new PagedResult<HardwareAsset>(matches.Take(limit).ToArray(), matches.Length));
     }

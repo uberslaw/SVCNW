@@ -91,6 +91,12 @@ public sealed record TicketQuery
     public string? OpenedTo { get; init; }
     public string? ParentRequestId { get; init; }
     public string? ExtraClause { get; init; }
+
+    /// <summary>
+    /// Hardware office names to load. Null or empty does not restrict location.
+    /// </summary>
+    public IReadOnlyList<string>? Locations { get; init; }
+
     public int Limit { get; init; } = 50;
     public int Offset { get; init; }
 
@@ -128,7 +134,11 @@ public sealed record JournalEntry(string SysId, string Kind, string KindLabel, s
 
 public sealed record ApiActivity(DateTimeOffset Time, string Method, string Path, int StatusCode, long ElapsedMilliseconds);
 
-public sealed record CurrentUser(string SysId, string Name, string UserName, string Email);
+public sealed record CurrentUser(string SysId, string Name, string UserName, string Email)
+{
+    /// <summary>Location name on the signed-in user. Empty when the account has none.</summary>
+    public string Location { get; init; } = "";
+}
 
 public sealed class DeskSettings
 {
@@ -161,6 +171,13 @@ public sealed class DeskSettings
         "Townsville",
         "Cairns"
     ];
+
+    /// <summary>
+    /// Offices the hardware tab loads on open. Null means nothing is saved yet.
+    /// An empty list means the saved default is every location.
+    /// </summary>
+    public List<string>? HardwareOfficeLocations { get; set; }
+
     public int NotificationPollSeconds { get; set; } = 60;
     public bool DownloadCacheOnLaunch { get; set; } = true;
 
