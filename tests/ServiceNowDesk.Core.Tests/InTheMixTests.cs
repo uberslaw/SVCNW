@@ -208,7 +208,7 @@ public class InTheMixTests
             Assert.Contains("location.name=\"Brisbane Office\"", query);
             Assert.DoesNotContain("location.nameIN", query);
             Assert.DoesNotContain("(", query);
-            Assert.DoesNotContain("^OR", query);
+            Assert.DoesNotContain("^OR", query.Replace("^ORDERBYDESCsys_updated_on", "", StringComparison.Ordinal));
             Assert.DoesNotContain("Hong Kong", query);
         });
         var walk = queries.Single(query => query.Contains("type=walkup", StringComparison.Ordinal));
