@@ -19,8 +19,13 @@ public class InTheMixTests
         Assert.Equal(["Cairns"], OfficeQueue.Cities(["Cairns"], "Brisbane"));
         Assert.Equal(["Brisbane"], OfficeQueue.Cities([], " Brisbane "));
         Assert.Empty(OfficeQueue.Cities(null, "  "));
-        Assert.Contains("location.nameIN", OfficeQueue.LocationClause(["Brisbane"]));
-        Assert.Contains("\"Brisbane Office\"", OfficeQueue.LocationClause(["Brisbane"]));
+        var brisbane = OfficeQueue.LocationClause(["Brisbane"]);
+        Assert.Contains("location.name=\"Brisbane\"", brisbane);
+        Assert.Contains("location.name=\"Brisbane Office\"", brisbane);
+        Assert.Contains("^NQ", brisbane);
+        Assert.DoesNotContain("location.nameIN", brisbane);
+        Assert.DoesNotContain("(", brisbane);
+        Assert.DoesNotContain("^OR", brisbane);
         Assert.Equal("sys_id=NO_OFFICE", OfficeQueue.LocationClause([]));
     }
 
@@ -36,6 +41,7 @@ public class InTheMixTests
         Assert.Contains(incidents.Items, row => row.Number == "INC0010021");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010020");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010022");
+        Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010023");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010011");
 
         incidents.Preset = Preset(AssignmentScope.Unassigned);
@@ -51,6 +57,34 @@ public class InTheMixTests
         Assert.Contains(incidents.Items, row => row.Number == "INC0010021");
         Assert.Contains(incidents.Items, row => row.Number == "INC0010019");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010020");
+        Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010023");
+    }
+
+    [Fact]
+    public async Task MyTeamButtonLoadsABrisbaneOfficeTicketAndSkipsHongKong()
+    {
+        using var client = new SampleServiceNowClient();
+        var mix = new MixWorkspaceViewModel();
+        mix.UseOfficeCities(["Brisbane"]);
+        mix.Attach(client);
+
+        Assert.Equal("My Team", mix.Preset.Label);
+        Assert.Equal("Select a ticket.", mix.EmptyPrompt);
+        Assert.Equal(0, mix.OpenEditorCount);
+        Assert.False(mix.ShowIncidentEditor);
+        Assert.False(mix.ShowRequestedItemEditor);
+        Assert.False(mix.ShowWalkUpEditor);
+
+        await mix.ApplyPresetCommand.ExecuteAsync(PresetCatalog.Mix.Single(preset => preset.Label == "My Team"));
+
+        Assert.True(string.IsNullOrEmpty(mix.ErrorMessage), mix.ErrorMessage);
+        Assert.Contains(mix.Items, row => row.Kind == "INC" && row.Number == "INC0010019");
+        Assert.Contains(mix.Items, row => row.Kind == "RITM" && row.Number == "RITM0010007");
+        Assert.Contains(mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010005");
+        Assert.DoesNotContain(mix.Items, row => row.Number == "INC0010023");
+        Assert.DoesNotContain(mix.Items, row => row.Number == "INC0010020");
+        Assert.Equal(0, mix.OpenEditorCount);
+        Assert.Equal("Select a ticket.", mix.EmptyPrompt);
     }
 
     [Fact]
@@ -98,12 +132,20 @@ public class InTheMixTests
         Assert.Contains(main.Mix.Items, row => row.Kind == "RITM" && row.Number == "RITM0010007");
         Assert.Contains(main.Mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010005");
         Assert.DoesNotContain(main.Mix.Items, row => row.Number == "INC0010020");
+        Assert.DoesNotContain(main.Mix.Items, row => row.Number == "INC0010023");
         Assert.DoesNotContain(main.Mix.Items, row => row.Kind == "INC" && row.Number == "INC0010011");
+        Assert.Equal(0, main.Mix.OpenEditorCount);
+        Assert.Equal("Select a ticket.", main.Mix.EmptyPrompt);
 
         var row = main.Mix.Items.Single(item => item.Number == "INC0010019");
         main.Mix.Selected = row;
         await main.MixOpenTask;
         Assert.Equal(DeskSection.Incidents.ToString(), main.Mix.EditorKey);
+        Assert.Equal(1, main.Mix.OpenEditorCount);
+        Assert.True(main.Mix.ShowIncidentEditor);
+        Assert.False(main.Mix.ShowRequestedItemEditor);
+        Assert.False(main.Mix.ShowWalkUpEditor);
+        Assert.Equal("", main.Mix.EmptyPrompt);
         Assert.True(main.Incidents.HasEditor);
         Assert.Equal("INC0010019", main.Incidents.Number);
 
@@ -159,10 +201,18 @@ public class InTheMixTests
         Assert.Equal(3, queries.Length);
         Assert.All(queries, query =>
         {
-            Assert.Contains("assignment_groupINgroup-cs", query);
-            Assert.Contains("location.nameIN\"Brisbane\",\"Brisbane Office\"", query);
+            var branches = query.Split("^NQ");
+            Assert.Equal(2, branches.Length);
+            Assert.All(branches, branch => Assert.Contains("assignment_groupINgroup-cs", branch));
+            Assert.Contains("location.name=\"Brisbane\"", query);
+            Assert.Contains("location.name=\"Brisbane Office\"", query);
+            Assert.DoesNotContain("location.nameIN", query);
+            Assert.DoesNotContain("(", query);
+            Assert.DoesNotContain("^OR", query);
+            Assert.DoesNotContain("Hong Kong", query);
         });
-        Assert.Contains(queries, query => query.Contains("type=walkup", StringComparison.Ordinal));
+        var walk = queries.Single(query => query.Contains("type=walkup", StringComparison.Ordinal));
+        Assert.Equal(2, walk.Split("type=walkup").Length - 1);
 
         await client.SearchIncidentsAsync(new TicketQuery
         {
@@ -173,7 +223,10 @@ public class InTheMixTests
         var unassigned = QueryOf(handler.Calls[^1].PathAndQuery);
         Assert.Contains("assigned_toISEMPTY", unassigned);
         Assert.Contains("assignment_groupINgroup-cs", unassigned);
-        Assert.Contains("location.nameIN\"Brisbane\",\"Brisbane Office\"", unassigned);
+        Assert.Contains("location.name=\"Brisbane\"", unassigned);
+        Assert.Contains("location.name=\"Brisbane Office\"", unassigned);
+        Assert.DoesNotContain("location.nameIN", unassigned);
+        Assert.Equal(2, unassigned.Split("assignment_groupINgroup-cs").Length - 1);
 
         await client.SearchIncidentsAsync(new TicketQuery
         {
@@ -194,6 +247,40 @@ public class InTheMixTests
         var none = QueryOf(handler.Calls[^1].PathAndQuery);
         Assert.Contains("assignment_groupINgroup-cs", none);
         Assert.Contains("sys_id=NO_OFFICE", none);
+        Assert.DoesNotContain("^NQ", none);
+    }
+
+    [Fact]
+    public async Task AFailedTableDoesNotHideRowsFromTheOthers()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
+            if (path.Contains("/api/now/table/incident", StringComparison.Ordinal))
+                return Api.Json(Api.IncidentList());
+            if (path.Contains("/api/now/table/sc_req_item", StringComparison.Ordinal))
+                return Api.Json("""{"result":{"not":"a list"}}""");
+            if (path.Contains("/api/now/table/interaction", StringComparison.Ordinal))
+                return Api.Json("""{"status":"failure","error":{"message":"Invalid query","detail":"location is not a field"}}""", System.Net.HttpStatusCode.BadRequest);
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var mix = new MixWorkspaceViewModel();
+        mix.UseOfficeCities(["Brisbane"]);
+        mix.Attach(client);
+
+        await mix.ApplyPresetCommand.ExecuteAsync(PresetCatalog.Mix.Single(preset => preset.Label == "My Team"));
+
+        Assert.Contains(mix.Items, row => row.Kind == "INC" && row.Number == "INC0010001");
+        Assert.DoesNotContain(mix.Items, row => row.Kind == "RITM");
+        Assert.DoesNotContain(mix.Items, row => row.Kind == "IMS");
+        Assert.Contains("Request items", mix.ErrorMessage);
+        Assert.Contains("did not include a list", mix.ErrorMessage);
+        Assert.Contains("Walk-ups", mix.ErrorMessage);
+        Assert.Contains("location is not a field", mix.ErrorMessage);
+        Assert.Equal(1, mix.TotalCount);
     }
 
     private static PresetOption Preset(AssignmentScope scope) =>

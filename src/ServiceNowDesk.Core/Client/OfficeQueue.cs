@@ -42,10 +42,27 @@ public static class OfficeQueue
     }
 
     /// <summary>
-    /// Encoded <c>location.name</c> clause. An empty city list matches nothing, so the queue
-    /// does not fall open to every group ticket.
+    /// Location predicate only. Prefer <see cref="ApplyTo"/> so the group and open filters
+    /// are repeated on every branch.
     /// </summary>
-    public static string LocationClause(IReadOnlyList<string>? cities)
+    public static string LocationClause(IReadOnlyList<string>? cities) => ApplyTo("", cities);
+
+    /// <summary>
+    /// Keeps <paramref name="encodedQuery"/> and adds one <c>location.name</c> equality per
+    /// place, including the " Office" form. Branches are joined with <c>^NQ</c> and the
+    /// original filters are copied onto each branch.
+    /// An <c>IN</c> list keeps the quote characters, so <c>location.nameIN"Brisbane","Brisbane Office"</c>
+    /// matches neither name and the queue comes back empty. A parenthesized <c>OR</c> is not
+    /// used: ServiceNow drops that group. An empty city list matches nothing.
+    /// </summary>
+    public static string ApplyTo(string? encodedQuery, IReadOnlyList<string>? cities)
+    {
+        var (body, order) = SplitOrder(encodedQuery);
+        var branches = Equalities(cities).Select(equality => body.Length == 0 ? equality : body + "^" + equality);
+        return string.Join("^NQ", branches) + order;
+    }
+
+    private static IReadOnlyList<string> Equalities(IReadOnlyList<string>? cities)
     {
         var names = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -53,20 +70,30 @@ public static class OfficeQueue
         {
             foreach (var variant in Variants(city))
             {
-                if (seen.Add(variant))
-                    names.Add(variant);
+                var quoted = AlertQueryBuilder.Quote(variant);
+                if (quoted.Length == 0 || !seen.Add(quoted))
+                    continue;
+                names.Add("location.name=" + quoted);
             }
         }
 
-        if (names.Count == 0)
-            return "sys_id=NO_OFFICE";
+        return names.Count == 0 ? ["sys_id=NO_OFFICE"] : names;
+    }
 
-        var quoted = names.Select(AlertQueryBuilder.Quote).Where(name => name.Length > 0).ToArray();
-        if (quoted.Length == 0)
-            return "sys_id=NO_OFFICE";
-        if (quoted.Length == 1)
-            return "location.name=" + quoted[0];
-        return "location.nameIN" + string.Join(",", quoted);
+    private static (string Body, string Order) SplitOrder(string? encodedQuery)
+    {
+        var encoded = encodedQuery?.Trim() ?? "";
+        if (encoded.Length == 0)
+            return ("", "");
+
+        var orderAt = encoded.LastIndexOf("^ORDERBY", StringComparison.Ordinal);
+        if (orderAt >= 0)
+            return (encoded[..orderAt], encoded[orderAt..]);
+
+        if (encoded.StartsWith("ORDERBY", StringComparison.Ordinal))
+            return ("", "^" + encoded);
+
+        return (encoded, "");
     }
 
     public static IReadOnlyList<string> Variants(string? city)

@@ -45,6 +45,19 @@ public partial class MixWorkspaceViewModel : ObservableObject
 
     public bool HasMixEditor => EditorKey.Length > 0;
 
+    public bool ShowIncidentEditor => EditorKey == nameof(DeskSection.Incidents);
+
+    public bool ShowRequestedItemEditor => EditorKey == nameof(DeskSection.RequestedItems);
+
+    public bool ShowWalkUpEditor => EditorKey == nameof(DeskSection.WalkUps);
+
+    public int OpenEditorCount =>
+        (ShowIncidentEditor ? 1 : 0) + (ShowRequestedItemEditor ? 1 : 0) + (ShowWalkUpEditor ? 1 : 0);
+
+    public bool ShowEmptyPrompt => OpenEditorCount == 0;
+
+    public string EmptyPrompt => ShowEmptyPrompt ? "Select a ticket." : "";
+
     public event EventHandler<TicketRow>? OpenRequested;
 
     public void UseOfficeCities(IReadOnlyList<string>? cities)
@@ -86,12 +99,13 @@ public partial class MixWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ApplyPreset(PresetOption? option)
+    private async Task ApplyPreset(PresetOption? option)
     {
-        if (option is null || option == Preset)
+        if (option is null)
             return;
-        Preset = option;
-        _ = RefreshAsync();
+        if (option != Preset)
+            Preset = option;
+        await RefreshAsync().ConfigureAwait(true);
     }
 
     public async Task RefreshAsync()
@@ -105,15 +119,28 @@ public partial class MixWorkspaceViewModel : ObservableObject
             IsLoading = true;
             ErrorMessage = "";
             var query = BuildQuery();
-            var incidents = await _client.SearchIncidentsAsync(query, CancellationToken.None).ConfigureAwait(true);
-            var items = await _client.SearchRequestedItemsAsync(query, CancellationToken.None).ConfigureAwait(true);
-            var walks = await _client.SearchInteractionsAsync(query, CancellationToken.None).ConfigureAwait(true);
+            var errors = new List<string>();
+            var incidents = await LoadTableAsync(version, "Incidents", errors, async () =>
+            {
+                var page = await _client.SearchIncidentsAsync(query, CancellationToken.None).ConfigureAwait(true);
+                return page.Items.Select(record => Tag(TicketRow.FromIncident(record), "INC", DeskSection.Incidents)).ToArray();
+            }).ConfigureAwait(true);
+            var items = await LoadTableAsync(version, "Request items", errors, async () =>
+            {
+                var page = await _client.SearchRequestedItemsAsync(query, CancellationToken.None).ConfigureAwait(true);
+                return page.Items.Select(record => Tag(TicketRow.FromItem(record), "RITM", DeskSection.RequestedItems)).ToArray();
+            }).ConfigureAwait(true);
+            var walks = await LoadTableAsync(version, "Walk-ups", errors, async () =>
+            {
+                var page = await _client.SearchInteractionsAsync(query, CancellationToken.None).ConfigureAwait(true);
+                return page.Items.Select(record => Tag(TicketRow.FromInteraction(record), "IMS", DeskSection.WalkUps)).ToArray();
+            }).ConfigureAwait(true);
             if (version != _loadVersion)
                 return;
 
-            var rows = incidents.Items.Select(record => Tag(TicketRow.FromIncident(record), "INC", DeskSection.Incidents))
-                .Concat(items.Items.Select(record => Tag(TicketRow.FromItem(record), "RITM", DeskSection.RequestedItems)))
-                .Concat(walks.Items.Select(record => Tag(TicketRow.FromInteraction(record), "IMS", DeskSection.WalkUps)))
+            var rows = incidents
+                .Concat(items)
+                .Concat(walks)
                 .OrderByDescending(row => row.SortKey, StringComparer.Ordinal)
                 .ThenBy(row => row.Number, StringComparer.Ordinal)
                 .ToArray();
@@ -132,7 +159,8 @@ public partial class MixWorkspaceViewModel : ObservableObject
             Selected = Items.FirstOrDefault(row => row.SysId == keepId && row.Source == keepSource);
             _bound = Selected;
             _suppressSelection = false;
-            HasLoaded = true;
+            ErrorMessage = string.Join(Environment.NewLine, errors);
+            HasLoaded = errors.Count == 0;
         }
         catch (Exception ex)
         {
@@ -143,6 +171,24 @@ public partial class MixWorkspaceViewModel : ObservableObject
         {
             if (version == _loadVersion)
                 IsLoading = false;
+        }
+    }
+
+    private async Task<TicketRow[]> LoadTableAsync(
+        int version,
+        string label,
+        List<string> errors,
+        Func<Task<TicketRow[]>> load)
+    {
+        try
+        {
+            return await load().ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (version == _loadVersion)
+                errors.Add(label + ": " + WorkspaceMessages.Describe(ex));
+            return [];
         }
     }
 
@@ -184,7 +230,16 @@ public partial class MixWorkspaceViewModel : ObservableObject
         Source = source
     };
 
-    partial void OnEditorKeyChanged(string value) => OnPropertyChanged(nameof(HasMixEditor));
+    partial void OnEditorKeyChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasMixEditor));
+        OnPropertyChanged(nameof(ShowIncidentEditor));
+        OnPropertyChanged(nameof(ShowRequestedItemEditor));
+        OnPropertyChanged(nameof(ShowWalkUpEditor));
+        OnPropertyChanged(nameof(OpenEditorCount));
+        OnPropertyChanged(nameof(ShowEmptyPrompt));
+        OnPropertyChanged(nameof(EmptyPrompt));
+    }
 
     partial void OnSelectedChanged(TicketRow? value)
     {

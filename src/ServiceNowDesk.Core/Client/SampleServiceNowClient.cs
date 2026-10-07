@@ -2133,6 +2133,33 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             UpdatedAtValue = "2099-01-01 00:03:00",
             Active = true
         });
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-mix-hkg",
+            Number = "INC0010023",
+            ShortDescription = "Team laptop in the Hong Kong office",
+            Description = "Same group, outside the watched Brisbane office.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "5",
+            PriorityLabel = "5 - Planning",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "3",
+            UrgencyLabel = "3 - Low",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Sam,
+            AssignedTo = Jordan,
+            AssignmentGroup = ClientServices,
+            Location = "Hong Kong Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-02 00:00",
+            UpdatedAtValue = "2099-01-02 00:00:00",
+            Active = true
+        });
         _items.Add(new RequestedItemRecord
         {
             SysId = "ritm-mix-bne",

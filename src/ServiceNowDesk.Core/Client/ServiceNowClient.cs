@@ -1646,13 +1646,6 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             };
         }
 
-        if (query.OfficeLocations is not null
-            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
-        {
-            var office = OfficeQueue.LocationClause(query.OfficeLocations);
-            assignment = string.IsNullOrEmpty(assignment) ? office : assignment + "^" + office;
-        }
-
         var extra = string.IsNullOrWhiteSpace(query.ParentRequestId)
             ? ""
             : "request=" + EncodedQuery.SafeToken(query.ParentRequestId, "request id");
@@ -1671,11 +1664,15 @@ public sealed partial class ServiceNowClient : IServiceNowClient
                 extra = extra.Length == 0 ? recordFilters : extra + "^" + recordFilters;
         }
 
-        return EncodedQuery.Build(
+        var encoded = EncodedQuery.Build(
             EncodedQuery.TextSearch(query.Text, textFields),
             assignment,
             OpenListClause(query),
             extra);
+        if (query.OfficeLocations is not null
+            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+            return OfficeQueue.ApplyTo(encoded, query.OfficeLocations);
+        return encoded;
     }
 
     /// <summary>

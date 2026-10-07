@@ -344,16 +344,20 @@
                             <ColumnDefinition Width="16"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <views:MixView DataContext="{Binding Mix}"/>
-                        <Grid Grid.Column="2">
-                            <TextBlock Text="Select a ticket." FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Visibility="{Binding Mix.HasMixEditor, Converter={StaticResource InverseBoolVis}}"/>
-                            <views:IncidentView EditorOnly="True" DataContext="{Binding Incidents}"
-                                                Visibility="{Binding Mix.EditorKey, Converter={StaticResource SectionVis}, ConverterParameter=Incidents}"/>
-                            <views:RequestedItemView EditorOnly="True" DataContext="{Binding RequestedItems}"
-                                                     Visibility="{Binding Mix.EditorKey, Converter={StaticResource SectionVis}, ConverterParameter=RequestedItems}"/>
-                            <views:InteractionView EditorOnly="True" DataContext="{Binding WalkUps}"
-                                                   Visibility="{Binding Mix.EditorKey, Converter={StaticResource SectionVis}, ConverterParameter=WalkUps}"/>
+                        <views:MixView Grid.Column="0" DataContext="{Binding Mix}"/>
+                        <!-- Visibility stays on the wrapper. DataContext on the same element resolves the editor flag against the child page, so every editor stays visible and their empty states draw on top of each other. -->
+                        <Grid Grid.Column="2" ClipToBounds="True">
+                            <TextBlock Text="{Binding Mix.EmptyPrompt}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding Mix.ShowEmptyPrompt, Converter={StaticResource BoolVis}}"/>
+                            <Grid Visibility="{Binding Mix.ShowIncidentEditor, Converter={StaticResource BoolVis}}">
+                                <views:IncidentView EditorOnly="True" DataContext="{Binding Incidents}"/>
+                            </Grid>
+                            <Grid Visibility="{Binding Mix.ShowRequestedItemEditor, Converter={StaticResource BoolVis}}">
+                                <views:RequestedItemView EditorOnly="True" DataContext="{Binding RequestedItems}"/>
+                            </Grid>
+                            <Grid Visibility="{Binding Mix.ShowWalkUpEditor, Converter={StaticResource BoolVis}}">
+                                <views:InteractionView EditorOnly="True" DataContext="{Binding WalkUps}"/>
+                            </Grid>
                         </Grid>
                     </Grid>
                 </Grid>
