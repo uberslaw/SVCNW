@@ -1,3 +1,4 @@
+using ServiceNowDesk.Client;
 using ServiceNowDesk.GuidedSetup;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Navigation;
@@ -425,8 +426,8 @@ public class GuidedSetupTests
     public async Task SignedInYesDoesNotCloseALoadingSplashOrOpenConnection()
     {
         var store = new MemorySettingsStore();
-        store.Save(new DeskSettings { UseSampleData = true });
-        var main = new MainViewModel(store, new RecordingDesktopServices());
+        store.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = false });
+        var main = new MainViewModel(store, new RecordingDesktopServices(), lists: FreshLists());
         await main.InitializeAsync();
         Assert.True(main.IsConnected);
         Assert.Equal(GuidedSetupOfferKind.Quick, main.Guided.OfferKind);
@@ -443,6 +444,7 @@ public class GuidedSetupTests
         main.Startup.Dismiss();
         Assert.Equal(GuidedSetupPhase.Tabs, main.Guided.Phase);
         Assert.Equal(DeskSection.DailyWork, main.Guided.HighlightedTab);
+        main.DisconnectCommand.Execute(null);
     }
 
     [Fact]
@@ -455,13 +457,39 @@ public class GuidedSetupTests
         Assert.Equal(DeskSection.Connection, signedOut.SelectedSection);
 
         var store = new MemorySettingsStore();
-        store.Save(new DeskSettings { UseSampleData = true, GuidedSetupOffer = GuidedSetupOfferChoice.DontAskAgain });
-        var signedIn = new MainViewModel(store, new RecordingDesktopServices());
+        store.Save(new DeskSettings
+        {
+            UseSampleData = true,
+            DownloadCacheOnLaunch = false,
+            GuidedSetupOffer = GuidedSetupOfferChoice.DontAskAgain
+        });
+        var signedIn = new MainViewModel(store, new RecordingDesktopServices(), lists: FreshLists());
         await signedIn.InitializeAsync();
         Assert.False(signedIn.Guided.ShowOffer);
         signedIn.StartGuidedSetupFromHelp();
         Assert.Equal(GuidedSetupPhase.Tabs, signedIn.Guided.Phase);
         Assert.NotEqual(DeskSection.Connection, signedIn.SelectedSection);
+        signedIn.DisconnectCommand.Execute(null);
+    }
+
+    private static MemoryDeskListStore FreshLists()
+    {
+        var now = DateTimeOffset.UtcNow;
+        CachedTicketList List() => new() { CapturedAt = now };
+        var store = new MemoryDeskListStore();
+        store.Save(DeskListScope.Practice, new DeskListSnapshot
+        {
+            ChoicesCapturedAt = now,
+            GroupsCapturedAt = now,
+            MembersCapturedAt = now,
+            ServiceOfferingsCapturedAt = now,
+            ConfigurationItemsCapturedAt = now,
+            Incidents = List(),
+            Requests = List(),
+            WalkUps = List(),
+            Knowledge = List()
+        });
+        return store;
     }
 
     [Fact]
