@@ -429,6 +429,9 @@ public class HardwareDeskTests
         Assert.Contains("model_category.name=Computer", client.LastHardwareQuery);
         Assert.Equal(5, workspace.Items.Count);
         Assert.Contains("Showing all locations.", workspace.OfficeStatus);
+        Assert.Contains(workspace.Items, asset => asset.Location.Display == "Hong Kong Office");
+        Assert.DoesNotContain(workspace.Offices, office => office.Name == "Hong Kong Office");
+        Assert.Equal("All locations", workspace.OfficeSelectionSummary);
 
         var sydney = workspace.Offices.Single(office => office.Name == "Sydney Office");
         sydney.IsSelected = true;
@@ -595,33 +598,120 @@ public class HardwareDeskTests
     }
 
     [Fact]
-    public async Task AssetLocationReplacesAShorterReferenceLabelInTheHardwareQuery()
+    public void MultipleOfficesAreSeparateClausesSoTheLimitAppliesAfterTheLocationFilter()
+    {
+        var query = HardwareCatalog.ListQuery(null, ["Brisbane Office", "Maroochydore Office", "Gold Coast Office", "Townsville Office"]);
+
+        Assert.Equal(
+            "model_category.name=Computer^location.nameLIKE\"Brisbane Office\""
+            + "^NQmodel_category.name=Computer^location.nameLIKE\"Maroochydore Office\""
+            + "^NQmodel_category.name=Computer^location.nameLIKE\"Gold Coast Office\""
+            + "^NQmodel_category.name=Computer^location.nameLIKE\"Townsville Office\""
+            + "^ORDERBYserial_number",
+            query);
+        Assert.DoesNotContain("(", query);
+        Assert.DoesNotContain("Hong Kong", query);
+        Assert.Equal(
+            "model_category.name=Computer^location.nameLIKE\"Brisbane Office\"^ORDERBYserial_number",
+            HardwareCatalog.ListQuery(null, ["Brisbane Office"]));
+        Assert.Equal("model_category.name=Computer^ORDERBYserial_number", HardwareCatalog.ListQuery(null, null));
+    }
+
+    [Fact]
+    public async Task LocationFilterRunsBeforeTheHardwareRowCap()
     {
         using var client = new SampleServiceNowClient();
-        client.AddLocation("loc-drw", "Darwin");
-        client.AddComputer(new HardwareAsset
+        client.AddComputer(HongKongVm("0000-0000-0353"));
+
+        var page = await client.SearchHardwareAsync(new TicketQuery
         {
-            SysId = "hw-drw",
-            SerialNumber = "DRW0001",
-            Model = "HP ZBook",
-            ModelCategory = HardwareCatalog.Computer,
-            Location = new ReferenceValue("loc-drw-asset", "Darwin Office"),
-            InstallStatus = HardwareCatalog.InUse,
-            InstallStatusLabel = HardwareCatalog.InUse
-        });
-        client.SignedInUser = ViewerAt("Darwin");
-        var workspace = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+            Locations = ["Brisbane Office"],
+            Limit = 1,
+            Activity = ActivityFilter.Any
+        }, CancellationToken.None);
+
+        var only = Assert.Single(page.Items);
+        Assert.Equal("Brisbane Office", only.Location.Display);
+        Assert.DoesNotContain("(", client.LastHardwareQuery);
+        Assert.Contains(
+            "model_category.name=Computer^location.nameLIKE\"Brisbane Office\"^ORDERBYserial_number",
+            client.LastHardwareQuery);
+    }
+
+    [Fact]
+    public async Task ReturnedRowsDoNotAddOfficeChoices()
+    {
+        using var client = new SampleServiceNowClient();
+        client.AddComputer(HongKongVm("0000-0000-0353"));
+        var store = new MemorySettingsStore();
+        store.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane"] });
+        var workspace = new HardwareWorkspaceViewModel(store);
         workspace.Attach(client);
-        workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
         await workspace.RefreshAsync();
 
-        AssertStoredOffice(workspace, "Darwin Office");
-        Assert.True(workspace.Offices.Single(office => office.Name == "Darwin Office").IsSelected);
-        Assert.Contains("location.nameLIKE\"Darwin Office\"", client.LastHardwareQuery);
-        Assert.DoesNotContain("location.nameLIKE\"Darwin\"", client.LastHardwareQuery);
-        Assert.Contains(workspace.Items, asset => asset.SerialNumber == "DRW0001");
-        Assert.Equal("Showing Darwin Office.", workspace.OfficeStatus);
+        AssertStoredOffice(workspace, "Brisbane Office");
+        Assert.Equal("Brisbane Office", workspace.OfficeSelectionSummary);
+        Assert.DoesNotContain(workspace.Offices, office => office.Name.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
+        Assert.All(workspace.Items, asset => Assert.Equal("Brisbane Office", asset.Location.Display));
+        Assert.Contains("location.nameLIKE\"Brisbane Office\"", client.LastHardwareQuery);
+        Assert.DoesNotContain("(", client.LastHardwareQuery);
+
+        await workspace.SearchAllLocationsCommand.ExecuteAsync(null);
+
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == "0000-0000-0353");
+        Assert.DoesNotContain(workspace.Offices, office => office.Name == "Hong Kong Office");
+        Assert.Equal("All locations", workspace.OfficeSelectionSummary);
     }
+
+    [Fact]
+    public async Task OfficeSearchNarrowsChoicesWithoutReloadingAssets()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenHardwareAsync(client);
+        var gets = HardwareGets(client);
+        var shown = workspace.Items.Count;
+        Assert.Contains(workspace.VisibleOffices, office => office.Name == "Cairns");
+        Assert.Contains(workspace.VisibleOffices, office => office.Name == "Brisbane Office");
+
+        workspace.OfficeSearchText = "br";
+
+        Assert.Equal(gets, HardwareGets(client));
+        Assert.Equal(shown, workspace.Items.Count);
+        Assert.Contains(workspace.VisibleOffices, office => office.Name == "Brisbane Office");
+        Assert.DoesNotContain(workspace.VisibleOffices, office => office.Name == "Cairns");
+        Assert.DoesNotContain(workspace.VisibleOffices, office => office.Name == "Maroochydore");
+        Assert.True(workspace.VisibleOffices.Count < workspace.Offices.Count);
+
+        workspace.OfficeSearchText = "cair";
+        Assert.Equal(gets, HardwareGets(client));
+        var cairns = Assert.Single(workspace.VisibleOffices);
+        Assert.Equal("Cairns", cairns.Name);
+
+        cairns.IsSelected = true;
+        await workspace.OfficeLoad;
+        Assert.True(HardwareGets(client) > gets);
+        Assert.Equal("Cairns", workspace.OfficeSelectionSummary);
+        Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
+
+        var afterSelect = HardwareGets(client);
+        cairns.IsSelected = false;
+        await workspace.OfficeLoad;
+        Assert.True(HardwareGets(client) > afterSelect);
+        Assert.Equal("All locations", workspace.OfficeSelectionSummary);
+        Assert.Contains(workspace.Items, asset => asset.Location.Display == "Hong Kong Office");
+    }
+
+    private static HardwareAsset HongKongVm(string serial) => new()
+    {
+        SysId = "hw-hk-vm",
+        SerialNumber = serial,
+        Model = "Microsoft Corporation Virtual Machine",
+        ModelCategory = HardwareCatalog.Computer,
+        Location = new ReferenceValue("loc-hkg", "Hong Kong Office"),
+        InstallStatus = HardwareCatalog.InUse,
+        InstallStatusLabel = HardwareCatalog.InUse
+    };
 
     private static void AssertStoredOffice(HardwareWorkspaceViewModel workspace, string name)
     {

@@ -38,6 +38,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
                 StockroomApply = ApplyWaitingAsync();
         };
         Batch.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasBatch));
+        Offices.CollectionChanged += (_, _) => RefreshVisibleOffices();
     }
 
     public ReferenceFieldModel AssignedTo { get; }
@@ -46,6 +47,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     public ReferenceFieldModel ReceiveStockroom { get; }
     public ObservableCollection<HardwareAsset> Items { get; } = [];
     public ObservableCollection<HardwareOfficeOption> Offices { get; } = [];
+    public ObservableCollection<HardwareOfficeOption> VisibleOffices { get; } = [];
     public ObservableCollection<Choice> InstallStatuses { get; } = [];
     public ObservableCollection<Choice> Substatuses { get; } = [];
     public ObservableCollection<HardwareScanRow> Batch { get; } = [];
@@ -64,6 +66,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     public event EventHandler? DefaultSaved;
 
     [ObservableProperty] private string searchText = "";
+    [ObservableProperty] private string officeSearchText = "";
     [ObservableProperty] private string officeStatus = "";
     [ObservableProperty] private string serialFilter = "";
     [ObservableProperty] private string modelFilter = "";
@@ -128,7 +131,18 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         StateFilter = "";
         SubstatusFilter = "";
         CommentsFilter = "";
+        OfficeSearchText = "";
         OfficeStatus = "";
+        OnPropertyChanged(nameof(OfficeSelectionSummary));
+    }
+
+    public string OfficeSelectionSummary
+    {
+        get
+        {
+            var names = SelectedOfficeNames();
+            return names.Count == 0 ? "All locations" : string.Join(", ", names);
+        }
     }
 
     public Task RefreshAsync() => RefreshCoreAsync();
@@ -148,21 +162,14 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             await EnsureChoicesAsync();
             var offices = SelectedOfficeNames();
             var page = await LoadHardwarePageAsync(offices);
-            if (AbsorbAssetOffices(page.Items))
-            {
-                var updated = SelectedOfficeNames();
-                if (!SameOfficeList(offices, updated))
-                {
-                    offices = updated;
-                    page = await LoadHardwarePageAsync(offices);
-                    AbsorbAssetOffices(page.Items);
-                    offices = SelectedOfficeNames();
-                }
-            }
-
             var keep = Selected?.SysId ?? _loaded?.SysId;
             _loadedRows.Clear();
-            _loadedRows.AddRange(page.Items);
+            foreach (var asset in page.Items)
+            {
+                if (HardwareCatalog.MatchesLocation(asset, offices) && HardwareCatalog.MatchesSearch(asset, SearchText))
+                    _loadedRows.Add(asset);
+            }
+
             ApplyColumnFilters(keep);
             PublishScope(offices);
         }
@@ -419,6 +426,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         foreach (var office in Offices)
             office.IsSelected = false;
         _suppressOffice = false;
+        OnPropertyChanged(nameof(OfficeSelectionSummary));
         await RefreshCoreAsync();
     }
 
@@ -692,45 +700,32 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             Locations = offices.ToList()
         }, CancellationToken.None);
 
-    /// <summary>
-    /// Renames a selected office when a loaded asset stores a different label for the same place.
-    /// Returns true when a selected label changed and the hardware query should be repeated.
-    /// </summary>
-    private bool AbsorbAssetOffices(IEnumerable<HardwareAsset> assets)
+    partial void OnOfficeSearchTextChanged(string value) => RefreshVisibleOffices(value);
+
+    private void RefreshVisibleOffices() => RefreshVisibleOffices(OfficeSearchText);
+
+    private void RefreshVisibleOffices(string? term)
     {
-        var renamedSelection = false;
-        foreach (var asset in assets)
-        {
-            if (EnsureOffice(asset.Location.Display, false, HardwareOfficeLabelKind.Asset))
-                renamedSelection = true;
-        }
+        var filter = (term ?? "").Trim();
+        var desired = Offices
+            .Where(office => filter.Length == 0 || office.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (desired.Length == VisibleOffices.Count && desired.SequenceEqual(VisibleOffices))
+            return;
 
-        return renamedSelection;
-    }
-
-    private static bool SameOfficeList(IReadOnlyList<string> left, IReadOnlyList<string> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var i = 0; i < left.Count; i++)
-        {
-            if (!left[i].Equals(right[i], StringComparison.OrdinalIgnoreCase))
-                return false;
-        }
-
-        return true;
+        VisibleOffices.Clear();
+        foreach (var office in desired)
+            VisibleOffices.Add(office);
     }
 
     /// <summary>
     /// Adds or selects an office. A bare city and the same city plus " Office" share one checkbox.
-    /// Returns true when the checkbox was selected and its query label changed.
     /// </summary>
-    private bool EnsureOffice(string? name, bool selected, HardwareOfficeLabelKind kind)
+    private void EnsureOffice(string? name, bool selected, HardwareOfficeLabelKind kind)
     {
         var trimmed = HardwareOfficeNames.Normalize(name);
         if (trimmed.Length == 0)
-            return false;
+            return;
 
         var existing = Offices.FirstOrDefault(office => HardwareOfficeNames.SamePlace(office.Name, trimmed));
         if (existing is null)
@@ -740,27 +735,26 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             Offices.Add(option);
             if (selected)
                 option.IsSelected = true;
-            return false;
+            return;
         }
 
-        var labelChanged = false;
         var adopt = HardwareOfficeNames.UseIncomingLabel(existing.Name, existing.LabelKind, trimmed, kind);
         if ((int)kind > (int)existing.LabelKind)
             existing.LabelKind = kind;
         if (adopt)
         {
-            labelChanged = existing.IsSelected;
             existing.Name = trimmed;
+            RefreshVisibleOffices();
         }
 
         if (selected && !existing.IsSelected)
             existing.IsSelected = true;
-
-        return labelChanged;
     }
 
     private void OnOfficeSelectionChanged(object? sender, EventArgs e)
     {
+        if (!_suppressOffice)
+            OnPropertyChanged(nameof(OfficeSelectionSummary));
         if (_suppressOffice || _client is null)
             return;
 
@@ -783,6 +777,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             OfficeStatus = "Showing all locations.";
         else
             OfficeStatus = "Showing " + string.Join(", ", offices) + ".";
+        OnPropertyChanged(nameof(OfficeSelectionSummary));
     }
 
     private void ApplyColumnFilters(string? keepSysId)

@@ -81,20 +81,23 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <TextBlock Text="Offices" Style="{StaticResource FieldLabel}"/>
-                    <TextBlock Text="Pick one or more offices to load that portion. All locations searches the full asset list. Set as default remembers the selection on this PC." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                    <ItemsControl ItemsSource="{Binding Offices}" Margin="0,0,0,6">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,0,16,6"
-                                          AutomationProperties.Name="{Binding Name, StringFormat=Office {0}}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <TextBlock Text="Type to find an office. Check one or more to load that portion. All locations searches the full asset list. Set as default remembers the selection on this PC." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <TextBox Text="{Binding OfficeSearchText, UpdateSourceTrigger=PropertyChanged}"
+                             MinHeight="28" Padding="6,4" Margin="0,0,0,6"
+                             AutomationProperties.Name="Find office"/>
+                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" MaxHeight="168" Margin="0,0,0,6">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding VisibleOffices}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="8,3"
+                                                  AutomationProperties.Name="{Binding Name, StringFormat=Office {0}}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                    <TextBlock Text="{Binding OfficeSelectionSummary}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                         <Button Content="All locations" Style="{StaticResource SecondaryButton}" Command="{Binding SearchAllLocationsCommand}" Margin="0,0,8,0"/>
                         <Button Content="Set as default" Style="{StaticResource SecondaryButton}" Command="{Binding SetDefaultOfficesCommand}"/>

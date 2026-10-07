@@ -147,39 +147,39 @@ public static class HardwareCatalog
         return names.Any(name => display.Contains(name, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Computer rows, restricted to the selected location names, ordered by serial.
+    /// Each office is its own complete clause joined with ^NQ. A parenthesized OR is not
+    /// used: ServiceNow drops that group, then sysparm_limit returns the first computers
+    /// in serial order from every city.
+    /// </summary>
     public static string ListQuery(string? text, IReadOnlyList<string>? locations = null)
     {
         var term = EncodedQuery.Sanitize(text);
-        var scope = ComputerScope(locations);
+        var places = OfficeNames(locations);
+        var branches = new List<string>();
+        if (places.Length == 0)
+            branches.AddRange(TextBranches("model_category.name=Computer", term));
+        else
+        {
+            foreach (var place in places)
+                branches.AddRange(TextBranches("model_category.name=Computer^location.nameLIKE" + Quote(place), term));
+        }
+
+        return string.Join("^NQ", branches) + "^ORDERBYserial_number";
+    }
+
+    private static IEnumerable<string> TextBranches(string scope, string term)
+    {
         if (term.Length == 0)
-            return scope + "^ORDERBYserial_number";
+        {
+            yield return scope;
+            yield break;
+        }
 
-        return string.Join("^NQ",
-        [
-            scope + "^serial_numberLIKE" + term,
-            scope + "^model.nameLIKE" + term,
-            scope + "^assigned_to.nameLIKE" + term
-        ]);
-    }
-
-    /// <summary>
-    /// Encoded location restriction. Empty when every office should be queried.
-    /// </summary>
-    public static string LocationClause(IReadOnlyList<string>? locations)
-    {
-        var names = OfficeNames(locations);
-        if (names.Length == 0)
-            return "";
-
-        var parts = names.Select(name => "location.nameLIKE" + Quote(name));
-        return names.Length == 1 ? parts.First() : "(" + string.Join("^OR", parts) + ")";
-    }
-
-    private static string ComputerScope(IReadOnlyList<string>? locations)
-    {
-        const string computers = "model_category.name=Computer";
-        var place = LocationClause(locations);
-        return place.Length == 0 ? computers : computers + "^" + place;
+        yield return scope + "^serial_numberLIKE" + term;
+        yield return scope + "^model.nameLIKE" + term;
+        yield return scope + "^assigned_to.nameLIKE" + term;
     }
 
     private static string[] OfficeNames(IReadOnlyList<string>? locations) =>
