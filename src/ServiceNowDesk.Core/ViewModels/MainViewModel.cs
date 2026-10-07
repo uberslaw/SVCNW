@@ -256,6 +256,7 @@ public partial class MainViewModel : ObservableObject
             WindowTitle = "ServiceNow Desk — " + InstanceLabel;
             IsConnected = true;
             _signedInUserId = user.SysId;
+            Catalog.RememberSignedInUser(user);
             Notifications.RememberViewer(_signedInUserId, Connection.Highlights);
             Leads.Board.RememberViewer(_signedInUserId, Connection.Highlights);
             StatusMessage = settings.UseSampleData
@@ -405,6 +406,7 @@ public partial class MainViewModel : ObservableObject
                 AbandonIfRejected(Search.ErrorMessage);
                 break;
             case DeskSection.Catalog:
+                _ = Catalog.PrepareGenericRequestAsync();
                 await Catalog.RunAsync(_client, SearchText);
                 AbandonIfRejected(Catalog.ErrorMessage);
                 break;
@@ -625,6 +627,7 @@ public partial class MainViewModel : ObservableObject
                     ShowSavedKnowledge();
                 break;
             case DeskSection.Catalog:
+                _ = Catalog.PrepareGenericRequestAsync();
                 await Catalog.RunAsync(_client, SearchText);
                 break;
             case DeskSection.Notifications:

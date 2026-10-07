@@ -58,16 +58,33 @@ public partial class CatalogWorkspaceViewModel : ObservableObject
 
     public void Attach(IServiceNowClient? client)
     {
+        var previous = _client;
         _client = client;
         _genericVariables = GenericRequestVariables.Fallback;
-        if (client is null)
+        _prepare = null;
+        if (ReferenceEquals(previous, client) || _genericPersonEdited)
             return;
-        _ = PrepareGenericRequestAsync();
+
+        _applyingGenericPerson = true;
+        GenericRequestedFor.Clear();
+        _applyingGenericPerson = false;
+    }
+
+    public void RememberSignedInUser(CurrentUser? user)
+    {
+        if (user is null || string.IsNullOrWhiteSpace(user.SysId) || _genericPersonEdited)
+            return;
+        if (!string.IsNullOrWhiteSpace(GenericRequestedFor.Text))
+            return;
+
+        _applyingGenericPerson = true;
+        GenericRequestedFor.Set(user.SysId, user.Name);
+        _applyingGenericPerson = false;
     }
 
     public Task PrepareGenericRequestAsync()
     {
-        _prepare = PrepareGenericRequestCoreAsync();
+        _prepare ??= PrepareGenericRequestCoreAsync();
         return _prepare;
     }
 
@@ -158,8 +175,7 @@ public partial class CatalogWorkspaceViewModel : ObservableObject
             return;
 
         GenericError = "";
-        if (_prepare is not null)
-            await _prepare;
+        await PrepareGenericRequestAsync();
 
         await GenericRequestedFor.AcceptExactUserAsync();
         if (string.IsNullOrEmpty(GenericRequestedFor.SysId))
