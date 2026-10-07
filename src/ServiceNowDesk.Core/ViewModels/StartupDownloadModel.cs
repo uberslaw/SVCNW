@@ -12,6 +12,9 @@ public sealed partial class StartupDownloadModel : ObservableObject
     private int _current = -1;
     private bool _dismissed;
 
+    /// <summary>True after the user closes the splash. A download that finishes on its own leaves this false.</summary>
+    public bool ClosedByUser { get; private set; }
+
     public ObservableCollection<StartupDownloadLine> Lines { get; } = [];
 
     public event EventHandler? Dismissed;
@@ -33,6 +36,7 @@ public sealed partial class StartupDownloadModel : ObservableObject
             _finished = 0;
             _current = -1;
             _dismissed = false;
+            ClosedByUser = false;
             Title = Heading(null);
             IsRunning = true;
             ShowScreen = true;
@@ -119,6 +123,7 @@ public sealed partial class StartupDownloadModel : ObservableObject
     {
         lock (_gate)
         {
+            ClosedByUser = true;
             _dismissed = true;
             ShowScreen = false;
             ShowBar = IsRunning;
@@ -137,6 +142,7 @@ public sealed partial class StartupDownloadModel : ObservableObject
             _finished = 0;
             _current = -1;
             _dismissed = false;
+            ClosedByUser = false;
             IsRunning = false;
             ShowScreen = false;
             ShowBar = false;

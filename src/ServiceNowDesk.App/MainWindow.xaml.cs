@@ -179,6 +179,15 @@ public partial class MainWindow : Window
     private void NotificationsHelp_Click(object sender, RoutedEventArgs e) =>
         OpenHelp(HelpTopic.Notifications);
 
+    private void GuidedSetup_Click(object sender, RoutedEventArgs e) =>
+        Model?.StartGuidedSetupFromHelp();
+
+    internal ItemsControl NavListControl => NavList;
+
+    internal ConnectionView ConnectionPageControl => ConnectionPage;
+
+    internal FrameworkElement SplashCardControl => SplashCard;
+
     private void OpenHelp(HelpTopic topic)
     {
         foreach (Window window in OwnedWindows)
