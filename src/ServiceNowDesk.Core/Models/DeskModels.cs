@@ -218,13 +218,14 @@ public sealed class DeskSettings
     public List<string>? EnabledHighlights { get; set; }
 
     /// <summary>
-    /// Schema for <see cref="LegendIntensity"/>. Version 2 is the wash-to-vivid curve.
+    /// Schema for <see cref="LegendIntensity"/>. Version 2 is the colour curve.
+    /// On that curve, 0 is the wash that used to sit at 25, and 100 is a quarter past the old maximum.
     /// Any other value, including a missing field, ignores saved positions so an older white-to-black number is not reused.
     /// </summary>
     public int LegendIntensityVersion { get; set; }
 
     /// <summary>
-    /// Shared legend slider position, 0–100, on the current curve.
+    /// Shared legend slider position, 0–100. 0 is the old 25% wash and 100 is past the old strongest tint.
     /// Null means each colour keeps the position closest to its original swatch, unless
     /// <see cref="LegendColorIntensities"/> names that colour.
     /// All-colours writes this and clears per-colour overrides.
