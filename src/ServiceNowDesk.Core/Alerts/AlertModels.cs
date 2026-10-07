@@ -39,7 +39,7 @@ public static class AlertCatalog
         AlertKind.SlaBreaching => "SLA breaching",
         AlertKind.OnHoldPastFollowUp => "On hold past follow-up",
         AlertKind.UpdatedByCaller => "Updated by caller",
-        AlertKind.ReturnedWithNotes => "Returned with notes",
+        AlertKind.ReturnedWithNotes => "Returned by DT",
         AlertKind.Unattended => "Unattended tickets",
         _ => kind.ToString()
     };
@@ -99,6 +99,30 @@ public sealed record AlertBucket(IReadOnlyList<AlertRecord> Rows, int TotalCount
     public static AlertBucket Empty { get; } = new([], 0);
 
     public static AlertBucket Failed(string status) => new([], 0, status ?? "");
+}
+
+/// <summary>
+/// A failed refresh that comes back empty must not wipe a queue that already has rows.
+/// A successful empty result (no status) still replaces the previous list.
+/// </summary>
+public static class AlertCountKeep
+{
+    public static AlertSnapshot Apply(AlertSnapshot previous, AlertSnapshot next)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(next);
+        var buckets = new Dictionary<AlertKind, AlertBucket>();
+        foreach (var kind in AlertCatalog.All)
+        {
+            var before = previous.Bucket(kind);
+            var after = next.Bucket(kind);
+            buckets[kind] = before.TotalCount > 0 && after.TotalCount == 0 && !string.IsNullOrWhiteSpace(after.Status)
+                ? new AlertBucket(before.Rows, before.TotalCount, after.Status)
+                : after;
+        }
+
+        return new AlertSnapshot(buckets);
+    }
 }
 
 /// <summary>

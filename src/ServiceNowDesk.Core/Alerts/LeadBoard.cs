@@ -26,6 +26,12 @@ public sealed class LeadBoard
 
     public AlertSnapshot For(LeadArea area) => area == LeadArea.Regional ? Regional : Team;
 
+    public LeadBoard KeepingCounts(LeadBoard next)
+    {
+        ArgumentNullException.ThrowIfNull(next);
+        return new LeadBoard(AlertCountKeep.Apply(Team, next.Team), AlertCountKeep.Apply(Regional, next.Regional));
+    }
+
     public static LeadBoard Build(
         IEnumerable<WatchedRecord> records,
         DateTime now,

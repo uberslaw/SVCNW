@@ -42,7 +42,7 @@
             </StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12">
                 <TextBlock.Text>
-                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, returned with notes, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. Save team stores the ticked names on this PC and hides the checkboxes. Edit team brings the ticks back. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work Effort counts only the people on the team."/>
+                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, Returned by DT, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. Save team stores the ticked names on this PC and hides the checkboxes. Edit team brings the ticks back. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work Effort counts only the people on the team."/>
                 </TextBlock.Text>
             </TextBlock>
         </StackPanel>

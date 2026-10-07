@@ -42,7 +42,7 @@ public sealed record WorkItem(
             if (Unattended)
                 parts.Add("Unattended");
             if (ReturnedWithNotes)
-                parts.Add("Returned with notes");
+                parts.Add("Returned by DT");
             return string.Join(", ", parts);
         }
     }

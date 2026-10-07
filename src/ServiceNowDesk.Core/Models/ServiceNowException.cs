@@ -12,8 +12,25 @@ public sealed class ServiceNowException : Exception
         Detail = detail;
     }
 
+    public const string QueryTooLongMessage = "The ServiceNow query was too long.";
+
     public int StatusCode { get; }
     public string? Detail { get; }
+
+    public static bool IsQueryTooLong(string? text) =>
+        !string.IsNullOrWhiteSpace(text)
+        && (text.Contains("pagination header", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("query is too long", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("sysparm_suppress_pagination_header", StringComparison.OrdinalIgnoreCase));
+
+    public static string ShortQueryMessage(ServiceNowException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        if (IsQueryTooLong(exception.Message) || IsQueryTooLong(exception.Detail))
+            return QueryTooLongMessage;
+        var text = exception.Message ?? "";
+        return text.Length > 180 ? text[..180].TrimEnd() + "…" : text;
+    }
 
     public static ServiceNowException FromResponse(int statusCode, string? body, string? fallback = null)
     {
@@ -54,6 +71,9 @@ public sealed class ServiceNowException : Exception
             }
 
             var text = FirstNonEmpty(detail, message);
+            if (IsQueryTooLong(text))
+                return new ServiceNowException(statusCode, QueryTooLongMessage, text);
+
             if (string.IsNullOrWhiteSpace(text))
                 text = fallback ?? DefaultForStatus(statusCode);
             else

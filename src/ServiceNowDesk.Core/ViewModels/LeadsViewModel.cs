@@ -193,7 +193,7 @@ public partial class LeadsViewModel : ObservableObject
 
     public void Show(LeadBoard board)
     {
-        _board = board ?? LeadBoard.Empty;
+        _board = _board.KeepingCounts(board ?? LeadBoard.Empty);
         Board.Show(_board.For(Area));
     }
 
