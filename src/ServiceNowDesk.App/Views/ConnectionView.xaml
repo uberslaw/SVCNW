@@ -70,6 +70,7 @@
             <TextBlock Text="Leads access" FontWeight="SemiBold" Margin="0,18,0,4"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                        Text="Enter the leads password to show the Leads menu."/>
+            <TextBlock Text="Leads password" Style="{StaticResource FieldLabel}"/>
             <PasswordBox x:Name="LeadsPasswordInput" Width="280" HorizontalAlignment="Left" Margin="0,0,0,8"
                          PasswordChanged="LeadsPasswordInput_PasswordChanged"
                          AutomationProperties.Name="Leads password"/>

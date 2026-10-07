@@ -290,12 +290,19 @@ public partial class AlertWidgetWindow : Window
         _positioning = true;
         try
         {
+            // Measure with the drop panel present so the strip stays as wide as the labels.
+            // Then hide that panel while the window is only the 4px strip. Its 1px line border
+            // and white fill otherwise paint as an empty collapsed box over the desk.
+            if (DropPanel.Visibility != Visibility.Visible)
+                DropPanel.Visibility = Visibility.Visible;
             WidgetRoot.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             var desired = WidgetRoot.DesiredSize;
             var width = desired.Width > 1 ? desired.Width : WidgetFallbackWidth;
             var openHeight = desired.Height > 1 ? desired.Height : WidgetFallbackHeight;
+            var barOpen = _motion.BarOpen;
+            DropPanel.Visibility = barOpen ? Visibility.Visible : Visibility.Collapsed;
             Width = width;
-            Height = _motion.BarOpen ? openHeight : IndicatorStrip;
+            Height = barOpen ? openHeight : IndicatorStrip;
             if (!_wiggling)
             {
                 BeginAnimation(LeftProperty, null);
