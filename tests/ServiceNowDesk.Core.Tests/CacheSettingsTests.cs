@@ -47,9 +47,10 @@ public class CacheSettingsTests
         var calls = handler.Snapshot();
         Assert.DoesNotContain(calls, call => call.PathAndQuery.Contains("sys_choice", StringComparison.Ordinal));
         Assert.DoesNotContain(calls, call => call.PathAndQuery.Contains("sys_user_group", StringComparison.Ordinal));
+        // Allow My Groups membership for the signed-in user. Block the full member directory download.
         Assert.DoesNotContain(calls, call =>
             call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal)
-            && !call.PathAndQuery.Contains("getUserID", StringComparison.Ordinal));
+            && Uri.UnescapeDataString(call.PathAndQuery).Contains("userISNOTEMPTY", StringComparison.Ordinal));
     }
 
     [Fact]
