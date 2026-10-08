@@ -33,30 +33,47 @@ public class TicketListFilterTests
     }
 
     [Fact]
-    public void DescribeActiveShowsMyTicketsWithoutOfficeFilter()
+    public void DescribeActiveShowsMyTicketsWithoutEncodedQuery()
     {
         var text = TicketListFilter.DescribeActive(
             PresetCatalog.Incidents[0],
             officeCities: ["Brisbane"],
             teamMemberIds: null);
         Assert.Contains("My Tickets", text, StringComparison.Ordinal);
-        Assert.Contains("assigned_to=signed-in user", text, StringComparison.Ordinal);
-        Assert.Contains("no office filter", text, StringComparison.Ordinal);
+        Assert.Contains("assigned to you", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("assigned_to", text, StringComparison.Ordinal);
         Assert.DoesNotContain("location.name", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("^NQ", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("assignment_groupIN", text, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void DescribeActiveShowsOfficeNqForMyTeam()
+    public void DescribeActiveShowsHumanOfficesForMyTeam()
     {
         var text = TicketListFilter.DescribeActive(
             PresetCatalog.Incidents.Single(preset => preset.Label == "My Team"),
             officeCities: ["Brisbane"],
             teamMemberIds: null);
         Assert.Contains("My Team", text, StringComparison.Ordinal);
-        Assert.Contains("assignment_groupIN my groups", text, StringComparison.Ordinal);
-        Assert.Contains("location.name NQ", text, StringComparison.Ordinal);
-        Assert.Contains("\"Brisbane\"", text, StringComparison.Ordinal);
-        Assert.Contains("\"Brisbane Office\"", text, StringComparison.Ordinal);
+        Assert.Contains("your groups", text, StringComparison.Ordinal);
+        Assert.Contains("offices: Brisbane", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("assignment_groupIN", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("location.name", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("^NQ", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DescribeActiveUnassignedOmitsEncodedOperators()
+    {
+        var text = TicketListFilter.DescribeActive(
+            PresetCatalog.Incidents.Single(preset => preset.Label == "Unassigned"),
+            officeCities: ["Brisbane"],
+            teamMemberIds: null);
+        Assert.Contains("Unassigned", text, StringComparison.Ordinal);
+        Assert.Contains("unassigned in your groups", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("assigned_toISEMPTY", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("assignment_groupIN", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("^NQ", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -87,7 +104,7 @@ public class TicketListFilterTests
     }
 
     [Fact]
-    public async Task PracticeListChromeSurfacesFilterAndEncodedQuery()
+    public async Task PracticeListChromeKeepsEncodedQueryOffStatusStrings()
     {
         var client = new SampleServiceNowClient();
         var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
@@ -96,11 +113,21 @@ public class TicketListFilterTests
         await workspace.ReloadAsync();
 
         Assert.Contains("My Tickets", workspace.FilterSummary, StringComparison.Ordinal);
-        Assert.Contains("no office filter", workspace.FilterSummary, StringComparison.Ordinal);
+        Assert.Contains("assigned to you", workspace.FilterSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain("assigned_toISEMPTY", workspace.FilterSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain("assignment_groupIN", workspace.FilterSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain("^NQ", workspace.FilterSummary, StringComparison.Ordinal);
         Assert.Contains("assigned_to=sample-user", workspace.LastEncodedQuery, StringComparison.Ordinal);
         Assert.DoesNotContain("javascript:gs.getUserID()", workspace.LastEncodedQuery, StringComparison.Ordinal);
         Assert.True(workspace.TotalCount > 0, workspace.LastEncodedQuery);
         Assert.Equal(client.LastTicketEncodedQuery, workspace.LastEncodedQuery);
+
+        workspace.Preset = PresetCatalog.Incidents.Single(preset => preset.Label == "Unassigned");
+        await workspace.ReloadAsync();
+        Assert.DoesNotContain("assigned_toISEMPTY", workspace.FilterSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain("assignment_groupIN", workspace.FilterSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain("^NQ", workspace.FilterSummary, StringComparison.Ordinal);
+        Assert.Contains("assigned_toISEMPTY", workspace.LastEncodedQuery, StringComparison.Ordinal);
     }
 
     private static string QueryOf(string pathAndQuery)

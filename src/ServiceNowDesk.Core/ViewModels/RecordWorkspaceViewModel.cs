@@ -194,7 +194,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Active filters and the last download encoded query for list / Settings Cache transparency.
+    /// Remembers the last download encoded query for logging. List chrome stays human-readable.
     /// </summary>
     public void RememberDownloadQuery(string? encodedQuery)
     {
