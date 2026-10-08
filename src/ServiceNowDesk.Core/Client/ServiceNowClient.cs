@@ -1299,7 +1299,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         if (term.Length < 2)
             return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
 
-        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", EncodedQuery.ActiveUserSearch(term), true, 20, cancellationToken);
+        return SearchReferencesAsync("sys_user", "sys_id,name,first_name,last_name,user_name,email", EncodedQuery.ActiveUserSearch(term), true, 20, cancellationToken);
     }
 
     public Task<IReadOnlyList<ReferenceSuggestion>> MatchUsersAsync(string text, CancellationToken cancellationToken)
@@ -1308,7 +1308,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         if (term.Length < 2)
             return Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([]);
 
-        return SearchReferencesAsync("sys_user", "sys_id,name,user_name,email", EncodedQuery.ActiveUserExact(term), true, 20, cancellationToken);
+        return SearchReferencesAsync("sys_user", "sys_id,name,first_name,last_name,user_name,email", EncodedQuery.ActiveUserExact(term), true, 20, cancellationToken);
     }
 
     public async Task<IReadOnlyList<Choice>> ListAssignmentGroupsAsync(CancellationToken cancellationToken)
