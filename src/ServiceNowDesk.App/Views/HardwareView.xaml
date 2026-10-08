@@ -119,68 +119,143 @@
                                    Text="{Binding DownloadPercent, StringFormat={}{0}%}"/>
                     </Grid>
                 </StackPanel>
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                    <TextBlock Text="{Binding Items.Count, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
-                    <TextBlock Text="  Downloading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}"/>
-                </StackPanel>
-                <Grid DockPanel.Dock="Top" Margin="8,0,8,4">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
+                    <TextBlock Text="{Binding Items.Count, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
+                    <TextBlock Text="  Downloading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}"/>
+                    <Grid Margin="12,0,0,0" VerticalAlignment="Center">
+                        <Button x:Name="SearchTipsButton"
+                                Content="Search tips"
+                                Style="{StaticResource QuietButton}"
+                                Padding="6,2"
+                                MinHeight="24"
+                                Command="{Binding ShowSearchTipsCommand}"
+                                ToolTip="Wildcard and filter rules"
+                                AutomationProperties.Name="Search tips"/>
+                        <Popup IsOpen="{Binding SearchTipsOpen, Mode=TwoWay}"
+                               Placement="Bottom"
+                               PlacementTarget="{Binding ElementName=SearchTipsButton}"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               PopupAnimation="Fade">
+                            <Border Background="{StaticResource CardBrush}"
+                                    BorderBrush="{StaticResource LineBrush}"
+                                    BorderThickness="1"
+                                    Padding="14"
+                                    MaxWidth="420"
+                                    SnapsToDevicePixels="True">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding SearchTipsTitle}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                    <TextBlock Text="{Binding SearchTipsBody}" TextWrapping="Wrap" Foreground="{StaticResource TextBrush}"/>
+                                    <Button Content="Close"
+                                            Style="{StaticResource SecondaryButton}"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,12,0,0"
+                                            Command="{Binding CloseSearchTipsCommand}"
+                                            AutomationProperties.Name="Close search tips"/>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </DockPanel>
+                <Grid Grid.IsSharedSizeScope="True">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="120"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="110"/>
-                        <ColumnDefinition Width="110"/>
-                        <ColumnDefinition Width="90"/>
-                        <ColumnDefinition Width="110"/>
-                        <ColumnDefinition Width="140"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Serial" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="1" Text="Model" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="2" Text="Assigned to" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="3" Text="Location" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="4" Text="State" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="5" Text="Substate" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="6" Text="Comments" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBox Grid.Row="1" Text="{Binding SerialFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter serial"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ModelFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter model"/>
-                    <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding AssignedFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter assigned to"/>
-                    <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding LocationFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter location"/>
-                    <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding StateFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter state"/>
-                    <TextBox Grid.Row="1" Grid.Column="5" Text="{Binding SubstatusFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,8,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter substate"/>
-                    <TextBox Grid.Row="1" Grid.Column="6" Text="{Binding CommentsFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter comments"/>
+                    <Grid Margin="0,0,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" MinWidth="64" SharedSizeGroup="HwSerial"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="*" MinWidth="80"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="110" MinWidth="72" SharedSizeGroup="HwAssigned"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="110" MinWidth="72" SharedSizeGroup="HwLocation"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="90" MinWidth="64" SharedSizeGroup="HwState"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="110" MinWidth="72" SharedSizeGroup="HwSubstate"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="140" MinWidth="72" SharedSizeGroup="HwComments"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Serial" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                        <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext" Background="Transparent"/>
+                        <TextBlock Grid.Column="2" Text="Model" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                        <GridSplitter Grid.Column="3" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext" Background="Transparent"/>
+                        <TextBlock Grid.Column="4" Text="Assigned to" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                        <GridSplitter Grid.Column="5" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext" Background="Transparent"/>
+                        <TextBlock Grid.Column="6" Text="Location" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                        <GridSplitter Grid.Column="7" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext" Background="Transparent"/>
+                        <TextBlock Grid.Column="8" Text="State" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                        <GridSplitter Grid.Column="9" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext" Background="Transparent"/>
+                        <TextBlock Grid.Column="10" Text="Substate" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                        <GridSplitter Grid.Column="11" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext" Background="Transparent"/>
+                        <TextBlock Grid.Column="12" Text="Comments" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid Grid.Row="1" Margin="0,4,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" MinWidth="64" SharedSizeGroup="HwSerial"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="*" MinWidth="80"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="110" MinWidth="72" SharedSizeGroup="HwAssigned"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="110" MinWidth="72" SharedSizeGroup="HwLocation"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="90" MinWidth="64" SharedSizeGroup="HwState"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="110" MinWidth="72" SharedSizeGroup="HwSubstate"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="140" MinWidth="72" SharedSizeGroup="HwComments"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding SerialFilter, UpdateSourceTrigger=PropertyChanged}" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter serial"/>
+                        <TextBox Grid.Column="2" Text="{Binding ModelFilter, UpdateSourceTrigger=PropertyChanged}" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter model"/>
+                        <TextBox Grid.Column="4" Text="{Binding AssignedFilter, UpdateSourceTrigger=PropertyChanged}" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter assigned to"/>
+                        <TextBox Grid.Column="6" Text="{Binding LocationFilter, UpdateSourceTrigger=PropertyChanged}" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter location"/>
+                        <TextBox Grid.Column="8" Text="{Binding StateFilter, UpdateSourceTrigger=PropertyChanged}" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter state"/>
+                        <TextBox Grid.Column="10" Text="{Binding SubstatusFilter, UpdateSourceTrigger=PropertyChanged}" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter substate"/>
+                        <TextBox Grid.Column="12" Text="{Binding CommentsFilter, UpdateSourceTrigger=PropertyChanged}" MinHeight="28" Padding="6,4" AutomationProperties.Name="Filter comments"/>
+                    </Grid>
+                    <ListBox Grid.Row="2"
+                             ItemsSource="{Binding Items}"
+                             SelectedItem="{Binding Selected}"
+                             Style="{StaticResource DeskList}"
+                             ItemContainerStyle="{StaticResource DeskListItem}"
+                             HorizontalContentAlignment="Stretch"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid HorizontalAlignment="Stretch">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120" MinWidth="64" SharedSizeGroup="HwSerial"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="*" MinWidth="80"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="110" MinWidth="72" SharedSizeGroup="HwAssigned"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="110" MinWidth="72" SharedSizeGroup="HwLocation"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="90" MinWidth="64" SharedSizeGroup="HwState"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="110" MinWidth="72" SharedSizeGroup="HwSubstate"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="140" MinWidth="72" SharedSizeGroup="HwComments"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding SerialNumber}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Model}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding AssignedTo.Display}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="6" Text="{Binding Location.Display}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="8" Text="{Binding InstallStatusLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="10" Text="{Binding SubstatusLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="12" Text="{Binding Comments}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </Grid>
-                <ListBox ItemsSource="{Binding Items}"
-                         SelectedItem="{Binding Selected}"
-                         Style="{StaticResource DeskList}"
-                         ItemContainerStyle="{StaticResource DeskListItem}"
-                         ScrollViewer.HorizontalScrollBarVisibility="Auto">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid MinWidth="780">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="120"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="110"/>
-                                    <ColumnDefinition Width="110"/>
-                                    <ColumnDefinition Width="90"/>
-                                    <ColumnDefinition Width="110"/>
-                                    <ColumnDefinition Width="140"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding SerialNumber}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" TextTrimming="CharacterEllipsis"/>
-                                <TextBlock Grid.Column="1" Text="{Binding Model}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
-                                <TextBlock Grid.Column="2" Text="{Binding AssignedTo.Display}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
-                                <TextBlock Grid.Column="3" Text="{Binding Location.Display}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
-                                <TextBlock Grid.Column="4" Text="{Binding InstallStatusLabel}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
-                                <TextBlock Grid.Column="5" Text="{Binding SubstatusLabel}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
-                                <TextBlock Grid.Column="6" Text="{Binding Comments}" TextTrimming="CharacterEllipsis"/>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
             </DockPanel>
 
             <DockPanel Grid.Column="2">
