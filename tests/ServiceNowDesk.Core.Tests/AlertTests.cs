@@ -111,7 +111,7 @@ public class AlertTests
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.SlaBreaching).Rows, row => row.Number == "INC0010015");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "RITM0010004");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Section == DeskSection.Knowledge);
-        Assert.Equal(6, snapshot.Count(AlertKind.AssignedToMe));
+        Assert.Equal(8, snapshot.Count(AlertKind.AssignedToMe));
 
         var group = snapshot.Bucket(AlertKind.WatchedGroup).Rows;
         var brisbane = Assert.Single(group);
@@ -909,7 +909,7 @@ public class AlertTests
 
         var returned = Assert.Single(snapshot.Bucket(AlertKind.ReturnedWithNotes).Rows);
         Assert.Equal("INC0010013", returned.Number);
-        Assert.Equal(6, snapshot.Count(AlertKind.AssignedToMe));
+        Assert.Equal(8, snapshot.Count(AlertKind.AssignedToMe));
         Assert.Equal("INC0010007", Assert.Single(snapshot.Bucket(AlertKind.WatchedGroup).Rows).Number);
     }
 
