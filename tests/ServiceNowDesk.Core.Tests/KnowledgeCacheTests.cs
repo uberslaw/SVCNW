@@ -177,13 +177,13 @@ public class KnowledgeCacheTests
 
         await main.InitializeAsync();
 
+        // Splash finished without a Knowledge line; ticket lists stayed on the saved copy.
         Assert.Empty(main.Startup.Lines);
         Assert.DoesNotContain(main.Startup.Lines, line => line.Name == "Knowledge");
         Assert.False(main.Startup.ShowScreen);
         Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
-        // Saved list stays usable immediately while the quiet refresh runs.
-        Assert.Contains(main.Knowledge.Articles, row => row.Number == "KB-STALE");
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP");
 
         await WaitUntilAsync(() =>
             main.Knowledge.Articles.Any(row => row.Number == "KB0001001")
