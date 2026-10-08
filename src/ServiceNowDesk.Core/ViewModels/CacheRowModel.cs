@@ -34,24 +34,12 @@ public sealed partial class CacheRowModel : ObservableObject
     }
 
     /// <summary>
-    /// Last download encoded query (and optional active-filter line) so a wrong field or value is visible.
+    /// Remembers the last download encoded query for logging. Settings shows the human filter line only.
     /// </summary>
     public void SetLastQuery(string? encodedQuery, string? filterSummary = null)
     {
         LastEncodedQuery = encodedQuery?.Trim() ?? "";
-        var filter = filterSummary?.Trim() ?? "";
-        if (LastEncodedQuery.Length == 0 && filter.Length == 0)
-        {
-            QueryText = "";
-            return;
-        }
-
-        if (filter.Length > 0 && LastEncodedQuery.Length > 0)
-            QueryText = filter + Environment.NewLine + "Query: " + LastEncodedQuery;
-        else if (LastEncodedQuery.Length > 0)
-            QueryText = "Query: " + LastEncodedQuery;
-        else
-            QueryText = filter;
+        QueryText = filterSummary?.Trim() ?? "";
     }
 
     public void RememberGoodDownload(DateTimeOffset when)

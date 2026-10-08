@@ -6,5 +6,5 @@ namespace ServiceNowDesk.ViewModels;
 public static class WalkUpTeam
 {
     public const string EmptyPrompt =
-        "Tick the people on your team under Leads. My Team stays empty until you do.";
+        "Tick the people on your team under Leads. Team lists stay empty until you do.";
 }

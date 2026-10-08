@@ -176,7 +176,18 @@ public static class PresetCatalog
 
     public static IReadOnlyList<PresetOption> RequestedItems { get; } = Incidents;
 
-    public static IReadOnlyList<PresetOption> WalkUps { get; } = Incidents;
+    /// <summary>
+    /// Walk-up queues: no All open, Closed is the signed-in agent only, Team closed uses the Leads roster.
+    /// </summary>
+    public static IReadOnlyList<PresetOption> WalkUps { get; } =
+    [
+        new(AssignmentScope.Mine, ActivityFilter.Open, "My Tickets"),
+        new(AssignmentScope.MyGroups, ActivityFilter.Open, "My Team"),
+        new(AssignmentScope.Unassigned, ActivityFilter.Open, "Unassigned"),
+        new(AssignmentScope.Mine, ActivityFilter.Closed, "Closed"),
+        new(AssignmentScope.MyGroups, ActivityFilter.Closed, "Team closed"),
+        new(AssignmentScope.Mine, ActivityFilter.Any, "All of mine")
+    ];
 
     /// <summary>
     /// The combined list uses the same three actions. My Tickets is the default selection

@@ -576,7 +576,10 @@ public class DeskListTests
 
     private static async Task<RecordWorkspaceViewModel> OpenList(RecordWorkspaceViewModel workspace, IServiceNowClient client)
     {
-        workspace.Preset = workspace.Presets.First(preset => preset.Assignment == AssignmentScope.Any && preset.Activity == ActivityFilter.Open);
+        // Walk-up hides All open in the bar; tests still need an any-open query to flag Unassigned rows.
+        workspace.Preset = workspace.Presets.FirstOrDefault(preset =>
+                preset.Assignment == AssignmentScope.Any && preset.Activity == ActivityFilter.Open)
+            ?? new PresetOption(AssignmentScope.Any, ActivityFilter.Open, "All open");
         workspace.Attach(client);
         await workspace.RefreshAsync();
         return workspace;
