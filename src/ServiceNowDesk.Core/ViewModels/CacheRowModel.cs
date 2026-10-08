@@ -17,18 +17,41 @@ public sealed partial class CacheRowModel : ObservableObject
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string lastGoodText = "Last good download: never";
     [ObservableProperty] private string countText = "0 stored";
+    [ObservableProperty] private string queryText = "";
     [ObservableProperty] private string lastAttemptText = "";
     [ObservableProperty] private bool isFailed;
     [ObservableProperty] private bool isBusy;
 
     public DateTimeOffset? LastGoodAt { get; private set; }
     public int StoredCount { get; private set; }
+    public string LastEncodedQuery { get; private set; } = "";
 
     public void SetStoredCount(int count)
     {
         StoredCount = Math.Max(0, count);
         CountText = StoredCount.ToString(CultureInfo.CurrentCulture)
             + (StoredCount == 1 ? " stored" : " stored");
+    }
+
+    /// <summary>
+    /// Last download encoded query (and optional active-filter line) so a wrong field or value is visible.
+    /// </summary>
+    public void SetLastQuery(string? encodedQuery, string? filterSummary = null)
+    {
+        LastEncodedQuery = encodedQuery?.Trim() ?? "";
+        var filter = filterSummary?.Trim() ?? "";
+        if (LastEncodedQuery.Length == 0 && filter.Length == 0)
+        {
+            QueryText = "";
+            return;
+        }
+
+        if (filter.Length > 0 && LastEncodedQuery.Length > 0)
+            QueryText = filter + Environment.NewLine + "Query: " + LastEncodedQuery;
+        else if (LastEncodedQuery.Length > 0)
+            QueryText = "Query: " + LastEncodedQuery;
+        else
+            QueryText = filter;
     }
 
     public void RememberGoodDownload(DateTimeOffset when)

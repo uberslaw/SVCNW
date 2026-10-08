@@ -84,6 +84,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string resolveCode = "";
     [ObservableProperty] private string resolveNotes = "";
     [ObservableProperty] private string attachmentNote = "";
+    [ObservableProperty] private string filterSummary = "";
+    [ObservableProperty] private string lastEncodedQuery = "";
 
     public bool HasJournalText => !string.IsNullOrWhiteSpace(JournalText);
 
@@ -188,6 +190,16 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         _suppressSelection = false;
         ErrorMessage = "";
         HasLoaded = true;
+        RefreshFilterChrome(BuildQuery(), Client?.LastTicketEncodedQuery ?? LastEncodedQuery);
+    }
+
+    /// <summary>
+    /// Active filters and the last download encoded query for list / Settings Cache transparency.
+    /// </summary>
+    public void RememberDownloadQuery(string? encodedQuery)
+    {
+        LastEncodedQuery = encodedQuery?.Trim() ?? "";
+        RefreshFilterChrome(BuildQuery(), LastEncodedQuery);
     }
 
     public async Task<bool> ReloadAsync()
@@ -253,6 +265,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
             _suppressSelection = false;
             HasLoaded = true;
+            RefreshFilterChrome(query, Client?.LastTicketEncodedQuery ?? "");
         }
         catch (Exception ex)
         {
@@ -727,6 +740,18 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             TeamMemberIds = team,
             Limit = 50
         };
+    }
+
+    private void RefreshFilterChrome(TicketQuery query, string encodedQuery)
+    {
+        FilterSummary = TicketListFilter.DescribeActive(
+            Preset,
+            query.OfficeLocations,
+            query.TeamMemberIds);
+        if (!string.IsNullOrWhiteSpace(encodedQuery))
+            LastEncodedQuery = encodedQuery.Trim();
+        else if (string.IsNullOrWhiteSpace(LastEncodedQuery))
+            LastEncodedQuery = "";
     }
 
     protected abstract Task<PagedResult<TicketRow>> FetchPageAsync(TicketQuery query, CancellationToken cancellationToken);

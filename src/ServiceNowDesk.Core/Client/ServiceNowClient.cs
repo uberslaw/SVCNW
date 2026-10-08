@@ -65,6 +65,9 @@ public sealed partial class ServiceNowClient : IServiceNowClient
 
     public event EventHandler? BrowserSessionRejected;
 
+    /// <inheritdoc />
+    public string LastTicketEncodedQuery { get; private set; } = "";
+
     public IReadOnlyList<ApiActivity> RecentActivity
     {
         get
@@ -1780,6 +1783,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     {
         ArgumentNullException.ThrowIfNull(query);
         var clause = await BuildClauseAsync(query, textFields, cancellationToken).ConfigureAwait(false);
+        LastTicketEncodedQuery = clause;
         var limit = Math.Clamp(query.Limit, 1, 100);
         var offset = Math.Max(0, query.Offset);
         var result = await GetListAsync(table, fields, clause, limit, offset, cancellationToken).ConfigureAwait(false);
@@ -1797,7 +1801,10 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         {
             assignment = query.Assignment switch
             {
-                AssignmentScope.Mine => "assigned_to=javascript:gs.getUserID()",
+                // Same signed-in sys_id Daily Work / alerts use. javascript:gs.getUserID() in
+                // Table API encoded queries often matches nobody, so My Tickets stayed empty
+                // while Daily Work (assigned_to=<sys_id>) still had rows.
+                AssignmentScope.Mine => TicketListFilter.AssignedToMeClause(SignedInUserSysId()),
                 AssignmentScope.Unassigned when query.OfficeLocations is not null =>
                     "assigned_toISEMPTY^" + await MyGroupsClauseAsync(cancellationToken).ConfigureAwait(false),
                 AssignmentScope.Unassigned => "assigned_toISEMPTY",
@@ -1806,6 +1813,10 @@ public sealed partial class ServiceNowClient : IServiceNowClient
                 AssignmentScope.MyGroups => await MyGroupsClauseAsync(cancellationToken).ConfigureAwait(false),
                 _ => ""
             };
+        }
+        else
+        {
+            assignment = TicketListFilter.BindCurrentUser(assignment, SignedInUserSysId());
         }
 
         var extra = string.IsNullOrWhiteSpace(query.ParentRequestId)
@@ -1838,6 +1849,12 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             && query.TeamMemberIds is null)
             return OfficeQueue.ApplyTo(encoded, query.OfficeLocations);
         return encoded;
+    }
+
+    private string? SignedInUserSysId()
+    {
+        lock (_cacheGate)
+            return _signedInUserSysId;
     }
 
     /// <summary>

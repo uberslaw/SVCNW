@@ -220,6 +220,9 @@ public partial class MainViewModel
             if (at != default)
                 row.RememberGoodDownload(at);
             row.SetStoredCount(StoredCountFor(row.Key, lists, catalog, live));
+            var list = ListFor(lists, row.Key);
+            if (list is not null)
+                row.SetLastQuery(list.EncodedQuery, list.FilterSummary);
         }
     }
 
@@ -584,6 +587,8 @@ public partial class MainViewModel
                     : workspace.ErrorMessage);
 
             _loadedFor[section] = workspace.SearchText;
+            var encoded = _client?.LastTicketEncodedQuery ?? workspace.LastEncodedQuery;
+            workspace.RememberDownloadQuery(encoded);
             if (string.IsNullOrWhiteSpace(workspace.SearchText))
                 SaveWorkspaceList(section, workspace);
             var captured = DateTimeOffset.UtcNow;
@@ -645,7 +650,12 @@ public partial class MainViewModel
     private void ApplyList(string key, CachedTicketList list)
     {
         var rows = list.Items.Select(ToTicket).ToArray();
-        WorkspaceFor(key).ShowCachedRows(rows, list.TotalCount > 0 ? list.TotalCount : rows.Length);
+        var workspace = WorkspaceFor(key);
+        workspace.ShowCachedRows(rows, list.TotalCount > 0 ? list.TotalCount : rows.Length);
+        if (!string.IsNullOrWhiteSpace(list.FilterSummary))
+            workspace.FilterSummary = list.FilterSummary;
+        if (!string.IsNullOrWhiteSpace(list.EncodedQuery))
+            workspace.LastEncodedQuery = list.EncodedQuery;
         _loadedFor[SectionFor(key)] = "";
     }
 
@@ -658,10 +668,15 @@ public partial class MainViewModel
         {
             CapturedAt = DateTimeOffset.UtcNow,
             TotalCount = workspace.TotalCount,
-            Items = workspace.Items.Select(FromTicket).ToList()
+            Items = workspace.Items.Select(FromTicket).ToList(),
+            EncodedQuery = workspace.LastEncodedQuery,
+            FilterSummary = workspace.FilterSummary
         };
         AssignList(snapshot, KeyFor(section), list);
         _lists.Save(CacheScope(), snapshot);
+        var cacheRow = Caches.FirstOrDefault(row => row.Key == KeyFor(section));
+        cacheRow?.SetLastQuery(list.EncodedQuery, list.FilterSummary);
+        cacheRow?.SetStoredCount(list.Items.Count);
     }
 
     private CachedTicketList? ClearList(string key)

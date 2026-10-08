@@ -248,8 +248,11 @@ public class InTheMixTests
     {
         var handler = new StubHandler((request, _) =>
         {
-            if (request.RequestUri!.AbsolutePath.Contains("sys_user_grmember", StringComparison.Ordinal))
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
                 return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
+            if (path.Contains("/sys_user", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
             return Api.Json("""{"result":[]}""");
         });
         using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
@@ -300,6 +303,7 @@ public class InTheMixTests
         Assert.DoesNotContain("location.nameIN", unassigned);
         Assert.Equal(2, unassigned.Split("assignment_groupINgroup-cs").Length - 1);
 
+        await client.GetCurrentUserAsync(CancellationToken.None);
         await client.SearchIncidentsAsync(new TicketQuery
         {
             Assignment = AssignmentScope.Mine,
@@ -307,10 +311,10 @@ public class InTheMixTests
             OfficeLocations = ["Brisbane"]
         }, CancellationToken.None);
         var mine = QueryOf(handler.Calls[^1].PathAndQuery);
-        Assert.Contains("assigned_to=javascript:gs.getUserID()", mine);
+        Assert.Contains("assigned_to=sample-user", mine);
+        Assert.DoesNotContain("javascript:gs.getUserID()", mine);
         Assert.DoesNotContain("location.name", mine);
         Assert.DoesNotContain("^NQ", mine);
-        Assert.Equal(1, mine.Split("assigned_to=javascript:gs.getUserID()").Length - 1);
 
         await client.SearchIncidentsAsync(new TicketQuery
         {

@@ -32,6 +32,12 @@ public sealed class CachedTicketList
     public DateTimeOffset CapturedAt { get; set; }
     public int TotalCount { get; set; }
     public List<CachedTicketRow> Items { get; set; } = [];
+
+    /// <summary>Encoded query used for the last successful list download.</summary>
+    public string? EncodedQuery { get; set; }
+
+    /// <summary>Human-readable active filters at download time.</summary>
+    public string? FilterSummary { get; set; }
 }
 
 public sealed class DeskListSnapshot

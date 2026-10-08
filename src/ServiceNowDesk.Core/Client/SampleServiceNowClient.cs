@@ -53,6 +53,9 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     public string LastHardwareQuery { get; private set; } = "";
 
+    /// <inheritdoc />
+    public string LastTicketEncodedQuery { get; private set; } = "";
+
     /// <summary>
     /// When false, hardware search returns every computer so the workspace can tell a dropped location filter from an empty office.
     /// </summary>
@@ -2710,10 +2713,52 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     private PagedResult<T> Page<T>(IEnumerable<T> matches, TicketQuery query) where T : class
     {
+        LastTicketEncodedQuery = PracticeTicketClause(query);
         var ordered = matches.OrderByDescending(UpdatedValue).ToArray();
         var limit = Math.Clamp(query.Limit, 1, 100);
-        Record("GET", "api/now/table");
+        Record("GET", "api/now/table?sysparm_query=" + Uri.EscapeDataString(LastTicketEncodedQuery));
         return new PagedResult<T>(ordered.Take(limit).ToArray(), ordered.Length);
+    }
+
+    /// <summary>
+    /// Practice mirror of the live Table API clause so list chrome shows the same fields.
+    /// </summary>
+    private string PracticeTicketClause(TicketQuery query)
+    {
+        var userId = SignedInUser.SysId;
+        var assignment = query.AssignmentClause;
+        if (string.IsNullOrWhiteSpace(assignment))
+        {
+            assignment = query.Assignment switch
+            {
+                AssignmentScope.Mine => TicketListFilter.AssignedToMeClause(userId),
+                AssignmentScope.Unassigned when query.OfficeLocations is not null =>
+                    "assigned_toISEMPTY^assignment_groupIN" + ClientServices.SysId,
+                AssignmentScope.Unassigned => "assigned_toISEMPTY",
+                AssignmentScope.MyGroups when query.TeamMemberIds is not null =>
+                    AlertQueryBuilder.AssignedToAny(query.TeamMemberIds) ?? "sys_id=NO_TEAM",
+                AssignmentScope.MyGroups => "assignment_groupIN" + ClientServices.SysId,
+                _ => ""
+            };
+        }
+        else
+        {
+            assignment = TicketListFilter.BindCurrentUser(assignment, userId);
+        }
+
+        var open = query.Activity == ActivityFilter.Open && query.ListSection is DeskSection section
+            ? AlertQueryBuilder.StillWorking(section)
+            : EncodedQuery.ActivityClause(query.Activity);
+        var encoded = EncodedQuery.Build(
+            EncodedQuery.TextSearch(query.Text),
+            assignment,
+            open,
+            "");
+        if (query.OfficeLocations is not null
+            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
+            && query.TeamMemberIds is null)
+            return OfficeQueue.ApplyTo(encoded, query.OfficeLocations);
+        return encoded;
     }
 
     private string UpdatedValue<T>(T record) => record switch

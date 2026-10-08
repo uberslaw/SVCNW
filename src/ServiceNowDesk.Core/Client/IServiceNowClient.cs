@@ -9,6 +9,12 @@ public interface IServiceNowClient : IDisposable
     Uri? InstanceUri { get; }
     IReadOnlyList<ApiActivity> RecentActivity { get; }
 
+    /// <summary>
+    /// Encoded query from the most recent ticket list search (incidents, requests, items, walk-ups).
+    /// Empty until a list search runs. Used by Settings Cache and list chrome for transparency.
+    /// </summary>
+    string LastTicketEncodedQuery { get; }
+
     Task<CurrentUser> GetCurrentUserAsync(CancellationToken cancellationToken);
 
     Task<AlertSnapshot> GetOpenAlertsAsync(AlertSearch search, CancellationToken cancellationToken);

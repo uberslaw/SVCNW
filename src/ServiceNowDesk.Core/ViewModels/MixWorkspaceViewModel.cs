@@ -52,6 +52,8 @@ public partial class MixWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool hasLoaded;
     [ObservableProperty] private int totalCount;
     [ObservableProperty] private string errorMessage = "";
+    [ObservableProperty] private string filterSummary = "";
+    [ObservableProperty] private string lastEncodedQuery = "";
 
     public bool HasMixEditor => Editor is not null || EditorKey.Length > 0;
 
@@ -155,6 +157,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
         HasLoaded = true;
         IsLoading = false;
         _suppressSelection = false;
+        RefreshFilterChrome(BuildQuery(), _client?.LastTicketEncodedQuery ?? LastEncodedQuery);
     }
 
     public async Task RefreshAsync()
@@ -225,6 +228,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
             _suppressSelection = false;
             ErrorMessage = string.Join(Environment.NewLine, errors);
             HasLoaded = errors.Count == 0;
+            RefreshFilterChrome(query, _client?.LastTicketEncodedQuery ?? "");
         }
         catch (Exception ex)
         {
@@ -276,6 +280,16 @@ public partial class MixWorkspaceViewModel : ObservableObject
             OfficeLocations = offices,
             Limit = PageLimit
         };
+    }
+
+    private void RefreshFilterChrome(TicketQuery query, string encodedQuery)
+    {
+        FilterSummary = TicketListFilter.DescribeActive(
+            Preset,
+            query.OfficeLocations,
+            query.TeamMemberIds);
+        if (!string.IsNullOrWhiteSpace(encodedQuery))
+            LastEncodedQuery = encodedQuery.Trim();
     }
 
     /// <summary>
