@@ -4,10 +4,17 @@
              xmlns:controls="clr-namespace:ServiceNowDesk.Controls">
     <DockPanel Margin="16,12,0,12">
         <controls:PresetBar DockPanel.Dock="Top"/>
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
             <TextBlock Text="{Binding TotalCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}"/>
             <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
         </StackPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding FilterSummary}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,2"
+                   Visibility="{Binding FilterSummary, Converter={StaticResource StringVis}}"
+                   AutomationProperties.Name="Active list filters"/>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding LastEncodedQuery}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"
+                   Visibility="{Binding LastEncodedQuery, Converter={StaticResource StringVis}}"
+                   ToolTip="{Binding LastEncodedQuery}"
+                   AutomationProperties.Name="Last encoded query"/>
         <TextBlock DockPanel.Dock="Top" Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,6" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}"/>
         <ListBox ItemsSource="{Binding Items}"
                  SelectedItem="{Binding Selected}"

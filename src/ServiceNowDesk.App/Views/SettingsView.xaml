@@ -108,7 +108,7 @@
 
             <TextBlock Text="Cache" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
-                       Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Rows show how many items are stored now, the last good download, how many stale items were cleared, how many fresh items were downloaded, and any error. Incident templates and the saved sign-in stay where they are."/>
+                       Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Rows show how many items are stored now, the last good download, the last download encoded query (ticket lists), how many stale items were cleared, how many fresh items were downloaded, and any error. Incident templates and the saved sign-in stay where they are."/>
 
             <CheckBox Content="Download cache on launch or new browser session"
                       IsChecked="{Binding Connection.DownloadCacheOnLaunch}"
@@ -138,6 +138,10 @@
                                     <TextBlock Text="{Binding LastGoodText}" Margin="0,2,0,0" FontSize="12"
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Last good download for {0}}"/>
+                                    <TextBlock Text="{Binding QueryText}" Margin="0,2,0,0" FontSize="11"
+                                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Visibility="{Binding QueryText, Converter={StaticResource StringVis}}"
+                                               AutomationProperties.Name="{Binding Name, StringFormat=Last download query for {0}}"/>
                                 </StackPanel>
                                 <Button Grid.Column="1" Width="36" Height="32" Padding="0" Cursor="Hand"
                                         Style="{StaticResource SecondaryButton}"

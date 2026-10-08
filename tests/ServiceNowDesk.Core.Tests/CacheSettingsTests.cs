@@ -535,6 +535,11 @@ public class CacheSettingsTests
         Assert.True(incidents.StoredCount > 0, incidents.CountText);
         Assert.Contains("stored", incidents.CountText, StringComparison.Ordinal);
         Assert.Equal(incidents.StoredCount, main.Incidents.Items.Count);
+        Assert.False(string.IsNullOrWhiteSpace(incidents.QueryText), "Cache row should show the last download query.");
+        Assert.Contains("assigned_to=sample-user", incidents.QueryText, StringComparison.Ordinal);
+        Assert.Contains("My Tickets", incidents.QueryText, StringComparison.Ordinal);
+        Assert.False(string.IsNullOrWhiteSpace(main.Incidents.LastEncodedQuery));
+        Assert.Contains("assigned_to=sample-user", main.Incidents.LastEncodedQuery, StringComparison.Ordinal);
 
         var choices = Assert.Single(main.Caches, row => row.Name == "Form choices");
         Assert.True(choices.StoredCount > 0, choices.CountText);

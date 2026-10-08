@@ -19,7 +19,14 @@
 
         <DockPanel x:Name="ListPane" Grid.Row="1" Grid.Column="0">
             <controls:PresetBar DockPanel.Dock="Top"/>
-            <TextBlock DockPanel.Dock="Top" Text="{Binding TotalCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"/>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding TotalCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding FilterSummary}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,2"
+                       Visibility="{Binding FilterSummary, Converter={StaticResource StringVis}}"
+                       AutomationProperties.Name="Active list filters"/>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding LastEncodedQuery}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
+                       Visibility="{Binding LastEncodedQuery, Converter={StaticResource StringVis}}"
+                       ToolTip="{Binding LastEncodedQuery}"
+                       AutomationProperties.Name="Last encoded query"/>
             <TextBlock DockPanel.Dock="Bottom" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" Text="Items come from catalog orders. Assign them, add notes, and close them here."/>
             <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" ItemTemplate="{StaticResource TicketRowTemplate}" ItemContainerStyle="{StaticResource TicketListItem}" Style="{StaticResource DeskList}"/>
         </DockPanel>

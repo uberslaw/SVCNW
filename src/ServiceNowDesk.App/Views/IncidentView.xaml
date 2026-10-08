@@ -40,10 +40,17 @@
                 </Grid>
                 <TextBlock Text="{Binding TemplateMessage}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="{Binding TemplateMessage, Converter={StaticResource StringVis}}"/>
             </StackPanel>
-            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
                 <TextBlock Text="{Binding TotalCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}"/>
                 <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
             </StackPanel>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding FilterSummary}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,2"
+                       Visibility="{Binding FilterSummary, Converter={StaticResource StringVis}}"
+                       AutomationProperties.Name="Active list filters"/>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding LastEncodedQuery}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"
+                       Visibility="{Binding LastEncodedQuery, Converter={StaticResource StringVis}}"
+                       ToolTip="{Binding LastEncodedQuery}"
+                       AutomationProperties.Name="Last encoded query"/>
             <TextBlock DockPanel.Dock="Top" Text="{Binding SearchHint}" Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding SearchHint, Converter={StaticResource StringVis}}"/>
             <ListBox ItemsSource="{Binding Items}"
                      SelectedItem="{Binding Selected}"
