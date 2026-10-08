@@ -301,6 +301,9 @@ public class DailyWorkTests
         Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRow.From(report.Daily.Personal[6]).HighlightHex);
         Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "INC0010017");
         Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "INC0010018");
+        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "INC0010024");
+        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "RITM0010008");
+        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "IMS0010010");
         Assert.Contains(report.Daily.Personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.ActFirstHex);
         Assert.Contains(report.Daily.Personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.AfterThoseHex);
 

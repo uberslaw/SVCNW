@@ -607,7 +607,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     protected void UpsertRow(TicketRow row)
     {
-        if (!ShowsOnThisList(row))
+        if (!ShowsOnThisList(row) || !MatchesOfficeScope(row))
         {
             RemoveFromList(row.SysId);
             return;
@@ -643,6 +643,21 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         if (Preset?.Activity != ActivityFilter.Open)
             return true;
         return AlertClassifier.IsStillOpen(Section, row.StateValue, row.StateLabel);
+    }
+
+    /// <summary>
+    /// Office-scoped presets drop out-of-office rows on Upsert so opening a Daily Work / search
+    /// hit cannot inject Manila (or other) tickets into My Tickets / My Team / Unassigned.
+    /// Cached rows often have no location; the list query already applied the office filter.
+    /// </summary>
+    protected bool MatchesOfficeScope(TicketRow row)
+    {
+        var leadTeamPeople = _useLeadTeam && Preset?.Assignment == AssignmentScope.MyGroups;
+        if (!_limitOffices
+            || leadTeamPeople
+            || Preset?.Assignment is not (AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned))
+            return true;
+        return OfficeQueue.Matches(row.Location, _officeCities);
     }
 
     private void RemoveFromList(string sysId)

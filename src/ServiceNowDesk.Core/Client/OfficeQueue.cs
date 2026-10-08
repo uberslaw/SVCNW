@@ -3,10 +3,10 @@ using ServiceNowDesk.Alerts;
 namespace ServiceNowDesk.Client;
 
 /// <summary>
-/// Offices for My Tickets, My Team, and Unassigned. The list is the watched notification
-/// offices when that setting is non-empty, otherwise the signed-in user's city. Tickets are
-/// matched on the record location with the same place rule as hardware ("Brisbane" and
-/// "Brisbane Office").
+/// Offices for My Tickets, My Team, Unassigned, Daily Work, and Assigned to me. The list is
+/// the watched notification offices when that setting is non-empty, otherwise the signed-in
+/// user's city. Tickets are matched on the record location with the same place rule as
+/// hardware ("Brisbane" and "Brisbane Office").
 /// </summary>
 public static class OfficeQueue
 {
