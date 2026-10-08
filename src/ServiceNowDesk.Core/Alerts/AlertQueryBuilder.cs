@@ -1,3 +1,4 @@
+using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
 
@@ -5,10 +6,21 @@ namespace ServiceNowDesk.Alerts;
 
 public static class AlertQueryBuilder
 {
-    public static string AssignedToMe(string userSysId, DeskSection section = DeskSection.Incidents)
+    public static string AssignedToMe(string userSysId, DeskSection section = DeskSection.Incidents) =>
+        AssignedToMe(userSysId, section, locations: null);
+
+    /// <summary>
+    /// Open tickets assigned to the user. When <paramref name="locations"/> is non-empty,
+    /// the same <see cref="OfficeQueue"/> place filter as My Tickets applies (including the
+    /// " Office" form). An empty or null city list leaves the assignee filter unlimited so
+    /// callers that only exercise Assigned to me without offices keep working.
+    /// </summary>
+    public static string AssignedToMe(string userSysId, DeskSection section, IEnumerable<string>? locations)
     {
         var id = EncodedQuery.SafeToken(userSysId, "user id");
-        return "assigned_to=" + id + "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on";
+        var body = "assigned_to=" + id + "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on";
+        var cities = OfficeCities(locations);
+        return cities.Length == 0 ? body : OfficeQueue.ApplyTo(body, cities);
     }
 
     /// <summary>
@@ -81,27 +93,37 @@ public static class AlertQueryBuilder
     /// </summary>
     public static string? WatchedGroup(string? groupName, IEnumerable<string>? locations)
     {
-        var scope = WatchedScope(groupName, locations);
-        return scope is null ? null : scope + "^" + StillWorking(DeskSection.Incidents) + "^ORDERBYDESCsys_updated_on";
+        var group = Quote(groupName);
+        var cities = OfficeCities(locations);
+        if (group.Length == 0 || cities.Length == 0)
+            return null;
+
+        return OfficeQueue.ApplyTo(
+            "assignment_group.name=" + group + "^" + StillWorking(DeskSection.Incidents) + "^ORDERBYDESCsys_updated_on",
+            cities);
     }
 
-    /// <summary>
-    /// ServiceNow will not build pagination header URLs once sysparm_query grows past this.
-    /// Each alert request stays under the limit. A 32-character sys_id is the long token.
-    /// </summary>
     public const int MaxQueryLength = 900;
 
     /// <summary>
-    /// Open records for the signed-in user: assigned to them, in one of their groups, or in the watched group at the office locations.
-    /// Each role is its own request. Group ids and office names are split so the roles are not one ^NQ string.
+    /// Open records for the signed-in user: assigned to them inside the watched offices, in one
+    /// of their groups, or in the watched group at the office locations. Each role is its own
+    /// request. Group ids and office names are split so pagination URLs stay short.
+    /// Assigned-to-me uses <see cref="OfficeQueue.ApplyTo"/> so it matches My Tickets.
     /// Lead-team members and the regional group (every open ticket, with no office filter) are not included.
     /// </summary>
     public static IReadOnlyList<string> PopulationQueries(string userSysId, IReadOnlyList<string>? groupIds, string? groupName, IEnumerable<string>? locations, DeskSection section = DeskSection.Incidents)
     {
-        var tail = "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on";
+        var openOrder = StillWorking(section) + "^ORDERBYDESCsys_updated_on";
+        var tail = "^" + openOrder;
         var budget = MaxQueryLength - tail.Length;
         var user = EncodedQuery.SafeToken(userSysId, "user id");
-        var queries = new List<string> { "assigned_to=" + user + tail };
+        var queries = new List<string>();
+        var cities = OfficeCities(locations);
+        if (cities.Length == 0)
+            queries.Add("assigned_to=" + user + tail);
+        else
+            queries.Add(OfficeQueue.ApplyTo("assigned_to=" + user + "^" + openOrder, cities));
         var groups = (groupIds ?? [])
             .Select(id => EncodedQuery.SafeToken(id, "group id"))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -109,16 +131,11 @@ public static class AlertQueryBuilder
         foreach (var clause in InClauses("assignment_group", groups, budget))
             queries.Add(clause + tail);
 
-        foreach (var scope in WatchedLocationScopes(groupName, locations, budget))
-            queries.Add(scope + tail);
+        foreach (var scope in WatchedLocationScopes(groupName, locations, section, MaxQueryLength))
+            queries.Add(scope);
         return queries;
     }
 
-    /// <summary>
-    /// Open incidents with an empty assignee whose group is one of the user's groups,
-    /// or the watched group by name. My Groups does not filter location, so this check does not either.
-    /// Null when both scopes are blank, so the caller sends no request.
-    /// </summary>
     public static string? UnassignedInGroups(IReadOnlyList<string>? groupIds, string? watchedGroupName)
     {
         var open = StillWorking(DeskSection.Incidents);
@@ -148,10 +165,6 @@ public static class AlertQueryBuilder
         return segments.Count == 0 ? null : string.Join("^NQ", segments) + "^ORDERBYDESCsys_updated_on";
     }
 
-    /// <summary>
-    /// Open tickets in the watched group (regional), and open tickets assigned to the selected team.
-    /// Each scope is its own request. Empty when both are blank, so the caller sends nothing.
-    /// </summary>
     public static IReadOnlyList<string> LeadQueries(string? groupName, IEnumerable<string>? memberIds, DeskSection section = DeskSection.Incidents)
     {
         var tail = "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on";
@@ -181,11 +194,6 @@ public static class AlertQueryBuilder
         return queries;
     }
 
-    /// <summary>
-    /// People on the selected Leads team. Null when the list is empty so the caller skips
-    /// an instance-wide query. Callers that must send a no-match clause use
-    /// <c>sys_id=NO_TEAM</c> themselves.
-    /// </summary>
     public static string? AssignedToAny(IEnumerable<string>? memberIds)
     {
         var ids = new List<string>();
@@ -208,12 +216,6 @@ public static class AlertQueryBuilder
 
     public const string SlaUnavailableStatus = "SLA data is not available to this user";
 
-    /// <summary>
-    /// Table API queries for breached or in-progress SLAs on the already scoped tasks.
-    /// A "&lt;" date comparison in this URL makes ServiceNow return an HTML page, so
-    /// planned-end is applied after the JSON comes back. Each query stays short so the
-    /// instance does not answer the Table API with an error page.
-    /// </summary>
     public static IReadOnlyList<string> TaskSlaQueries(IReadOnlyList<string>? taskIds)
     {
         var tokens = (taskIds ?? [])
@@ -235,10 +237,6 @@ public static class AlertQueryBuilder
         return queries;
     }
 
-    /// <summary>
-    /// Latest comment or work note for each task. Task ids are split so one element_id list cannot
-    /// include every personal ticket and every lead ticket in a single sysparm_query.
-    /// </summary>
     public static IReadOnlyList<string> LatestJournalQueries(IReadOnlyList<string>? taskIds)
     {
         var tokens = (taskIds ?? [])
@@ -255,24 +253,13 @@ public static class AlertQueryBuilder
     public static string? WatchedScope(string? groupName, IEnumerable<string>? locations)
     {
         var group = Quote(groupName);
-        var cities = (locations ?? [])
-            .Select(Quote)
-            .Where(city => city.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var cities = OfficeCities(locations);
         if (group.Length == 0 || cities.Length == 0)
             return null;
 
-        var location = cities.Length == 1
-            ? "location.name=" + cities[0]
-            : "location.nameIN" + string.Join(",", cities);
-        return "assignment_group.name=" + group + "^" + location;
+        return OfficeQueue.ApplyTo("assignment_group.name=" + group, cities);
     }
 
-    /// <summary>
-    /// fieldIN lists that stay within <paramref name="budget"/> characters.
-    /// One token that is already longer than the budget is still returned on its own.
-    /// </summary>
     internal static IReadOnlyList<string> InClauses(string field, IReadOnlyList<string> tokens, int budget)
     {
         if (tokens.Count == 0)
@@ -303,41 +290,35 @@ public static class AlertQueryBuilder
         return queries;
     }
 
-    private static IReadOnlyList<string> WatchedLocationScopes(string? groupName, IEnumerable<string>? locations, int budget)
+    private static IReadOnlyList<string> WatchedLocationScopes(
+        string? groupName,
+        IEnumerable<string>? locations,
+        DeskSection section,
+        int budget)
     {
         var group = Quote(groupName);
-        var cities = (locations ?? [])
-            .Select(Quote)
-            .Where(city => city.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var cities = OfficeCities(locations);
         if (group.Length == 0 || cities.Length == 0)
             return [];
 
-        var head = "assignment_group.name=" + group + "^";
+        var head = "assignment_group.name=" + group + "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on";
         var queries = new List<string>();
-        var batch = new List<string>();
         foreach (var city in cities)
         {
-            var next = LocationClause(head, [.. batch, city]);
-            if (batch.Count > 0 && next.Length > budget)
-            {
-                queries.Add(LocationClause(head, batch));
-                batch.Clear();
-            }
-
-            batch.Add(city);
+            var encoded = OfficeQueue.ApplyTo(head, [city]);
+            if (encoded.Length <= budget)
+                queries.Add(encoded);
         }
 
-        if (batch.Count > 0)
-            queries.Add(LocationClause(head, batch));
         return queries;
     }
 
-    private static string LocationClause(string head, IReadOnlyList<string> cities) =>
-        cities.Count == 1
-            ? head + "location.name=" + cities[0]
-            : head + "location.nameIN" + string.Join(",", cities);
+    private static string[] OfficeCities(IEnumerable<string>? locations) =>
+        (locations ?? [])
+            .Select(HardwareOfficeNames.Normalize)
+            .Where(city => city.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     public static string Quote(string? value)
     {

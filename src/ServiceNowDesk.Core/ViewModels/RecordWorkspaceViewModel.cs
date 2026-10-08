@@ -636,13 +636,25 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     /// <summary>
     /// Open presets hide resolved, closed, and cancelled rows that still come back from ServiceNow.
-    /// On hold stays. Closed and any-activity lists keep every row.
+    /// On hold stays. Closed and any-activity lists keep every row. Office-scoped presets also
+    /// drop rows outside the watched cities so opening a Daily Work / search hit cannot inject
+    /// an out-of-office ticket into My Tickets / My Team / Unassigned.
     /// </summary>
     protected bool ShowsOnThisList(TicketRow row)
     {
-        if (Preset?.Activity != ActivityFilter.Open)
-            return true;
-        return AlertClassifier.IsStillOpen(Section, row.StateValue, row.StateLabel);
+        if (Preset?.Activity == ActivityFilter.Open
+            && !AlertClassifier.IsStillOpen(Section, row.StateValue, row.StateLabel))
+            return false;
+
+        // Walk-up / Mix My Team is people (including outside the office). Other office-scoped
+        // presets — My Tickets, group My Team, Unassigned — stay inside watched cities.
+        var leadTeamPeople = _useLeadTeam && Preset?.Assignment == AssignmentScope.MyGroups;
+        if (_limitOffices
+            && !leadTeamPeople
+            && Preset?.Assignment is AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+            return OfficeQueue.Matches(row.Location, _officeCities);
+
+        return true;
     }
 
     private void RemoveFromList(string sysId)

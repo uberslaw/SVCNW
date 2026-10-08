@@ -780,7 +780,9 @@ public partial class MainViewModel
     };
 
     private static bool ListIsStale(CachedTicketList? list) =>
-        list is null || FormCatalogPolicy.IsStale(list.CapturedAt, DateTimeOffset.UtcNow);
+        list is null
+        || list.Items.Count == 0
+        || FormCatalogPolicy.IsStale(list.CapturedAt, DateTimeOffset.UtcNow);
 
     private static CachedTicketList? ListFor(DeskListSnapshot? snapshot, string key) => key switch
     {

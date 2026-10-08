@@ -67,8 +67,10 @@ public class AlertTests
 
         Assert.NotNull(query);
         Assert.Contains("assignment_group.name=\"Aus DT active=false\"", query);
-        Assert.Contains("\"Gold Coast\"", query);
-        Assert.Contains("\"Brisbane ORpriority=1\"", query);
+        Assert.Contains("location.name=\"Gold Coast\"", query);
+        Assert.Contains("location.name=\"Brisbane ORpriority=1\"", query);
+        Assert.Contains("^NQ", query);
+        Assert.DoesNotContain("location.nameIN", query);
         Assert.Contains("active=true", query);
         Assert.DoesNotContain("^active=false", query);
         Assert.DoesNotContain("^ORpriority=1", query);
@@ -111,7 +113,8 @@ public class AlertTests
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.SlaBreaching).Rows, row => row.Number == "INC0010015");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "RITM0010004");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Section == DeskSection.Knowledge);
-        Assert.Equal(8, snapshot.Count(AlertKind.AssignedToMe));
+        Assert.Equal(6, snapshot.Count(AlertKind.AssignedToMe));
+        Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "INC0010024");
 
         var group = snapshot.Bucket(AlertKind.WatchedGroup).Rows;
         var brisbane = Assert.Single(group);
@@ -163,8 +166,11 @@ public class AlertTests
             .Select(call => QueryOf(call.PathAndQuery))
             .First(query => query.Contains("assignment_group.name", StringComparison.Ordinal));
         Assert.Contains("assignment_group.name=\"Aus DT active=false\"", groupQuery);
-        Assert.Contains("\"Gold Coast\"", groupQuery);
-        Assert.Contains("\"Brisbane\"", groupQuery);
+        Assert.Contains("location.name=\"Gold Coast\"", groupQuery);
+        Assert.Contains("location.name=\"Brisbane\"", groupQuery);
+        Assert.Contains("location.name=\"Brisbane Office\"", groupQuery);
+        Assert.Contains("^NQ", groupQuery);
+        Assert.DoesNotContain("location.nameIN", groupQuery);
         Assert.DoesNotContain("^active=false", groupQuery);
         Assert.Contains("active=true", groupQuery);
     }
@@ -909,7 +915,7 @@ public class AlertTests
 
         var returned = Assert.Single(snapshot.Bucket(AlertKind.ReturnedWithNotes).Rows);
         Assert.Equal("INC0010013", returned.Number);
-        Assert.Equal(8, snapshot.Count(AlertKind.AssignedToMe));
+        Assert.Equal(6, snapshot.Count(AlertKind.AssignedToMe));
         Assert.Equal("INC0010007", Assert.Single(snapshot.Bucket(AlertKind.WatchedGroup).Rows).Number);
     }
 
@@ -1109,16 +1115,21 @@ public class AlertTests
             "Aus DT - Client Services",
             ["Brisbane", "Gold Coast", "Townsville", "Cairns", "Maroochydore"]);
         Assert.All(queries, query => Assert.True(query.Length <= AlertQueryBuilder.MaxQueryLength, query));
-        Assert.DoesNotContain(queries, query => query.Contains("^NQ", StringComparison.Ordinal));
-        Assert.Contains(queries, query => query.StartsWith("assigned_to=sample-user", StringComparison.Ordinal) && !query.Contains("assignment_group", StringComparison.Ordinal));
+        var assigned = Assert.Single(queries, query => query.StartsWith("assigned_to=sample-user", StringComparison.Ordinal) && !query.Contains("assignment_group", StringComparison.Ordinal));
+        Assert.Contains("location.name=\"Brisbane\"", assigned);
+        Assert.Contains("location.name=\"Brisbane Office\"", assigned);
+        Assert.Contains("^NQ", assigned);
+        Assert.DoesNotContain("location.nameIN", assigned);
         var groupQueries = queries.Where(query => query.Contains("assignment_groupIN", StringComparison.Ordinal)).ToArray();
         Assert.True(groupQueries.Length > 1);
         Assert.All(groupQueries, query =>
         {
             Assert.DoesNotContain("assigned_to=", query);
             Assert.DoesNotContain("location.name", query);
+            Assert.DoesNotContain("^NQ", query);
         });
-        Assert.Contains(queries, query => query.Contains("location.name", StringComparison.Ordinal) && !query.Contains("assignment_groupIN", StringComparison.Ordinal));
+        Assert.Contains(queries, query => query.Contains("location.name", StringComparison.Ordinal) && query.Contains("assignment_group.name", StringComparison.Ordinal));
+        Assert.DoesNotContain(queries, query => query.Contains("location.nameIN", StringComparison.Ordinal));
         var packed = string.Join(",", groupQueries);
         Assert.All(groups, id => Assert.Contains(id, packed, StringComparison.Ordinal));
 

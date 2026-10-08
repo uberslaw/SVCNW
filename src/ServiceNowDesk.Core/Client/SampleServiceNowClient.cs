@@ -188,24 +188,32 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             items = _items.ToArray();
         }
 
+        var offices = OfficeCities(search.Locations);
         var assigned = new List<AlertRecord>();
-        assigned.AddRange(incidents.Where(record => record.Active && record.AssignedTo.SysId == userId && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel)).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
+        assigned.AddRange(incidents.Where(record =>
+                record.Active
+                && record.AssignedTo.SysId == userId
+                && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel)
+                && InOffice(record.Location, offices))
+            .Select(record => ToAlert(record, AlertKind.AssignedToMe)));
+        // Requests have no location; assignee-only matches the live client.
         assigned.AddRange(requests.Where(record => record.Active && record.AssignedTo.SysId == userId && AlertClassifier.IsStillOpen(DeskSection.Requests, record.RequestState, record.RequestStateLabel)).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
-        assigned.AddRange(items.Where(record => record.Active && record.AssignedTo.SysId == userId && AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel)).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
+        assigned.AddRange(items.Where(record =>
+                record.Active
+                && record.AssignedTo.SysId == userId
+                && AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel)
+                && InOffice(record.Location, offices))
+            .Select(record => ToAlert(record, AlertKind.AssignedToMe)));
 
         var group = new List<AlertRecord>();
         if (AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations) is not null)
         {
             var name = EncodedQuery.Sanitize(search.GroupName);
-            var cities = search.Locations
-                .Select(EncodedQuery.Sanitize)
-                .Where(city => city.Length > 0)
-                .ToArray();
             group.AddRange(incidents.Where(record =>
                 record.Active
                 && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel)
                 && string.Equals(record.AssignmentGroup.Display, name, StringComparison.OrdinalIgnoreCase)
-                && cities.Any(city => string.Equals(record.Location, city, StringComparison.OrdinalIgnoreCase)))
+                && OfficeQueue.Matches(record.Location, offices))
                 .Select(record => ToAlert(record, AlertKind.WatchedGroup)));
             Record("GET", "api/now/table/incident");
         }
@@ -288,10 +296,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         var userId = EncodedQuery.SafeToken(search.UserSysId, "user id");
         var watched = AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations) is not null;
         var groupName = EncodedQuery.Sanitize(search.GroupName);
-        var cities = search.Locations
-            .Select(EncodedQuery.Sanitize)
-            .Where(city => city.Length > 0)
-            .ToArray();
+        var cities = OfficeCities(search.Locations);
         var rows = new List<WatchedRecord>();
         foreach (var record in incidents)
         {
@@ -301,14 +306,14 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
         foreach (var record in items)
         {
-            if (AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel) && InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
-                rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo, record.Priority, record.PriorityLabel));
+            if (AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel) && InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, record.Location, userId, watched, groupName, cities))
+                rows.Add(Describe(DeskSection.RequestedItems, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, record.Location, record.UpdatedAtDisplay, ReferenceValue.Empty, record.AssignedTo, record.Priority, record.PriorityLabel));
         }
 
         foreach (var record in walks)
         {
-            if (AlertClassifier.IsStillOpen(DeskSection.WalkUps, record.State, record.StateLabel) && InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, "", userId, watched, groupName, cities))
-                rows.Add(Describe(DeskSection.WalkUps, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, "", record.UpdatedAtDisplay, record.OpenedFor, record.AssignedTo));
+            if (AlertClassifier.IsStillOpen(DeskSection.WalkUps, record.State, record.StateLabel) && InPopulation(record.Active, record.AssignedTo.SysId, record.AssignmentGroup, record.Location, userId, watched, groupName, cities))
+                rows.Add(Describe(DeskSection.WalkUps, record.SysId, record.Number, record.ShortDescription, record.State, record.StateLabel, record.AssignmentGroup, record.Location, record.UpdatedAtDisplay, record.OpenedFor, record.AssignedTo));
         }
 
         return rows;
@@ -327,13 +332,23 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         if (!active)
             return false;
         if (assignedId == userId)
-            return true;
+            return InOffice(location, cities);
         if (group.SysId == "group-cs" || group.Display.Equals("Client Services", StringComparison.OrdinalIgnoreCase))
             return true;
         return watched
             && group.Display.Equals(groupName, StringComparison.OrdinalIgnoreCase)
-            && cities.Any(city => location.Equals(city, StringComparison.OrdinalIgnoreCase));
+            && OfficeQueue.Matches(location, cities);
     }
+
+    private static string[] OfficeCities(IEnumerable<string>? locations) =>
+        (locations ?? [])
+            .Select(HardwareOfficeNames.Normalize)
+            .Where(city => city.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static bool InOffice(string? location, IReadOnlyList<string> cities) =>
+        cities.Count == 0 || OfficeQueue.Matches(location, cities);
 
     private WatchedRecord Describe(
         DeskSection section,

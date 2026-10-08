@@ -21,12 +21,12 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private const string KnowledgeListFields = "sys_id,number,short_description,topic,workflow_state,kb_category,kb_knowledge_base,author,sys_updated_on,published";
     private const string AlertIncidentFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
     private const string AlertRequestFields = "sys_id,number,short_description,request_state,assigned_to,assignment_group,sys_updated_on,active";
-    private const string AlertItemFields = "sys_id,number,short_description,state,assigned_to,assignment_group,sys_updated_on,active";
+    private const string AlertItemFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
     private const string PopulationIncidentFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,caller_id,caller_id.user_name,follow_up";
     private const string UnassignedQueueFields = PopulationIncidentFields + ",opened_at";
-    private const string PopulationItemFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,requested_for,requested_for.user_name,request.requested_for,request.requested_for.user_name,follow_up";
-    private const string PopulationInteractionFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name,follow_up";
-    private const string PopulationInteractionFieldsWithoutFollowUp = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name";
+    private const string PopulationItemFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,requested_for,requested_for.user_name,request.requested_for,request.requested_for.user_name,follow_up";
+    private const string PopulationInteractionFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name,follow_up";
+    private const string PopulationInteractionFieldsWithoutFollowUp = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name";
     private const int AlertLimit = 100;
     private const string InteractionFields = "sys_id,number,short_description,description,state,type,opened_for,assigned_to,assignment_group,location,opened_at,sys_updated_on,active";
 
@@ -289,9 +289,10 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     public async Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(search);
-        var incidents = await QueryAlertsAsync("incident", AlertIncidentFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.Incidents), AlertKind.AssignedToMe, DeskSection.Incidents, includeLocation: true, cancellationToken).ConfigureAwait(false);
+        var incidents = await QueryAlertsAsync("incident", AlertIncidentFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.Incidents, search.Locations), AlertKind.AssignedToMe, DeskSection.Incidents, includeLocation: true, cancellationToken).ConfigureAwait(false);
+        // Requests have no location field; keep assignee-only. Incidents / items use offices.
         var requests = await QueryAlertsAsync("sc_request", AlertRequestFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.Requests), AlertKind.AssignedToMe, DeskSection.Requests, includeLocation: false, cancellationToken).ConfigureAwait(false);
-        var items = await QueryAlertsAsync("sc_req_item", AlertItemFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.RequestedItems), AlertKind.AssignedToMe, DeskSection.RequestedItems, includeLocation: false, cancellationToken).ConfigureAwait(false);
+        var items = await QueryAlertsAsync("sc_req_item", AlertItemFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.RequestedItems, search.Locations), AlertKind.AssignedToMe, DeskSection.RequestedItems, includeLocation: true, cancellationToken).ConfigureAwait(false);
 
         var groupQuery = AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations);
         var group = groupQuery is null
@@ -490,7 +491,10 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             AddNote(leadNotes, leadWalkUps.Failure);
         }
 
-        var distinct = DistinctWatched(watched);
+        // Assigned-to-me rows that arrived via a group query still drop outside the watched offices.
+        var distinct = DistinctWatched(watched)
+            .Where(record => KeepAssignedInOffice(record, search.UserSysId, search.Locations))
+            .ToArray();
         var leadDistinct = DistinctWatched(lead);
         var personalIds = new HashSet<string>(distinct.Select(record => record.SysId), StringComparer.OrdinalIgnoreCase);
         var leadOnlyIds = leadDistinct
@@ -575,6 +579,27 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             .GroupBy(record => record.SysId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToArray();
+
+    /// <summary>
+    /// My Tickets / Daily Work office rule for rows assigned to the signed-in user. Other
+    /// population roles (group membership, watched group) stay unchanged. Empty cities leave
+    /// the assignee unlimited so office-less alert tests keep working.
+    /// </summary>
+    private static bool KeepAssignedInOffice(WatchedRecord record, string? userSysId, IEnumerable<string>? locations)
+    {
+        var user = userSysId?.Trim() ?? "";
+        if (user.Length == 0
+            || !record.AssignedToSysId.Trim().Equals(user, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var cities = (locations ?? [])
+            .Select(HardwareOfficeNames.Normalize)
+            .Where(city => city.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return cities.Length == 0 || OfficeQueue.Matches(record.Location, cities);
+    }
+
 
     private async Task<IReadOnlyList<string>> MemberGroupIdsAsync(CancellationToken cancellationToken)
     {

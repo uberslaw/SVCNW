@@ -110,7 +110,7 @@ public sealed record TicketQuery
     /// Cities for My Tickets, My Team, and Unassigned. Null leaves those queues unlimited.
     /// An empty list matches no location, so the queue stays inside an office that was not named.
     /// When Settings has no watched offices, callers pass the signed-in user's city via
-    /// <c>OfficeQueue.Cities</c> so behaviour matches My Team.
+    /// <c>OfficeQueue.Cities</c> so behaviour matches Daily Work and Assigned to me.
     /// </summary>
     public IReadOnlyList<string>? OfficeLocations { get; init; }
 

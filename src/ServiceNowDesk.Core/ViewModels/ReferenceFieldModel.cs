@@ -200,6 +200,9 @@ public sealed class TicketRow : IHighlightRow
     public string StateValue { get; init; } = "";
     public string SortKey { get; init; } = "";
 
+    /// <summary>Record location for office-scoped lists. Empty when the table has none.</summary>
+    public string Location { get; init; } = "";
+
     /// <summary>INC, RITM, or IMS on the combined list. Empty on a single-table list.</summary>
     public string Kind { get; init; } = "";
 
@@ -233,7 +236,8 @@ public sealed class TicketRow : IHighlightRow
         Badge = BadgeFor(record.Priority),
         Unassigned = record.AssignedTo.IsEmpty,
         StateValue = record.State,
-        SortKey = record.UpdatedAtValue
+        SortKey = record.UpdatedAtValue,
+        Location = record.Location
     };
 
     public static TicketRow FromRequest(RequestRecord record) => new()
@@ -261,7 +265,8 @@ public sealed class TicketRow : IHighlightRow
         When = record.UpdatedAtDisplay,
         Unassigned = record.AssignedTo.IsEmpty,
         StateValue = record.State,
-        SortKey = record.UpdatedAtValue
+        SortKey = record.UpdatedAtValue,
+        Location = record.Location
     };
 
     public static TicketRow FromItem(RequestedItemRecord record) => new()
@@ -276,7 +281,8 @@ public sealed class TicketRow : IHighlightRow
         Badge = BadgeFor(record.Priority),
         Unassigned = record.AssignedTo.IsEmpty,
         StateValue = record.State,
-        SortKey = record.UpdatedAtValue
+        SortKey = record.UpdatedAtValue,
+        Location = record.Location
     };
 
     private static string BadgeFor(string priority) =>

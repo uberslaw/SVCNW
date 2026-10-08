@@ -440,6 +440,89 @@ public class CacheSettingsTests
         Assert.Contains(main.Mix.Items, row => row.Number == "INC-CACHE");
     }
 
+
+    [Fact]
+    public async Task EmptyIncidentCacheIsTreatedAsStaleAndRefreshDownloadsAgain()
+    {
+        var folder = NewFolder();
+        var catalog = new FileFormCatalogStore(folder);
+        var lists = new MemoryDeskListStore();
+        var session = Api.BasicSession();
+        catalog.Save(session.InstanceUri, FreshCatalog());
+        var empty = FreshLists("INC-OLD", "Old printer");
+        empty.Incidents = new CachedTicketList
+        {
+            CapturedAt = DateTimeOffset.UtcNow,
+            TotalCount = 0,
+            Items = []
+        };
+        lists.Save(DeskListScope.ForInstance(session.InstanceUri), empty);
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (IsUser(path))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            if (path.Contains("/incident", StringComparison.Ordinal))
+            {
+                return Api.Json(
+                    """{"result":[{"sys_id":"inc-fresh","number":"INC-FRESH","short_description":"Fresh printer","state":"2","sys_updated_on":"2026-10-01 10:00:00"}]}""");
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = Desk(catalog, lists, handler);
+        main.Connection.DownloadCacheOnLaunch = false;
+
+        await main.ConnectCommand.ExecuteAsync(null);
+
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-FRESH");
+        var incidents = Assert.Single(main.Caches, row => row.Name == "Incidents");
+        await main.RefreshCacheCommand.ExecuteAsync(incidents);
+        Assert.Contains("Downloaded 1 fresh", incidents.Status, StringComparison.Ordinal);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-FRESH");
+    }
+
+    [Fact]
+    public async Task MyTicketsStayInsideWatchedOfficesAfterSplashAndOpeningMelbourneDoesNotFillTheList()
+    {
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings
+        {
+            UseSampleData = true,
+            DownloadCacheOnLaunch = true,
+            OfficeLocations = ["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"]
+        });
+        var main = new MainViewModel(settings, new RecordingDesktopServices());
+        await main.InitializeAsync();
+
+        Assert.Equal("My Tickets", main.Incidents.Preset?.Label);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010001");
+        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010024");
+        Assert.DoesNotContain(main.Mix.Items, row => row.Number == "INC0010024");
+        Assert.DoesNotContain(main.RequestedItems.Items, row => row.Number == "RITM0010008");
+        Assert.DoesNotContain(main.WalkUps.Items, row => row.Number == "IMS0010010");
+
+        await main.OpenSearchResultAsync(new SearchHit
+        {
+            Section = DeskSection.Incidents,
+            TableLabel = "Incident",
+            SysId = "inc-melbourne-mine",
+            Number = "INC0010024",
+            Title = "Assigned to me in Melbourne outside watched offices",
+            StateLabel = "In Progress",
+            Tone = "open",
+            Meta = "",
+            When = "",
+            SortKey = "INC0010024"
+        });
+
+        Assert.Equal(DeskSection.Incidents, main.SelectedSection);
+        Assert.Equal("INC0010024", main.Incidents.Number);
+        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010024");
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010001");
+        Assert.True(main.Incidents.Items.Count > 0, "Office-scoped tickets must already be on the list.");
+    }
+
     [Fact]
     public async Task FailedRefreshKeepsLastGoodDownloadAndShowsError()
     {

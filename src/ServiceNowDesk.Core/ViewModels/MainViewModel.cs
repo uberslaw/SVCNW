@@ -1598,6 +1598,7 @@ public partial class MainViewModel : ObservableObject
             var localNow = DateTime.Now;
             var search = NotificationSettings.Committed.ToSearch(_signedInUserId) with
             {
+                Locations = OfficeQueue.Cities(NotificationSettings.Committed.OfficeLocations, _signedInUserLocation),
                 TeamMemberIds = TeamIdsForAlerts()
             };
 
@@ -1736,6 +1737,7 @@ public partial class MainViewModel : ObservableObject
 
             var search = NotificationSettings.Committed.ToSearch(_signedInUserId) with
             {
+                Locations = OfficeQueue.Cities(NotificationSettings.Committed.OfficeLocations, _signedInUserLocation),
                 TeamMemberIds = TeamIdsForAlerts()
             };
             var report = await client.GetAlertReportAsync(search, token).ConfigureAwait(false);
