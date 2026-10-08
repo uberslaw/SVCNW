@@ -176,7 +176,15 @@ public class StartupDownloadLifecycleTests
                 return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"},"user":{"value":"user-alex","display_value":"Alex Rivera"}}]}""");
             return Api.Json("""{"result":[]}""");
         });
-        var session = Api.BasicSession();
+        // Use a real browser session so ACL 403s exercise IsRejectedBrowserSession —
+        // the bug was wiping a fresh SSO after PIN when any list returned Forbidden.
+        var session = ServiceNowSession.FromSettings(new DeskSettings
+        {
+            InstanceUrl = "https://example.service-now.com",
+            AuthMode = ServiceNowAuthMode.BrowserSession,
+            SessionCookie = "glide_user_session=ok",
+            UserToken = "tok"
+        });
         var main = new MainViewModel(
             new MemorySettingsStore(),
             new RecordingDesktopServices(),
@@ -190,11 +198,88 @@ public class StartupDownloadLifecycleTests
         await main.SignInWithBrowserCommand.ExecuteAsync(null);
 
         Assert.True(main.IsConnected);
+        Assert.Equal("glide_user_session=ok", main.Connection.SessionCookie);
+        Assert.NotEqual("No browser sign-in yet.", main.Connection.BrowserSessionStatus);
         Assert.False(main.Startup.ShowScreen);
         Assert.True(main.Startup.HasFailures);
         Assert.False(string.IsNullOrWhiteSpace(main.ErrorMessage));
         Assert.Contains("could not be downloaded", main.StatusMessage, StringComparison.OrdinalIgnoreCase);
         Assert.NotEqual(GuidedSetupPhase.SignIn, main.Guided.Phase);
+    }
+
+    [Fact]
+    public async Task DismissingSplashDuringBrowserBootstrapKeepsSessionAndDownload()
+    {
+        var release = new TaskCompletionSource();
+        var started = new TaskCompletionSource();
+        var session = ServiceNowSession.FromSettings(new DeskSettings
+        {
+            InstanceUrl = "https://example.service-now.com",
+            AuthMode = ServiceNowAuthMode.BrowserSession,
+            SessionCookie = "glide_user_session=ok",
+            UserToken = "tok"
+        });
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            browserSignIn: new ScriptedBrowserSignIn(),
+            clientFactory: (_, catalog) => ServiceNowClient.Create(session, new GatedListHandler(started, release), catalog));
+        main.Connection.InstanceUrl = "https://example.service-now.com";
+        main.Connection.DownloadCacheOnLaunch = true;
+
+        var signIn = main.SignInWithBrowserCommand.ExecuteAsync(null);
+        try
+        {
+            var startedOrGaveUp = await Task.WhenAny(started.Task, Task.Delay(TimeSpan.FromSeconds(20)));
+            Assert.Same(started.Task, startedOrGaveUp);
+            Assert.True(main.Startup.ShowScreen);
+
+            main.CloseStartupCommand.Execute(null);
+
+            Assert.True(main.Startup.ClosedByUser);
+            Assert.False(main.Startup.ShowScreen);
+            Assert.True(main.Startup.IsRunning);
+            Assert.True(main.IsConnected);
+            Assert.Equal("glide_user_session=ok", main.Connection.SessionCookie);
+            Assert.False(signIn.IsCompleted);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        await signIn;
+        await main.AssignmentDirectoryRefresh;
+
+        Assert.True(main.IsConnected);
+        Assert.False(main.Startup.IsRunning);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-NEW");
+        Assert.NotEqual("No browser sign-in yet.", main.Connection.BrowserSessionStatus);
+    }
+
+    [Fact]
+    public async Task BrowserAuthFailureDoesNotLookLikeAConnectedSplashThenNoSession()
+    {
+        var handler = new StubHandler((_, _) => Api.Json(
+            """{"error":{"message":"Required to provide Auth information","detail":"User Not Authenticated"},"status":"failure"}""",
+            HttpStatusCode.Unauthorized));
+        var store = new MemorySettingsStore();
+        var main = new MainViewModel(
+            store,
+            new RecordingDesktopServices(),
+            browserSignIn: new ScriptedBrowserSignIn(),
+            clientFactory: (session, catalog) => ServiceNowClient.Create(session, handler, catalog));
+        main.Connection.InstanceUrl = "https://example.service-now.com";
+
+        await main.SignInWithBrowserCommand.ExecuteAsync(null);
+
+        Assert.False(main.IsConnected);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.IsRunning);
+        Assert.Equal(BrowserSignInClock.ExpiredStatus, main.StatusMessage);
+        Assert.Equal(BrowserSignInClock.ExpiredStatus, main.ErrorMessage);
+        Assert.Equal("No browser sign-in yet.", main.Connection.BrowserSessionStatus);
+        Assert.Equal("", store.Current.SessionCookie);
     }
 
     private static MainViewModel LiveDesk(HttpMessageHandler handler)

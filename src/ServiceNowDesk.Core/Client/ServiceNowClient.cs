@@ -2125,10 +2125,26 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     {
         if (_authMode != ServiceNowAuthMode.BrowserSession)
             return false;
-        if (statusCode is 401 or 403)
+        if (ContainsInvalidGrant(body) || ContainsInvalidGrant(error.Message) || ContainsInvalidGrant(error.Detail))
             return true;
-        return ContainsInvalidGrant(body) || ContainsInvalidGrant(error.Message) || ContainsInvalidGrant(error.Detail);
+        // 401 means the session cookie/token is no longer accepted.
+        if (statusCode == 401)
+            return true;
+        // 403 is usually a table ACL. Only treat it as a dead browser session when
+        // ServiceNow explicitly says the user is not authenticated — otherwise a
+        // denied list during bootstrap would wipe a fresh sign-in.
+        if (statusCode == 403)
+            return LooksUnauthenticated(body)
+                || LooksUnauthenticated(error.Message)
+                || LooksUnauthenticated(error.Detail);
+        return false;
     }
+
+    private static bool LooksUnauthenticated(string? text) =>
+        text is not null
+        && (text.Contains("User Not Authenticated", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("Required to provide Auth information", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("not authenticated", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsSlaTableDenial(int statusCode, string body, string? relativeUrl)
     {

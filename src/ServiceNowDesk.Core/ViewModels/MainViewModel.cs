@@ -41,6 +41,7 @@ public partial class MainViewModel : ObservableObject
     private string _signedInUserId = "";
     private string _signedInUserLocation = "";
     private int _sessionEpoch;
+    private int _connectBusy;
     private int _mixOpenGeneration;
 
     public Task AssignmentDirectoryRefresh { get; private set; } = Task.CompletedTask;
@@ -326,6 +327,21 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task ConnectAsync()
     {
+        if (Interlocked.CompareExchange(ref _connectBusy, 1, 0) != 0)
+            return;
+
+        try
+        {
+            await ConnectCoreAsync();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _connectBusy, 0);
+        }
+    }
+
+    private async Task ConnectCoreAsync()
+    {
         IServiceNowClient? created = null;
         var epoch = _sessionEpoch;
         try
@@ -436,6 +452,11 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        // One auth attempt per click — share the connect gate so Connect cannot
+        // start a second session while browser sign-in / bootstrap is running.
+        if (Interlocked.CompareExchange(ref _connectBusy, 1, 0) != 0)
+            return;
+
         try
         {
             IsBusy = true;
@@ -451,7 +472,7 @@ public partial class MainViewModel : ObservableObject
             Connection.SessionCapturedAt = clock.SignedInAtUtc;
             Connection.SessionExpiresAt = clock.ExpiresAtUtc;
             _store.Save(Connection.BuildSettings());
-            await ConnectAsync();
+            await ConnectCoreAsync();
             if (IsConnected)
             {
                 // Connect awaits bootstrap. The splash may already have self-closed; the
@@ -459,7 +480,11 @@ public partial class MainViewModel : ObservableObject
                 Guided.SignInSucceeded(Startup.ShowScreen || Startup.IsRunning);
             }
             else
+            {
+                if (string.IsNullOrWhiteSpace(ErrorMessage))
+                    ErrorMessage = "Sign-in did not connect. Check the instance URL and try again.";
                 Guided.SignInFailed();
+            }
         }
         catch (BrowserSignInCanceledException)
         {
@@ -477,6 +502,7 @@ public partial class MainViewModel : ObservableObject
         finally
         {
             IsBusy = false;
+            Interlocked.Exchange(ref _connectBusy, 0);
         }
     }
 
@@ -1284,7 +1310,20 @@ public partial class MainViewModel : ObservableObject
     {
         _sessionEpoch++;
         ClearSavedBrowserSignIn();
+        try
+        {
+            // Stop splash/progress UI; the download cannot continue without a session.
+            Startup.Reset();
+        }
+        catch
+        {
+            // Splash model is best-effort while tearing down a rejected session.
+        }
+
         DropConnection(BrowserSignInClock.ExpiredStatus);
+        // Status already carries the expired line; also put it in the banner so the
+        // cleared "No browser sign-in yet." session status is not the only signal.
+        ErrorMessage = BrowserSignInClock.ExpiredStatus;
     }
 
     private void ClearSavedBrowserSignIn()
