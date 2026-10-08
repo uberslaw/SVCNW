@@ -407,6 +407,100 @@ public class WalkUpTests
         Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010008");
     }
 
+    [Fact]
+    public void WalkUpPresetsHideAllOpenAndAddTeamClosed()
+    {
+        var labels = PresetCatalog.WalkUps.Select(preset => preset.Label).ToArray();
+        Assert.Equal(
+            ["My Tickets", "My Team", "Unassigned", "Closed", "Team closed", "All of mine"],
+            labels);
+        Assert.DoesNotContain("All open", labels);
+        var closed = Assert.Single(PresetCatalog.WalkUps, preset => preset.Label == "Closed");
+        Assert.Equal(AssignmentScope.Mine, closed.Assignment);
+        Assert.Equal(ActivityFilter.Closed, closed.Activity);
+        var teamClosed = Assert.Single(PresetCatalog.WalkUps, preset => preset.Label == "Team closed");
+        Assert.Equal(AssignmentScope.MyGroups, teamClosed.Assignment);
+        Assert.Equal(ActivityFilter.Closed, teamClosed.Activity);
+    }
+
+    [Fact]
+    public void WalkUpListChromeDoesNotBindEncodedQueryOrFilterDump()
+    {
+        var xamlPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "src", "ServiceNowDesk.App", "Views", "InteractionView.xaml"));
+        Assert.True(File.Exists(xamlPath), xamlPath);
+        var xaml = File.ReadAllText(xamlPath);
+        Assert.DoesNotContain("LastEncodedQuery", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("FilterSummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("{0} shown", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UnassignedStatusDoesNotExposeEncodedQueryText()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenWalkUpsAsync(client, ["Brisbane"], ["user-jordan"]);
+        workspace.Preset = Preset(AssignmentScope.Unassigned);
+        await workspace.RefreshAsync();
+
+        Assert.Contains(workspace.Items, row => row.Number == "IMS0010008");
+        Assert.DoesNotContain("assigned_toISEMPTY", workspace.SearchHint, StringComparison.Ordinal);
+        Assert.DoesNotContain("^NQ", workspace.SearchHint, StringComparison.Ordinal);
+        Assert.DoesNotContain("assigned_toISEMPTY", workspace.ErrorMessage ?? "", StringComparison.Ordinal);
+        Assert.DoesNotContain("^NQ", workspace.ErrorMessage ?? "", StringComparison.Ordinal);
+        // Kept for Settings Cache / logging — never bound into Walk-up list chrome.
+        Assert.False(string.IsNullOrWhiteSpace(workspace.LastEncodedQuery));
+        Assert.Contains("assigned_toISEMPTY", workspace.LastEncodedQuery, StringComparison.Ordinal);
+        Assert.Contains("^NQ", workspace.LastEncodedQuery, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ClosedShowsOnlyTheSignedInUsersClosedWalkUps()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenWalkUpsAsync(client, ["Brisbane"], ["user-jordan"]);
+        workspace.Preset = PresetCatalog.WalkUps.Single(preset => preset.Label == "Closed");
+        await workspace.RefreshAsync();
+
+        Assert.Contains(workspace.Items, row => row.Number == "IMS0010011");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010007");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010012");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010008");
+    }
+
+    [Fact]
+    public async Task TeamClosedIncludesTeamMembersAndExcludesOutsideClosed()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenWalkUpsAsync(client, ["Brisbane"], ["user-jordan"]);
+        workspace.Preset = PresetCatalog.WalkUps.Single(preset => preset.Label == "Team closed");
+        await workspace.RefreshAsync();
+
+        Assert.Contains(workspace.Items, row => row.Number == "IMS0010007");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010011");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010012");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010005");
+    }
+
+    [Fact]
+    public async Task TeamClosedWithNoSelectedPeopleShowsThePromptAndDoesNotQuery()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("{\"result\":[]}"));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var workspace = new InteractionWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.UseOfficeCities(["Brisbane"]);
+        workspace.UseTeamMembers([]);
+        workspace.Attach(client);
+        workspace.Preset = PresetCatalog.WalkUps.Single(preset => preset.Label == "Team closed");
+        await workspace.RefreshAsync();
+
+        Assert.Equal(WalkUpTeam.EmptyPrompt, workspace.SearchHint);
+        Assert.Empty(workspace.Items);
+        Assert.Empty(handler.Calls);
+    }
+
     private static PresetOption Preset(AssignmentScope scope) =>
         PresetCatalog.WalkUps.Single(preset => preset.Assignment == scope && preset.Activity == ActivityFilter.Open && preset.AssignmentClause is null);
 

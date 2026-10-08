@@ -2424,6 +2424,44 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         });
         AddInteraction(new InteractionRecord
         {
+            SysId = "ims-mine-closed",
+            Number = "IMS0010011",
+            ShortDescription = "Closed walk-up assigned to me",
+            Description = "Closed walk-up for the signed-in agent.",
+            State = "closed_complete",
+            StateLabel = "Closed Complete",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Sam,
+            AssignedTo = Alex,
+            AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:07",
+            UpdatedAtValue = "2099-01-01 00:07:30",
+            Active = false
+        });
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-outside-closed",
+            Number = "IMS0010012",
+            ShortDescription = "Closed walk-up outside the team",
+            Description = "Closed walk-up on someone who is not on the Leads team.",
+            State = "closed_complete",
+            StateLabel = "Closed Complete",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Jordan,
+            AssignedTo = Sam,
+            AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:07",
+            UpdatedAtValue = "2099-01-01 00:07:45",
+            Active = false
+        });
+        AddInteraction(new InteractionRecord
+        {
             SysId = "ims-unassigned-bne",
             Number = "IMS0010008",
             ShortDescription = "Unassigned walk-up in Brisbane",
