@@ -13,11 +13,12 @@ public class WorkspaceTests
         using var client = new SampleServiceNowClient();
         var workspace = await OpenIncidentsAsync(client);
 
-        Assert.Equal(4, workspace.Items.Count);
+        Assert.Equal(5, workspace.Items.Count);
         Assert.Contains(workspace.Items, row => row.Number == "INC0010001");
         Assert.Contains(workspace.Items, row => row.Number == "INC0010002");
         Assert.Contains(workspace.Items, row => row.Number == "INC0010006");
         Assert.Contains(workspace.Items, row => row.Number == "INC0010010");
+        Assert.Contains(workspace.Items, row => row.Number == "INC0010024");
         Assert.DoesNotContain(workspace.Items, row => row.Number == "INC0010015");
         Assert.DoesNotContain(workspace.Items, row => row.Number == "INC0010004");
 

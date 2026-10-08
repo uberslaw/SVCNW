@@ -236,7 +236,8 @@ public partial class MixWorkspaceViewModel : ObservableObject
             text = trimmed;
 
         IReadOnlyList<string>? offices = null;
-        if (_limitOffices && Preset.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+        // My Tickets uses the same watched-office list as My Team / Unassigned.
+        if (_limitOffices && Preset.Assignment is AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned)
             offices = _officeCities;
 
         return new TicketQuery

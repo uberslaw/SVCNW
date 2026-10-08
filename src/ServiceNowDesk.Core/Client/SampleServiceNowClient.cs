@@ -1275,6 +1275,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             AssignmentGroup = ClientServices,
             ServiceOffering = new ReferenceValue("offering-print", "Printing"),
             ConfigurationItem = new ReferenceValue("ci-printer", "HQ-PRINTER-01"),
+            Location = "Brisbane Office",
             OpenedAtDisplay = "2026-09-28 09:15",
             UpdatedAtDisplay = "2026-09-28 10:40",
             UpdatedAtValue = "2026-09-28 10:40:00",
@@ -1306,6 +1307,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             Caller = Sam,
             AssignedTo = Alex,
             AssignmentGroup = Network,
+            Location = "Brisbane",
             OpenedAtDisplay = "2026-09-29 08:05",
             UpdatedAtDisplay = "2026-09-29 08:05",
             UpdatedAtValue = "2026-09-29 08:05:00",
@@ -1418,11 +1420,40 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             Caller = Sam,
             AssignedTo = Alex,
             AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
             OpenedAtDisplay = "2026-09-25 13:00",
             UpdatedAtDisplay = "2026-09-25 16:22",
             UpdatedAtValue = "2026-09-25 16:22:00",
             Active = true
         }, new JournalEntry("journal-blue", "work_notes", "Work note", "Memory dump shows bugcheck 0x50 after the graphics driver update.", "alex.rivera", "2026-09-25 16:22"));
+
+        AddIncident(new IncidentRecord
+        {
+            SysId = "inc-melbourne-mine",
+            Number = "INC0010024",
+            ShortDescription = "Assigned to me in Melbourne outside watched offices",
+            Description = "Mine, but the location is not a notification office.",
+            State = "2",
+            StateLabel = "In Progress",
+            Priority = "3",
+            PriorityLabel = "3 - Moderate",
+            Impact = "3",
+            ImpactLabel = "3 - Low",
+            Urgency = "2",
+            UrgencyLabel = "2 - Medium",
+            Category = "hardware",
+            CategoryLabel = "Hardware",
+            ContactType = "phone",
+            ContactTypeLabel = "Phone",
+            Caller = Sam,
+            AssignedTo = Alex,
+            AssignmentGroup = AusClientServices,
+            Location = "Melbourne",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:10",
+            UpdatedAtValue = "2099-01-01 00:10:00",
+            Active = true
+        });
 
         AddIncident(new IncidentRecord
         {
@@ -1598,9 +1629,30 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                 AssignmentGroup = ClientServices,
                 ServiceOffering = new ReferenceValue("offering-euc", "End-user computing"),
                 ConfigurationItem = new ReferenceValue("ci-laptop", "LAPTOP-FIN-014"),
+                Location = "Brisbane Office",
                 OpenedAtDisplay = "2026-09-24 09:00",
                 UpdatedAtDisplay = "2026-09-28 09:00",
                 UpdatedAtValue = "2026-09-28 09:00:00",
+                Active = true
+            },
+            new RequestedItemRecord
+            {
+                SysId = "ritm-melbourne-mine",
+                Number = "RITM0010008",
+                ShortDescription = "Melbourne dock assigned to me",
+                Description = "Request item assigned to me outside the watched offices.",
+                State = "2",
+                StateLabel = "Work in Progress",
+                Priority = "4",
+                PriorityLabel = "4 - Low",
+                StageLabel = "Fulfillment",
+                Quantity = "1",
+                AssignedTo = Alex,
+                AssignmentGroup = AusClientServices,
+                Location = "Melbourne",
+                OpenedAtDisplay = "2099-01-01 00:00",
+                UpdatedAtDisplay = "2099-01-01 00:11",
+                UpdatedAtValue = "2099-01-01 00:11:00",
                 Active = true
             },
             new RequestedItemRecord
@@ -1733,6 +1785,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             OpenedFor = Sam,
             AssignedTo = Alex,
             AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
             OpenedAtDisplay = "2026-10-01 09:10",
             UpdatedAtDisplay = "2026-10-01 09:12",
             UpdatedAtValue = "2026-10-01 09:12:00",
@@ -1740,6 +1793,26 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         },
             new JournalEntry("journal-walkup-comment", "comments", "Customer comment", "I am locked out of payroll at the front desk.", "sam.patel", "2026-10-01 09:05"),
             new JournalEntry("journal-walkup", "work_notes", "Work note", "Checked the badge photo against the payroll roster.", "alex.rivera", "2026-10-01 09:12"));
+
+        AddInteraction(new InteractionRecord
+        {
+            SysId = "ims-melbourne-mine",
+            Number = "IMS0010010",
+            ShortDescription = "Walk-up assigned to me in Melbourne",
+            Description = "Mine, but outside the watched notification offices.",
+            State = "work_in_progress",
+            StateLabel = "Work in Progress",
+            Type = DefaultChoices.WalkUpType,
+            TypeLabel = "Walk-up",
+            OpenedFor = Sam,
+            AssignedTo = Alex,
+            AssignmentGroup = AusClientServices,
+            Location = "Melbourne",
+            OpenedAtDisplay = "2099-01-01 00:00",
+            UpdatedAtDisplay = "2099-01-01 00:12",
+            UpdatedAtValue = "2099-01-01 00:12:00",
+            Active = true
+        });
 
         AddInteraction(new InteractionRecord
         {
@@ -2540,7 +2613,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         }
 
         if (query.OfficeLocations is not null
-            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
+            && query.Assignment is AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned
             && query.TeamMemberIds is null)
         {
             if (query.Assignment == AssignmentScope.Unassigned && groupId != ClientServices.SysId)
