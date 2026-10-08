@@ -10,6 +10,7 @@ namespace ServiceNowDesk.ViewModels;
 public partial class WorkEffortViewModel : ObservableObject
 {
     private readonly Dictionary<WorkEffortScale, WorkEffortCacheEntry> _cache = [];
+    private readonly object _gate = new();
     private DateOnly? _cachedDay;
     private string _loadingTeam = "";
     private WorkEffortCacheEntry? _shown;
@@ -158,19 +159,22 @@ public partial class WorkEffortViewModel : ObservableObject
 
     public void MarkLoading()
     {
-        Rows.Clear();
-        HasRows = false;
-        EmptyMessage = "";
-        Shift = "";
-        AsOf = "";
-        _shown = null;
-        _boardCredits = [];
-        ClearDetail();
-        _loadingScale = Scale;
-        ProgressValue = 0;
-        ProgressMaximum = WorkEffortEstimate.BarMaximum;
-        IsLoading = true;
-        Status = WorkEffortEstimate.Text(1);
+        lock (_gate)
+        {
+            Rows.Clear();
+            HasRows = false;
+            EmptyMessage = "";
+            Shift = "";
+            AsOf = "";
+            _shown = null;
+            _boardCredits = [];
+            ClearDetail();
+            _loadingScale = Scale;
+            ProgressValue = 0;
+            ProgressMaximum = WorkEffortEstimate.BarMaximum;
+            IsLoading = true;
+            Status = WorkEffortEstimate.Text(1);
+        }
     }
 
     public void Show(WorkEffortReport report)
@@ -182,39 +186,45 @@ public partial class WorkEffortViewModel : ObservableObject
 
     public void ShowError(string message)
     {
-        Rows.Clear();
-        HasRows = false;
-        EmptyMessage = "";
-        Shift = "";
-        AsOf = "";
-        _shown = null;
-        _boardCredits = [];
-        ClearDetail();
-        Status = message ?? "";
-        IsLoading = false;
-        _loadingScale = null;
+        lock (_gate)
+        {
+            Rows.Clear();
+            HasRows = false;
+            EmptyMessage = "";
+            Shift = "";
+            AsOf = "";
+            _shown = null;
+            _boardCredits = [];
+            ClearDetail();
+            Status = message ?? "";
+            IsLoading = false;
+            _loadingScale = null;
+        }
     }
 
     public void Clear()
     {
-        _cache.Clear();
-        _cachedDay = null;
-        _shown = null;
-        _boardCredits = [];
-        Rows.Clear();
-        HasRows = false;
-        EmptyMessage = "";
-        Shift = "";
-        AsOf = "";
-        Status = "";
-        IsLoading = false;
-        ProgressValue = 0;
-        ProgressMaximum = WorkEffortEstimate.BarMaximum;
-        _loadingScale = null;
-        _loadingTeam = "";
-        ClearDetail();
-        if (UpdateMode != WorkEffortUpdateMode.Daily)
-            UpdateMode = WorkEffortUpdateMode.Daily;
+        lock (_gate)
+        {
+            _cache.Clear();
+            _cachedDay = null;
+            _shown = null;
+            _boardCredits = [];
+            Rows.Clear();
+            HasRows = false;
+            EmptyMessage = "";
+            Shift = "";
+            AsOf = "";
+            Status = "";
+            IsLoading = false;
+            ProgressValue = 0;
+            ProgressMaximum = WorkEffortEstimate.BarMaximum;
+            _loadingScale = null;
+            _loadingTeam = "";
+            ClearDetail();
+            if (UpdateMode != WorkEffortUpdateMode.Daily)
+                UpdateMode = WorkEffortUpdateMode.Daily;
+        }
     }
 
     public void ShowPersonDetail(WorkEffortRow? row)
@@ -333,18 +343,21 @@ public partial class WorkEffortViewModel : ObservableObject
 
     private void ApplyReport(WorkEffortReport report)
     {
-        Rows.Clear();
-        foreach (var row in report.Rows)
-            Rows.Add(row);
-        HasRows = Rows.Count > 0;
-        EmptyMessage = HasRows ? "" : report.EmptyMessage;
-        Shift = HasRows ? report.Shift : "";
-        Status = report.Status;
-        IsLoading = false;
-        _loadingScale = null;
-        RebuildBoardCredits(report);
-        if (ShowDetail)
-            RefreshOpenDetail();
+        lock (_gate)
+        {
+            Rows.Clear();
+            foreach (var row in report.Rows)
+                Rows.Add(row);
+            HasRows = Rows.Count > 0;
+            EmptyMessage = HasRows ? "" : report.EmptyMessage;
+            Shift = HasRows ? report.Shift : "";
+            Status = report.Status;
+            IsLoading = false;
+            _loadingScale = null;
+            RebuildBoardCredits(report);
+            if (ShowDetail)
+                RefreshOpenDetail();
+        }
     }
 
     private void RebuildBoardCredits(WorkEffortReport report)
