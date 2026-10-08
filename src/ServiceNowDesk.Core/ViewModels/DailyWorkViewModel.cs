@@ -28,6 +28,7 @@ public enum DailyWorkSortColumn
 public partial class DailyWorkViewModel : ObservableObject
 {
     private readonly IDailyWorkStore _store;
+    private readonly object _gate = new();
     private DailyWorkBoard _board = DailyWorkBoard.Empty;
     private string _userId = "";
     private IReadOnlyList<string> _teamIds = [];
@@ -101,26 +102,29 @@ public partial class DailyWorkViewModel : ObservableObject
 
     public void Clear()
     {
-        _board = DailyWorkBoard.Empty;
-        _userId = "";
-        _teamIds = [];
-        _groupTickets = [];
-        _groupSeen = UnassignedSeen.None;
-        _sortColumn = null;
-        _sortDescending = false;
-        NewUnassigned.Clear();
-        Attend.Clear();
-        Cleared.Clear();
-        Arrived.Clear();
-        HasNewUnassigned = false;
-        HasAttend = false;
-        HasCleared = false;
-        HasArrived = false;
-        TeamPrompt = "";
-        ReportNote = "";
-        DifferenceNote = "";
-        Headline = "Attend to these first";
-        NotifySortHeaders();
+        lock (_gate)
+        {
+            _board = DailyWorkBoard.Empty;
+            _userId = "";
+            _teamIds = [];
+            _groupTickets = [];
+            _groupSeen = UnassignedSeen.None;
+            _sortColumn = null;
+            _sortDescending = false;
+            NewUnassigned.Clear();
+            Attend.Clear();
+            Cleared.Clear();
+            Arrived.Clear();
+            HasNewUnassigned = false;
+            HasAttend = false;
+            HasCleared = false;
+            HasArrived = false;
+            TeamPrompt = "";
+            ReportNote = "";
+            DifferenceNote = "";
+            Headline = "Attend to these first";
+            NotifySortHeaders();
+        }
     }
 
     [RelayCommand]
@@ -161,21 +165,24 @@ public partial class DailyWorkViewModel : ObservableObject
 
     private void Apply()
     {
-        var now = _now ?? DateTime.Now;
-        var disconnected = _userId.Length == 0;
-        Replace(NewUnassigned, QueueRows());
-        HasNewUnassigned = NewUnassigned.Count > 0;
-        var personal = DailyWorkRanker.Order(Merge(_board.Personal, QueueAdditions(now)));
-        var mineView = DailyWorkReportBuilder.Build(DailyWorkKeys.User(_userId), now, personal, _store);
-        var teamKey = DailyWorkKeys.Team(_teamIds);
-        var teamView = teamKey is null
-            ? DailyWorkView.Empty
-            : DailyWorkReportBuilder.Build(teamKey, now, _board.Team, _store);
-        if (Area == DailyWorkArea.Team)
-            Fill(teamView, teamWithoutPeople: teamKey is null && !disconnected, disconnected);
-        else
-            Fill(mineView, teamWithoutPeople: false, disconnected);
-        ApplySort();
+        lock (_gate)
+        {
+            var now = _now ?? DateTime.Now;
+            var disconnected = _userId.Length == 0;
+            Replace(NewUnassigned, QueueRows());
+            HasNewUnassigned = NewUnassigned.Count > 0;
+            var personal = DailyWorkRanker.Order(Merge(_board.Personal, QueueAdditions(now)));
+            var mineView = DailyWorkReportBuilder.Build(DailyWorkKeys.User(_userId), now, personal, _store);
+            var teamKey = DailyWorkKeys.Team(_teamIds);
+            var teamView = teamKey is null
+                ? DailyWorkView.Empty
+                : DailyWorkReportBuilder.Build(teamKey, now, _board.Team, _store);
+            if (Area == DailyWorkArea.Team)
+                Fill(teamView, teamWithoutPeople: teamKey is null && !disconnected, disconnected);
+            else
+                Fill(mineView, teamWithoutPeople: false, disconnected);
+            ApplySort();
+        }
     }
 
     private void Fill(DailyWorkView view, bool teamWithoutPeople, bool disconnected)

@@ -82,7 +82,7 @@
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <TextBlock Text="Offices" Style="{StaticResource FieldLabel}"/>
                     <TextBlock Text="{Binding AccountOfficeText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                    <TextBlock Text="The list starts at the office on the signed-in account. Type to find an office. Check one or more to load that portion. Override office remembers the checked offices, or every location when none are checked, on this PC. Clear override returns to your office. All locations searches the full asset list." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <TextBlock Text="The list starts at the office on the signed-in account and filters the computers saved on this PC. Checkboxes change the filter without downloading again. Refresh this office or Refresh all downloads in the background. Override office remembers the checked offices on this PC. Clear override returns to your office. All locations shows every saved computer." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <TextBox Text="{Binding OfficeSearchText, UpdateSourceTrigger=PropertyChanged}"
                              MinHeight="28" Padding="6,4" Margin="0,0,0,6"
                              AutomationProperties.Name="Find office"/>
@@ -100,16 +100,29 @@
                     </Border>
                     <TextBlock Text="{Binding OfficeSelectionSummary}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <Button Content="All locations" Style="{StaticResource SecondaryButton}" Command="{Binding SearchAllLocationsCommand}" Margin="0,0,8,0"/>
+                        <Button Content="All locations" Style="{StaticResource SecondaryButton}" Command="{Binding SearchAllLocationsCommand}" Margin="0,0,8,0"
+                                IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBool}}"/>
                         <Button Content="Override office" Style="{StaticResource SecondaryButton}" Command="{Binding OverrideOfficeCommand}" Margin="0,0,8,0"/>
-                        <Button Content="Clear override" Style="{StaticResource SecondaryButton}" Command="{Binding ClearOverrideCommand}"/>
+                        <Button Content="Clear override" Style="{StaticResource SecondaryButton}" Command="{Binding ClearOverrideCommand}" Margin="0,0,8,0"/>
+                        <Button Content="Refresh this office" Style="{StaticResource SecondaryButton}" Command="{Binding RefreshOfficeCatalogCommand}" Margin="0,0,8,0"
+                                IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBool}}"/>
+                        <Button Content="Refresh all" Style="{StaticResource SecondaryButton}" Command="{Binding RefreshAllCatalogCommand}"
+                                IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBool}}"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding OfficeStatus}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                    <TextBlock Text="{Binding OfficeStatus}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4"
                                Visibility="{Binding OfficeStatus, Converter={StaticResource StringVis}}"/>
+                    <TextBlock Text="{Binding CatalogStatus}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4"
+                               Visibility="{Binding CatalogStatus, Converter={StaticResource StringVis}}"/>
+                    <Grid Margin="0,0,0,6" Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}">
+                        <ProgressBar Minimum="0" Maximum="100" Value="{Binding DownloadPercent}" Height="16"/>
+                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11"
+                                   Text="{Binding DownloadPercent, StringFormat={}{0}%}"/>
+                    </Grid>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
                     <TextBlock Text="{Binding Items.Count, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}"/>
                     <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
+                    <TextBlock Text="  Downloading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}"/>
                 </StackPanel>
                 <Grid DockPanel.Dock="Top" Margin="8,0,8,4">
                     <Grid.RowDefinitions>

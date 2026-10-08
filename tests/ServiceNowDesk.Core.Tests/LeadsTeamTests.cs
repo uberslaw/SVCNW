@@ -245,8 +245,11 @@ public class LeadsTeamTests
 
         Assert.True(main.TrySelect(DeskSection.Leads));
         main.Leads.Area = LeadArea.WorkEffort;
-        await WaitUntilAsync(() => main.Leads.WorkEffort.HasRows);
-        var names = main.Leads.WorkEffort.Rows.Select(row => row.Name).ToArray();
+        await WaitUntilAsync(() =>
+            main.Leads.WorkEffort.HasRows
+            && !main.Leads.WorkEffort.IsLoading
+            && main.Leads.WorkEffort.Rows.Count > 0);
+        var names = main.Leads.WorkEffort.Rows.ToArray().Select(row => row?.Name ?? "").ToArray();
         Assert.Contains("Alex Rivera", names);
         Assert.Contains("Jordan Lee", names);
         Assert.DoesNotContain("Sam Patel", names);

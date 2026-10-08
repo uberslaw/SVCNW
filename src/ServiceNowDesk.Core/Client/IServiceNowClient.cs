@@ -66,6 +66,16 @@ public interface IServiceNowClient : IDisposable
     Task<IReadOnlyList<ReferenceSuggestion>> SearchConfigurationItemsAsync(string text, CancellationToken cancellationToken);
 
     Task<PagedResult<HardwareAsset>> SearchHardwareAsync(TicketQuery query, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Pages every computer (or the selected offices) into memory. Progress reports rows received.
+    /// </summary>
+    Task<HardwareCatalogDownload> DownloadHardwareAsync(
+        IReadOnlyList<string>? locations,
+        IReadOnlyList<string>? locationSysIds,
+        IProgress<DownloadTick>? progress,
+        CancellationToken cancellationToken);
+
     Task<HardwareAsset> GetHardwareAsync(string sysId, CancellationToken cancellationToken);
     Task<HardwareAsset> UpdateHardwareAsync(string sysId, HardwareChanges changes, CancellationToken cancellationToken);
     Task<HardwareAsset?> FindHardwareBySerialAsync(string serial, bool ignoreCase, CancellationToken cancellationToken);

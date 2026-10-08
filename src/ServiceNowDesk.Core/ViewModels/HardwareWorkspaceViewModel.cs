@@ -10,8 +10,12 @@ namespace ServiceNowDesk.ViewModels;
 public partial class HardwareWorkspaceViewModel : ObservableObject
 {
     private readonly ISettingsStore? _settings;
+    private readonly IHardwareCatalogStore _catalogStore;
+    private readonly Func<string> _cacheScope;
+    private readonly List<HardwareAsset> _catalog = [];
     private readonly List<HardwareAsset> _loadedRows = [];
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private CancellationTokenSource? _downloadCts;
     private IServiceNowClient? _client;
     private HardwareAsset? _loaded;
     private bool _choicesReady;
@@ -19,14 +23,19 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     private bool _officesReady;
     private bool _suppressOffice;
     private bool _missingLocationNotice;
-    private bool _locationFilterIgnored;
     private bool _overrideActive;
+    private bool _catalogIsAllLocations;
     private string _signedInLocation = "";
     private int _substateGeneration;
 
-    public HardwareWorkspaceViewModel(ISettingsStore? settings = null)
+    public HardwareWorkspaceViewModel(
+        ISettingsStore? settings = null,
+        IHardwareCatalogStore? catalogStore = null,
+        Func<string>? cacheScope = null)
     {
         _settings = settings;
+        _catalogStore = catalogStore ?? new MemoryHardwareCatalogStore();
+        _cacheScope = cacheScope ?? (() => DeskListScope.Practice);
         AssignedTo = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
         Location = new ReferenceFieldModel(SearchLocationsAsync);
         Stockroom = new ReferenceFieldModel(SearchStockroomsAsync);
@@ -70,6 +79,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string searchText = "";
     [ObservableProperty] private string officeSearchText = "";
     [ObservableProperty] private string officeStatus = "";
+    [ObservableProperty] private string catalogStatus = "";
     [ObservableProperty] private string serialFilter = "";
     [ObservableProperty] private string modelFilter = "";
     [ObservableProperty] private string assignedFilter = "";
@@ -81,6 +91,8 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool hasEditor;
     [ObservableProperty] private bool isDirty;
     [ObservableProperty] private bool isLoading;
+    [ObservableProperty] private bool isDownloading;
+    [ObservableProperty] private int downloadPercent;
     [ObservableProperty] private string errorMessage = "";
     [ObservableProperty] private string editorMessage = "";
     [ObservableProperty] private string receiveMessage = "";
@@ -127,6 +139,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _loaded = null;
         HasEditor = false;
         IsDirty = false;
+        _downloadCts?.Cancel();
+        _catalog.Clear();
+        _catalogIsAllLocations = false;
         _loadedRows.Clear();
         Items.Clear();
         _suppressOffice = true;
@@ -148,6 +163,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         CommentsFilter = "";
         OfficeSearchText = "";
         OfficeStatus = "";
+        CatalogStatus = "";
+        DownloadPercent = 0;
+        IsDownloading = false;
         OnPropertyChanged(nameof(OfficeSelectionSummary));
     }
 
@@ -172,29 +190,35 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         {
             IsLoading = true;
             ErrorMessage = "";
-            _locationFilterIgnored = false;
             if (!_officesReady)
                 await PrepareOfficesAsync();
             await EnsureChoicesAsync();
+            if (_catalog.Count == 0)
+                LoadCatalogFromStore();
+
             var offices = SelectedOfficeNames();
-            var page = await LoadHardwarePageAsync(offices);
-            var keep = Selected?.SysId ?? _loaded?.SysId;
-            _loadedRows.Clear();
-            var outsideSelection = 0;
-            foreach (var asset in page.Items)
-            {
-                var inOffice = HardwareCatalog.MatchesLocation(asset, offices);
-                if (inOffice && HardwareCatalog.MatchesSearch(asset, SearchText))
-                    _loadedRows.Add(asset);
-                else if (offices.Count > 0 && !inOffice)
-                    outsideSelection++;
-            }
-
-            if (offices.Count > 0 && _loadedRows.Count == 0 && outsideSelection > 0)
-                _locationFilterIgnored = true;
-
-            ApplyColumnFilters(keep);
+            ApplyCatalogToRows(offices);
             PublishScope(offices);
+
+            if (_catalog.Count == 0)
+            {
+                // First open downloads every computer so office checkboxes can filter locally.
+                _refreshGate.Release();
+                try
+                {
+                    await DownloadCatalogAsync(allLocations: true, merge: false);
+                    ApplyCatalogToRows(SelectedOfficeNames());
+                    PublishScope(SelectedOfficeNames());
+                }
+                finally
+                {
+                    await _refreshGate.WaitAsync();
+                }
+            }
+            else if (offices.Count > 0 && _loadedRows.Count == 0)
+            {
+                CatalogStatus = "No computers for the selected office in the saved list. Use Refresh this office or Refresh all.";
+            }
         }
         catch (Exception ex)
         {
@@ -206,6 +230,190 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             _refreshGate.Release();
         }
     }
+
+    [RelayCommand]
+    private Task RefreshOfficeCatalogAsync() => DownloadCatalogAsync(allLocations: false, merge: true);
+
+    [RelayCommand]
+    private Task RefreshAllCatalogAsync() => DownloadCatalogAsync(allLocations: true, merge: false);
+
+    private async Task DownloadCatalogAsync(bool allLocations, bool merge)
+    {
+        if (_client is null || IsDownloading)
+            return;
+
+        _downloadCts?.Cancel();
+        _downloadCts = new CancellationTokenSource();
+        var token = _downloadCts.Token;
+        IsDownloading = true;
+        DownloadPercent = 0;
+        CatalogStatus = allLocations ? "Downloading all computers…" : "Downloading computers for the selected office…";
+        ErrorMessage = "";
+
+        try
+        {
+            if (!_officesReady)
+                await PrepareOfficesAsync();
+
+            IReadOnlyList<string> offices = allLocations ? [] : SelectedOfficeNames();
+            IReadOnlyList<string> ids = allLocations ? [] : SelectedLocationSysIds();
+            if (!allLocations && offices.Count == 0 && ids.Count == 0)
+            {
+                CatalogStatus = "Check an office, or use Refresh all.";
+                return;
+            }
+
+            var previous = _catalog.ToDictionary(asset => asset.SysId, StringComparer.OrdinalIgnoreCase);
+            var previousCount = previous.Count;
+            var progress = new Progress<DownloadTick>(tick => DownloadPercent = tick.Percent);
+            var downloaded = await _client.DownloadHardwareAsync(offices, ids, progress, token);
+            var kept = downloaded.Assets
+                .Where(asset => allLocations || HardwareCatalog.MatchesLocation(asset, offices))
+                .ToArray();
+
+            var newCount = 0;
+            var updatedCount = 0;
+            if (merge && !allLocations)
+            {
+                foreach (var asset in kept)
+                {
+                    if (!previous.TryGetValue(asset.SysId, out var old))
+                    {
+                        previous[asset.SysId] = asset;
+                        newCount++;
+                    }
+                    else
+                    {
+                        previous[asset.SysId] = asset;
+                        if (!SameAsset(old, asset))
+                            updatedCount++;
+                    }
+                }
+
+                _catalog.Clear();
+                _catalog.AddRange(previous.Values.OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase));
+                _catalogIsAllLocations = _catalogIsAllLocations || false;
+            }
+            else
+            {
+                foreach (var asset in kept)
+                {
+                    if (!previous.ContainsKey(asset.SysId))
+                        newCount++;
+                    else if (!SameAsset(previous[asset.SysId], asset))
+                        updatedCount++;
+                }
+
+                _catalog.Clear();
+                _catalog.AddRange(kept.OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase));
+                _catalogIsAllLocations = allLocations;
+            }
+
+            SaveCatalogToStore(offices);
+            var selected = SelectedOfficeNames();
+            ApplyCatalogToRows(selected);
+            PublishScope(selected);
+            DownloadPercent = 100;
+
+            if (downloaded.Truncated)
+            {
+                CatalogStatus = _catalog.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " saved; stopped at the "
+                    + FormCatalogPolicy.MaxHardwareAssets.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " limit.";
+            }
+            else if (previousCount == 0)
+            {
+                CatalogStatus = "Downloaded "
+                    + _catalog.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " computers.";
+            }
+            else
+            {
+                CatalogStatus = "Downloaded "
+                    + kept.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " computers. "
+                    + newCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " new, "
+                    + updatedCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " updated. "
+                    + _catalog.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " saved on this PC.";
+            }
+
+            if (selected.Count > 0 && _loadedRows.Count == 0)
+            {
+                CatalogStatus = CatalogStatus
+                    + " No computers for the selected office in the saved list. Use Refresh this office or Refresh all.";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            CatalogStatus = "Download cancelled.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+            CatalogStatus = "Update finished with errors.";
+        }
+        finally
+        {
+            IsDownloading = false;
+        }
+    }
+
+    private void LoadCatalogFromStore()
+    {
+        var snapshot = _catalogStore.Load(_cacheScope());
+        _catalog.Clear();
+        if (snapshot?.Items is null || snapshot.Items.Count == 0)
+        {
+            _catalogIsAllLocations = false;
+            CatalogStatus = "No computers saved on this PC yet.";
+            return;
+        }
+
+        _catalog.AddRange(snapshot.Items);
+        _catalogIsAllLocations = snapshot.AllLocations;
+        CatalogStatus = _catalog.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + " computers saved"
+            + (snapshot.CapturedAt == default
+                ? "."
+                : " as of " + snapshot.CapturedAt.ToLocalTime().ToString("g", System.Globalization.CultureInfo.CurrentCulture) + ".");
+    }
+
+    private void SaveCatalogToStore(IReadOnlyList<string> offices)
+    {
+        _catalogStore.Save(_cacheScope(), new HardwareCatalogSnapshot
+        {
+            CapturedAt = DateTimeOffset.UtcNow,
+            AllLocations = _catalogIsAllLocations,
+            Offices = offices.ToList(),
+            Items = [.. _catalog]
+        });
+    }
+
+    private void ApplyCatalogToRows(IReadOnlyList<string> offices)
+    {
+        var keep = Selected?.SysId ?? _loaded?.SysId;
+        _loadedRows.Clear();
+        foreach (var asset in _catalog)
+        {
+            if (HardwareCatalog.MatchesLocation(asset, offices) && HardwareCatalog.MatchesSearch(asset, SearchText))
+                _loadedRows.Add(asset);
+        }
+
+        ApplyColumnFilters(keep);
+    }
+
+    private static bool SameAsset(HardwareAsset left, HardwareAsset right) =>
+        left.SerialNumber == right.SerialNumber
+        && left.Model == right.Model
+        && left.AssignedTo.SysId == right.AssignedTo.SysId
+        && left.Location.SysId == right.Location.SysId
+        && left.InstallStatus == right.InstallStatus
+        && left.Substatus == right.Substatus
+        && left.Comments == right.Comments;
 
     public async Task EnsureChoicesAsync()
     {
@@ -427,6 +635,13 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             Touch();
     }
 
+    partial void OnSearchTextChanged(string value)
+    {
+        if (_client is null)
+            return;
+        ApplyCatalogToRows(SelectedOfficeNames());
+    }
+
     partial void OnSerialFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
 
     partial void OnModelFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
@@ -450,7 +665,13 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             office.IsSelected = false;
         _suppressOffice = false;
         OnPropertyChanged(nameof(OfficeSelectionSummary));
-        await RefreshCoreAsync();
+        if (_catalog.Count == 0 || !_catalogIsAllLocations)
+            await DownloadCatalogAsync(allLocations: true, merge: false);
+        else
+        {
+            ApplyCatalogToRows([]);
+            PublishScope([]);
+        }
     }
 
     [RelayCommand]
@@ -657,12 +878,20 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     private void ReplaceItem(HardwareAsset updated)
     {
+        var catalogIndex = _catalog.FindIndex(asset => asset.SysId == updated.SysId);
+        if (catalogIndex >= 0)
+            _catalog[catalogIndex] = updated;
+
         var index = _loadedRows.FindIndex(asset => asset.SysId == updated.SysId);
         if (index < 0)
+        {
+            ApplyCatalogToRows(SelectedOfficeNames());
             return;
+        }
 
         _loadedRows[index] = updated;
         ApplyColumnFilters(updated.SysId);
+        SaveCatalogToStore(SelectedOfficeNames());
     }
 
     private async Task PrepareOfficesAsync()
@@ -726,7 +955,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             }
 
             foreach (var place in found)
-                EnsureOffice(place.Display, false, HardwareOfficeLabelKind.Reference);
+                EnsureOffice(place.Display, false, HardwareOfficeLabelKind.Reference, place.SysId);
         }
     }
 
@@ -752,15 +981,6 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         return true;
     }
 
-    private Task<PagedResult<HardwareAsset>> LoadHardwarePageAsync(IReadOnlyList<string> offices) =>
-        _client!.SearchHardwareAsync(new TicketQuery
-        {
-            Text = SearchText,
-            Limit = 100,
-            Activity = ActivityFilter.Any,
-            Locations = offices.ToList()
-        }, CancellationToken.None);
-
     partial void OnOfficeSearchTextChanged(string value) => RefreshVisibleOffices(value);
 
     private void RefreshVisibleOffices() => RefreshVisibleOffices(OfficeSearchText);
@@ -782,7 +1002,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     /// <summary>
     /// Adds or selects an office. A bare city and the same city plus " Office" share one checkbox.
     /// </summary>
-    private void EnsureOffice(string? name, bool selected, HardwareOfficeLabelKind kind)
+    private void EnsureOffice(string? name, bool selected, HardwareOfficeLabelKind kind, string? sysId = null)
     {
         var trimmed = HardwareOfficeNames.Normalize(name);
         if (trimmed.Length == 0)
@@ -791,13 +1011,16 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         var existing = Offices.FirstOrDefault(office => HardwareOfficeNames.SamePlace(office.Name, trimmed));
         if (existing is null)
         {
-            var option = new HardwareOfficeOption(trimmed) { LabelKind = kind };
+            var option = new HardwareOfficeOption(trimmed) { LabelKind = kind, SysId = sysId?.Trim() ?? "" };
             option.SelectionChanged += OnOfficeSelectionChanged;
             Offices.Add(option);
             if (selected)
                 option.IsSelected = true;
             return;
         }
+
+        if (string.IsNullOrWhiteSpace(existing.SysId) && !string.IsNullOrWhiteSpace(sysId))
+            existing.SysId = sysId.Trim();
 
         var adopt = HardwareOfficeNames.UseIncomingLabel(existing.Name, existing.LabelKind, trimmed, kind);
         if ((int)kind > (int)existing.LabelKind)
@@ -820,7 +1043,13 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             return;
 
         _missingLocationNotice = false;
-        OfficeLoad = RefreshCoreAsync();
+        var offices = SelectedOfficeNames();
+        ApplyCatalogToRows(offices);
+        PublishScope(offices);
+        if (_catalog.Count == 0)
+            OfficeLoad = DownloadCatalogAsync(allLocations: true, merge: false);
+        else if (offices.Count > 0 && _loadedRows.Count == 0)
+            CatalogStatus = "No computers for the selected office in the saved list. Use Refresh this office or Refresh all.";
     }
 
     private bool IsAccountSelection(IReadOnlyList<string> offices) =>
@@ -833,11 +1062,16 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+    private string[] SelectedLocationSysIds() =>
+        Offices
+            .Where(office => office.IsSelected && !string.IsNullOrWhiteSpace(office.SysId))
+            .Select(office => office.SysId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
     private void PublishScope(IReadOnlyList<string> offices)
     {
-        if (_locationFilterIgnored && offices.Count > 0)
-            OfficeStatus = "The location filter did not apply. This page is not limited to " + string.Join(", ", offices) + ".";
-        else if (_overrideActive)
+        if (_overrideActive)
             OfficeStatus = offices.Count == 0
                 ? "Showing all locations."
                 : "Showing override: " + string.Join(", ", offices) + ".";
@@ -942,6 +1176,8 @@ public partial class HardwareOfficeOption : ObservableObject
     [ObservableProperty] private string name;
 
     internal HardwareOfficeLabelKind LabelKind { get; set; }
+
+    internal string SysId { get; set; } = "";
 
     [ObservableProperty] private bool isSelected;
 

@@ -10,6 +10,7 @@ namespace ServiceNowDesk.ViewModels;
 public partial class WorkEffortViewModel : ObservableObject
 {
     private readonly Dictionary<WorkEffortScale, WorkEffortCacheEntry> _cache = [];
+    private readonly object _gate = new();
     private DateOnly? _cachedDay;
     private string _loadingTeam = "";
     private WorkEffortCacheEntry? _shown;
@@ -59,9 +60,12 @@ public partial class WorkEffortViewModel : ObservableObject
     public bool BeginLoad(DateTime localNow, bool force, string? teamKey = null)
     {
         var key = teamKey ?? "";
-        if (!force && IsLoading && _loadingScale == Scale)
-            return false;
+        // Prefer a finished cache for this scale/team even when a load flag is still set,
+        // so returning to the page never looks stuck after the query already completed.
         if (!force && TryShowCached(localNow, key))
+            return false;
+        if (!force && IsLoading && _loadingScale == Scale
+            && string.Equals(key, _loadingTeam, StringComparison.Ordinal))
             return false;
 
         _loadingTeam = key;
@@ -80,6 +84,34 @@ public partial class WorkEffortViewModel : ObservableObject
     public void Remember(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string? teamKey = null)
     {
         ArgumentNullException.ThrowIfNull(report);
+        var key = teamKey ?? "";
+        var entry = Store(scale, localNow, report, key);
+        // Paint when this result matches the in-flight team. If the team key drifted but
+        // this scale is still loading, still clear IsLoading so the page cannot stick.
+        if (scale != Scale)
+            return;
+        if (string.Equals(key, _loadingTeam, StringComparison.Ordinal))
+        {
+            ShowEntry(entry);
+            return;
+        }
+
+        if (IsLoading && _loadingScale == scale)
+            AbandonLoad();
+    }
+
+    /// <summary>
+    /// Keeps a finished query for the local day and team without painting the board.
+    /// Used when the roster changed mid-flight so a later visit can still hit the cache.
+    /// </summary>
+    public void Cache(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string? teamKey = null)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        Store(scale, localNow, report, teamKey ?? "");
+    }
+
+    private WorkEffortCacheEntry Store(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string key)
+    {
         var clock = WorkEffortWindow.Clock(localNow);
         var day = DateOnly.FromDateTime(clock);
         if (_cachedDay != day)
@@ -88,11 +120,9 @@ public partial class WorkEffortViewModel : ObservableObject
             _cachedDay = day;
         }
 
-        var key = teamKey ?? "";
         var entry = new WorkEffortCacheEntry(clock, report, key);
         _cache[scale] = entry;
-        if (scale == Scale && string.Equals(key, _loadingTeam, StringComparison.Ordinal))
-            ShowEntry(entry);
+        return entry;
     }
 
     /// <summary>
@@ -146,72 +176,83 @@ public partial class WorkEffortViewModel : ObservableObject
     /// </summary>
     public void AbandonLoad()
     {
-        if (!IsLoading)
-            return;
-        IsLoading = false;
-        _loadingScale = null;
-        Status = "";
+        lock (_gate)
+        {
+            if (!IsLoading)
+                return;
+            IsLoading = false;
+            _loadingScale = null;
+            Status = "";
+        }
     }
 
     public void MarkLoading()
     {
-        Rows.Clear();
-        HasRows = false;
-        EmptyMessage = "";
-        Shift = "";
-        AsOf = "";
-        _shown = null;
-        _boardCredits = [];
-        ClearDetail();
-        _loadingScale = Scale;
-        ProgressValue = 0;
-        ProgressMaximum = WorkEffortEstimate.BarMaximum;
-        IsLoading = true;
-        Status = WorkEffortEstimate.Text(1);
+        lock (_gate)
+        {
+            Rows.Clear();
+            HasRows = false;
+            EmptyMessage = "";
+            Shift = "";
+            AsOf = "";
+            _shown = null;
+            _boardCredits = [];
+            ClearDetail();
+            _loadingScale = Scale;
+            ProgressValue = 0;
+            ProgressMaximum = WorkEffortEstimate.BarMaximum;
+            IsLoading = true;
+            Status = WorkEffortEstimate.Text(1);
+        }
     }
 
     public void Show(WorkEffortReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
-        _shown = null;
         ApplyReport(report);
     }
 
     public void ShowError(string message)
     {
-        Rows.Clear();
-        HasRows = false;
-        EmptyMessage = "";
-        Shift = "";
-        AsOf = "";
-        _shown = null;
-        _boardCredits = [];
-        ClearDetail();
-        Status = message ?? "";
-        IsLoading = false;
-        _loadingScale = null;
+        lock (_gate)
+        {
+            Rows.Clear();
+            HasRows = false;
+            EmptyMessage = "";
+            Shift = "";
+            AsOf = "";
+            _shown = null;
+            _boardCredits = [];
+            ClearDetail();
+            Status = message ?? "";
+            IsLoading = false;
+            _loadingScale = null;
+        }
     }
 
     public void Clear()
     {
-        _cache.Clear();
-        _cachedDay = null;
-        _shown = null;
-        _boardCredits = [];
-        Rows.Clear();
-        HasRows = false;
-        EmptyMessage = "";
-        Shift = "";
-        AsOf = "";
-        Status = "";
-        IsLoading = false;
-        ProgressValue = 0;
-        ProgressMaximum = WorkEffortEstimate.BarMaximum;
-        _loadingScale = null;
-        _loadingTeam = "";
-        ClearDetail();
-        if (UpdateMode != WorkEffortUpdateMode.Daily)
-            UpdateMode = WorkEffortUpdateMode.Daily;
+        lock (_gate)
+        {
+            _cache.Clear();
+            _cachedDay = null;
+            _shown = null;
+            _boardCredits = [];
+            Rows.Clear();
+            HasRows = false;
+            EmptyMessage = "";
+            Shift = "";
+            AsOf = "";
+            Status = "";
+            IsLoading = false;
+            ProgressValue = 0;
+            ProgressMaximum = WorkEffortEstimate.BarMaximum;
+            _loadingScale = null;
+            _loadingTeam = "";
+            ClearDetail();
+            if (UpdateMode != WorkEffortUpdateMode.Daily)
+                UpdateMode = WorkEffortUpdateMode.Daily;
+        }
     }
 
     public void ShowPersonDetail(WorkEffortRow? row)
@@ -322,12 +363,34 @@ public partial class WorkEffortViewModel : ObservableObject
 
     private void ShowEntry(WorkEffortCacheEntry entry)
     {
-        _shown = entry;
-        ApplyReport(WorkEffortScore.Present(entry.Report, UpdateMode));
-        AsOf = "As of " + entry.LoadedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
+        // Set AsOf before ApplyReport clears IsLoading so waiters never see rows without a stamp.
+        var presented = WorkEffortScore.Present(entry.Report, UpdateMode);
+        lock (_gate)
+        {
+            _shown = entry;
+            AsOf = "As of " + entry.LoadedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
+            WriteReport(presented);
+        }
+
+        RebuildBoardCredits(presented);
+        if (ShowDetail)
+            RefreshOpenDetail();
     }
 
     private void ApplyReport(WorkEffortReport report)
+    {
+        lock (_gate)
+        {
+            _shown = null;
+            WriteReport(report);
+        }
+
+        RebuildBoardCredits(report);
+        if (ShowDetail)
+            RefreshOpenDetail();
+    }
+
+    private void WriteReport(WorkEffortReport report)
     {
         Rows.Clear();
         foreach (var row in report.Rows)
@@ -338,9 +401,6 @@ public partial class WorkEffortViewModel : ObservableObject
         Status = report.Status;
         IsLoading = false;
         _loadingScale = null;
-        RebuildBoardCredits(report);
-        if (ShowDetail)
-            RefreshOpenDetail();
     }
 
     private void RebuildBoardCredits(WorkEffortReport report)

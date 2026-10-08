@@ -102,9 +102,15 @@ public sealed record TicketQuery
     public IReadOnlyList<string>? Locations { get; init; }
 
     /// <summary>
-    /// Cities for My Team and Unassigned. Null leaves those queues unlimited.
+    /// Hardware location sys_ids when the desk resolved the office against cmn_location.
+    /// </summary>
+    public IReadOnlyList<string>? LocationSysIds { get; init; }
+
+    /// <summary>
+    /// Cities for My Tickets, My Team, and Unassigned. Null leaves those queues unlimited.
     /// An empty list matches no location, so the queue stays inside an office that was not named.
-    /// My Tickets ignores this.
+    /// When Settings has no watched offices, callers pass the signed-in user's city via
+    /// <c>OfficeQueue.Cities</c> so behaviour matches My Team.
     /// </summary>
     public IReadOnlyList<string>? OfficeLocations { get; init; }
 

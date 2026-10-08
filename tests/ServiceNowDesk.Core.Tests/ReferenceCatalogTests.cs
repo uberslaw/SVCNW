@@ -138,6 +138,7 @@ public class ReferenceCatalogTests
         Assert.DoesNotContain(main.Incidents.ConfigurationItem.Choices, choice => choice.Value == "ci-switch");
 
         await main.Incidents.ConfigurationItem.CommitAsync();
+        await main.Incidents.ConfigurationItem.WhenReady;
 
         Assert.Contains(main.Incidents.ConfigurationItem.Choices, choice => choice.Value == "ci-switch" && choice.Label == "CORE-SWITCH-02");
         main.Incidents.ConfigurationItem.Id = "ci-switch";
