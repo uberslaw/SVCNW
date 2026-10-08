@@ -22,9 +22,9 @@
                                             <Binding Path="DataContext.Preset" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
                                         </MultiBinding>
                                     </DataTrigger.Binding>
-                                    <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+                                    <Setter Property="Background" Value="{StaticResource PresetActiveBrush}"/>
                                     <Setter Property="Foreground" Value="{StaticResource WhiteBrush}"/>
-                                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{StaticResource PresetActiveBrush}"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>

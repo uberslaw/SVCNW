@@ -16,7 +16,9 @@
 
     <Color x:Key="NavColor">#1B2B2E</Color>
     <Color x:Key="NavMutedColor">#B7C7C6</Color>
+    <!-- Accent #0A635C; PresetActive is Accent blended 30% toward white → #54928D (see DeskColors). -->
     <Color x:Key="AccentColor">#0A635C</Color>
+    <Color x:Key="PresetActiveColor">#54928D</Color>
     <Color x:Key="AccentSoftColor">#CEE0DE</Color>
     <Color x:Key="AppColor">#F3F6F7</Color>
     <Color x:Key="CardColor">#FFFFFF</Color>
@@ -34,6 +36,7 @@
     <SolidColorBrush x:Key="NavBrush" Color="{StaticResource NavColor}"/>
     <SolidColorBrush x:Key="NavMutedBrush" Color="{StaticResource NavMutedColor}"/>
     <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}"/>
+    <SolidColorBrush x:Key="PresetActiveBrush" Color="{StaticResource PresetActiveColor}"/>
     <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource AccentSoftColor}"/>
     <SolidColorBrush x:Key="AppBrush" Color="{StaticResource AppColor}"/>
     <SolidColorBrush x:Key="CardBrush" Color="{StaticResource CardColor}"/>

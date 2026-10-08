@@ -17,7 +17,7 @@
         </DockPanel>
 
         <Grid Grid.Column="2">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}">
+            <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}">
                 <TextBlock Text="Select a request, or press Ctrl+N to log one." FontSize="16" HorizontalAlignment="Center"/>
                 <TextBlock Text="Items on that request are listed in the request, and each one opens in Request items." Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
             </StackPanel>
