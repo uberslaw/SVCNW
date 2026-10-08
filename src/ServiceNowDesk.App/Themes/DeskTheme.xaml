@@ -453,15 +453,20 @@
 
     <!-- History sits in its own scroller. A virtualized ListBox inside the page ScrollViewer collapses to a blank gap. -->
     <DataTemplate x:Key="JournalHistoryTemplate">
-        <StackPanel>
+        <StackPanel HorizontalAlignment="Stretch">
             <TextBlock Text="Notes" FontWeight="SemiBold" Margin="0,0,0,8"/>
             <TextBlock Text="No notes yet." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                        Visibility="{Binding HasJournal, Converter={StaticResource InverseBoolVis}}"/>
-            <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,8">
-                <ItemsControl ItemsSource="{Binding Journal}">
+            <ScrollViewer MaxHeight="220"
+                          MinWidth="0"
+                          HorizontalAlignment="Stretch"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Margin="0,0,0,8">
+                <ItemsControl ItemsSource="{Binding Journal}" HorizontalContentAlignment="Stretch">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Padding="10,8" Background="{StaticResource CardBrush}">
+                            <Border Padding="10,8" Background="{StaticResource CardBrush}" HorizontalAlignment="Stretch">
                                 <Border.Style>
                                     <Style TargetType="Border">
                                         <Setter Property="BorderBrush" Value="#EEF2F4"/>
@@ -474,7 +479,7 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Border.Style>
-                                <StackPanel>
+                                <StackPanel HorizontalAlignment="Stretch">
                                     <WrapPanel>
                                         <TextBlock Text="{Binding KindLabel}" FontWeight="SemiBold" Margin="0,0,8,0">
                                             <TextBlock.Style>
@@ -493,10 +498,14 @@
                                         <TextBlock Text="·" Margin="0,0,8,0" Foreground="{StaticResource MutedBrush}"/>
                                         <TextBlock Text="{Binding CreatedDisplay}" Foreground="{StaticResource MutedBrush}"/>
                                     </WrapPanel>
-                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0">
+                                    <TextBlock Text="{Binding Text}"
+                                               TextWrapping="Wrap"
+                                               HorizontalAlignment="Stretch"
+                                               Margin="0,4,0,0">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                                <Setter Property="TextWrapping" Value="Wrap"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsCustomer}" Value="True">
                                                         <Setter Property="Foreground" Value="{StaticResource CustomerBrush}"/>
