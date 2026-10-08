@@ -2710,9 +2710,23 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             return [];
         return source.Where(person =>
             person.Display.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || NamePartsMatch(person.Display, term)
             || person.Detail.Contains(term, StringComparison.OrdinalIgnoreCase)
             || person.UserName.Contains(term, StringComparison.OrdinalIgnoreCase)
             || person.Email.Contains(term, StringComparison.OrdinalIgnoreCase)).ToArray();
+    }
+
+    /// <summary>Matches first/last tokens the way live <c>first_nameLIKE</c>/<c>last_nameLIKE</c> queries do.</summary>
+    private static bool NamePartsMatch(string display, string term)
+    {
+        foreach (var part in display.Split([' ', ',', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (part.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || part.StartsWith(term, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private string NextId(string prefix) => prefix + "-" + (++_sequence);

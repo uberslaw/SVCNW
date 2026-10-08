@@ -138,7 +138,12 @@ public static partial class EncodedQuery
     }
 
     public static string ActiveUserSearch(string term) =>
-        "nameLIKE" + term + "^ORemailLIKE" + term + "^ORuser_nameLIKE" + term + "^active=true";
+        "nameLIKE" + term
+        + "^ORfirst_nameLIKE" + term
+        + "^ORlast_nameLIKE" + term
+        + "^ORemailLIKE" + term
+        + "^ORuser_nameLIKE" + term
+        + "^active=true";
 
     public static string ActiveUserExact(string term)
     {
@@ -148,6 +153,8 @@ public static partial class EncodedQuery
             Group("name=" + term),
             Group("email=" + term),
             Group("user_name=" + term),
+            Group("first_name=" + term),
+            Group("last_name=" + term),
             Group("nameSTARTSWITH" + term + "^nameENDSWITH" + term),
             Group("emailSTARTSWITH" + term + "^emailENDSWITH" + term),
             Group("user_nameSTARTSWITH" + term + "^user_nameENDSWITH" + term)

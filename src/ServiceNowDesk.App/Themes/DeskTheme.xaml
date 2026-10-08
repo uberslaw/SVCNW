@@ -32,6 +32,7 @@
     <Color x:Key="AmberColor">#9A6408</Color>
     <Color x:Key="DownloadTrackColor">#F2F4F2</Color>
     <Color x:Key="DownloadFillColor">#B7E6B9</Color>
+    <Color x:Key="MatchColor">#1F8A4C</Color>
 
     <SolidColorBrush x:Key="NavBrush" Color="{StaticResource NavColor}"/>
     <SolidColorBrush x:Key="NavMutedBrush" Color="{StaticResource NavMutedColor}"/>
@@ -50,6 +51,7 @@
     <SolidColorBrush x:Key="AmberBrush" Color="{StaticResource AmberColor}"/>
     <SolidColorBrush x:Key="DownloadTrackBrush" Color="{StaticResource DownloadTrackColor}"/>
     <SolidColorBrush x:Key="DownloadFillBrush" Color="{StaticResource DownloadFillColor}"/>
+    <SolidColorBrush x:Key="MatchBrush" Color="{StaticResource MatchColor}"/>
     <SolidColorBrush x:Key="SlaBrush" Color="#721612"/>
     <SolidColorBrush x:Key="FollowUpBrush" Color="#14386C"/>
     <SolidColorBrush x:Key="CallerUpdateBrush" Color="#5B21B6"/>

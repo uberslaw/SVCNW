@@ -294,7 +294,7 @@ public class DeskListTests
         await WaitUntilAsync(() => workspace.Caller.HasSuggestions);
         var query = Uri.UnescapeDataString(handler.Calls.First(call => call.PathAndQuery.Contains("/sys_user", StringComparison.Ordinal)).PathAndQuery);
         Assert.Contains(
-            "nameLIKEjordan.lee@example.com^ORemailLIKEjordan.lee@example.com^ORuser_nameLIKEjordan.lee@example.com^active=true",
+            "nameLIKEjordan.lee@example.com^ORfirst_nameLIKEjordan.lee@example.com^ORlast_nameLIKEjordan.lee@example.com^ORemailLIKEjordan.lee@example.com^ORuser_nameLIKEjordan.lee@example.com^active=true",
             query);
         Assert.DoesNotContain("^ORactive=true^", query);
         Assert.Contains("sysparm_limit=20", query);
@@ -403,7 +403,9 @@ public class DeskListTests
                 Assert.Contains("glide_user_session=abc", cookie);
                 Assert.Equal("tok-ck", Assert.Single(request.Headers.GetValues("X-UserToken")));
                 var query = Uri.UnescapeDataString(request.RequestUri.Query);
-                Assert.Contains("nameLIKEjordan^ORemailLIKEjordan^ORuser_nameLIKEjordan^active=true", query);
+                Assert.Contains(
+                    "nameLIKEjordan^ORfirst_nameLIKEjordan^ORlast_nameLIKEjordan^ORemailLIKEjordan^ORuser_nameLIKEjordan^active=true",
+                    query);
             }
 
             return Api.Json("""{"result":[]}""");
@@ -452,10 +454,50 @@ public class DeskListTests
         workspace.Caller.Text = "jordan.lee@example.com";
         await WaitUntilAsync(() => workspace.Caller.HasSuggestions);
 
+        Assert.False(workspace.Caller.IsMatched);
         workspace.Caller.Choose(workspace.Caller.Highlighted!);
 
         Assert.Equal("user-jordan", workspace.Caller.SysId);
         Assert.Equal("Jordan Lee", workspace.Caller.Text);
+        Assert.True(workspace.Caller.IsMatched);
+        Assert.False(workspace.Caller.HasSuggestions);
+
+        workspace.Caller.Text = "jor";
+        Assert.False(workspace.Caller.IsMatched);
+    }
+
+    [Fact]
+    public async Task CallerTypeaheadMatchesFirstOrLastNamePrefix()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/sys_user", StringComparison.Ordinal))
+            {
+                var query = Uri.UnescapeDataString(request.RequestUri.Query);
+                Assert.Contains("first_nameLIKEsm", query, StringComparison.Ordinal);
+                Assert.Contains("last_nameLIKEsm", query, StringComparison.Ordinal);
+                Assert.Contains("nameLIKEsm", query, StringComparison.Ordinal);
+                Assert.Contains("sysparm_fields=sys_id,name,first_name,last_name,user_name,email", query, StringComparison.Ordinal);
+                return Api.Json("{\"result\":[" + OneUser("user-smith", "Sam Smith", "sam.smith", "sam.smith@example.com") + "]}");
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.Attach(client);
+        workspace.NewRecordCommand.Execute(null);
+        workspace.Caller.Text = "sm";
+        await WaitUntilAsync(() => workspace.Caller.HasSuggestions);
+
+        var suggestion = Assert.Single(workspace.Caller.Suggestions);
+        Assert.Equal("user-smith", suggestion.SysId);
+        Assert.Equal("Sam Smith", suggestion.Display);
+
+        workspace.Caller.Choose(suggestion);
+
+        Assert.Equal("user-smith", workspace.Caller.SysId);
+        Assert.Equal("Sam Smith", workspace.Caller.Text);
         Assert.False(workspace.Caller.HasSuggestions);
     }
 

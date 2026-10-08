@@ -153,16 +153,18 @@ public class EncodedQueryTests
     }
 
     [Fact]
-    public void UserSearchOrsNameEmailAndUserNameThenRequiresActive()
+    public void UserSearchOrsNameFirstLastEmailAndUserNameThenRequiresActive()
     {
         const string term = "jordan.lee@example.com";
         Assert.Equal(
-            "nameLIKEjordan.lee@example.com^ORemailLIKEjordan.lee@example.com^ORuser_nameLIKEjordan.lee@example.com^active=true",
+            "nameLIKEjordan.lee@example.com^ORfirst_nameLIKEjordan.lee@example.com^ORlast_nameLIKEjordan.lee@example.com^ORemailLIKEjordan.lee@example.com^ORuser_nameLIKEjordan.lee@example.com^active=true",
             EncodedQuery.ActiveUserSearch(term));
         Assert.DoesNotContain("^ORactive=true^", EncodedQuery.ActiveUserSearch(term));
 
         var exact = EncodedQuery.ActiveUserExact(term);
         Assert.Contains("email=" + term + "^active=true", exact);
+        Assert.Contains("first_name=" + term + "^active=true", exact);
+        Assert.Contains("last_name=" + term + "^active=true", exact);
         Assert.Contains("nameSTARTSWITH" + term + "^nameENDSWITH" + term + "^active=true", exact);
         Assert.Contains("emailSTARTSWITH" + term + "^emailENDSWITH" + term + "^active=true", exact);
         Assert.Contains("user_nameSTARTSWITH" + term + "^user_nameENDSWITH" + term + "^active=true", exact);

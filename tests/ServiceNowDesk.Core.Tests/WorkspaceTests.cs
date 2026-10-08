@@ -972,12 +972,15 @@ public class WorkspaceTests
         field.Text = "jor";
         await FlushAsync();
         Assert.True(field.HasSuggestions);
+        Assert.False(field.IsMatched);
         field.Choose(field.Highlighted!);
         Assert.Equal("user-jordan", field.SysId);
         Assert.Equal("Jordan Lee", field.Text);
+        Assert.True(field.IsMatched);
 
         field.Text = "Jordan Leigh";
         Assert.Equal("", field.SysId);
+        Assert.False(field.IsMatched);
     }
 
     private static void AssertAusMembers(IncidentWorkspaceViewModel workspace)
