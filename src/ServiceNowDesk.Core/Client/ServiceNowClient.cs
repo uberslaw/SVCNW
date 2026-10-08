@@ -1775,8 +1775,9 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             OpenListClause(query),
             extra);
         // Walk-up My Team is people (TeamMemberIds), so office cities do not apply.
+        // My Tickets, My Team, and Unassigned all stay inside the watched offices.
         if (query.OfficeLocations is not null
-            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
+            && query.Assignment is AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned
             && query.TeamMemberIds is null)
             return OfficeQueue.ApplyTo(encoded, query.OfficeLocations);
         return encoded;
