@@ -6,7 +6,7 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="400"/>
             <ColumnDefinition Width="16"/>
-            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*" MinWidth="0"/>
         </Grid.ColumnDefinitions>
 
         <DockPanel x:Name="ListPane" Grid.Column="0">
@@ -52,7 +52,15 @@
                                 <TextBlock Text="{Binding ResolveChoiceLabel}" Style="{StaticResource FieldLabel}"/>
                                 <ComboBox ItemsSource="{Binding ResolveChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ResolveCode}" Margin="0,0,0,8"/>
                                 <TextBlock Text="Work notes" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Text="{Binding ResolveNotes, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding ResolveNotes, UpdateSourceTrigger=PropertyChanged}"
+                                         AcceptsReturn="True"
+                                         MinHeight="64"
+                                         TextWrapping="Wrap"
+                                         VerticalContentAlignment="Top"
+                                         HorizontalAlignment="Stretch"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Disabled"
+                                         Margin="0,0,0,8"/>
                                 <StackPanel Orientation="Horizontal">
                                     <Button Content="Confirm close" Style="{StaticResource PrimaryButton}" Command="{Binding ConfirmResolveCommand}" Margin="0,0,8,0"/>
                                     <Button Content="Cancel" Style="{StaticResource SecondaryButton}" Command="{Binding CancelResolveCommand}"/>
@@ -72,8 +80,11 @@
                     </StackPanel>
                 </Border>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
+                <ScrollViewer MinWidth="0"
+                              HorizontalAlignment="Stretch"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel HorizontalAlignment="Stretch">
                         <DockPanel Margin="0,0,0,12">
                             <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
                                 <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
@@ -84,7 +95,13 @@
                         </DockPanel>
 
                         <TextBlock Text="Short description" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}"
+                                 TextWrapping="Wrap"
+                                 AcceptsReturn="True"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,10"/>
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -126,7 +143,15 @@
                         </Grid>
 
                         <TextBlock Text="Description" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" VerticalScrollBarVisibility="Auto" Margin="0,0,0,12"/>
+                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="90"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,12"/>
 
                         <ContentControl Content="{Binding}" ContentTemplate="{StaticResource JournalHistoryTemplate}" Focusable="False" IsTabStop="False"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
@@ -136,7 +161,15 @@
                                          IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=Comments}"/>
                         </StackPanel>
                         <TextBlock Text="Visible to the caller." Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding JournalIsCustomerVisible, Converter={StaticResource BoolVis}}"/>
-                        <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"/>
+                        <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="64"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,8"/>
                         <Button Content="Post note" Style="{StaticResource SecondaryButton}" Command="{Binding PostJournalCommand}" HorizontalAlignment="Left"/>
                     </StackPanel>
                 </ScrollViewer>
