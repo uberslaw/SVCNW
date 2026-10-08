@@ -68,7 +68,7 @@ public class InTheMixTests
         mix.UseOfficeCities(["Brisbane"]);
         mix.Attach(client);
 
-        Assert.Equal("My Team", mix.Preset.Label);
+        Assert.Equal("My Tickets", mix.Preset.Label);
         Assert.Equal("Select a ticket.", mix.EmptyPrompt);
         Assert.Equal(0, mix.OpenEditorCount);
         Assert.False(mix.ShowIncidentEditor);
@@ -137,7 +137,8 @@ public class InTheMixTests
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010020");
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010011");
 
-        Assert.Equal("My Team", main.Mix.Preset.Label);
+        Assert.Equal("My Tickets", main.Mix.Preset.Label);
+        main.Mix.Preset = PresetCatalog.Mix.Single(preset => preset.Label == "My Team");
         await main.Mix.RefreshAsync();
         Assert.Contains(main.Mix.Items, row => row.Kind == "INC" && row.Number == "INC0010019");
         Assert.Contains(main.Mix.Items, row => row.Kind == "RITM" && row.Number == "RITM0010007");

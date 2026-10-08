@@ -88,8 +88,11 @@ public class CacheSettingsTests
         var requests = Assert.Single(main.Caches, row => row.Name == "Requests");
         await main.RefreshCacheCommand.ExecuteAsync(incidents);
 
-        Assert.Equal("Refreshed.", incidents.Status);
+        Assert.Contains("Cleared 1 stale", incidents.Status, StringComparison.Ordinal);
+        Assert.Contains("Downloaded 1 fresh", incidents.Status, StringComparison.Ordinal);
         Assert.False(incidents.IsFailed);
+        Assert.StartsWith("Last good download:", incidents.LastGoodText, StringComparison.Ordinal);
+        Assert.DoesNotContain("never", incidents.LastGoodText, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("", requests.Status);
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC-NEW");
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC-OLD");
@@ -180,8 +183,10 @@ public class CacheSettingsTests
         var incidents = Assert.Single(main.Caches, row => row.Name == "Incidents");
         await main.RefreshCacheCommand.ExecuteAsync(incidents);
 
-        Assert.Equal("Refreshed.", incidents.Status);
+        Assert.Contains("Cleared", incidents.Status, StringComparison.Ordinal);
+        Assert.Contains("Downloaded", incidents.Status, StringComparison.Ordinal);
         Assert.False(incidents.IsFailed);
+        Assert.StartsWith("Last good download:", incidents.LastGoodText, StringComparison.Ordinal);
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC-BOGUS");
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010001");
         Assert.Contains(templates.List(), template => template.Name == "Badge");
@@ -235,7 +240,10 @@ public class CacheSettingsTests
         Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
-        Assert.Equal(9, main.Startup.Lines.Count);
+        Assert.Equal(10, main.Startup.Lines.Count);
+        Assert.Equal("Incidents", main.Startup.Lines[0].Name);
+        Assert.Equal("Request items", main.Startup.Lines[1].Name);
+        Assert.Equal("Walk-ups", main.Startup.Lines[2].Name);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Knowledge" && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Service offerings" && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Configuration items" && line.Percent == 100);
@@ -370,6 +378,108 @@ public class CacheSettingsTests
         var stillThere = catalog.Load(session.InstanceUri);
         Assert.NotNull(stillThere);
         Assert.Contains(stillThere.Groups, group => group.SysId == "group-aus");
+    }
+
+    [Fact]
+    public async Task SplashPreloadsMixTicketSectionsFirstAndSeedsMixMyTickets()
+    {
+        var lists = new MemoryDeskListStore();
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = true });
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
+
+        await main.InitializeAsync();
+
+        Assert.True(main.Incidents.HasLoaded);
+        Assert.True(main.RequestedItems.HasLoaded);
+        Assert.True(main.WalkUps.HasLoaded);
+        Assert.Equal(["Incidents", "Request items", "Walk-ups"], main.Startup.Lines.Take(3).Select(line => line.Name).ToArray());
+        Assert.Equal("My Tickets", main.Mix.Preset.Label);
+        Assert.True(main.Mix.HasLoaded);
+        Assert.Contains(main.Mix.Items, row => row.Kind == "INC");
+        Assert.Contains(main.Mix.Items, row => row.Kind == "RITM");
+        Assert.Contains(main.Mix.Items, row => row.Kind == "IMS");
+
+        var before = lists.Load(DeskListScope.Practice);
+        Assert.NotNull(before);
+        Assert.NotNull(before.Incidents);
+        Assert.NotNull(before.RequestItems);
+        Assert.NotNull(before.WalkUps);
+
+        main.SelectedSection = DeskSection.InTheMix;
+        await Task.Yield();
+        Assert.True(main.Mix.HasLoaded);
+        Assert.Contains(main.Mix.Items, row => row.Kind == "INC");
+    }
+
+    [Fact]
+    public async Task OpeningMixAfterPreloadDoesNotRequireAColdReload()
+    {
+        var lists = new MemoryDeskListStore();
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = false });
+        lists.Save(DeskListScope.Practice, FreshPractice("INC-CACHE", "Cached mix incident"));
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
+
+        await main.InitializeAsync();
+
+        Assert.True(main.Incidents.HasLoaded);
+        Assert.True(main.RequestedItems.HasLoaded);
+        Assert.True(main.WalkUps.HasLoaded);
+        Assert.True(main.Mix.HasLoaded);
+        Assert.Contains(main.Mix.Items, row => row.Number == "INC-CACHE");
+        var seededCount = main.Mix.Items.Count;
+
+        main.SelectedSection = DeskSection.DailyWork;
+        await Task.Yield();
+        main.SelectedSection = DeskSection.InTheMix;
+        await Task.Yield();
+
+        Assert.True(main.Mix.HasLoaded);
+        Assert.Equal(seededCount, main.Mix.Items.Count);
+        Assert.Contains(main.Mix.Items, row => row.Number == "INC-CACHE");
+    }
+
+    [Fact]
+    public async Task FailedRefreshKeepsLastGoodDownloadAndShowsError()
+    {
+        var folder = NewFolder();
+        var catalog = new FileFormCatalogStore(folder);
+        var lists = new MemoryDeskListStore();
+        var session = Api.BasicSession();
+        catalog.Save(session.InstanceUri, FreshCatalog());
+        lists.Save(DeskListScope.ForInstance(session.InstanceUri), FreshLists("INC-KEEP", "Keep me"));
+        var failIncidents = false;
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (IsUser(path))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            if (failIncidents && path.Contains("/incident", StringComparison.Ordinal))
+            {
+                return Api.Json(
+                    """{"error":{"message":"unavailable","detail":"incident list failed"},"status":"failure"}""",
+                    HttpStatusCode.InternalServerError);
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = Desk(catalog, lists, handler);
+        main.Connection.DownloadCacheOnLaunch = false;
+        await main.ConnectCommand.ExecuteAsync(null);
+
+        var incidents = Assert.Single(main.Caches, row => row.Name == "Incidents");
+        Assert.StartsWith("Last good download:", incidents.LastGoodText, StringComparison.Ordinal);
+        var goodBefore = incidents.LastGoodText;
+        failIncidents = true;
+
+        await main.RefreshCacheCommand.ExecuteAsync(incidents);
+
+        Assert.True(incidents.IsFailed);
+        Assert.Contains("incident list failed", incidents.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(goodBefore, incidents.LastGoodText);
+        Assert.StartsWith("Last attempt:", incidents.LastAttemptText, StringComparison.Ordinal);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP");
     }
 
     private static MainViewModel Desk(
