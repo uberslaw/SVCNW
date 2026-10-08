@@ -609,6 +609,51 @@ public class DailyWorkTests
         Assert.Empty(main.DailyWork.NewUnassigned);
     }
 
+    [Fact]
+    public void DeskXamlDoesNotPutClickHandlersInsideStyleSetterContextMenus()
+    {
+        // PresentationBuildTasks mis-wires Connect for Click inside Style Setter.Value ContextMenu,
+        // casting MenuItem to a sibling control and crashing startup with "Set connectionId threw an exception."
+        var viewsRoot = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "src", "ServiceNowDesk.App"));
+        Assert.True(Directory.Exists(viewsRoot), viewsRoot);
+
+        var offenders = new List<string>();
+        foreach (var path in Directory.EnumerateFiles(viewsRoot, "*.xaml", SearchOption.AllDirectories))
+        {
+            var text = File.ReadAllText(path);
+            if (HasClickInsideStyleSetterContextMenu(text))
+                offenders.Add(Path.GetRelativePath(viewsRoot, path));
+        }
+
+        Assert.True(
+            offenders.Count == 0,
+            "Move ContextMenus with Click handlers to UserControl.Resources (x:Shared=false) and reference them from the Style. Offenders: "
+            + string.Join(", ", offenders));
+
+        var daily = File.ReadAllText(Path.Combine(viewsRoot, "Views", "DailyWorkView.xaml"));
+        Assert.Contains("DailyWorkNewUnassignedMenu", daily, StringComparison.Ordinal);
+        Assert.Contains("DailyWorkAttendMenu", daily, StringComparison.Ordinal);
+        Assert.Contains("x:Shared=\"false\"", daily, StringComparison.Ordinal);
+        Assert.Contains("NotPartOfMyQueue_Click", daily, StringComparison.Ordinal);
+    }
+
+    private static bool HasClickInsideStyleSetterContextMenu(string xaml)
+    {
+        // Strip comments so historical notes do not trip the scanner.
+        var scrubbed = System.Text.RegularExpressions.Regex.Replace(
+            xaml,
+            @"<!--.*?-->",
+            " ",
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+        return System.Text.RegularExpressions.Regex.IsMatch(
+            scrubbed,
+            @"Setter\s+Property\s*=\s*""ContextMenu""[\s\S]*?<Setter\.Value>[\s\S]*?<ContextMenu[\s\S]*?\bClick\s*=",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
     private static WatchedRecord QueueRecord(string sysId, string number, string priority, string label, DateTime updated) => new()
     {
         Section = DeskSection.Incidents,

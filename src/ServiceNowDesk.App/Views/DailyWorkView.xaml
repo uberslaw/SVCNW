@@ -2,6 +2,21 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:ServiceNowDesk.ViewModels;assembly=ServiceNowDesk.Core">
+    <!--
+      ContextMenus with Click handlers must live as resources, not inline inside Style Setter.Value.
+      Inline menus make PresentationBuildTasks wire Connect to the wrong type (InvalidCast →
+      "Set connectionId threw an exception" while MainWindow loads Daily Work at startup).
+    -->
+    <UserControl.Resources>
+        <ContextMenu x:Key="DailyWorkNewUnassignedMenu" x:Shared="false">
+            <MenuItem Header="Not part of my queue" Click="NotPartOfMyQueue_Click" Tag="new-unassigned"
+                      AutomationProperties.Name="Not part of my queue"/>
+        </ContextMenu>
+        <ContextMenu x:Key="DailyWorkAttendMenu" x:Shared="false">
+            <MenuItem Header="Not part of my queue" Click="NotPartOfMyQueue_Click" Tag="attend"
+                      AutomationProperties.Name="Not part of my queue"/>
+        </ContextMenu>
+    </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel MaxWidth="1040" HorizontalAlignment="Left" Margin="8">
             <TextBlock Text="Daily Work" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
@@ -39,14 +54,7 @@
                      Margin="0,0,0,12">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource TicketListItem}">
-                        <Setter Property="ContextMenu">
-                            <Setter.Value>
-                                <ContextMenu>
-                                    <MenuItem Header="Not part of my queue" Click="NotPartOfMyQueue_Click" Tag="new-unassigned"
-                                              AutomationProperties.Name="Not part of my queue"/>
-                                </ContextMenu>
-                            </Setter.Value>
-                        </Setter>
+                        <Setter Property="ContextMenu" Value="{StaticResource DailyWorkNewUnassignedMenu}"/>
                     </Style>
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
@@ -174,14 +182,7 @@
                      Margin="0,0,0,12">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource TicketListItem}">
-                        <Setter Property="ContextMenu">
-                            <Setter.Value>
-                                <ContextMenu>
-                                    <MenuItem Header="Not part of my queue" Click="NotPartOfMyQueue_Click" Tag="attend"
-                                              AutomationProperties.Name="Not part of my queue"/>
-                                </ContextMenu>
-                            </Setter.Value>
-                        </Setter>
+                        <Setter Property="ContextMenu" Value="{StaticResource DailyWorkAttendMenu}"/>
                     </Style>
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>

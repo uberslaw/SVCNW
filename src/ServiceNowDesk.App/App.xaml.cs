@@ -21,7 +21,7 @@ public partial class App : Application
 
             try
             {
-                MessageBox.Show(args.Exception.Message, "ServiceNow Desk");
+                MessageBox.Show(Describe(args.Exception), "ServiceNow Desk");
             }
             finally
             {
@@ -44,5 +44,25 @@ public partial class App : Application
         var window = new MainWindow { DataContext = main };
         MainWindow = window;
         window.Show();
+    }
+
+    /// <summary>
+    /// Prefer the inner message when XAML wraps a cast failure as "Set connectionId threw an exception."
+    /// </summary>
+    internal static string Describe(Exception error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        var parts = new List<string>();
+        for (var current = error; current is not null; current = current.InnerException)
+        {
+            var text = current.Message?.Trim() ?? "";
+            if (text.Length == 0)
+                continue;
+            if (parts.Count > 0 && string.Equals(parts[^1], text, StringComparison.Ordinal))
+                continue;
+            parts.Add(text);
+        }
+
+        return parts.Count == 0 ? error.GetType().Name : string.Join(" → ", parts);
     }
 }
