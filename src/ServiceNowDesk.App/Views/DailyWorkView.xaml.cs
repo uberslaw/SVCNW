@@ -46,12 +46,11 @@ public partial class DailyWorkView
         if (sender is not MenuItem menu)
             return;
 
-        var row = menu.DataContext as DailyWorkRow
-            ?? (menu.Parent as ContextMenu)?.PlacementTarget is FrameworkElement target
-                ? target.DataContext as DailyWorkRow
-                : null;
-        if (row is null && menu.Parent is ContextMenu context && context.PlacementTarget is ListBoxItem item)
-            row = item.DataContext as DailyWorkRow;
+        DailyWorkRow? row = menu.DataContext as DailyWorkRow;
+        if (row is null
+            && menu.Parent is ContextMenu context
+            && context.PlacementTarget is FrameworkElement target)
+            row = target.DataContext as DailyWorkRow;
         if (row is null)
             return;
 

@@ -591,7 +591,7 @@ public class DailyWorkTests
         page.ClearDismissalsCommand.Execute(null);
         page.ShowGroupQueue([brisbane, melbourne], seen, now.AddHours(2), NotificationPreferences.DefaultLocations);
         Assert.Equal("INC-BNE", Assert.Single(page.NewUnassigned).Number);
-        Assert.Empty(dismissals.Load().Where(item => item.LocalDay == DateOnly.FromDateTime(now)));
+        Assert.DoesNotContain(dismissals.Load(), item => item.LocalDay == DateOnly.FromDateTime(now));
     }
 
     [Fact]
