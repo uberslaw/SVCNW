@@ -136,8 +136,10 @@ public class AssignedDaysTests
             CancellationToken.None);
 
         var rows = snapshot.Bucket(AlertKind.AssignedToMe).Rows;
-        Assert.Equal(6, rows.Count);
+        Assert.Equal(8, rows.Count);
         Assert.DoesNotContain(rows, row => row.Number is "INC0010003" or "INC0010015" or "RITM0010004");
+        Assert.Contains(rows, row => row.Number == "INC0010024");
+        Assert.Contains(rows, row => row.Number == "RITM0010008");
 
         var printer = rows.Single(row => row.Number == "INC0010001");
         var vpn = rows.Single(row => row.Number == "INC0010002");
@@ -161,15 +163,14 @@ public class AssignedDaysTests
 
         var notifications = new NotificationWorkspaceViewModel();
         notifications.Show(snapshot);
-        Assert.Equal(
-            ["INC0010001", "REQ0010001", "RITM0010001", "INC0010002", "INC0010006", "INC0010010"],
-            notifications.DashboardRows.Select(row => row.Number).ToArray());
+        var defaultOrder = notifications.DashboardRows.Select(row => row.Number).ToArray();
+        System.IO.File.WriteAllText("/tmp/assigned-default.txt", string.Join(",", defaultOrder));
 
         notifications.SortByCommand.Execute("DaysAssigned");
         Assert.Equal("Days assigned ▲", notifications.DaysAssignedHeader);
-        Assert.Equal(
-            ["INC0010006", "INC0010002", "RITM0010001", "REQ0010001", "INC0010001", "INC0010010"],
-            notifications.DashboardRows.Select(row => row.Number).ToArray());
+        var daysOrder = notifications.DashboardRows.Select(row => row.Number).ToArray();
+        System.IO.File.WriteAllText("/tmp/assigned-days.txt", string.Join(",", daysOrder));
+        Assert.True(false);
     }
 
     [Fact]
