@@ -295,6 +295,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool isBusy;
     [ObservableProperty] private bool showBack;
     [ObservableProperty] private bool showRowLegend;
+    [ObservableProperty] private bool showTopSearch;
 
     public bool ResolvePanelOpen =>
         (SelectedSection == DeskSection.Incidents && Incidents.ShowResolvePanel)
@@ -688,6 +689,14 @@ public partial class MainViewModel : ObservableObject
             or DeskSection.Leads;
         if (value == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
             ShowRowLegend = false;
+        // Ticket lists + Daily Work share the chrome search. Search keeps it as its
+        // primary query field (SearchView has no duplicate box). Other sections hide it.
+        ShowTopSearch = value is DeskSection.DailyWork
+            or DeskSection.InTheMix
+            or DeskSection.Incidents
+            or DeskSection.RequestedItems
+            or DeskSection.WalkUps
+            or DeskSection.Search;
         UpdateBack();
         if (IsConnected && !_openingRecord && !_preserveNavigation && !_startupGate)
             _ = EnsureSectionAsync();

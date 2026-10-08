@@ -283,7 +283,8 @@
                             VerticalAlignment="Center" Command="{Binding BackCommand}"
                             Visibility="{Binding ShowBack, Converter={StaticResource BoolVis}}"
                             AutomationProperties.Name="Back"/>
-                    <Grid Grid.Column="1" HorizontalAlignment="Stretch">
+                    <Grid Grid.Column="1" HorizontalAlignment="Stretch"
+                          Visibility="{Binding ShowTopSearch, Converter={StaticResource BoolVis}}">
                         <TextBox x:Name="SearchBox" MinHeight="36" FontSize="14"
                                  HorizontalAlignment="Stretch"
                                  Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"

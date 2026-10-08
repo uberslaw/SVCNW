@@ -71,8 +71,11 @@ public partial class MainWindow : Window
 
         if (ctrl && e.Key is Key.K or Key.F)
         {
-            SearchBox.Focus();
-            SearchBox.SelectAll();
+            if (main.ShowTopSearch)
+            {
+                SearchBox.Focus();
+                SearchBox.SelectAll();
+            }
             e.Handled = true;
             return;
         }
