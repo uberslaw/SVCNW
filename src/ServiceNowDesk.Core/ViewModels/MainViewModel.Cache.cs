@@ -33,8 +33,6 @@ public partial class MainViewModel
                 await Task.Yield();
             var run = await RunKeyedSectionAsync(live, row.Key, force: true);
             ApplyRowOutcome(row, run);
-            if (run.Error is null && MixTicketCacheKeys.Contains(row.Key))
-                TrySeedMixFromDeskCaches();
         }
         finally
         {

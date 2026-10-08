@@ -1780,8 +1780,26 @@ public partial class MainViewModel : ObservableObject
 
     private void Paint(IEnumerable<TicketRow> rows)
     {
-        foreach (var row in rows)
+        foreach (var row in SnapshotRows(rows))
             _rows.Paint(row);
+    }
+
+    private static TicketRow[] SnapshotRows(IEnumerable<TicketRow> rows)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                return rows.ToArray();
+            }
+            catch (ArgumentException)
+            {
+                // Collection mutated by a list reload on another thread (common in tests
+                // without a UI SynchronizationContext).
+            }
+        }
+
+        return [];
     }
 
     private CancellationTokenSource? _workEffortCts;
