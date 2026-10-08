@@ -30,6 +30,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     private readonly Dictionary<string, SampleAlertSignals> _signals = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _assignedOn = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ApiActivity> _activity = [];
+    private readonly object _activityGate = new();
     private int _sequence = 1000;
     private int _unassignedQueueReads;
 
@@ -60,7 +61,14 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     public IReadOnlyList<Choice>? ContactTypeChoices { get; set; }
 
-    public IReadOnlyList<ApiActivity> RecentActivity => _activity.ToArray();
+    public IReadOnlyList<ApiActivity> RecentActivity
+    {
+        get
+        {
+            lock (_activityGate)
+                return _activity.ToArray();
+        }
+    }
 
     public void Dispose()
     {
@@ -2667,6 +2675,9 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     private static string Stamp() => DateTime.Now.ToString("yyyy-MM-dd HH:mm");
 
-    private void Record(string method, string path) =>
-        _activity.Insert(0, new ApiActivity(DateTimeOffset.Now, method, path, 200, 1));
+    private void Record(string method, string path)
+    {
+        lock (_activityGate)
+            _activity.Insert(0, new ApiActivity(DateTimeOffset.Now, method, path, 200, 1));
+    }
 }

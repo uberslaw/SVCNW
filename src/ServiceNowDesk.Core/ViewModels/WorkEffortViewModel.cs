@@ -63,7 +63,8 @@ public partial class WorkEffortViewModel : ObservableObject
         // so returning to the page never looks stuck after the query already completed.
         if (!force && TryShowCached(localNow, key))
             return false;
-        if (!force && IsLoading && _loadingScale == Scale)
+        if (!force && IsLoading && _loadingScale == Scale
+            && string.Equals(key, _loadingTeam, StringComparison.Ordinal))
             return false;
 
         _loadingTeam = key;
