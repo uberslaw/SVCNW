@@ -1939,10 +1939,12 @@ public partial class MainViewModel : ObservableObject
 
     private void PostToUi(Action action)
     {
+        // Send (not Post) so background completions always apply before the caller
+        // continues. Post can sit forever on a sync context that never pumps in tests.
         if (_ui is null || ReferenceEquals(SynchronizationContext.Current, _ui))
             action();
         else
-            _ui.Post(_ => action(), null);
+            _ui.Send(_ => action(), null);
     }
 
     private void RefreshActivity()
