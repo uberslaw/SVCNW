@@ -119,11 +119,45 @@
                                    Text="{Binding DownloadPercent, StringFormat={}{0}%}"/>
                     </Grid>
                 </StackPanel>
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                    <TextBlock Text="{Binding Items.Count, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
-                    <TextBlock Text="  Downloading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}"/>
-                </StackPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
+                    <TextBlock Text="{Binding Items.Count, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
+                    <TextBlock Text="  Downloading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}"/>
+                    <Grid Margin="12,0,0,0" VerticalAlignment="Center">
+                        <Button x:Name="SearchTipsButton"
+                                Content="Search tips"
+                                Style="{StaticResource QuietButton}"
+                                Padding="6,2"
+                                MinHeight="24"
+                                Command="{Binding ShowSearchTipsCommand}"
+                                ToolTip="Wildcard and filter rules"
+                                AutomationProperties.Name="Search tips"/>
+                        <Popup IsOpen="{Binding SearchTipsOpen, Mode=TwoWay}"
+                               Placement="Bottom"
+                               PlacementTarget="{Binding ElementName=SearchTipsButton}"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               PopupAnimation="Fade">
+                            <Border Background="{StaticResource CardBrush}"
+                                    BorderBrush="{StaticResource LineBrush}"
+                                    BorderThickness="1"
+                                    Padding="14"
+                                    MaxWidth="420"
+                                    SnapsToDevicePixels="True">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding SearchTipsTitle}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                    <TextBlock Text="{Binding SearchTipsBody}" TextWrapping="Wrap" Foreground="{StaticResource TextBrush}"/>
+                                    <Button Content="Close"
+                                            Style="{StaticResource SecondaryButton}"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,12,0,0"
+                                            Command="{Binding CloseSearchTipsCommand}"
+                                            AutomationProperties.Name="Close search tips"/>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                </DockPanel>
                 <DataGrid ItemsSource="{Binding Items}"
                           SelectedItem="{Binding Selected}"
                           Style="{StaticResource DeskDataGrid}"

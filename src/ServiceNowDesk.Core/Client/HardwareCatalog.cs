@@ -129,13 +129,16 @@ public static class HardwareCatalog
         if (term.Length == 0)
             return true;
 
-        return Contains(asset.SerialNumber, term)
-            || Contains(asset.Model, term)
-            || Contains(asset.AssignedTo.Display, term);
+        return HardwareTextFilter.Matches(asset.SerialNumber, term)
+            || HardwareTextFilter.Matches(asset.Model, term)
+            || HardwareTextFilter.Matches(asset.AssignedTo.Display, term);
     }
 
-    private static bool Contains(string? value, string term) =>
-        !string.IsNullOrEmpty(value) && value.Contains(term, StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Local column filter. See <see cref="HardwareTextFilter"/> for wildcard rules.
+    /// </summary>
+    public static bool MatchesColumn(string? value, string? filter) =>
+        HardwareTextFilter.Matches(value, filter);
 
     public static bool MatchesLocation(HardwareAsset asset, IReadOnlyList<string>? locations)
     {

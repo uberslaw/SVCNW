@@ -87,6 +87,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string stateFilter = "";
     [ObservableProperty] private string substatusFilter = "";
     [ObservableProperty] private string commentsFilter = "";
+    [ObservableProperty] private bool searchTipsOpen;
     [ObservableProperty] private HardwareAsset? selected;
     [ObservableProperty] private bool hasEditor;
     [ObservableProperty] private bool isDirty;
@@ -161,6 +162,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         StateFilter = "";
         SubstatusFilter = "";
         CommentsFilter = "";
+        SearchTipsOpen = false;
         OfficeSearchText = "";
         OfficeStatus = "";
         CatalogStatus = "";
@@ -1103,22 +1105,22 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     }
 
     private bool PassesColumnFilters(HardwareAsset asset) =>
-        ColumnMatch(asset.SerialNumber, SerialFilter)
-        && ColumnMatch(asset.Model, ModelFilter)
-        && ColumnMatch(asset.AssignedTo.Display, AssignedFilter)
-        && ColumnMatch(asset.Location.Display, LocationFilter)
-        && ColumnMatch(asset.InstallStatusLabel, StateFilter)
-        && ColumnMatch(asset.SubstatusLabel, SubstatusFilter)
-        && ColumnMatch(asset.Comments, CommentsFilter);
+        HardwareCatalog.MatchesColumn(asset.SerialNumber, SerialFilter)
+        && HardwareCatalog.MatchesColumn(asset.Model, ModelFilter)
+        && HardwareCatalog.MatchesColumn(asset.AssignedTo.Display, AssignedFilter)
+        && HardwareCatalog.MatchesColumn(asset.Location.Display, LocationFilter)
+        && HardwareCatalog.MatchesColumn(asset.InstallStatusLabel, StateFilter)
+        && HardwareCatalog.MatchesColumn(asset.SubstatusLabel, SubstatusFilter)
+        && HardwareCatalog.MatchesColumn(asset.Comments, CommentsFilter);
 
-    private static bool ColumnMatch(string? value, string? filter)
-    {
-        var term = (filter ?? "").Trim();
-        if (term.Length == 0)
-            return true;
+    public string SearchTipsTitle => HardwareTextFilter.SearchTipsTitle;
+    public string SearchTipsBody => HardwareTextFilter.SearchTipsBody;
 
-        return (value ?? "").Contains(term, StringComparison.OrdinalIgnoreCase);
-    }
+    [RelayCommand]
+    private void ShowSearchTips() => SearchTipsOpen = true;
+
+    [RelayCommand]
+    private void CloseSearchTips() => SearchTipsOpen = false;
 
     private async Task<IReadOnlyList<Choice>> ReadChoicesAsync(string element, string? dependent, IReadOnlyList<Choice> fallback)
     {
