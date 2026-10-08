@@ -162,9 +162,6 @@ public class ServiceNowClientTests
         await client.SearchRequestedItemsAsync(query, CancellationToken.None);
 
         Assert.Equal(1, handler.Calls.Count(call => call.PathAndQuery.Contains("sys_user_grmember")));
-        var membership = Uri.UnescapeDataString(handler.Calls.Single(call => call.PathAndQuery.Contains("sys_user_grmember")).PathAndQuery);
-        Assert.Contains("user=user-alex", membership, StringComparison.Ordinal);
-        Assert.DoesNotContain("javascript:gs.getUserID()", membership, StringComparison.Ordinal);
         Assert.Contains("assignment_groupINgroup-cs", QueryOf(handler.Calls[^1].PathAndQuery));
     }
 

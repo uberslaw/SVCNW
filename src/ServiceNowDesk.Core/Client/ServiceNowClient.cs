@@ -1872,13 +1872,13 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     /// </summary>
     private async Task<string[]> LoadMemberGroupIdsAsync(CancellationToken cancellationToken)
     {
-        var userId = await EnsureSignedInUserSysIdAsync(cancellationToken).ConfigureAwait(false);
+        var userFilter = await MembershipUserFilterAsync(cancellationToken).ConfigureAwait(false);
         var ids = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         await PageRowsAsync(
             "sys_user_grmember",
             "group",
-            "user=" + EncodedQuery.SafeToken(userId, "user id") + "^ORDERBYsys_id",
+            userFilter + "^ORDERBYsys_id",
             FormCatalogPolicy.MaxAssignmentGroups,
             null,
             row =>
@@ -1900,19 +1900,20 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         return ids.ToArray();
     }
 
-    private async Task<string> EnsureSignedInUserSysIdAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Prefer the signed-in sys_id remembered by <see cref="GetCurrentUserAsync"/> at Connect.
+    /// Fall back to the Table API script only when Connect has not resolved a user yet.
+    /// </summary>
+    private Task<string> MembershipUserFilterAsync(CancellationToken cancellationToken)
     {
+        _ = cancellationToken;
         lock (_cacheGate)
         {
             if (!string.IsNullOrWhiteSpace(_signedInUserSysId))
-                return _signedInUserSysId;
+                return Task.FromResult("user=" + EncodedQuery.SafeToken(_signedInUserSysId, "user id"));
         }
 
-        var user = await GetCurrentUserAsync(cancellationToken).ConfigureAwait(false);
-        var id = (user.SysId ?? "").Trim();
-        if (id.Length == 0)
-            throw new ServiceNowException(404, "Signed in, but ServiceNow did not return a user id for this account.", null);
-        return id;
+        return Task.FromResult("user=javascript:gs.getUserID()");
     }
 
     private async Task<T> GetOneAsync<T>(string table, string sysId, string fields, Func<JsonElement, T> map, CancellationToken cancellationToken)
