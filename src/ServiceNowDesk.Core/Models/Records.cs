@@ -115,6 +115,10 @@ public sealed record InteractionConversion(IncidentRecord Incident, bool Created
 
 public readonly record struct KnowledgeDownload(IReadOnlyList<KnowledgeArticle> Articles, bool Truncated);
 
+public readonly record struct HardwareCatalogDownload(
+    IReadOnlyList<HardwareAsset> Assets,
+    bool Truncated);
+
 public sealed record KnowledgeArticle
 {
     public string SysId { get; init; } = "";

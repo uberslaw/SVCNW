@@ -13,6 +13,7 @@ A Windows desktop app for client services teams who need to create, update, reso
 Order catalog also has Other Request, for hardware, help, or support that has no specific catalog item. Use it only when nothing else fits, because a generic request can be slower and may miss fields. Requested for starts as the signed-in person and searches active users the same way as Caller. Request Title and Request Description are required. The desk orders catalog item `06fbd61cdb810410c93568684b9619a9` with `POST /api/sn_sc/servicecatalog/items/{sys_id}/order_now`, sends the person as `sysparm_requested_for`, and sends the title and description as that item's variables (`request_title` and `request_description` when the item variables cannot be read). The REQ and RITM numbers are shown, and the request item opens. Practice data submits this form on this PC and returns a sample REQ and RITM.
 - Search: one box searches the current list. The Search page looks across incidents, requests, items, and knowledge at once, including closed records. Open a hit to read it, then use Back to return to the results.
 - Knowledge: a list of articles saved on this PC. Open Knowledge and the list is already there, including the sample articles in practice mode. The filter box on that page narrows the saved list by number, title, and the short description. It does not send a new ServiceNow query. Click an article to read it. On launch, and when a search includes knowledge, the desk checks for added, updated, and removed articles in the background and updates the list when that check finishes.
+- Hardware: computers (`alm_hardware`, model category Computer) for receive-into-stockroom and state updates. The first open downloads every computer (paged, not the old 100-row search cap) and saves them on this PC in `%AppData%\ServiceNowDesk\hardware.<instance>.json`. Office checkboxes, your signed-in location, Override office, and Clear override filter that saved list locally — they do not re-query ServiceNow. **Refresh this office** merges computers for the checked offices; **Refresh all** replaces the full list. A progress bar and status line show how many were downloaded, how many are new or updated, or when the update finished with errors.
 
 Practice data is built in, so the team can learn the layout before an instance is connected. Nothing in practice mode is sent to ServiceNow.
 
@@ -89,7 +90,7 @@ In ServiceNow: **System OAuth > Application Registry > New > Create an OAuth API
 
 The signed-in user needs the same rights they already use in the web UI, typically `itil`, plus permission to:
 
-- read and write `incident`, `sc_request`, `sc_req_item`, and `interaction`
+- read and write `incident`, `sc_request`, `sc_req_item`, `interaction`, and `alm_hardware`
 - create `interaction_related_record` rows when converting a walk-up to an incident
 - read `sys_user`, `sys_user_group`, `sys_choice`, and `sys_journal_field`
 - read `sys_audit` for the Assigned to me days column. The queue still loads when that table is blocked
@@ -107,6 +108,7 @@ The app uses the Table API:
 - `GET/PATCH /api/now/table/sc_req_item`
 - `GET/POST/PATCH /api/now/table/interaction` for walk-up IMS records (`type=walkup`)
 - `GET/POST /api/now/table/interaction_related_record` to link an interaction to the incident created from it (`interaction`, `document_table=incident`, `document_id`)
+- `GET/PATCH /api/now/table/alm_hardware` for computers on Hardware (paged download into the local catalog, then local office filter)
 - journal notes are `work_notes` or `comments` on that record, including walk-up interactions
 - attachments are `GET /api/now/attachment?sysparm_query=table_name={incident|sc_req_item}^table_sys_id={sys_id}` and `GET /api/now/attachment/{sys_id}/file`
 - choices, users, and groups come from the matching tables

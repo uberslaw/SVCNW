@@ -77,6 +77,7 @@ public partial class MainViewModel : ObservableObject
         IDeskListStore? lists = null,
         IDailyWorkStore? dailyWork = null,
         IPersonalTaskStore? personalTasks = null,
+        IHardwareCatalogStore? hardwareCatalog = null,
         Func<IServiceNowClient>? sampleClientFactory = null)
     {
         _store = store;
@@ -90,7 +91,7 @@ public partial class MainViewModel : ObservableObject
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
-        Hardware = new HardwareWorkspaceViewModel(store);
+        Hardware = new HardwareWorkspaceViewModel(store, hardwareCatalog, CacheScope);
         Hardware.DefaultSaved += (_, _) =>
         {
             var saved = _store.Load();

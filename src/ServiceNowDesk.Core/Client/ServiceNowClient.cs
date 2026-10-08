@@ -1427,7 +1427,13 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         ArgumentNullException.ThrowIfNull(query);
         var limit = Math.Clamp(query.Limit, 1, 100);
         var offset = Math.Max(0, query.Offset);
-        var result = await GetListAsync("alm_hardware", HardwareFields, HardwareCatalog.ListQuery(query.Text, query.Locations), limit, offset, cancellationToken).ConfigureAwait(false);
+        var result = await GetListAsync(
+            "alm_hardware",
+            HardwareFields,
+            HardwareCatalog.ListQuery(query.Text, query.Locations, query.LocationSysIds),
+            limit,
+            offset,
+            cancellationToken).ConfigureAwait(false);
         using (result)
         {
             var items = RequireArray(result.Document)
@@ -1438,6 +1444,30 @@ public sealed partial class ServiceNowClient : IServiceNowClient
                 .ToArray();
             return new PagedResult<HardwareAsset>(items, result.TotalCount);
         }
+    }
+
+    public async Task<HardwareCatalogDownload> DownloadHardwareAsync(
+        IReadOnlyList<string>? locations,
+        IReadOnlyList<string>? locationSysIds,
+        IProgress<DownloadTick>? progress,
+        CancellationToken cancellationToken)
+    {
+        var assets = new List<HardwareAsset>();
+        var query = HardwareCatalog.DownloadQuery(locations, locationSysIds);
+        var truncated = await PageRowsAsync(
+            "alm_hardware",
+            HardwareFields,
+            query,
+            FormCatalogPolicy.MaxHardwareAssets,
+            progress,
+            row =>
+            {
+                var asset = RecordMapper.Hardware(row);
+                if (HardwareCatalog.IsComputer(asset))
+                    assets.Add(asset);
+            },
+            cancellationToken).ConfigureAwait(false);
+        return new HardwareCatalogDownload(assets, truncated);
     }
 
     public Task<HardwareAsset> GetHardwareAsync(string sysId, CancellationToken cancellationToken) =>
