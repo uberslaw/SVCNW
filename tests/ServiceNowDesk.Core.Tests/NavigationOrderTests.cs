@@ -107,6 +107,19 @@ public partial class NavigationOrderTests
     }
 
     [Fact]
+    public void RequestItemCloseNotesReplaceJournalComposeOnlyWhileClosing()
+    {
+        var view = RepoFile("src/ServiceNowDesk.App/Views/RequestedItemView.xaml");
+        Assert.Contains("Text=\"Close notes\"", view, StringComparison.Ordinal);
+        Assert.Contains("Binding ResolveNotes", view, StringComparison.Ordinal);
+        Assert.Contains("Binding ShowResolvePanel, Converter={StaticResource BoolVis}", view, StringComparison.Ordinal);
+        Assert.Contains("Binding ShowResolvePanel, Converter={StaticResource InverseBoolVis}", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("Binding CloseNotes", view, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding BeginResolveCommand}\"", view, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding CancelResolveCommand}\"", view, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CreateNewButtonAndNavBindToThatCatalogSection()
     {
         var view = RepoFile("src/ServiceNowDesk.App/Views/RequestedItemView.xaml");
