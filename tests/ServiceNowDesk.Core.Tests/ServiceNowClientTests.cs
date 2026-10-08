@@ -158,6 +158,39 @@ public class ServiceNowClientTests
     }
 
     [Fact]
+    public async Task MyGroupsKeepAusMembershipAndDoNotInjectApac()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+            {
+                // ServiceNow truth: signed-in user is only in AUS DT - Client Services.
+                return Api.Json("""
+                    {"result":[
+                      {"group":{"value":"group-aus","display_value":"AUS DT - Client Services"}}
+                    ]}
+                    """);
+            }
+
+            return Api.Json(Api.IncidentList());
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var query = new TicketQuery { Assignment = AssignmentScope.MyGroups, Activity = ActivityFilter.Open };
+        await client.SearchIncidentsAsync(query, CancellationToken.None);
+
+        var membershipCalls = handler.Calls.Where(call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal)).ToArray();
+        Assert.Single(membershipCalls);
+        Assert.Contains("user=javascript:gs.getUserID()", Uri.UnescapeDataString(membershipCalls[0].PathAndQuery), StringComparison.Ordinal);
+
+        var incidentQuery = QueryOf(handler.Calls.Last(call => call.PathAndQuery.Contains("/incident", StringComparison.Ordinal)).PathAndQuery);
+        Assert.Contains("assignment_groupINgroup-aus", incidentQuery, StringComparison.Ordinal);
+        Assert.DoesNotContain("group-apac", incidentQuery, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("APAC", incidentQuery, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("LIKEClient Services", incidentQuery, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ApiFailuresSurfaceTheServiceNowDetail()
     {
         var handler = new StubHandler((_, _) => Api.Json(

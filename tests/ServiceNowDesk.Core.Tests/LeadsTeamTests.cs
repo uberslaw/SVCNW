@@ -126,7 +126,7 @@ public class LeadsTeamTests
     }
 
     [Fact]
-    public void LockedRosterKeepsClientServicesInTheSameCity()
+    public void LockedRosterKeepsOnlyTheWatchedAusGroupInTheSameCity()
     {
         var rows = new[]
         {
@@ -134,17 +134,22 @@ public class LeadsTeamTests
             new LockedLeadMembership("APAC DT - Client Services", "user-ada", "Ada Brisbane", "Brisbane Office"),
             new LockedLeadMembership("Client Services", "user-bea", "Bea Brisbane", "Brisbane"),
             new LockedLeadMembership("APAC DT - Client Services", "user-sid", "Sid Sydney", "Sydney Office"),
+            new LockedLeadMembership("APAC DT - Client Services", "user-apac-bne", "Pat Apac", "Brisbane Office"),
             new LockedLeadMembership("Network", "user-ned", "Ned Network", "Brisbane Office"),
             new LockedLeadMembership("Client Services", "user-none", "No Place", ""),
             new LockedLeadMembership("Aus DT - Client Services", "user-cbd", "Cbd Person", "Brisbane CBD")
         };
 
-        var team = LockedLeadTeam.Select("Brisbane", rows);
-        Assert.Equal(["Ada Brisbane", "Bea Brisbane"], team.Select(person => person.Name));
-        Assert.DoesNotContain(team, person => person.SysId is "user-sid" or "user-ned" or "user-none" or "user-cbd");
+        var team = LockedLeadTeam.Select("Brisbane", rows, "Aus DT - Client Services");
+        Assert.Equal(["Ada Brisbane"], team.Select(person => person.Name));
+        Assert.DoesNotContain(team, person => person.SysId is "user-sid" or "user-ned" or "user-none" or "user-cbd" or "user-bea" or "user-apac-bne");
         Assert.True(HardwareOfficeNames.SamePlace("Brisbane", "Brisbane Office"));
-        Assert.Empty(LockedLeadTeam.Select("  ", rows));
+        Assert.Empty(LockedLeadTeam.Select("  ", rows, "Aus DT - Client Services"));
         Assert.False(LockedLeadTeam.HasCity(null));
+        Assert.False(LockedLeadTeam.IsWatchedGroup("APAC DT - Client Services", "Aus DT - Client Services"));
+        Assert.True(LockedLeadTeam.IsWatchedGroup("AUS DT - Client Services", "Aus DT - Client Services"));
+        Assert.DoesNotContain("LIKE", LockedLeadTeam.MembershipQuery("Aus DT - Client Services"), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("group.name=\"Aus DT - Client Services\"", LockedLeadTeam.MembershipQuery("Aus DT - Client Services"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -164,16 +169,18 @@ public class LeadsTeamTests
 
         handler.Calls.Clear();
         using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
-        var team = await client.ListLockedLeadTeamAsync("Brisbane", CancellationToken.None);
-        Assert.Equal(["user-ada", "user-bea"], team.Select(person => person.SysId).OrderBy(id => id, StringComparer.Ordinal));
+        var team = await client.ListLockedLeadTeamAsync("Brisbane", "Aus DT - Client Services", CancellationToken.None);
+        Assert.Equal(["user-ada"], team.Select(person => person.SysId));
         Assert.DoesNotContain(team, person => person.Name.Contains("Everyone", StringComparison.Ordinal));
-        Assert.DoesNotContain(team, person => person.SysId is "user-sid" or "user-ned" or "user-none");
+        Assert.DoesNotContain(team, person => person.SysId is "user-sid" or "user-ned" or "user-none" or "user-bea" or "user-apac-bne");
 
         var call = Assert.Single(handler.Calls);
         var query = Uri.UnescapeDataString(call.PathAndQuery);
         Assert.Contains("/table/sys_user_grmember", query, StringComparison.Ordinal);
-        Assert.Contains(LockedLeadTeam.MembershipQuery, query, StringComparison.Ordinal);
-        Assert.Contains("group.nameLIKEClient Services", query, StringComparison.Ordinal);
+        Assert.Contains(LockedLeadTeam.MembershipQuery("Aus DT - Client Services"), query, StringComparison.Ordinal);
+        Assert.Contains("group.name=\"Aus DT - Client Services\"", query, StringComparison.Ordinal);
+        Assert.DoesNotContain("LIKEClient Services", query, StringComparison.Ordinal);
+        Assert.DoesNotContain("APAC", query, StringComparison.Ordinal);
         Assert.DoesNotContain("group=group-", query, StringComparison.Ordinal);
         Assert.DoesNotContain("/table/sys_user?", call.PathAndQuery, StringComparison.Ordinal);
     }
@@ -230,6 +237,8 @@ public class LeadsTeamTests
         Assert.Contains("Alex Rivera", main.Leads.LockedNames);
         Assert.Contains("Jordan Lee", main.Leads.LockedNames);
         Assert.DoesNotContain("Sam Patel", main.Leads.LockedNames);
+        Assert.DoesNotContain("Pat Apac", main.Leads.LockedNames);
+        Assert.DoesNotContain("Bea Brisbane", main.Leads.LockedNames);
         Assert.DoesNotContain("Casey Ng", main.Leads.LockedNames);
         Assert.DoesNotContain("No Location", main.Leads.LockedNames);
         Assert.False(main.Leads.ShowCheckboxes);
@@ -239,9 +248,11 @@ public class LeadsTeamTests
         Assert.Contains("sample-user", effort);
         Assert.Contains("user-jordan", effort);
         Assert.DoesNotContain("user-sam", effort);
+        Assert.DoesNotContain("user-apac-bne", effort);
         Assert.Equal(1, client.LockedTeamQueries);
         var query = Uri.UnescapeDataString(client.RecentActivity.Single(call => call.Path.Contains("sys_user_grmember", StringComparison.Ordinal)).Path);
-        Assert.Contains("group.nameLIKEClient Services", query, StringComparison.Ordinal);
+        Assert.Contains("group.name=\"Aus DT - Client Services\"", query, StringComparison.Ordinal);
+        Assert.DoesNotContain("LIKEClient Services", query, StringComparison.Ordinal);
 
         Assert.True(main.TrySelect(DeskSection.Leads));
         main.Leads.Area = LeadArea.WorkEffort;
