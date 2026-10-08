@@ -20,7 +20,8 @@ public sealed record WorkItem(
     bool UpdatedByCaller,
     bool FollowUpPassed,
     bool Unattended,
-    bool ReturnedWithNotes)
+    bool ReturnedWithNotes,
+    string Location = "")
 {
     public int PriorityRank => DailyWorkRanker.PriorityRank(PriorityValue, PriorityLabel);
 
@@ -64,7 +65,8 @@ public sealed record WorkItem(
             AlertClassifier.CallerMadeTheLatestUpdate(record),
             AlertClassifier.IsOnHoldPastFollowUp(record, now),
             AlertClassifier.IsUnattended(record, now),
-            AlertClassifier.IsReturnedWithNotes(record));
+            AlertClassifier.IsReturnedWithNotes(record),
+            record.Location?.Trim() ?? "");
     }
 }
 

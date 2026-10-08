@@ -39,7 +39,8 @@ public partial class App : Application
             lists: FileDeskListStore.InApplicationData(),
             dailyWork: FileDailyWorkStore.InApplicationData(),
             personalTasks: FilePersonalTaskStore.InApplicationData(),
-            hardwareCatalog: FileHardwareCatalogStore.InApplicationData());
+            hardwareCatalog: FileHardwareCatalogStore.InApplicationData(),
+            queueDismissals: FileQueueDismissalStore.InApplicationData());
         var window = new MainWindow { DataContext = main };
         MainWindow = window;
         window.Show();

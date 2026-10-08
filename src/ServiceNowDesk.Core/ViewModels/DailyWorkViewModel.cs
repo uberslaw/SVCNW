@@ -3,6 +3,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
+using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Services;
 
@@ -22,19 +23,26 @@ public enum DailyWorkSortColumn
     Title,
     Why,
     State,
-    Assignee
+    Assignee,
+    Office
 }
 
 public partial class DailyWorkViewModel : ObservableObject
 {
+    public const string UnassignedListName = "new-unassigned";
+    public const string AttendListName = "attend";
+
     private readonly IDailyWorkStore _store;
+    private readonly IQueueDismissalStore _dismissals;
     private readonly object _gate = new();
     private DailyWorkBoard _board = DailyWorkBoard.Empty;
     private string _userId = "";
     private IReadOnlyList<string> _teamIds = [];
+    private IReadOnlyList<string> _officeCities = [];
     private DateTime? _now;
     private IReadOnlyList<WatchedRecord> _groupTickets = [];
     private UnassignedSeen _groupSeen = UnassignedSeen.None;
+    private HashSet<string> _dismissedIds = new(StringComparer.OrdinalIgnoreCase);
     private DailyWorkSortColumn? _sortColumn;
     private bool _sortDescending;
 
@@ -43,10 +51,14 @@ public partial class DailyWorkViewModel : ObservableObject
         + "Red = act first (priority 1 or SLA breaching). Yellow = next (caller update or follow-up passed). Green = after those. "
         + "The report is saved once each local day.";
 
-    public DailyWorkViewModel(IDailyWorkStore store, IPersonalTaskStore? personalTasks = null)
+    public DailyWorkViewModel(
+        IDailyWorkStore store,
+        IPersonalTaskStore? personalTasks = null,
+        IQueueDismissalStore? queueDismissals = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         _store = store;
+        _dismissals = queueDismissals ?? new MemoryQueueDismissalStore();
         _personalTasks = personalTasks ?? new MemoryPersonalTaskStore();
         LoadNotes();
     }
@@ -55,6 +67,7 @@ public partial class DailyWorkViewModel : ObservableObject
     public ObservableCollection<DailyWorkRow> Attend { get; } = [];
     public ObservableCollection<DailyWorkRow> Cleared { get; } = [];
     public ObservableCollection<DailyWorkRow> Arrived { get; } = [];
+    public ObservableCollection<QueueDismissalRow> Dismissed { get; } = [];
 
     public event EventHandler<DailyWorkRow>? OpenRequested;
 
@@ -67,6 +80,7 @@ public partial class DailyWorkViewModel : ObservableObject
     [ObservableProperty] private bool hasAttend;
     [ObservableProperty] private bool hasCleared;
     [ObservableProperty] private bool hasArrived;
+    [ObservableProperty] private bool hasDismissed;
 
     public string ActFirstHex => DailyWorkRanker.ActFirstHex;
 
@@ -81,6 +95,7 @@ public partial class DailyWorkViewModel : ObservableObject
     public string WhyHeader => SortHeader("Why", DailyWorkSortColumn.Why);
     public string StateHeader => SortHeader("State", DailyWorkSortColumn.State);
     public string AssigneeHeader => SortHeader("Assigned to", DailyWorkSortColumn.Assignee);
+    public string OfficeHeader => SortHeader("Office", DailyWorkSortColumn.Office);
 
     public void Show(DailyWorkBoard? board, string? userSysId, IReadOnlyList<string>? teamMemberIds, DateTime? localNow = null)
     {
@@ -88,15 +103,30 @@ public partial class DailyWorkViewModel : ObservableObject
         _userId = userSysId?.Trim() ?? "";
         _teamIds = teamMemberIds ?? [];
         _now = localNow;
+        RefreshDismissals(_now ?? DateTime.Now);
         Apply();
     }
 
-    public void ShowGroupQueue(IReadOnlyList<WatchedRecord>? tickets, UnassignedSeen seen, DateTime? localNow = null)
+    public void ShowGroupQueue(
+        IReadOnlyList<WatchedRecord>? tickets,
+        UnassignedSeen seen,
+        DateTime? localNow = null,
+        IReadOnlyList<string>? officeCities = null)
     {
         _groupTickets = tickets ?? [];
         _groupSeen = seen;
+        if (officeCities is not null)
+            _officeCities = officeCities;
         if (localNow is not null)
             _now = localNow;
+        RefreshDismissals(_now ?? DateTime.Now);
+        Apply();
+    }
+
+    /// <summary>Watched / account offices used to filter the group queue when non-empty.</summary>
+    public void UseOfficeCities(IReadOnlyList<string>? cities)
+    {
+        _officeCities = cities ?? [];
         Apply();
     }
 
@@ -107,24 +137,70 @@ public partial class DailyWorkViewModel : ObservableObject
             _board = DailyWorkBoard.Empty;
             _userId = "";
             _teamIds = [];
+            _officeCities = [];
             _groupTickets = [];
             _groupSeen = UnassignedSeen.None;
+            _dismissedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             _sortColumn = null;
             _sortDescending = false;
             NewUnassigned.Clear();
             Attend.Clear();
             Cleared.Clear();
             Arrived.Clear();
+            Dismissed.Clear();
             HasNewUnassigned = false;
             HasAttend = false;
             HasCleared = false;
             HasArrived = false;
+            HasDismissed = false;
             TeamPrompt = "";
             ReportNote = "";
             DifferenceNote = "";
             Headline = "Attend to these first";
             NotifySortHeaders();
         }
+    }
+
+    /// <summary>
+    /// Removes a ticket from Daily Work for the local day and records the dismissal under AppData.
+    /// </summary>
+    public bool NotPartOfMyQueue(DailyWorkRow? row, string? reason, string listName, DateTime? localNow = null)
+    {
+        if (row is null || (string.IsNullOrWhiteSpace(row.SysId) && string.IsNullOrWhiteSpace(row.Number)))
+            return false;
+
+        var now = localNow ?? _now ?? DateTime.Now;
+        var day = DateOnly.FromDateTime(now);
+        var key = DismissalKey(row.SysId, row.Number);
+        var existing = _dismissals.Load().ToList();
+        if (existing.Any(item =>
+                item.LocalDay == day
+                && string.Equals(DismissalKey(item.SysId, item.Number), key, StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        existing.Add(new QueueDismissal(
+            row.SysId?.Trim() ?? "",
+            row.Number?.Trim() ?? "",
+            row.Office?.Trim() ?? "",
+            string.IsNullOrWhiteSpace(listName) ? UnassignedListName : listName.Trim(),
+            reason?.Trim() ?? "",
+            now,
+            day));
+        _dismissals.Save(existing);
+        RefreshDismissals(now);
+        Apply();
+        return true;
+    }
+
+    [RelayCommand]
+    private void ClearDismissals()
+    {
+        var now = _now ?? DateTime.Now;
+        var day = DateOnly.FromDateTime(now);
+        var keep = _dismissals.Load().Where(item => item.LocalDay != day).ToArray();
+        _dismissals.Save(keep);
+        RefreshDismissals(now);
+        Apply();
     }
 
     [RelayCommand]
@@ -191,9 +267,9 @@ public partial class DailyWorkViewModel : ObservableObject
         TeamPrompt = teamWithoutPeople
             ? "Tick the people on your team under Leads. This report stays empty until you do."
             : "";
-        Replace(Attend, teamWithoutPeople ? [] : view.Attend.Select(DailyWorkRow.From));
+        Replace(Attend, teamWithoutPeople ? [] : view.Attend.Where(StillOnQueue).Select(DailyWorkRow.From));
         Replace(Cleared, teamWithoutPeople ? [] : view.Cleared.Select(DailyWorkRow.FromCleared));
-        Replace(Arrived, teamWithoutPeople ? [] : view.Arrived.Select(DailyWorkRow.From));
+        Replace(Arrived, teamWithoutPeople ? [] : view.Arrived.Where(StillOnQueue).Select(DailyWorkRow.From));
         HasAttend = Attend.Count > 0;
         HasCleared = Cleared.Count > 0;
         HasArrived = Arrived.Count > 0;
@@ -257,6 +333,7 @@ public partial class DailyWorkViewModel : ObservableObject
         OnPropertyChanged(nameof(WhyHeader));
         OnPropertyChanged(nameof(StateHeader));
         OnPropertyChanged(nameof(AssigneeHeader));
+        OnPropertyChanged(nameof(OfficeHeader));
     }
 
     private IReadOnlyList<DailyWorkRow> QueueRows()
@@ -266,7 +343,10 @@ public partial class DailyWorkViewModel : ObservableObject
             return [];
 
         return _groupTickets
-            .Where(record => record.SysId.Length > 0 && announced.Contains(record.SysId))
+            .Where(record => record.SysId.Length > 0
+                && announced.Contains(record.SysId)
+                && InOfficeScope(record)
+                && StillOnQueue(record.SysId, record.Number))
             .Select(QueueRow)
             .OrderBy(row => row.PriorityRank)
             .ThenBy(row => row.Number, StringComparer.Ordinal)
@@ -280,9 +360,46 @@ public partial class DailyWorkViewModel : ObservableObject
             return [];
 
         return _groupTickets
-            .Where(record => announced.Contains(record.SysId) && DailyWorkRanker.NeedsAttention(record, now))
+            .Where(record => announced.Contains(record.SysId)
+                && InOfficeScope(record)
+                && StillOnQueue(record.SysId, record.Number)
+                && DailyWorkRanker.NeedsAttention(record, now))
             .Select(record => WorkItem.From(record, now))
             .ToArray();
+    }
+
+    private bool InOfficeScope(WatchedRecord record) =>
+        _officeCities.Count == 0 || OfficeQueue.Matches(record.Location, _officeCities);
+
+    private bool StillOnQueue(WorkItem item) => StillOnQueue(item.SysId, item.Number);
+
+    private bool StillOnQueue(string? sysId, string? number) =>
+        !_dismissedIds.Contains(DismissalKey(sysId, number));
+
+    private void RefreshDismissals(DateTime localNow)
+    {
+        var day = DateOnly.FromDateTime(localNow);
+        var today = _dismissals.Load().Where(item => item.LocalDay == day).ToArray();
+        _dismissedIds = new HashSet<string>(
+            today.Select(item => DismissalKey(item.SysId, item.Number)),
+            StringComparer.OrdinalIgnoreCase);
+        Replace(Dismissed, today.OrderByDescending(item => item.DismissedAtLocal).Select(QueueDismissalRow.From));
+        HasDismissed = Dismissed.Count > 0;
+    }
+
+    private static string DismissalKey(string? sysId, string? number)
+    {
+        var id = sysId?.Trim() ?? "";
+        if (id.Length > 0)
+            return id;
+        return number?.Trim() ?? "";
+    }
+
+    private static void Replace(ObservableCollection<QueueDismissalRow> target, IEnumerable<QueueDismissalRow> rows)
+    {
+        target.Clear();
+        foreach (var row in rows)
+            target.Add(row);
     }
 
     private static IEnumerable<WorkItem> Merge(IReadOnlyList<WorkItem> current, IReadOnlyList<WorkItem> extras)
@@ -318,6 +435,7 @@ public partial class DailyWorkViewModel : ObservableObject
             PriorityBadge = rank is 1 or 2 ? "P" + rank.ToString(CultureInfo.InvariantCulture) : "",
             EmphasizePriority = rank is 1 or 2,
             Group = record.Group?.Trim() ?? "",
+            Office = record.Location?.Trim() ?? "",
             When = WhenOf(record),
             State = record.State,
             AssigneeText = "Unassigned",
@@ -356,6 +474,7 @@ public sealed class DailyWorkRow
     public string PriorityBadge { get; init; } = "";
     public bool EmphasizePriority { get; init; }
     public string Group { get; init; } = "";
+    public string Office { get; init; } = "";
     public string When { get; init; } = "";
     public string Reasons { get; init; } = "";
     public string State { get; init; } = "";
@@ -375,6 +494,7 @@ public sealed class DailyWorkRow
         Reasons = item.Reasons,
         State = item.State,
         AssigneeText = item.AssigneeText,
+        Office = item.Location?.Trim() ?? "",
         HighlightHex = DailyWorkRanker.HighlightHex(item)
     };
 
@@ -393,6 +513,31 @@ public sealed class DailyWorkRow
             AssigneeText = ""
         };
     }
+}
+
+public sealed class QueueDismissalRow
+{
+    public string SysId { get; init; } = "";
+    public string Number { get; init; } = "";
+    public string Office { get; init; } = "";
+    public string List { get; init; } = "";
+    public string Reason { get; init; } = "";
+    public string When { get; init; } = "";
+
+    public static QueueDismissalRow From(QueueDismissal item) => new()
+    {
+        SysId = item.SysId,
+        Number = item.Number,
+        Office = item.Office,
+        List = item.List switch
+        {
+            DailyWorkViewModel.AttendListName => "Attend",
+            DailyWorkViewModel.UnassignedListName => "New unassigned",
+            _ => item.List
+        },
+        Reason = string.IsNullOrWhiteSpace(item.Reason) ? "(no reason)" : item.Reason,
+        When = item.DismissedAtLocal.ToString("g", CultureInfo.CurrentCulture)
+    };
 }
 
 public static class DailyWorkRowSort
@@ -459,6 +604,7 @@ public static class DailyWorkRowSort
         DailyWorkSortColumn.Why => row.Reasons,
         DailyWorkSortColumn.State => row.State,
         DailyWorkSortColumn.Assignee => row.AssigneeText,
+        DailyWorkSortColumn.Office => row.Office,
         _ => ""
     };
 }

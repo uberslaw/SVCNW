@@ -101,7 +101,8 @@ public partial class MainViewModel : ObservableObject
         IDailyWorkStore? dailyWork = null,
         IPersonalTaskStore? personalTasks = null,
         IHardwareCatalogStore? hardwareCatalog = null,
-        Func<IServiceNowClient>? sampleClientFactory = null)
+        Func<IServiceNowClient>? sampleClientFactory = null,
+        IQueueDismissalStore? queueDismissals = null)
     {
         _store = store;
         _desktop = desktop;
@@ -134,7 +135,10 @@ public partial class MainViewModel : ObservableObject
         NotificationSettings = new NotificationSettingsViewModel();
         Legend = new LegendSettingsViewModel();
         Leads = new LeadsViewModel();
-        DailyWork = new DailyWorkViewModel(_dailyWork, personalTasks ?? new MemoryPersonalTaskStore());
+        DailyWork = new DailyWorkViewModel(
+            _dailyWork,
+            personalTasks ?? new MemoryPersonalTaskStore(),
+            queueDismissals ?? new MemoryQueueDismissalStore());
         Leads.UseEditors(Incidents, Requests, RequestedItems, WalkUps);
         Leads.WorkEffort.UseDesktop(desktop);
         Leads.OpenUnknownRecord = OpenUnknownLeadRecord;
@@ -1052,6 +1056,7 @@ public partial class MainViewModel : ObservableObject
         Unassigned = row.Unassigned,
         StateValue = row.StateValue,
         SortKey = row.SortKey,
+        Location = row.Location,
         Kind = kind,
         Source = source
     };
@@ -1063,6 +1068,7 @@ public partial class MainViewModel : ObservableObject
         RequestedItems.UseOfficeCities(cities);
         WalkUps.UseOfficeCities(cities);
         Mix.UseOfficeCities(cities);
+        DailyWork.UseOfficeCities(cities);
         ApplyTeamQueue();
         _loadedFor.Remove(DeskSection.Incidents);
         _loadedFor.Remove(DeskSection.RequestedItems);
@@ -1622,7 +1628,8 @@ public partial class MainViewModel : ObservableObject
             Exception? queueError = null;
             try
             {
-                queue = await client.ListUnassignedGroupQueueAsync(search.GroupName, token).ConfigureAwait(false);
+                queue = await client.ListUnassignedGroupQueueAsync(search.GroupName, search.Locations, token)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
             {
@@ -1663,7 +1670,7 @@ public partial class MainViewModel : ObservableObject
                 }
 
                 if (step is not null)
-                    DailyWork.ShowGroupQueue(queue, step.State, localNow);
+                    DailyWork.ShowGroupQueue(queue, step.State, localNow, search.Locations);
 
                 if (queueError is not null)
                     Notifications.NotePollError(WorkspaceMessages.Describe(queueError));

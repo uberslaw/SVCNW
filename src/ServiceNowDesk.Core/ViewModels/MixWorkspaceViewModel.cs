@@ -322,6 +322,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
         Unassigned = row.Unassigned,
         StateValue = row.StateValue,
         SortKey = row.SortKey,
+        Location = row.Location,
         Kind = kind,
         Source = source
     };

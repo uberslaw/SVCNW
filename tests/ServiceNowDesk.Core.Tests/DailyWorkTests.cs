@@ -466,7 +466,7 @@ public class DailyWorkTests
     {
         using var client = new SampleServiceNowClient();
         var watched = "Aus DT - Client Services";
-        var first = await client.ListUnassignedGroupQueueAsync(watched, CancellationToken.None);
+        var first = await client.ListUnassignedGroupQueueAsync(watched, null, CancellationToken.None);
         Assert.Contains(first, row => row.Number == "INC0010004");
         Assert.Contains(first, row => row.Number == "INC0010013");
         Assert.Contains(first, row => row.Number == "INC0010018" && row.Location == "Melbourne");
@@ -476,7 +476,7 @@ public class DailyWorkTests
         Assert.All(first, row => Assert.True(string.IsNullOrWhiteSpace(row.AssignedToSysId)));
 
         using var mineOnly = new SampleServiceNowClient();
-        var withoutWatched = await mineOnly.ListUnassignedGroupQueueAsync(null, CancellationToken.None);
+        var withoutWatched = await mineOnly.ListUnassignedGroupQueueAsync(null, null, CancellationToken.None);
         Assert.DoesNotContain(withoutWatched, row => row.Number == "INC0010018");
         Assert.Contains(withoutWatched, row => row.Number == "INC0010004");
 
@@ -494,7 +494,7 @@ public class DailyWorkTests
         page.Show(report.Daily, "sample-user", [], now);
         var morning = store.Find("user:sample-user", day)!.Lines.Select(line => line.SysId).ToArray();
 
-        var second = await client.ListUnassignedGroupQueueAsync(watched, CancellationToken.None);
+        var second = await client.ListUnassignedGroupQueueAsync(watched, null, CancellationToken.None);
         var arrived = GroupQueueTracker.Compare(store.FindUnassigned("user:sample-user", day), second.Select(row => row.SysId));
         Assert.Equal(["inc-queue-new"], arrived.NewIds);
         store.SaveUnassigned("user:sample-user", day, arrived.State);
@@ -506,16 +506,92 @@ public class DailyWorkTests
         Assert.True(row.EmphasizePriority);
         Assert.Equal(DailyWorkRanker.ActFirstHex, row.HighlightHex);
         Assert.Equal("Client Services", row.Group);
+        Assert.Equal("Brisbane Office", row.Office);
         Assert.False(string.IsNullOrWhiteSpace(row.When));
         Assert.DoesNotContain(page.Arrived, item => item.Number == "INC0010017");
         Assert.DoesNotContain(page.Attend, item => item.Number == "INC0010017");
         Assert.Equal(morning, store.Find("user:sample-user", day)!.Lines.Select(line => line.SysId).ToArray());
 
-        var third = await client.ListUnassignedGroupQueueAsync(watched, CancellationToken.None);
+        var third = await client.ListUnassignedGroupQueueAsync(watched, null, CancellationToken.None);
         var repeat = GroupQueueTracker.Compare(store.FindUnassigned("user:sample-user", day), third.Select(item => item.SysId));
         Assert.Empty(repeat.NewIds);
         page.ShowGroupQueue(third, repeat.State, now.AddMinutes(10));
         Assert.Equal("INC0010017", Assert.Single(page.NewUnassigned).Number);
+    }
+
+    [Fact]
+    public async Task OfficeScopedGroupQueueExcludesMelbourneAndKeepsBrisbane()
+    {
+        using var client = new SampleServiceNowClient();
+        var offices = NotificationPreferences.DefaultLocations;
+        var watched = "Aus DT - Client Services";
+        var rows = await client.ListUnassignedGroupQueueAsync(watched, offices, CancellationToken.None);
+
+        Assert.Contains(rows, row => row.Number == "INC0010004" && row.Location == "Brisbane Office");
+        Assert.Contains(rows, row => row.Number == "INC0010013" && row.Location == "Brisbane Office");
+        Assert.DoesNotContain(rows, row => row.Number == "INC0010018");
+        Assert.DoesNotContain(rows, row => string.Equals(row.Location, "Melbourne", StringComparison.OrdinalIgnoreCase));
+        Assert.All(rows, row => Assert.True(OfficeQueue.Matches(row.Location, offices)));
+
+        var query = AlertQueryBuilder.UnassignedInGroups(["group-cs"], watched, offices);
+        Assert.NotNull(query);
+        Assert.Contains("location.name=", query, StringComparison.Ordinal);
+        Assert.Contains("Brisbane", query, StringComparison.Ordinal);
+
+        var store = new MemoryDailyWorkStore();
+        var now = new DateTime(2026, 10, 7, 9, 30, 0);
+        var day = DateOnly.FromDateTime(now);
+        var baseline = GroupQueueTracker.Compare(UnassignedSeen.None, rows.Select(row => row.SysId));
+        store.SaveUnassigned("user:sample-user", day, baseline.State);
+
+        var page = new DailyWorkViewModel(store);
+        page.ShowGroupQueue(rows, baseline.State, now, offices);
+        Assert.Empty(page.NewUnassigned);
+
+        var second = await client.ListUnassignedGroupQueueAsync(watched, offices, CancellationToken.None);
+        var arrived = GroupQueueTracker.Compare(store.FindUnassigned("user:sample-user", day), second.Select(row => row.SysId));
+        store.SaveUnassigned("user:sample-user", day, arrived.State);
+        page.ShowGroupQueue(second, arrived.State, now.AddMinutes(5), offices);
+
+        var fresh = Assert.Single(page.NewUnassigned);
+        Assert.Equal("INC0010017", fresh.Number);
+        Assert.Equal("Brisbane Office", fresh.Office);
+    }
+
+    [Fact]
+    public void NotPartOfMyQueueRemovesRowAndPersistsLocalRecord()
+    {
+        var dismissals = new MemoryQueueDismissalStore();
+        var store = new MemoryDailyWorkStore();
+        var page = new DailyWorkViewModel(store, queueDismissals: dismissals);
+        var now = new DateTime(2026, 10, 7, 10, 0, 0);
+        var brisbane = QueueRecord("inc-bne", "INC-BNE", "3", "3 - Moderate", now) with { Location = "Brisbane Office" };
+        var melbourne = QueueRecord("inc-mel", "INC-MEL", "2", "2 - High", now) with { Location = "Melbourne" };
+        var seen = new UnassignedSeen(true, [brisbane.SysId, melbourne.SysId], [brisbane.SysId, melbourne.SysId]);
+
+        page.ShowGroupQueue([brisbane, melbourne], seen, now, NotificationPreferences.DefaultLocations);
+        Assert.Equal(["INC-BNE"], page.NewUnassigned.Select(row => row.Number).ToArray());
+        Assert.Equal("Brisbane Office", page.NewUnassigned[0].Office);
+
+        Assert.True(page.NotPartOfMyQueue(page.NewUnassigned[0], "Wrong region desk", DailyWorkViewModel.UnassignedListName, now));
+        Assert.Empty(page.NewUnassigned);
+        Assert.True(page.HasDismissed);
+        var recorded = Assert.Single(dismissals.Load());
+        Assert.Equal("INC-BNE", recorded.Number);
+        Assert.Equal("Brisbane Office", recorded.Office);
+        Assert.Equal("Wrong region desk", recorded.Reason);
+        Assert.Equal(DailyWorkViewModel.UnassignedListName, recorded.List);
+        Assert.Equal(DateOnly.FromDateTime(now), recorded.LocalDay);
+        Assert.Equal(now, recorded.DismissedAtLocal);
+        Assert.Equal("inc-bne", recorded.SysId);
+
+        page.ShowGroupQueue([brisbane, melbourne], seen, now.AddHours(1), NotificationPreferences.DefaultLocations);
+        Assert.Empty(page.NewUnassigned);
+
+        page.ClearDismissalsCommand.Execute(null);
+        page.ShowGroupQueue([brisbane, melbourne], seen, now.AddHours(2), NotificationPreferences.DefaultLocations);
+        Assert.Equal("INC-BNE", Assert.Single(page.NewUnassigned).Number);
+        Assert.Empty(dismissals.Load().Where(item => item.LocalDay == DateOnly.FromDateTime(now)));
     }
 
     [Fact]
@@ -547,6 +623,7 @@ public class DailyWorkTests
         AssignedToSysId = "",
         PriorityValue = priority,
         PriorityLabel = label,
+        Location = "Brisbane Office",
         Opened = "2026-10-07 08:00",
         Updated = "2026-10-07 08:00",
         UpdatedAt = updated

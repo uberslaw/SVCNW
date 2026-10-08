@@ -18,24 +18,37 @@
                     <ColumnDefinition Width="110"/>
                     <ColumnDefinition Width="150"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="160"/>
+                    <ColumnDefinition Width="140"/>
                     <ColumnDefinition Width="140"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
                 <TextBlock Grid.Column="1" Text="Priority" Style="{StaticResource FieldLabel}"/>
                 <TextBlock Grid.Column="2" Text="Title" Style="{StaticResource FieldLabel}"/>
                 <TextBlock Grid.Column="3" Text="Group" Style="{StaticResource FieldLabel}"/>
-                <TextBlock Grid.Column="4" Text="Opened" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="4" Text="Office" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Grid.Column="5" Text="Opened" Style="{StaticResource FieldLabel}"/>
             </Grid>
             <ListBox ItemsSource="{Binding NewUnassigned}"
                      Style="{StaticResource DeskList}"
-                     ItemContainerStyle="{StaticResource TicketListItem}"
                      MaxHeight="220"
                      MouseLeftButtonUp="NewUnassigned_MouseLeftButtonUp"
                      PreviewKeyDown="NewUnassigned_PreviewKeyDown"
                      AutomationProperties.Name="New unassigned in the group queue"
                      Visibility="{Binding HasNewUnassigned, Converter={StaticResource BoolVis}}"
                      Margin="0,0,0,12">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource TicketListItem}">
+                        <Setter Property="ContextMenu">
+                            <Setter.Value>
+                                <ContextMenu>
+                                    <MenuItem Header="Not part of my queue" Click="NotPartOfMyQueue_Click" Tag="new-unassigned"
+                                              AutomationProperties.Name="Not part of my queue"/>
+                                </ContextMenu>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Grid>
@@ -43,7 +56,8 @@
                                 <ColumnDefinition Width="110"/>
                                 <ColumnDefinition Width="150"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="180"/>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="140"/>
                                 <ColumnDefinition Width="140"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
@@ -78,7 +92,8 @@
                             </StackPanel>
                             <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Group}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="4" Text="{Binding When}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding Office}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="5" Text="{Binding When}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -127,9 +142,10 @@
                     <ColumnDefinition Width="110"/>
                     <ColumnDefinition Width="120"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="210"/>
-                    <ColumnDefinition Width="110"/>
-                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="170"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="120"/>
                 </Grid.ColumnDefinitions>
                 <Button Content="{Binding ColourHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
                         Command="{Binding SortByCommand}" CommandParameter="Colour" AutomationProperties.Name="Sort by colour"/>
@@ -143,18 +159,31 @@
                         Command="{Binding SortByCommand}" CommandParameter="Why" AutomationProperties.Name="Sort by why"/>
                 <Button Grid.Column="5" Content="{Binding StateHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
                         Command="{Binding SortByCommand}" CommandParameter="State" AutomationProperties.Name="Sort by state"/>
-                <Button Grid.Column="6" Content="{Binding AssigneeHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                <Button Grid.Column="6" Content="{Binding OfficeHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
+                        Command="{Binding SortByCommand}" CommandParameter="Office" AutomationProperties.Name="Sort by office"/>
+                <Button Grid.Column="7" Content="{Binding AssigneeHeader}" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left"
                         Command="{Binding SortByCommand}" CommandParameter="Assignee" AutomationProperties.Name="Sort by assigned to"/>
             </Grid>
             <ListBox ItemsSource="{Binding Attend}"
                      Style="{StaticResource DeskList}"
-                     ItemContainerStyle="{StaticResource TicketListItem}"
                      MaxHeight="420"
                      MouseLeftButtonUp="Attend_MouseLeftButtonUp"
                      PreviewKeyDown="Attend_PreviewKeyDown"
                      AutomationProperties.Name="Daily work list"
                      Visibility="{Binding HasAttend, Converter={StaticResource BoolVis}}"
                      Margin="0,0,0,12">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource TicketListItem}">
+                        <Setter Property="ContextMenu">
+                            <Setter.Value>
+                                <ContextMenu>
+                                    <MenuItem Header="Not part of my queue" Click="NotPartOfMyQueue_Click" Tag="attend"
+                                              AutomationProperties.Name="Not part of my queue"/>
+                                </ContextMenu>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Grid>
@@ -163,9 +192,10 @@
                                 <ColumnDefinition Width="110"/>
                                 <ColumnDefinition Width="120"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="210"/>
-                                <ColumnDefinition Width="110"/>
-                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="120"/>
+                                <ColumnDefinition Width="120"/>
                             </Grid.ColumnDefinitions>
                             <Border Width="28" Height="12" CornerRadius="2" VerticalAlignment="Center" HorizontalAlignment="Left" Margin="8,0,0,0"
                                     BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
@@ -175,7 +205,8 @@
                             <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding Reasons}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="5" Margin="8,0" Text="{Binding State}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="6" Text="{Binding AssigneeText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="6" Margin="8,0" Text="{Binding Office}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="7" Text="{Binding AssigneeText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -268,6 +299,39 @@
                             <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding PriorityText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="3" Margin="8,0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                             <TextBlock Grid.Column="4" Margin="8,0" Text="{Binding Reasons}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <DockPanel Margin="0,8,0,4" Visibility="{Binding HasDismissed, Converter={StaticResource BoolVis}}">
+                <Button DockPanel.Dock="Right" Content="Clear dismissals" Style="{StaticResource SecondaryButton}" Padding="10,4" MinHeight="28"
+                        Command="{Binding ClearDismissalsCommand}" AutomationProperties.Name="Clear dismissals"/>
+                <TextBlock Text="Not part of my queue today" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </DockPanel>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                       Text="These stay off Daily Work for the rest of the local day. Clear them here, or they drop out after midnight."
+                       Visibility="{Binding HasDismissed, Converter={StaticResource BoolVis}}"/>
+            <ListBox ItemsSource="{Binding Dismissed}"
+                     Style="{StaticResource DeskList}"
+                     ItemContainerStyle="{StaticResource TicketListItem}"
+                     MaxHeight="160"
+                     AutomationProperties.Name="Dismissed from my queue"
+                     Visibility="{Binding HasDismissed, Converter={StaticResource BoolVis}}"
+                     Margin="0,0,0,12">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="120"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="140"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Office}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Margin="8,0" Text="{Binding Reason}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Text="{Binding When}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>

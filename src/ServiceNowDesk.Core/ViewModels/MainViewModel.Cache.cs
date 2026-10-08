@@ -1004,7 +1004,8 @@ public partial class MainViewModel
         Tone = row.Tone,
         Meta = row.Meta,
         When = row.When,
-        Badge = row.Badge
+        Badge = row.Badge,
+        Location = row.Location
     };
 
     private static TicketRow ToTicket(CachedTicketRow row) => new()
@@ -1016,6 +1017,7 @@ public partial class MainViewModel
         Tone = row.Tone,
         Meta = row.Meta,
         When = row.When,
-        Badge = row.Badge
+        Badge = row.Badge,
+        Location = row.Location ?? ""
     };
 }

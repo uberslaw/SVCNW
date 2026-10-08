@@ -87,7 +87,10 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     public Task<AlertReport> GetAlertReportAsync(AlertSearch search, CancellationToken cancellationToken) =>
         Task.FromResult(BuildReport(search, cancellationToken));
 
-    public Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(string? watchedGroupName, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(
+        string? watchedGroupName,
+        IReadOnlyList<string>? officeLocations,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         _unassignedQueueReads++;
@@ -100,7 +103,9 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         lock (_data)
             source = _incidents.ToArray();
         var rows = source
-            .Where(record => IsOpenUnassigned(record) && InGroupQueue(record, watched))
+            .Where(record => IsOpenUnassigned(record)
+                && InGroupQueue(record, watched)
+                && InOfficeQueue(record.Location, officeLocations))
             .Select(record => Describe(
                 DeskSection.Incidents,
                 record.SysId,
@@ -124,7 +129,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     /// <summary>
     /// Practice stand-in for My Groups: the sample user is in Client Services only.
-    /// The watched group is included by the name the caller passes, with no location filter.
+    /// The watched group is included by the name the caller passes.
     /// </summary>
     private static bool InGroupQueue(IncidentRecord record, string watchedName)
     {
@@ -135,6 +140,17 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             return false;
         return record.AssignmentGroup.Display.Equals(watchedName, StringComparison.OrdinalIgnoreCase)
             || record.AssignmentGroup.SysId.Equals(watchedName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Null offices keep the legacy unfiltered queue. Non-null uses <see cref="OfficeQueue.Matches"/>
+    /// (blank location excluded when any city is set).
+    /// </summary>
+    private static bool InOfficeQueue(string? location, IReadOnlyList<string>? officeLocations)
+    {
+        if (officeLocations is null)
+            return true;
+        return OfficeQueue.Matches(location, officeLocations);
     }
 
     private static bool IsOpenUnassigned(IncidentRecord record) =>
@@ -169,6 +185,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             Caller = Jordan,
             AssignedTo = ReferenceValue.Empty,
             AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
             OpenedAtDisplay = now,
             UpdatedAtDisplay = now,
             UpdatedAtValue = now,
@@ -1427,6 +1444,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             ContactTypeLabel = "Walk-in",
             Caller = Jordan,
             AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
             OpenedAtDisplay = "2026-09-27 15:45",
             UpdatedAtDisplay = "2026-09-27 15:45",
             UpdatedAtValue = "2026-09-27 15:45:00",
@@ -2089,6 +2107,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             Caller = Jordan,
             AssignedTo = ReferenceValue.Empty,
             AssignmentGroup = ClientServices,
+            Location = "Brisbane Office",
             OpenedAtDisplay = "2026-10-03 12:00",
             UpdatedAtDisplay = "2026-10-05 15:00",
             UpdatedAtValue = "2026-10-05 15:00:00",

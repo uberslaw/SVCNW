@@ -25,6 +25,7 @@ public sealed class CachedTicketRow
     public string Meta { get; set; } = "";
     public string When { get; set; } = "";
     public string Badge { get; set; } = "";
+    public string Location { get; set; } = "";
 }
 
 public sealed class CachedTicketList

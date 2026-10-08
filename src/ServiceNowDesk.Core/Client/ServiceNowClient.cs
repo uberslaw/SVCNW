@@ -341,7 +341,10 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         return new AlertReport(personal, categories.Leads, categories.Daily);
     }
 
-    public async Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(string? watchedGroupName, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(
+        string? watchedGroupName,
+        IReadOnlyList<string>? officeLocations,
+        CancellationToken cancellationToken)
     {
         IReadOnlyList<string> groupIds;
         try
@@ -353,12 +356,14 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             groupIds = [];
         }
 
-        var query = AlertQueryBuilder.UnassignedInGroups(groupIds, watchedGroupName);
+        var query = AlertQueryBuilder.UnassignedInGroups(groupIds, watchedGroupName, officeLocations);
         if (query is null)
             return [];
 
         var rows = await LoadPopulationAsync("incident", UnassignedQueueFields, query, DeskSection.Incidents, cancellationToken).ConfigureAwait(false);
         var open = rows.Where(record => string.IsNullOrWhiteSpace(record.AssignedToSysId)).ToArray();
+        if (officeLocations is not null)
+            open = open.Where(record => OfficeQueue.Matches(record.Location, officeLocations)).ToArray();
         if (open.Length == 0)
             return [];
 

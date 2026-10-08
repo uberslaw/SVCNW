@@ -601,7 +601,7 @@ public class ServiceNowClientTests
             return Api.Json("""{"result":[]}""");
         });
         using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
-        var rows = await client.ListUnassignedGroupQueueAsync("Aus DT - Client Services", CancellationToken.None);
+        var rows = await client.ListUnassignedGroupQueueAsync("Aus DT - Client Services", null, CancellationToken.None);
         Assert.Empty(rows);
 
         var incident = handler.Calls.Select(call => call.PathAndQuery).Last(path => path.Contains("/incident", StringComparison.Ordinal));
@@ -616,6 +616,12 @@ public class ServiceNowClientTests
             "assigned_toISEMPTY^assignment_groupINgroup-cs^active=true^stateNOT IN6,7,8^NQassigned_toISEMPTY^assignment_group.name=\"Aus DT - Client Services\"^active=true^stateNOT IN6,7,8^ORDERBYDESCsys_updated_on",
             AlertQueryBuilder.UnassignedInGroups(["group-cs"], "Aus DT - Client Services"));
         Assert.Null(AlertQueryBuilder.UnassignedInGroups([], "  "));
+
+        var officeQuery = AlertQueryBuilder.UnassignedInGroups(["group-cs"], "Aus DT - Client Services", ["Brisbane"]);
+        Assert.NotNull(officeQuery);
+        Assert.Contains("location.name=", officeQuery, StringComparison.Ordinal);
+        Assert.Contains("Brisbane", officeQuery, StringComparison.Ordinal);
+        Assert.Contains("Brisbane Office", officeQuery, StringComparison.Ordinal);
     }
 
     private static string FieldsOf(string pathAndQuery)

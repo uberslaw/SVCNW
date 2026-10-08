@@ -9,6 +9,7 @@ public static class DeskAppData
     public const string FolderName = "ServiceNowDesk";
     public const string SettingsFileName = "settings.json";
     public const string DailyTasksFileName = "daily-tasks.json";
+    public const string QueueDismissalsFileName = "queue-dismissals.json";
 
     public static string Folder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), FolderName);
@@ -16,6 +17,8 @@ public static class DeskAppData
     public static string SettingsPath => Path.Combine(Folder, SettingsFileName);
 
     public static string DailyTasksPath => Path.Combine(Folder, DailyTasksFileName);
+
+    public static string QueueDismissalsPath => Path.Combine(Folder, QueueDismissalsFileName);
 
     public static void WriteSettings(string json, string? folder = null)
     {

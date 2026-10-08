@@ -23,9 +23,13 @@ public interface IServiceNowClient : IDisposable
 
     /// <summary>
     /// Open incidents with an empty assignee in the signed-in user's groups, plus the watched group when its name is set.
-    /// Location is not applied.
+    /// When <paramref name="officeLocations"/> is non-null, only tickets at those offices are returned
+    /// (same place rule as <see cref="OfficeQueue"/>; blank location is excluded).
     /// </summary>
-    Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(string? watchedGroupName, CancellationToken cancellationToken);
+    Task<IReadOnlyList<WatchedRecord>> ListUnassignedGroupQueueAsync(
+        string? watchedGroupName,
+        IReadOnlyList<string>? officeLocations,
+        CancellationToken cancellationToken);
 
     Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken);
     Task<IncidentRecord> GetIncidentAsync(string sysId, CancellationToken cancellationToken);

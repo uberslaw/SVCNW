@@ -130,7 +130,16 @@ public static class AlertQueryBuilder
         return queries;
     }
 
-    public static string? UnassignedInGroups(IReadOnlyList<string>? groupIds, string? watchedGroupName)
+    /// <summary>
+    /// Open unassigned incidents in the signed-in user's groups and/or the watched group.
+    /// When <paramref name="officeLocations"/> is non-null, each group segment is narrowed with
+    /// <see cref="OfficeQueue.ApplyTo"/> (blank location matches nothing). Null offices keep the
+    /// legacy unfiltered group queue for callers that only want membership.
+    /// </summary>
+    public static string? UnassignedInGroups(
+        IReadOnlyList<string>? groupIds,
+        string? watchedGroupName,
+        IReadOnlyList<string>? officeLocations = null)
     {
         var open = StillWorking(DeskSection.Incidents);
         var groups = new List<string>();
@@ -156,7 +165,18 @@ public static class AlertQueryBuilder
         if (watched.Length > 0)
             segments.Add("assigned_toISEMPTY^assignment_group.name=" + watched + "^" + open);
 
-        return segments.Count == 0 ? null : string.Join("^NQ", segments) + "^ORDERBYDESCsys_updated_on";
+        if (segments.Count == 0)
+            return null;
+
+        if (officeLocations is not null)
+        {
+            // Apply location per segment so an existing ^NQ in the group filter is not
+            // split across offices (which would leave unscoped branches).
+            var cities = OfficeCities(officeLocations);
+            segments = segments.Select(segment => OfficeQueue.ApplyTo(segment, cities)).ToList();
+        }
+
+        return string.Join("^NQ", segments) + "^ORDERBYDESCsys_updated_on";
     }
 
     public static IReadOnlyList<string> LeadQueries(string? groupName, IEnumerable<string>? memberIds, DeskSection section = DeskSection.Incidents)
