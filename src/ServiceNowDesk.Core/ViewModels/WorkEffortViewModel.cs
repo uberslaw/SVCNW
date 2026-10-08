@@ -323,8 +323,9 @@ public partial class WorkEffortViewModel : ObservableObject
     private void ShowEntry(WorkEffortCacheEntry entry)
     {
         _shown = entry;
-        ApplyReport(WorkEffortScore.Present(entry.Report, UpdateMode));
+        // Set AsOf before ApplyReport clears IsLoading so waiters never see rows without a stamp.
         AsOf = "As of " + entry.LoadedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
+        ApplyReport(WorkEffortScore.Present(entry.Report, UpdateMode));
     }
 
     private void ApplyReport(WorkEffortReport report)

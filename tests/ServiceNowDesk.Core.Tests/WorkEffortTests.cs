@@ -416,7 +416,10 @@ public class WorkEffortTests
         Assert.True(main.Leads.WorkEffort.IsLoading);
 
         ready.SetResult();
-        await WaitUntilAsync(() => !main.Leads.WorkEffort.IsLoading && main.Leads.WorkEffort.HasRows);
+        await WaitUntilAsync(() =>
+            !main.Leads.WorkEffort.IsLoading
+            && main.Leads.WorkEffort.HasRows
+            && main.Leads.WorkEffort.AsOf.StartsWith("As of ", StringComparison.Ordinal));
 
         Assert.False(main.Leads.WorkEffort.IsLoading);
         Assert.Equal("Alex Rivera", main.Leads.WorkEffort.Rows[0].Name);

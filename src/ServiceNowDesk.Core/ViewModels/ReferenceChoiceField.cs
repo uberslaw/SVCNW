@@ -118,6 +118,8 @@ public sealed class ReferenceChoiceField : ObservableObject
         else
             all = Prepare(rows, selected, label);
 
+        // Keep names found by CommitAsync remote search; a catalog reload must not drop them.
+        KeepSearchHits(all, _all);
         _all = all;
         if (all.Count > ReferenceNameMatcher.PageSize)
             await PublishOffThreadAsync().ConfigureAwait(true);
@@ -345,6 +347,16 @@ public sealed class ReferenceChoiceField : ObservableObject
         var all = CopyRows(rows);
         RememberInto(all, selected, label);
         return all;
+    }
+
+    private static void KeepSearchHits(List<Choice> next, IReadOnlyList<Choice> previous)
+    {
+        foreach (var choice in previous)
+        {
+            if (string.IsNullOrEmpty(choice.Value))
+                continue;
+            RememberInto(next, choice.Value, choice.Label);
+        }
     }
 
     private static List<Choice> CopyRows(IReadOnlyList<Choice> rows)
