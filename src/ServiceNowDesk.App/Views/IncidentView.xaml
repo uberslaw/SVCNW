@@ -151,7 +151,17 @@
                                 <ColumnDefinition Width="*" MinWidth="0"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel HorizontalAlignment="Stretch">
-                                <TextBlock Text="Caller" Style="{StaticResource IncidentLabel}"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="Caller" Style="{StaticResource IncidentLabel}" Margin="0"/>
+                                    <TextBlock Text="✓"
+                                               Margin="8,0,0,0"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource MatchBrush}"
+                                               ToolTip="Caller matched to a person"
+                                               Visibility="{Binding Caller.IsMatched, Converter={StaticResource BoolVis}}"/>
+                                </StackPanel>
                                 <controls:ReferenceEditor DataContext="{Binding Caller}" Margin="0,0,0,10"/>
 
                                 <TextBlock Text="Location" Style="{StaticResource IncidentLabel}"/>

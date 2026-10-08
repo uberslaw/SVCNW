@@ -34,10 +34,15 @@ public sealed partial class ReferenceFieldModel : ObservableObject
 
     public bool HasSuggestions => Suggestions.Count > 0;
 
+    /// <summary>True when a sys_user (or other reference) sys_id is bound to the current text.</summary>
+    public bool IsMatched => !string.IsNullOrEmpty(SysId);
+
     public event EventHandler? Changed;
 
     public ReferenceSuggestion? Highlighted =>
         HighlightedIndex >= 0 && HighlightedIndex < Suggestions.Count ? Suggestions[HighlightedIndex] : null;
+
+    partial void OnSysIdChanged(string value) => OnPropertyChanged(nameof(IsMatched));
 
     partial void OnTextChanged(string value)
     {

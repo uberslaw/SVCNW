@@ -454,11 +454,16 @@ public class DeskListTests
         workspace.Caller.Text = "jordan.lee@example.com";
         await WaitUntilAsync(() => workspace.Caller.HasSuggestions);
 
+        Assert.False(workspace.Caller.IsMatched);
         workspace.Caller.Choose(workspace.Caller.Highlighted!);
 
         Assert.Equal("user-jordan", workspace.Caller.SysId);
         Assert.Equal("Jordan Lee", workspace.Caller.Text);
+        Assert.True(workspace.Caller.IsMatched);
         Assert.False(workspace.Caller.HasSuggestions);
+
+        workspace.Caller.Text = "jor";
+        Assert.False(workspace.Caller.IsMatched);
     }
 
     [Fact]
