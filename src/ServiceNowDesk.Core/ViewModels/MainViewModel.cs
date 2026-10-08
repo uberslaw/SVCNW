@@ -1358,11 +1358,12 @@ public partial class MainViewModel : ObservableObject
     {
         _signedInUserId = "";
         _signedInUserLocation = "";
+        // Stop polls before clearing/painting notification rows so Disconnect cannot race them.
+        ReplaceClient(null);
         Notifications.RememberViewer("", Connection.Highlights);
         Leads.Board.RememberViewer("", Connection.Highlights);
         Leads.Clear();
         DailyWork.Clear();
-        ReplaceClient(null);
         IsConnected = false;
         IsSample = false;
         ConnectedUser = "";

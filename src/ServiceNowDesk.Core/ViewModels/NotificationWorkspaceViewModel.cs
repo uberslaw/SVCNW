@@ -431,10 +431,15 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
 
     private void PaintSlaAssignees()
     {
-        foreach (var section in Sections)
+        // Snapshot — Disconnect/alert polls can mutate Rows on another thread.
+        foreach (var section in Sections.ToArray())
         {
-            foreach (var row in section.Rows)
+            foreach (var row in section.Rows.ToArray())
+            {
+                if (row is null)
+                    continue;
                 row.HighlightHex = SlaAssigneeHex(row);
+            }
         }
     }
 
