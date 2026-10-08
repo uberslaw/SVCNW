@@ -795,12 +795,39 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             ShowResolvePanel = false;
             ShowUnsavedBanner = false;
             Applying = false;
-            var notes = await Client.GetJournalAsync(TableName, sysId, cancellationToken);
-            if (version != _openVersion)
-                return;
+            // Journal and attachments are secondary. An HTML/ACL failure on either must
+            // not leave the editor busy or Save stuck — the record fields already loaded.
+            try
+            {
+                var notes = await Client.GetJournalAsync(TableName, sysId, cancellationToken);
+                if (version != _openVersion)
+                    return;
+                ReplaceJournal(notes);
+            }
+            catch (Exception ex)
+            {
+                if (version == _openVersion)
+                {
+                    ReplaceJournal([]);
+                    ErrorMessage = ClarifySecondaryLookup(ex, "work notes");
+                }
+            }
 
-            ReplaceJournal(notes);
-            await RefreshAttachmentsAsync(cancellationToken);
+            try
+            {
+                await RefreshAttachmentsAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                if (version == _openVersion)
+                {
+                    Attachments.Clear();
+                    AttachmentNote = "Attachments could not be loaded.";
+                    if (string.IsNullOrEmpty(ErrorMessage))
+                        ErrorMessage = ClarifySecondaryLookup(ex, "attachments");
+                }
+            }
+
             if (version != _openVersion)
                 return;
             _boundRow = Items.FirstOrDefault(row => row.SysId == sysId);
@@ -826,6 +853,14 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
                 RecalculateDirty();
             }
         }
+    }
+
+    private static string ClarifySecondaryLookup(Exception ex, string what)
+    {
+        var text = WorkspaceMessages.Describe(ex);
+        if (text.Contains("web page instead of API data", StringComparison.OrdinalIgnoreCase))
+            return $"Could not load {what}: the instance returned a web page instead of Table API data. The ticket is still open — you can edit and Save.";
+        return $"Could not load {what}: {text}";
     }
 
     private void QueueOpen(string sysId)

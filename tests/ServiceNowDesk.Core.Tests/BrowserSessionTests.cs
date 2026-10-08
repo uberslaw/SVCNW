@@ -135,6 +135,57 @@ public class BrowserSessionTests
     }
 
     [Fact]
+    public async Task HtmlForbiddenLookupDoesNotRejectTheBrowserSession()
+    {
+        var handler = new StubHandler((_, _) => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        {
+            Content = new System.Net.Http.StringContent(
+                "<html><body>User Not Authenticated — sign in</body></html>",
+                System.Text.Encoding.UTF8,
+                "text/html")
+        });
+        using var client = ServiceNowClient.Create(BrowserSession(), handler);
+        var rejected = 0;
+        client.BrowserSessionRejected += (_, _) => rejected++;
+
+        var ex = await Assert.ThrowsAsync<ServiceNowException>(() => client.GetCurrentUserAsync(CancellationToken.None));
+
+        Assert.Equal(0, rejected);
+        Assert.Contains("web page instead of API data", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sign in with the browser again", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task JournalHtmlForbiddenReturnsEmptyWithoutFailing()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.Contains("sys_journal_field", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new System.Net.Http.StringContent(
+                        "<html><body>login</body></html>",
+                        System.Text.Encoding.UTF8,
+                        "text/html")
+                };
+            }
+
+            // Activity fallback on the record itself.
+            return Api.Json("""{"result":{"work_notes":{"value":"","display_value":""},"comments":{"value":"","display_value":""}}}""");
+        });
+        using var client = ServiceNowClient.Create(BrowserSession(), handler);
+        var rejected = 0;
+        client.BrowserSessionRejected += (_, _) => rejected++;
+
+        var notes = await client.GetJournalAsync("sc_req_item", "ritm-dock", CancellationToken.None);
+
+        Assert.Empty(notes);
+        Assert.Equal(0, rejected);
+    }
+
+    [Fact]
     public async Task SavedFormListsLoadWithoutCallingServiceNow()
     {
         var folder = NewFolder();

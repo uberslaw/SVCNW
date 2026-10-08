@@ -102,11 +102,13 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock Text="Assignment group" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding Assignment.Groups}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.GroupId}"/>
+                                <ComboBox ItemsSource="{Binding Assignment.Groups}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          SelectedValue="{Binding Assignment.GroupId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="Assigned to" Style="{StaticResource FieldLabel}"/>
-                                <ComboBox ItemsSource="{Binding Assignment.Members}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Assignment.MemberId}"/>
+                                <ComboBox ItemsSource="{Binding Assignment.Members}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                                          SelectedValue="{Binding Assignment.MemberId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                 <TextBlock Text="{Binding Assignment.MemberHint}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding Assignment.MemberHint, Converter={StaticResource StringVis}}"/>
                             </StackPanel>
                         </Grid>

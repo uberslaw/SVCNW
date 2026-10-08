@@ -379,6 +379,200 @@ public class WorkspaceTests
     }
 
     [Fact]
+    public async Task ChangingAssignedToMarksRequestedItemDirtyAndCanSave()
+    {
+        using var client = new SampleServiceNowClient();
+        var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
+        items.Attach(client);
+        await items.EnsureChoicesAsync();
+        await items.OpenFromSearchAsync("ritm-badge");
+        await items.Assignment.WhenReady;
+
+        Assert.False(items.IsDirty);
+        Assert.False(items.SaveCommand.CanExecute(null));
+        Assert.Equal("user-jordan", items.Assignment.MemberId);
+
+        items.Assignment.MemberId = "sample-user";
+
+        Assert.True(items.IsDirty);
+        Assert.True(items.SaveCommand.CanExecute(null));
+        Assert.False(items.IsEditorBusy);
+    }
+
+    [Fact]
+    public async Task SavingAssignedToSendsSysIdOnRequestedItemPatch()
+    {
+        var handler = new StubHandler((request, body) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (request.Method == HttpMethod.Patch && path.Contains("/sc_req_item/", StringComparison.Ordinal))
+            {
+                Assert.Contains("\"assigned_to\":\"user-sam\"", body);
+                return Api.Json("""
+                    {"result":{
+                      "sys_id":{"value":"ritm-dock","display_value":"ritm-dock"},
+                      "number":{"value":"RITM0010002","display_value":"RITM0010002"},
+                      "short_description":{"value":"USB-C dock","display_value":"USB-C dock"},
+                      "state":{"value":"1","display_value":"Open"},
+                      "assigned_to":{"value":"user-sam","display_value":"Sam Patel"},
+                      "assignment_group":{"value":"group-net","display_value":"Network"},
+                      "quantity":{"value":"1","display_value":"1"},
+                      "stage":{"value":"request_approved","display_value":"Request Approved"},
+                      "active":{"value":"true","display_value":"true"}
+                    }}
+                    """);
+            }
+
+            if (path.Contains("/sc_req_item/", StringComparison.Ordinal) && request.Method == HttpMethod.Get)
+            {
+                return Api.Json("""
+                    {"result":{
+                      "sys_id":{"value":"ritm-dock","display_value":"ritm-dock"},
+                      "number":{"value":"RITM0010002","display_value":"RITM0010002"},
+                      "short_description":{"value":"USB-C dock","display_value":"USB-C dock"},
+                      "state":{"value":"1","display_value":"Open"},
+                      "assigned_to":{"value":"","display_value":""},
+                      "assignment_group":{"value":"group-cs","display_value":"Client Services"},
+                      "quantity":{"value":"1","display_value":"1"},
+                      "stage":{"value":"request_approved","display_value":"Request Approved"},
+                      "active":{"value":"true","display_value":"true"}
+                    }}
+                    """);
+            }
+
+            if (path.Contains("sys_journal_field", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+            {
+                return Api.Json("""
+                    {"result":[
+                      {"group":{"value":"group-cs","display_value":"Client Services"},"user":{"value":"sample-user","display_value":"Alex Rivera"},"user.name":{"display_value":"Alex Rivera"}},
+                      {"group":{"value":"group-net","display_value":"Network"},"user":{"value":"user-sam","display_value":"Sam Patel"},"user.name":{"display_value":"Sam Patel"}}
+                    ]}
+                    """);
+            }
+            if (path.Contains("sys_user_group", StringComparison.Ordinal))
+            {
+                return Api.Json("""
+                    {"result":[
+                      {"sys_id":"group-cs","name":"Client Services"},
+                      {"sys_id":"group-net","name":"Network"}
+                    ]}
+                    """);
+            }
+            if (path.Contains("/attachment", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (path.Contains("sys_choice", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
+        items.Attach(client);
+        await items.EnsureChoicesAsync();
+        await items.OpenFromSearchAsync("ritm-dock");
+        await items.Assignment.WhenReady;
+
+        items.Assignment.GroupId = "group-net";
+        await items.Assignment.WhenReady;
+        items.Assignment.MemberId = "user-sam";
+        Assert.True(items.IsDirty);
+        Assert.True(items.SaveCommand.CanExecute(null));
+
+        await items.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("", items.ErrorMessage);
+        Assert.Contains(handler.Calls, call => call.Method == "PATCH" && call.Body.Contains("\"assigned_to\":\"user-sam\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task HtmlJournalLookupDoesNotDisableRequestedItemSaveAfterAssign()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.Contains("sys_journal_field", StringComparison.Ordinal))
+            {
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.Forbidden)
+                {
+                    Content = new System.Net.Http.StringContent(
+                        "<html><body>User Not Authenticated — please log in</body></html>",
+                        System.Text.Encoding.UTF8,
+                        "text/html")
+                };
+            }
+
+            if (path.Contains("/sc_req_item/", StringComparison.Ordinal))
+            {
+                return Api.Json("""
+                    {"result":{
+                      "sys_id":{"value":"ritm-dock","display_value":"ritm-dock"},
+                      "number":{"value":"RITM0010002","display_value":"RITM0010002"},
+                      "short_description":{"value":"USB-C dock","display_value":"USB-C dock"},
+                      "description":{"value":"Dock for the new laptop.","display_value":"Dock for the new laptop."},
+                      "state":{"value":"1","display_value":"Open"},
+                      "assigned_to":{"value":"","display_value":""},
+                      "assignment_group":{"value":"group-cs","display_value":"Client Services"},
+                      "quantity":{"value":"1","display_value":"1"},
+                      "stage":{"value":"request_approved","display_value":"Request Approved"},
+                      "work_notes":{"value":"","display_value":""},
+                      "comments":{"value":"","display_value":""},
+                      "active":{"value":"true","display_value":"true"}
+                    }}
+                    """);
+            }
+
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+            {
+                return Api.Json("""
+                    {"result":[
+                      {"group":{"value":"group-cs","display_value":"Client Services"},"user":{"value":"sample-user","display_value":"Alex Rivera"},"user.name":{"display_value":"Alex Rivera"}}
+                    ]}
+                    """);
+            }
+            if (path.Contains("sys_user_group", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":"group-cs","name":"Client Services"}]}""");
+            if (path.Contains("/attachment", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (path.Contains("sys_choice", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
+        items.Attach(client);
+        await items.EnsureChoicesAsync();
+        await items.OpenFromSearchAsync("ritm-dock");
+        await items.Assignment.WhenReady;
+
+        Assert.Equal("RITM0010002", items.Number);
+        Assert.Equal("1", items.Quantity);
+        Assert.Equal("Request Approved", items.StageLabel);
+        Assert.False(items.IsEditorBusy);
+        Assert.True(items.IsReady);
+
+        items.Assignment.MemberId = "sample-user";
+
+        Assert.True(items.IsDirty);
+        Assert.True(items.SaveCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void RequestedItemPatchJsonIncludesAssignedToSysId()
+    {
+        var json = ServiceNowDesk.Mapping.ChangeJson.FromRequestedItem(new RequestedItemChanges
+        {
+            AssignedToId = "user-sam",
+            AssignmentGroupId = "group-net"
+        });
+
+        Assert.Contains("\"assigned_to\":\"user-sam\"", json);
+        Assert.Contains("\"assignment_group\":\"group-net\"", json);
+    }
+
+    [Fact]
     public async Task OnHoldRequestedItemStoresReasonAndFollowUp()
     {
         using var client = new SampleServiceNowClient();
