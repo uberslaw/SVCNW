@@ -334,8 +334,8 @@ public class AssignmentDirectoryTests
         Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Requests" && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Walk-ups" && line.Percent == 100);
-        Assert.Equal(10, main.Startup.Lines.Count);
-        Assert.Contains(main.Startup.Lines, line => line.Name == "Knowledge" && line.Percent == 100);
+        Assert.Equal(9, main.Startup.Lines.Count);
+        Assert.DoesNotContain(main.Startup.Lines, line => line.Name == "Knowledge");
         Assert.Contains(main.Startup.Lines, line => line.Name == "Service offerings" && line.Text.Contains("cached"));
         Assert.Contains(main.Startup.Lines, line => line.Name == "Configuration items" && line.Text.Contains("cached"));
         main.Incidents.NewRecordCommand.Execute(null);

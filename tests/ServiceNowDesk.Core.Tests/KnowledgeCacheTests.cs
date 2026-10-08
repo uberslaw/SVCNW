@@ -53,7 +53,13 @@ public class KnowledgeCacheTests
 
         await main.InitializeAsync();
 
-        Assert.Contains(main.Startup.Lines, line => line.Name == "Knowledge" && line.Percent == 100);
+        Assert.DoesNotContain(main.Startup.Lines, line => line.Name == "Knowledge");
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.IsRunning);
+        await WaitUntilAsync(() =>
+            main.Knowledge.Articles.Any(row => row.Number == "KB0001001")
+            && main.Knowledge.Articles.Any(row => row.Number == "KB0001002")
+            && main.Knowledge.Articles.Any(row => row.Number == "KB0001003"));
         Assert.Contains(main.Knowledge.Articles, row => row.Number == "KB0001001");
         Assert.Contains(main.Knowledge.Articles, row => row.Number == "KB0001002");
         Assert.Contains(main.Knowledge.Articles, row => row.Number == "KB0001003");
@@ -117,6 +123,7 @@ public class KnowledgeCacheTests
         await main.InitializeAsync();
 
         Assert.Empty(main.Startup.Lines);
+        Assert.DoesNotContain(main.Startup.Lines, line => line.Name == "Knowledge");
         Assert.Equal("KB-BOGUS", Assert.Single(main.Knowledge.Articles).Number);
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP");
 
@@ -138,6 +145,53 @@ public class KnowledgeCacheTests
         Assert.NotNull(saved.Knowledge);
         Assert.Contains(saved.Knowledge.Items, row => row.Number == "KB0001001");
         Assert.DoesNotContain(saved.Knowledge.Items, row => row.Number == "KB-BOGUS");
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP");
+    }
+
+    [Fact]
+    public async Task PracticeLaunchRefreshesKnowledgeInTheBackgroundWithoutASplashLine()
+    {
+        var lists = new MemoryDeskListStore();
+        var now = DateTimeOffset.UtcNow;
+        lists.Save(DeskListScope.Practice, new DeskListSnapshot
+        {
+            ChoicesCapturedAt = now,
+            GroupsCapturedAt = now,
+            MembersCapturedAt = now,
+            ServiceOfferingsCapturedAt = now,
+            ConfigurationItemsCapturedAt = now,
+            Incidents = Fresh("inc-keep", "INC-KEEP", "Kept incident"),
+            Requests = Fresh("req-keep", "REQ-KEEP", "Kept request"),
+            RequestItems = Fresh("ritm-keep", "RITM-KEEP", "Kept item"),
+            WalkUps = Fresh("ims-keep", "IMS-KEEP", "Kept walk-up"),
+            Knowledge = Fresh("kb-stale", "KB-STALE", "Stale article")
+        });
+        // Age the knowledge list past the one-day freshness window.
+        var snapshot = lists.Load(DeskListScope.Practice)!;
+        snapshot.Knowledge!.CapturedAt = now.AddDays(-2);
+        lists.Save(DeskListScope.Practice, snapshot);
+
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = false });
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
+
+        await main.InitializeAsync();
+
+        Assert.Empty(main.Startup.Lines);
+        Assert.DoesNotContain(main.Startup.Lines, line => line.Name == "Knowledge");
+        Assert.False(main.Startup.ShowScreen);
+        Assert.False(main.Startup.ShowBar);
+        Assert.False(main.Startup.IsRunning);
+        // Saved list stays usable immediately while the quiet refresh runs.
+        Assert.Contains(main.Knowledge.Articles, row => row.Number == "KB-STALE");
+
+        await WaitUntilAsync(() =>
+            main.Knowledge.Articles.Any(row => row.Number == "KB0001001")
+            && main.Knowledge.Articles.All(row => row.Number != "KB-STALE"));
+
+        Assert.Empty(main.Startup.Lines);
+        Assert.False(main.Startup.ShowScreen);
+        Assert.Contains(main.Knowledge.Articles, row => row.Number == "KB0001002");
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP");
     }
 

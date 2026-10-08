@@ -65,6 +65,7 @@ public partial class MainViewModel : ObservableObject
     private int _downloadBusy;
     /// <summary>
     /// Splash order: Mix ticket sections first (incidents, request items, walk-ups), then the rest.
+    /// Knowledge refreshes in the background after connect so it does not block the splash.
     /// </summary>
     private static readonly string[] StartupCacheKeys =
     [
@@ -72,7 +73,6 @@ public partial class MainViewModel : ObservableObject
         "request-items",
         "walk-ups",
         "requests",
-        "knowledge",
         "choices",
         "groups",
         "members",
@@ -446,6 +446,7 @@ public partial class MainViewModel : ObservableObject
             _ = LoadLeadRosterAsync();
             if (SelectedSection == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
                 _ = LoadWorkEffortAsync(force: false);
+            StartBackgroundKnowledgeRefresh();
             _ = Knowledge.RefreshPublishedCountAsync();
             RefreshActivity();
         }
@@ -1306,7 +1307,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     private static readonly string[] TicketBootstrapNames =
-        ["Incidents", "Requests", "Request items", "Walk-ups", "Knowledge"];
+        ["Incidents", "Requests", "Request items", "Walk-ups"];
 
     private async Task BindGroupsAsync()
     {

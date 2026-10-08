@@ -871,6 +871,21 @@ public partial class MainViewModel
         }
     }
 
+    /// <summary>
+    /// After connect, refresh knowledge off the splash path. Saved articles stay on screen;
+    /// a failed refresh keeps the previous copy. Search uses the same quiet download.
+    /// </summary>
+    private void StartBackgroundKnowledgeRefresh()
+    {
+        if (_client is null)
+            return;
+        // Same force rule as splash caches: download on launch when the setting is on,
+        // otherwise only when the saved list is missing or older than a day.
+        if (!Connection.DownloadCacheOnLaunch && !NeedsDownload(null, "knowledge"))
+            return;
+        _ = RefreshKnowledgeQuietlyAsync();
+    }
+
     private async Task RefreshKnowledgeQuietlyAsync()
     {
         if (_client is null || Volatile.Read(ref _downloadBusy) != 0)

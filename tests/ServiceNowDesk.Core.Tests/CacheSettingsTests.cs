@@ -240,11 +240,11 @@ public class CacheSettingsTests
         Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);
-        Assert.Equal(10, main.Startup.Lines.Count);
+        Assert.Equal(9, main.Startup.Lines.Count);
         Assert.Equal("Incidents", main.Startup.Lines[0].Name);
         Assert.Equal("Request items", main.Startup.Lines[1].Name);
         Assert.Equal("Walk-ups", main.Startup.Lines[2].Name);
-        Assert.Contains(main.Startup.Lines, line => line.Name == "Knowledge" && line.Percent == 100);
+        Assert.DoesNotContain(main.Startup.Lines, line => line.Name == "Knowledge");
         Assert.Contains(main.Startup.Lines, line => line.Name == "Service offerings" && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Configuration items" && line.Percent == 100);
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC-BOGUS");
