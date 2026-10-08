@@ -6,7 +6,7 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="400"/>
             <ColumnDefinition Width="16"/>
-            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*" MinWidth="0"/>
         </Grid.ColumnDefinitions>
 
         <DockPanel x:Name="ListPane" Grid.Column="0">
@@ -42,7 +42,15 @@
                                 <TextBlock Text="Close request" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                 <TextBlock Text="ServiceNow may keep this open until every item is closed." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"/>
                                 <ComboBox ItemsSource="{Binding ResolveChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ResolveCode}" Margin="0,0,0,8"/>
-                                <TextBox Text="{Binding ResolveNotes, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding ResolveNotes, UpdateSourceTrigger=PropertyChanged}"
+                                         AcceptsReturn="True"
+                                         MinHeight="64"
+                                         TextWrapping="Wrap"
+                                         VerticalContentAlignment="Top"
+                                         HorizontalAlignment="Stretch"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Disabled"
+                                         Margin="0,0,0,8"/>
                                 <StackPanel Orientation="Horizontal">
                                     <Button Content="Confirm close" Style="{StaticResource PrimaryButton}" Command="{Binding ConfirmResolveCommand}" Margin="0,0,8,0"/>
                                     <Button Content="Cancel" Style="{StaticResource SecondaryButton}" Command="{Binding CancelResolveCommand}"/>
@@ -61,8 +69,11 @@
                     </StackPanel>
                 </Border>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
+                <ScrollViewer MinWidth="0"
+                              HorizontalAlignment="Stretch"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel HorizontalAlignment="Stretch">
                         <DockPanel Margin="0,0,0,12">
                             <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
                                 <TextBlock Text="{Binding Number}" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
@@ -73,7 +84,13 @@
                             <TextBlock Text="{Binding OpenedAt, StringFormat=Opened {0}}" HorizontalAlignment="Right" Foreground="{StaticResource MutedBrush}"/>
                         </DockPanel>
                         <TextBlock Text="Short description" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}"
+                                 TextWrapping="Wrap"
+                                 AcceptsReturn="True"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,10"/>
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -98,9 +115,25 @@
                         <TextBlock Text="Due date" Style="{StaticResource FieldLabel}"/>
                         <TextBox Text="{Binding DueDate, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10" ToolTip="Use the date format your instance expects, for example 2026-10-08 17:00:00"/>
                         <TextBlock Text="Special instructions" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding SpecialInstructions, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" Margin="0,0,0,10"/>
+                        <TextBox Text="{Binding SpecialInstructions, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="60"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,10"/>
                         <TextBlock Text="Description" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" Margin="0,0,0,12"/>
+                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="80"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,12"/>
                         <TextBlock Text="{Binding ApprovalLabel, StringFormat=Approval: {0}}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10" Visibility="{Binding ApprovalLabel, Converter={StaticResource StringVis}}"/>
 
                         <TextBlock Text="Items on this request" FontWeight="SemiBold" Margin="0,0,0,8"/>
@@ -113,7 +146,7 @@
                                                 CommandParameter="{Binding SysId}"/>
                                         <StackPanel>
                                             <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
-                                            <TextBlock Text="{Binding Title}"/>
+                                            <TextBlock Text="{Binding Title}" TextWrapping="Wrap"/>
                                             <TextBlock Text="{Binding StateLabel}" Foreground="{StaticResource MutedBrush}" FontSize="11"/>
                                         </StackPanel>
                                     </DockPanel>
@@ -127,7 +160,15 @@
                             <RadioButton Content="Customer comment" GroupName="RequestJournal" Foreground="{StaticResource CustomerBrush}" IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=Comments}"/>
                         </StackPanel>
                         <TextBlock Text="Visible to the requester." Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding JournalIsCustomerVisible, Converter={StaticResource BoolVis}}"/>
-                        <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"/>
+                        <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="64"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,8"/>
                         <Button Content="Post note" Style="{StaticResource SecondaryButton}" Command="{Binding PostJournalCommand}" HorizontalAlignment="Left"/>
                     </StackPanel>
                 </ScrollViewer>

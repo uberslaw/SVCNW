@@ -80,7 +80,15 @@
                                 <TextBlock Text="{Binding ResolveChoiceLabel}" Style="{StaticResource FieldLabel}"/>
                                 <ComboBox ItemsSource="{Binding ResolveChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ResolveCode}" Margin="0,0,0,8"/>
                                 <TextBlock Text="Close notes" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Text="{Binding ResolveNotes, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding ResolveNotes, UpdateSourceTrigger=PropertyChanged}"
+                                         AcceptsReturn="True"
+                                         MinHeight="64"
+                                         TextWrapping="Wrap"
+                                         VerticalContentAlignment="Top"
+                                         HorizontalAlignment="Stretch"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Disabled"
+                                         Margin="0,0,0,8"/>
                                 <StackPanel Orientation="Horizontal">
                                     <Button Content="Confirm resolve" Style="{StaticResource PrimaryButton}" Command="{Binding ConfirmResolveCommand}" Margin="0,0,8,0"/>
                                     <Button Content="Cancel" Style="{StaticResource SecondaryButton}" Command="{Binding CancelResolveCommand}"/>
@@ -142,7 +150,13 @@
                         </DockPanel>
 
                         <TextBlock Text="Short description" Style="{StaticResource IncidentLabel}"/>
-                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
+                        <TextBox Text="{Binding ShortDescription, UpdateSourceTrigger=PropertyChanged}"
+                                 TextWrapping="Wrap"
+                                 AcceptsReturn="True"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,12"/>
 
                         <Grid Margin="0,0,0,12" HorizontalAlignment="Stretch">
                             <Grid.ColumnDefinitions>
@@ -204,7 +218,15 @@
                         </Grid>
 
                         <TextBlock Text="Description" Style="{StaticResource IncidentLabel}"/>
-                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="68" VerticalScrollBarVisibility="Auto" Margin="0,0,0,12"/>
+                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="68"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,12"/>
 
                         <ContentControl Content="{Binding}" ContentTemplate="{StaticResource JournalHistoryTemplate}" Focusable="False" IsTabStop="False"/>
                         <WrapPanel Margin="0,0,0,6">
@@ -214,7 +236,15 @@
                                          IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=Comments}"/>
                         </WrapPanel>
                         <TextBlock Text="Visible to the caller." Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding JournalIsCustomerVisible, Converter={StaticResource BoolVis}}"/>
-                        <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"/>
+                        <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="64"
+                                 VerticalContentAlignment="Top"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,8"/>
                         <Button Content="Post note" Style="{StaticResource SecondaryButton}" Command="{Binding PostJournalCommand}" HorizontalAlignment="Left"/>
                     </StackPanel>
                 </ScrollViewer>
