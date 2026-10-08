@@ -59,9 +59,11 @@ public partial class WorkEffortViewModel : ObservableObject
     public bool BeginLoad(DateTime localNow, bool force, string? teamKey = null)
     {
         var key = teamKey ?? "";
-        if (!force && IsLoading && _loadingScale == Scale)
-            return false;
+        // Prefer a finished cache for this scale/team even when a load flag is still set,
+        // so returning to the page never looks stuck after the query already completed.
         if (!force && TryShowCached(localNow, key))
+            return false;
+        if (!force && IsLoading && _loadingScale == Scale)
             return false;
 
         _loadingTeam = key;

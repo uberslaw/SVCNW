@@ -429,6 +429,11 @@ public class WorkEffortTests
 
         Assert.True(main.TrySelect(DeskSection.Leads));
         main.Leads.Area = LeadArea.WorkEffort;
+        await WaitUntilAsync(() =>
+            hold.Queries == 1
+            && !main.Leads.WorkEffort.IsLoading
+            && main.Leads.WorkEffort.HasRows
+            && main.Leads.WorkEffort.AsOf.StartsWith("As of ", StringComparison.Ordinal));
         Assert.Equal(1, hold.Queries);
         Assert.False(main.Leads.WorkEffort.IsLoading);
         Assert.True(main.Leads.WorkEffort.HasRows);

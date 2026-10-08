@@ -2058,7 +2058,19 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             + "&sysparm_query=" + Uri.EscapeDataString(query);
         if (suppressPaginationHeader)
             url += "&sysparm_suppress_pagination_header=true";
-        return await SendAsync(HttpMethod.Get, url, null, cancellationToken).ConfigureAwait(false);
+        var payload = await SendAsync(HttpMethod.Get, url, null, cancellationToken).ConfigureAwait(false);
+        // A blank HTTP body is stored as result:{}. List callers need an array.
+        if (TryGetResult(payload.Document, out var result)
+            && result.ValueKind == JsonValueKind.Object
+            && !result.EnumerateObject().Any())
+        {
+            var total = payload.TotalCount;
+            var next = payload.NextLink;
+            payload.Dispose();
+            return new ApiPayload(JsonDocument.Parse("""{"result":[]}"""), total, next);
+        }
+
+        return payload;
     }
 
     private async Task<ApiPayload> SendAsync(HttpMethod method, string relativeUrl, string? json, CancellationToken cancellationToken)
@@ -2907,9 +2919,19 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     {
         if (!TryGetResult(document, out var result))
             throw new ServiceNowException(200, "ServiceNow response did not include a result.", null);
-        if (result.ValueKind != JsonValueKind.Array)
+        if (result.ValueKind == JsonValueKind.Array)
+            return result;
+        if (result.ValueKind == JsonValueKind.Null)
             throw new ServiceNowException(200, "ServiceNow response did not include a list.", null);
-        return result;
+        if (result.ValueKind == JsonValueKind.Object
+            && result.TryGetProperty("message", out var message)
+            && message.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(message.GetString()))
+        {
+            throw new ServiceNowException(200, message.GetString()!.Trim(), null);
+        }
+
+        throw new ServiceNowException(200, "ServiceNow response did not include a list.", null);
     }
 
     private static bool TryGetResult(JsonDocument document, out JsonElement result) =>
