@@ -379,6 +379,32 @@ public class WorkspaceTests
     }
 
     [Fact]
+    public async Task RequestItemCloseNotesStayHiddenUntilCloseItemAndRestoreOnCancel()
+    {
+        using var client = new SampleServiceNowClient();
+        var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
+        items.Attach(client);
+        await items.EnsureChoicesAsync();
+        await items.OpenFromSearchAsync("ritm-dock");
+
+        Assert.False(items.ShowResolvePanel);
+        Assert.False(items.ConfirmResolveCommand.CanExecute(null));
+
+        items.BeginResolveCommand.Execute(null);
+        Assert.True(items.ShowResolvePanel);
+        Assert.False(string.IsNullOrWhiteSpace(items.ResolveCode));
+        Assert.False(items.ConfirmResolveCommand.CanExecute(null));
+
+        items.ResolveNotes = "Ready to hand off.";
+        Assert.True(items.ConfirmResolveCommand.CanExecute(null));
+
+        items.CancelResolveCommand.Execute(null);
+        Assert.False(items.ShowResolvePanel);
+        Assert.Equal("", items.ResolveNotes);
+        Assert.False(items.ConfirmResolveCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task OnHoldRequestedItemStoresReasonAndFollowUp()
     {
         using var client = new SampleServiceNowClient();
