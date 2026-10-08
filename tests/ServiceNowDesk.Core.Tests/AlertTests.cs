@@ -113,8 +113,9 @@ public class AlertTests
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.SlaBreaching).Rows, row => row.Number == "INC0010015");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "RITM0010004");
         Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Section == DeskSection.Knowledge);
-        Assert.Equal(6, snapshot.Count(AlertKind.AssignedToMe));
-        Assert.DoesNotContain(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "INC0010024");
+        Assert.Contains(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "INC0010024");
+        Assert.Contains(snapshot.Bucket(AlertKind.AssignedToMe).Rows, row => row.Number == "RITM0010008");
+        Assert.Equal(8, snapshot.Count(AlertKind.AssignedToMe));
 
         var group = snapshot.Bucket(AlertKind.WatchedGroup).Rows;
         var brisbane = Assert.Single(group);
@@ -915,7 +916,7 @@ public class AlertTests
 
         var returned = Assert.Single(snapshot.Bucket(AlertKind.ReturnedWithNotes).Rows);
         Assert.Equal("INC0010013", returned.Number);
-        Assert.Equal(6, snapshot.Count(AlertKind.AssignedToMe));
+        Assert.Equal(8, snapshot.Count(AlertKind.AssignedToMe));
         Assert.Equal("INC0010007", Assert.Single(snapshot.Bucket(AlertKind.WatchedGroup).Rows).Number);
     }
 
@@ -1116,10 +1117,8 @@ public class AlertTests
             ["Brisbane", "Gold Coast", "Townsville", "Cairns", "Maroochydore"]);
         Assert.All(queries, query => Assert.True(query.Length <= AlertQueryBuilder.MaxQueryLength, query));
         var assigned = Assert.Single(queries, query => query.StartsWith("assigned_to=sample-user", StringComparison.Ordinal) && !query.Contains("assignment_group", StringComparison.Ordinal));
-        Assert.Contains("location.name=\"Brisbane\"", assigned);
-        Assert.Contains("location.name=\"Brisbane Office\"", assigned);
-        Assert.Contains("^NQ", assigned);
-        Assert.DoesNotContain("location.nameIN", assigned);
+        Assert.DoesNotContain("location.name", assigned);
+        Assert.DoesNotContain("^NQ", assigned);
         var groupQueries = queries.Where(query => query.Contains("assignment_groupIN", StringComparison.Ordinal)).ToArray();
         Assert.True(groupQueries.Length > 1);
         Assert.All(groupQueries, query =>
@@ -1198,12 +1197,9 @@ public class AlertTests
         Assert.All(personal, call =>
         {
             Assert.DoesNotContain(team, call.Query);
-            Assert.DoesNotContain("location.nameIN", call.Query);
+            Assert.DoesNotContain("location.name", call.Query);
             Assert.DoesNotContain("assignment_groupIN", call.Query);
             Assert.DoesNotContain("sysparm_suppress_pagination_header", call.PathAndQuery);
-            // Requests have no location field; incidents / items / walk-ups stay in-office.
-            if (!call.PathAndQuery.Contains("/sc_request", StringComparison.Ordinal))
-                Assert.Contains("location.name", call.Query);
         });
 
         var groupCalls = decoded.Where(call => call.Query.Contains("assignment_groupIN", StringComparison.Ordinal)).ToArray();

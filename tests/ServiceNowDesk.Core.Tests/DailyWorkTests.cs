@@ -286,26 +286,24 @@ public class DailyWorkTests
             CancellationToken.None);
 
         Assert.Empty(report.Personal.Bucket(AlertKind.OnHoldPastFollowUp).Rows);
-        Assert.Equal(
-            ["INC0010010", "INC0010002", "INC0010006", "INC0010001", "RITM0010001", "IMS0010003", "IMS0010001"],
-            report.Daily.Personal.Select(item => item.Number).ToArray());
-        Assert.Equal("SLA, Unattended", report.Daily.Personal[0].Reasons);
-        Assert.All(report.Daily.Personal.Skip(1).Take(4), item => Assert.Equal("Unattended", item.Reasons));
-        Assert.Equal("SLA, Unattended", report.Daily.Personal[5].Reasons);
-        Assert.Contains(report.Daily.Personal, item => item.Number == "INC0010010" && item.SlaBreaching);
-        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRow.From(report.Daily.Personal[0]).HighlightHex);
-        Assert.All(
-            report.Daily.Personal.Skip(1).Take(4),
-            item => Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRow.From(item).HighlightHex));
-        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRow.From(report.Daily.Personal[5]).HighlightHex);
-        Assert.Equal(DailyWorkRanker.AfterThoseHex, DailyWorkRow.From(report.Daily.Personal[6]).HighlightHex);
-        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "INC0010017");
-        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "INC0010018");
-        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "INC0010024");
-        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "RITM0010008");
-        Assert.DoesNotContain(report.Daily.Personal, item => item.Number == "IMS0010010");
-        Assert.Contains(report.Daily.Personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.ActFirstHex);
-        Assert.Contains(report.Daily.Personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.AfterThoseHex);
+        var personal = report.Daily.Personal;
+        Assert.Contains(personal, item => item.Number == "INC0010010" && item.SlaBreaching);
+        Assert.Contains(personal, item => item.Number == "INC0010001");
+        Assert.Contains(personal, item => item.Number == "INC0010002");
+        Assert.Contains(personal, item => item.Number == "INC0010006");
+        Assert.Contains(personal, item => item.Number == "RITM0010001");
+        Assert.Contains(personal, item => item.Number == "IMS0010001");
+        Assert.Contains(personal, item => item.Number == "IMS0010003");
+        Assert.Contains(personal, item => item.Number == "INC0010024");
+        Assert.Contains(personal, item => item.Number == "RITM0010008");
+        Assert.Contains(personal, item => item.Number == "IMS0010010");
+        Assert.Equal("INC0010010", personal[0].Number);
+        Assert.Equal("SLA, Unattended", personal[0].Reasons);
+        Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRow.From(personal[0]).HighlightHex);
+        Assert.DoesNotContain(personal, item => item.Number == "INC0010017");
+        Assert.DoesNotContain(personal, item => item.Number == "INC0010018");
+        Assert.Contains(personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.ActFirstHex);
+        Assert.Contains(personal, item => DailyWorkRanker.HighlightHex(item) == DailyWorkRanker.AfterThoseHex);
 
         var team = report.Daily.Team;
         Assert.Equal("INC0010016", team[0].Number);

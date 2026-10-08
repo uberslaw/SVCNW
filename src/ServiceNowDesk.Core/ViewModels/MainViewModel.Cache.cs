@@ -219,8 +219,28 @@ public partial class MainViewModel
             var at = CapturedAtFor(row.Key, lists, catalog);
             if (at != default)
                 row.RememberGoodDownload(at);
+            row.SetStoredCount(StoredCountFor(row.Key, lists, catalog, live));
         }
     }
+
+    private int StoredCountFor(string key, DeskListSnapshot? lists, FormCatalogSnapshot? catalog, ServiceNowClient? live) =>
+        key switch
+        {
+            "incidents" => lists?.Incidents?.Items.Count ?? 0,
+            "requests" => lists?.Requests?.Items.Count ?? 0,
+            "request-items" => lists?.RequestItems?.Items.Count ?? 0,
+            "walk-ups" => lists?.WalkUps?.Items.Count ?? 0,
+            "knowledge" => lists?.Knowledge?.Items.Count
+                ?? (Knowledge.HasArticles ? Knowledge.Articles.Count : 0),
+            "choices" => catalog?.Choices.Sum(list => list.Choices?.Count ?? 0)
+                ?? (live is null ? CountPracticeStamp("choices") : 0),
+            "groups" => catalog?.Groups.Count
+                ?? (live is null ? Incidents.Assignment.Groups.Count(choice => !string.IsNullOrEmpty(choice.Value)) : 0),
+            "members" => catalog?.Members.Count ?? 0,
+            "service-offerings" => catalog?.ServiceOfferings.Count ?? 0,
+            "configuration-items" => catalog?.ConfigurationItems.Count ?? 0,
+            _ => 0
+        };
 
     private static DateTimeOffset CapturedAtFor(string key, DeskListSnapshot? lists, FormCatalogSnapshot? catalog) =>
         key switch
@@ -766,7 +786,7 @@ public partial class MainViewModel
 
     private static string LineName(string key) => key switch
     {
-        "choices" => "Choices",
+        "choices" => "Form choices",
         "groups" => "Assignment groups",
         "members" => "Assignment group members",
         "service-offerings" => "Service offerings",

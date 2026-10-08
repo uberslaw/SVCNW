@@ -328,7 +328,7 @@ public class AssignmentDirectoryTests
         Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
         Assert.Equal("", main.ErrorMessage);
-        Assert.Contains(main.Startup.Lines, line => line.Name == "Choices" && line.Text.Contains("cached") && line.Percent == 100);
+        Assert.Contains(main.Startup.Lines, line => line.Name == "Form choices" && line.Text.Contains("cached") && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment groups" && line.Text.Contains("cached"));
         Assert.Contains(main.Startup.Lines, line => line.Name == "Assignment group members" && line.Text.Contains("cached"));
         Assert.Contains(main.Startup.Lines, line => line.Name == "Incidents" && line.Percent == 100);

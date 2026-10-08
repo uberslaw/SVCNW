@@ -513,10 +513,9 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             AddNote(leadNotes, leadWalkUps.Failure);
         }
 
-        // Assigned-to-me rows that arrived via a group query still drop outside the watched offices.
-        var distinct = DistinctWatched(watched)
-            .Where(record => KeepAssignedInOffice(record, search.UserSysId, search.Locations))
-            .ToArray();
+        // Assigned-to-me matches My Tickets (any office). Group / watched-group queries already
+        // apply their own filters; do not drop the user's own tickets by location here.
+        var distinct = DistinctWatched(watched);
         var leadDistinct = DistinctWatched(lead);
         var personalIds = new HashSet<string>(distinct.Select(record => record.SysId), StringComparer.OrdinalIgnoreCase);
         var leadOnlyIds = leadDistinct
@@ -601,27 +600,6 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             .GroupBy(record => record.SysId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToArray();
-
-    /// <summary>
-    /// My Tickets / Daily Work office rule for rows assigned to the signed-in user. Other
-    /// population roles (group membership, watched group) stay unchanged. Empty cities leave
-    /// the assignee unlimited so office-less alert tests keep working.
-    /// </summary>
-    private static bool KeepAssignedInOffice(WatchedRecord record, string? userSysId, IEnumerable<string>? locations)
-    {
-        var user = userSysId?.Trim() ?? "";
-        if (user.Length == 0
-            || !record.AssignedToSysId.Trim().Equals(user, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        var cities = (locations ?? [])
-            .Select(HardwareOfficeNames.Normalize)
-            .Where(city => city.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        return cities.Length == 0 || OfficeQueue.Matches(record.Location, cities);
-    }
-
 
     private async Task<IReadOnlyList<string>> MemberGroupIdsAsync(CancellationToken cancellationToken)
     {
@@ -1854,9 +1832,9 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             OpenListClause(query),
             extra);
         // Walk-up My Team is people (TeamMemberIds), so office cities do not apply.
-        // My Tickets, My Team, and Unassigned all stay inside the watched offices.
+        // My Team and Unassigned stay inside the watched offices. My Tickets is assignee-only.
         if (query.OfficeLocations is not null
-            && query.Assignment is AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned
+            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
             && query.TeamMemberIds is null)
             return OfficeQueue.ApplyTo(encoded, query.OfficeLocations);
         return encoded;

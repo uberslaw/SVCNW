@@ -136,10 +136,10 @@ public class AssignedDaysTests
             CancellationToken.None);
 
         var rows = snapshot.Bucket(AlertKind.AssignedToMe).Rows;
-        Assert.Equal(6, rows.Count);
+        Assert.Equal(8, rows.Count);
         Assert.DoesNotContain(rows, row => row.Number is "INC0010003" or "INC0010015" or "RITM0010004");
-        Assert.DoesNotContain(rows, row => row.Number == "INC0010024");
-        Assert.DoesNotContain(rows, row => row.Number == "RITM0010008");
+        Assert.Contains(rows, row => row.Number == "INC0010024");
+        Assert.Contains(rows, row => row.Number == "RITM0010008");
 
         var printer = rows.Single(row => row.Number == "INC0010001");
         var vpn = rows.Single(row => row.Number == "INC0010002");

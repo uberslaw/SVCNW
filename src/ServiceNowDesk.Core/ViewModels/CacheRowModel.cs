@@ -16,11 +16,20 @@ public sealed partial class CacheRowModel : ObservableObject
 
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string lastGoodText = "Last good download: never";
+    [ObservableProperty] private string countText = "0 stored";
     [ObservableProperty] private string lastAttemptText = "";
     [ObservableProperty] private bool isFailed;
     [ObservableProperty] private bool isBusy;
 
     public DateTimeOffset? LastGoodAt { get; private set; }
+    public int StoredCount { get; private set; }
+
+    public void SetStoredCount(int count)
+    {
+        StoredCount = Math.Max(0, count);
+        CountText = StoredCount.ToString(CultureInfo.CurrentCulture)
+            + (StoredCount == 1 ? " stored" : " stored");
+    }
 
     public void RememberGoodDownload(DateTimeOffset when)
     {

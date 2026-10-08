@@ -10,17 +10,14 @@ public static class AlertQueryBuilder
         AssignedToMe(userSysId, section, locations: null);
 
     /// <summary>
-    /// Open tickets assigned to the user. When <paramref name="locations"/> is non-empty,
-    /// the same <see cref="OfficeQueue"/> place filter as My Tickets applies (including the
-    /// " Office" form). An empty or null city list leaves the assignee filter unlimited so
-    /// callers that only exercise Assigned to me without offices keep working.
+    /// Open tickets assigned to the user. Matches My Tickets: assignee-only, no office filter.
+    /// <paramref name="locations"/> is kept for call-site compatibility and ignored.
     /// </summary>
     public static string AssignedToMe(string userSysId, DeskSection section, IEnumerable<string>? locations)
     {
+        _ = locations;
         var id = EncodedQuery.SafeToken(userSysId, "user id");
-        var body = "assigned_to=" + id + "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on";
-        var cities = OfficeCities(locations);
-        return cities.Length == 0 ? body : OfficeQueue.ApplyTo(body, cities);
+        return "assigned_to=" + id + "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on";
     }
 
     /// <summary>
@@ -106,10 +103,9 @@ public static class AlertQueryBuilder
     public const int MaxQueryLength = 900;
 
     /// <summary>
-    /// Open records for the signed-in user: assigned to them inside the watched offices, in one
-    /// of their groups, or in the watched group at the office locations. Each role is its own
-    /// request. Group ids and office names are split so pagination URLs stay short.
-    /// Assigned-to-me uses <see cref="OfficeQueue.ApplyTo"/> so it matches My Tickets.
+    /// Open records for the signed-in user: assigned to them (any office, matching My Tickets),
+    /// in one of their groups, or in the watched group at the office locations. Each role is
+    /// its own request. Group ids and office names are split so pagination URLs stay short.
     /// Lead-team members and the regional group (every open ticket, with no office filter) are not included.
     /// </summary>
     public static IReadOnlyList<string> PopulationQueries(string userSysId, IReadOnlyList<string>? groupIds, string? groupName, IEnumerable<string>? locations, DeskSection section = DeskSection.Incidents)
@@ -118,12 +114,10 @@ public static class AlertQueryBuilder
         var tail = "^" + openOrder;
         var budget = MaxQueryLength - tail.Length;
         var user = EncodedQuery.SafeToken(userSysId, "user id");
-        var queries = new List<string>();
-        var cities = OfficeCities(locations);
-        if (cities.Length == 0)
-            queries.Add("assigned_to=" + user + tail);
-        else
-            queries.Add(OfficeQueue.ApplyTo("assigned_to=" + user + "^" + openOrder, cities));
+        var queries = new List<string>
+        {
+            "assigned_to=" + user + tail
+        };
         var groups = (groupIds ?? [])
             .Select(id => EncodedQuery.SafeToken(id, "group id"))
             .Distinct(StringComparer.OrdinalIgnoreCase)

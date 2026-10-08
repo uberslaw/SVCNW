@@ -55,7 +55,7 @@ public partial class MainViewModel : ObservableObject
         new CacheRowModel("request-items", "Request items"),
         new CacheRowModel("walk-ups", "Walk-ups"),
         new CacheRowModel("knowledge", "Knowledge"),
-        new CacheRowModel("choices", "Choices (menus)"),
+        new CacheRowModel("choices", "Form choices"),
         new CacheRowModel("groups", "Assignment groups"),
         new CacheRowModel("members", "Assignment group members"),
         new CacheRowModel("service-offerings", "Service offerings"),

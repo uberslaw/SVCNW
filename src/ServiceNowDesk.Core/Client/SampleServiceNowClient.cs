@@ -190,19 +190,17 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
         var offices = OfficeCities(search.Locations);
         var assigned = new List<AlertRecord>();
+        // Assigned to me matches My Tickets: every open ticket on the signed-in user.
         assigned.AddRange(incidents.Where(record =>
                 record.Active
                 && record.AssignedTo.SysId == userId
-                && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel)
-                && InOffice(record.Location, offices))
+                && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel))
             .Select(record => ToAlert(record, AlertKind.AssignedToMe)));
-        // Requests have no location; assignee-only matches the live client.
         assigned.AddRange(requests.Where(record => record.Active && record.AssignedTo.SysId == userId && AlertClassifier.IsStillOpen(DeskSection.Requests, record.RequestState, record.RequestStateLabel)).Select(record => ToAlert(record, AlertKind.AssignedToMe)));
         assigned.AddRange(items.Where(record =>
                 record.Active
                 && record.AssignedTo.SysId == userId
-                && AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel)
-                && InOffice(record.Location, offices))
+                && AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel))
             .Select(record => ToAlert(record, AlertKind.AssignedToMe)));
 
         var group = new List<AlertRecord>();
@@ -331,8 +329,9 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     {
         if (!active)
             return false;
+        // Assignee matches My Tickets: keep the user's own tickets regardless of office.
         if (assignedId == userId)
-            return InOffice(location, cities);
+            return true;
         if (group.SysId == "group-cs" || group.Display.Equals("Client Services", StringComparison.OrdinalIgnoreCase))
             return true;
         return watched
@@ -2677,7 +2676,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         }
 
         if (query.OfficeLocations is not null
-            && query.Assignment is AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned
+            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
             && query.TeamMemberIds is null)
         {
             if (query.Assignment == AssignmentScope.Unassigned && groupId != ClientServices.SysId)

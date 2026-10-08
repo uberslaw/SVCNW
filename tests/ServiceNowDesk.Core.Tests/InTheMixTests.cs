@@ -100,7 +100,7 @@ public class InTheMixTests
         await incidents.RefreshAsync();
 
         Assert.Contains(incidents.Items, row => row.Number == "INC0010001");
-        Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010024");
+        Assert.Contains(incidents.Items, row => row.Number == "INC0010024");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010019");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010020");
 
@@ -110,11 +110,11 @@ public class InTheMixTests
         Assert.Equal("My Tickets", items.Preset?.Label);
         await items.RefreshAsync();
         Assert.Contains(items.Items, row => row.Number == "RITM0010001");
-        Assert.DoesNotContain(items.Items, row => row.Number == "RITM0010008");
+        Assert.Contains(items.Items, row => row.Number == "RITM0010008");
     }
 
     [Fact]
-    public async Task MixMyTicketsUseTheSameOfficeFilter()
+    public async Task MixMyTicketsStayAssigneeOnlyWhileTeamUsesOffices()
     {
         using var client = new SampleServiceNowClient();
         var mix = new MixWorkspaceViewModel();
@@ -128,9 +128,9 @@ public class InTheMixTests
         Assert.Contains(mix.Items, row => row.Kind == "INC" && row.Number == "INC0010001");
         Assert.Contains(mix.Items, row => row.Kind == "RITM" && row.Number == "RITM0010001");
         Assert.Contains(mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010001");
-        Assert.DoesNotContain(mix.Items, row => row.Number == "INC0010024");
-        Assert.DoesNotContain(mix.Items, row => row.Number == "RITM0010008");
-        Assert.DoesNotContain(mix.Items, row => row.Number == "IMS0010010");
+        Assert.Contains(mix.Items, row => row.Number == "INC0010024");
+        Assert.Contains(mix.Items, row => row.Number == "RITM0010008");
+        Assert.Contains(mix.Items, row => row.Number == "IMS0010010");
         Assert.DoesNotContain(mix.Items, row => row.Number == "INC0010019");
     }
 
@@ -308,10 +308,9 @@ public class InTheMixTests
         }, CancellationToken.None);
         var mine = QueryOf(handler.Calls[^1].PathAndQuery);
         Assert.Contains("assigned_to=javascript:gs.getUserID()", mine);
-        Assert.Contains("location.name=\"Brisbane\"", mine);
-        Assert.Contains("location.name=\"Brisbane Office\"", mine);
-        Assert.DoesNotContain("location.nameIN", mine);
-        Assert.Equal(2, mine.Split("assigned_to=javascript:gs.getUserID()").Length - 1);
+        Assert.DoesNotContain("location.name", mine);
+        Assert.DoesNotContain("^NQ", mine);
+        Assert.Equal(1, mine.Split("assigned_to=javascript:gs.getUserID()").Length - 1);
 
         await client.SearchIncidentsAsync(new TicketQuery
         {

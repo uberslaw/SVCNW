@@ -143,7 +143,7 @@ public class CacheSettingsTests
         await main.ConnectCommand.ExecuteAsync(null);
         failChoices = true;
 
-        var choices = Assert.Single(main.Caches, row => row.Name == "Choices (menus)");
+        var choices = Assert.Single(main.Caches, row => row.Name == "Form choices");
         await main.RefreshCacheCommand.ExecuteAsync(choices);
 
         Assert.True(choices.IsFailed);
@@ -195,7 +195,7 @@ public class CacheSettingsTests
         Assert.False(main.Startup.ShowScreen);
         Assert.False(main.Startup.ShowBar);
         Assert.Contains(main.Caches, row => row.Name == "Request items");
-        Assert.Contains(main.Caches, row => row.Name == "Choices (menus)");
+        Assert.Contains(main.Caches, row => row.Name == "Form choices");
         Assert.Contains(main.Caches, row => row.Name == "Assignment groups");
         Assert.Contains(main.Caches, row => row.Name == "Assignment group members");
         Assert.Contains(main.Caches, row => row.Name == "Service offerings");
@@ -484,7 +484,7 @@ public class CacheSettingsTests
     }
 
     [Fact]
-    public async Task MyTicketsStayInsideWatchedOfficesAfterSplashAndOpeningMelbourneDoesNotFillTheList()
+    public async Task MyTicketsKeepTicketsOutsideWatchedOfficesAfterSplash()
     {
         var settings = new MemorySettingsStore();
         settings.Save(new DeskSettings
@@ -498,10 +498,10 @@ public class CacheSettingsTests
 
         Assert.Equal("My Tickets", main.Incidents.Preset?.Label);
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010001");
-        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010024");
-        Assert.DoesNotContain(main.Mix.Items, row => row.Number == "INC0010024");
-        Assert.DoesNotContain(main.RequestedItems.Items, row => row.Number == "RITM0010008");
-        Assert.DoesNotContain(main.WalkUps.Items, row => row.Number == "IMS0010010");
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010024");
+        Assert.Contains(main.Mix.Items, row => row.Number == "INC0010024");
+        Assert.Contains(main.RequestedItems.Items, row => row.Number == "RITM0010008");
+        Assert.Contains(main.WalkUps.Items, row => row.Number == "IMS0010010");
 
         await main.OpenSearchResultAsync(new SearchHit
         {
@@ -518,10 +518,28 @@ public class CacheSettingsTests
         });
 
         Assert.Equal(DeskSection.Incidents, main.SelectedSection);
-        Assert.Equal("INC0010024", main.Incidents.Number);
-        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010024");
-        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010001");
-        Assert.True(main.Incidents.Items.Count > 0, "Office-scoped tickets must already be on the list.");
+        Assert.Equal("INC0010024", main.Incidents.Selected?.Number);
+        Assert.True(main.Incidents.Items.Count > 1, "Opening one ticket must not be the only way the list fills.");
+    }
+
+    [Fact]
+    public async Task CacheRowsShowLiveStoredCountsAfterConnect()
+    {
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = true });
+        var main = new MainViewModel(settings, new RecordingDesktopServices());
+        await main.InitializeAsync();
+
+        var incidents = Assert.Single(main.Caches, row => row.Name == "Incidents");
+        Assert.True(incidents.StoredCount > 0, incidents.CountText);
+        Assert.Contains("stored", incidents.CountText, StringComparison.Ordinal);
+        Assert.Equal(incidents.StoredCount, main.Incidents.Items.Count);
+
+        var choices = Assert.Single(main.Caches, row => row.Name == "Form choices");
+        Assert.True(choices.StoredCount > 0, choices.CountText);
+
+        var knowledge = Assert.Single(main.Caches, row => row.Name == "Knowledge");
+        Assert.True(knowledge.StoredCount >= 0, knowledge.CountText);
     }
 
     [Fact]

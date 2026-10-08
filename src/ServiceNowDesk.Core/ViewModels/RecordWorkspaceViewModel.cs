@@ -95,6 +95,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     /// <summary>
     /// My Team and Unassigned keep tickets whose location is one of these cities.
+    /// My Tickets ignores the list (assignee-only).
     /// </summary>
     public void UseOfficeCities(IReadOnlyList<string>? cities)
     {
@@ -647,15 +648,16 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     /// <summary>
     /// Office-scoped presets drop out-of-office rows on Upsert so opening a Daily Work / search
-    /// hit cannot inject Manila (or other) tickets into My Tickets / My Team / Unassigned.
-    /// Cached rows often have no location; the list query already applied the office filter.
+    /// hit cannot inject Manila (or other) tickets into My Team / Unassigned.
+    /// My Tickets stays assignee-only. Cached rows often have no location; the list query
+    /// already applied the office filter for team queues.
     /// </summary>
     protected bool MatchesOfficeScope(TicketRow row)
     {
         var leadTeamPeople = _useLeadTeam && Preset?.Assignment == AssignmentScope.MyGroups;
         if (!_limitOffices
             || leadTeamPeople
-            || Preset?.Assignment is not (AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned))
+            || Preset?.Assignment is not (AssignmentScope.MyGroups or AssignmentScope.Unassigned))
             return true;
         return OfficeQueue.Matches(row.Location, _officeCities);
     }
@@ -708,10 +710,10 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             // Walk-up My Team is the Leads people, including members outside the office.
             team = _teamMemberIds;
         }
-        else if (_limitOffices && assignment is AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+        else if (_limitOffices && assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
         {
-            // Same office list as My Team / Unassigned: watched notification offices, or the
-            // signed-in user's city when that list is empty (see OfficeQueue.Cities).
+            // My Team / Unassigned: watched notification offices, or the signed-in user's city
+            // when that list is empty (see OfficeQueue.Cities). My Tickets stays assignee-only.
             offices = _officeCities;
         }
 
