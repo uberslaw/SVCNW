@@ -1883,6 +1883,9 @@ public partial class MainViewModel : ObservableObject
                     : members.Count == 0
                         ? "That group has no cached members yet. Refresh assignment group members under Settings, Cache."
                         : "";
+                // Roster can arrive after Work Effort already opened with an empty team prompt.
+                if (Leads.Area == LeadArea.WorkEffort)
+                    _ = LoadWorkEffortAsync(force: false);
             });
         }
         catch (Exception ex)
