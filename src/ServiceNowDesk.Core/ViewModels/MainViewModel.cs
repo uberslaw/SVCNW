@@ -1761,8 +1761,11 @@ public partial class MainViewModel : ObservableObject
             {
                 if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
                     return;
-                if (!string.Equals(WorkEffortTeam.Key(Leads.DefinedTeam(Connection.LeadTeamMemberIds)), teamKey, StringComparison.Ordinal))
+                var currentKey = WorkEffortTeam.Key(Leads.DefinedTeam(Connection.LeadTeamMemberIds));
+                if (!string.Equals(currentKey, teamKey, StringComparison.Ordinal))
                 {
+                    // Keep the finished query for its team so a return visit can use it.
+                    Leads.WorkEffort.Cache(scale, localNow, report, teamKey);
                     Leads.WorkEffort.AbandonLoad();
                     if (Leads.Area == LeadArea.WorkEffort)
                         _ = LoadWorkEffortAsync(force: false);
@@ -1774,6 +1777,14 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
+            // A cancel without a replacement load must clear IsLoading; otherwise BeginLoad
+            // sees "already loading" and WaitUntil hang until the 30s timeout.
+            PostToUi(() =>
+            {
+                if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
+                    return;
+                Leads.WorkEffort.AbandonLoad();
+            });
         }
         catch (Exception ex)
         {
@@ -1783,7 +1794,12 @@ public partial class MainViewModel : ObservableObject
                 if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
                     return;
                 if (Leads.Area != LeadArea.WorkEffort || Leads.WorkEffort.Scale != scale)
+                {
+                    if (generation == _workEffortGeneration)
+                        Leads.WorkEffort.AbandonLoad();
                     return;
+                }
+
                 Leads.WorkEffort.ShowError(message);
             });
         }

@@ -429,8 +429,13 @@ public class WorkEffortTests
         Assert.StartsWith("As of ", main.Leads.WorkEffort.AsOf, StringComparison.Ordinal);
         Assert.Contains("Counts for today", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
 
+        // Re-enter Leads first and wait for the Aus DT ticks so a late SetRoster cannot
+        // retarget the team key between BeginLoad and the waiter.
         Assert.True(main.TrySelect(DeskSection.Leads));
+        await WaitUntilAsync(() => main.Leads.Members.Count(member => member.IsSelected) >= 2);
+        var queriesBeforeReturn = hold.Queries;
         main.Leads.Area = LeadArea.WorkEffort;
+        // Ready already completed: any refresh HoldAsync must finish without another SetResult.
         await WaitUntilAsync(() =>
             !main.Leads.WorkEffort.IsLoading
             && main.Leads.WorkEffort.HasRows
@@ -440,7 +445,7 @@ public class WorkEffortTests
         Assert.Contains(main.Leads.WorkEffort.Rows, row => row.Name == "Jordan Lee");
         // Usually the cache answers without another query. A late roster tick may refresh once.
         Assert.True(hold.Queries >= queriesAfterOpen);
-        Assert.True(hold.Queries <= queriesAfterOpen + 1);
+        Assert.True(hold.Queries <= queriesBeforeReturn + 1);
 
         main.DisconnectCommand.Execute(null);
     }
@@ -1075,7 +1080,10 @@ public class WorkEffortHold : DispatchProxy
         Interlocked.Increment(ref Queries);
         Tokens.Add(token);
         progress?.Report(WorkEffortProgress.Loading(scale, 0));
-        await Ready.Task.WaitAsync(token).ConfigureAwait(false);
+        // Only block while the test gate is open. After ready.SetResult(), a return-visit
+        // refresh must finish immediately — never wait on a gate that will not be signaled again.
+        if (!Ready.Task.IsCompleted)
+            await Ready.Task.WaitAsync(token).ConfigureAwait(false);
         progress?.Report(WorkEffortProgress.Loading(scale, 1));
         progress?.Report(WorkEffortProgress.Loading(scale, 2));
         return SampleWorkEffort.Report(scale, localNow);

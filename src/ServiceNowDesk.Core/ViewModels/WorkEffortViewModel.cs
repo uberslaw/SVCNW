@@ -84,6 +84,34 @@ public partial class WorkEffortViewModel : ObservableObject
     public void Remember(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string? teamKey = null)
     {
         ArgumentNullException.ThrowIfNull(report);
+        var key = teamKey ?? "";
+        var entry = Store(scale, localNow, report, key);
+        // Paint when this result matches the in-flight team. If the team key drifted but
+        // this scale is still loading, still clear IsLoading so the page cannot stick.
+        if (scale != Scale)
+            return;
+        if (string.Equals(key, _loadingTeam, StringComparison.Ordinal))
+        {
+            ShowEntry(entry);
+            return;
+        }
+
+        if (IsLoading && _loadingScale == scale)
+            AbandonLoad();
+    }
+
+    /// <summary>
+    /// Keeps a finished query for the local day and team without painting the board.
+    /// Used when the roster changed mid-flight so a later visit can still hit the cache.
+    /// </summary>
+    public void Cache(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string? teamKey = null)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        Store(scale, localNow, report, teamKey ?? "");
+    }
+
+    private WorkEffortCacheEntry Store(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string key)
+    {
         var clock = WorkEffortWindow.Clock(localNow);
         var day = DateOnly.FromDateTime(clock);
         if (_cachedDay != day)
@@ -92,11 +120,9 @@ public partial class WorkEffortViewModel : ObservableObject
             _cachedDay = day;
         }
 
-        var key = teamKey ?? "";
         var entry = new WorkEffortCacheEntry(clock, report, key);
         _cache[scale] = entry;
-        if (scale == Scale && string.Equals(key, _loadingTeam, StringComparison.Ordinal))
-            ShowEntry(entry);
+        return entry;
     }
 
     /// <summary>
