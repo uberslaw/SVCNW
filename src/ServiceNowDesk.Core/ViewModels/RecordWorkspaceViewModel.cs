@@ -689,8 +689,10 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             // Walk-up My Team is the Leads people, including members outside the office.
             team = _teamMemberIds;
         }
-        else if (_limitOffices && assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+        else if (_limitOffices && assignment is AssignmentScope.Mine or AssignmentScope.MyGroups or AssignmentScope.Unassigned)
         {
+            // Same office list as My Team / Unassigned: watched notification offices, or the
+            // signed-in user's city when that list is empty (see OfficeQueue.Cities).
             offices = _officeCities;
         }
 

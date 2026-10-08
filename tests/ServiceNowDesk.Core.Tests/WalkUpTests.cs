@@ -394,11 +394,15 @@ public class WalkUpTests
     public async Task MyTicketsStayWithTheSignedInUsersOpenWalkUps()
     {
         using var client = new SampleServiceNowClient();
-        var workspace = await OpenWalkUpsAsync(client, ["Brisbane"], ["user-jordan"]);
+        var workspace = await OpenWalkUpsAsync(
+            client,
+            ["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"],
+            ["user-jordan"]);
         Assert.Equal("My Tickets", workspace.Preset?.Label);
         await workspace.RefreshAsync();
 
         Assert.Contains(workspace.Items, row => row.Number == "IMS0010001");
+        Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010010");
         Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010005");
         Assert.DoesNotContain(workspace.Items, row => row.Number == "IMS0010008");
     }
