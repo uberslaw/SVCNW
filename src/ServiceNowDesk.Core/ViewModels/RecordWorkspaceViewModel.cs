@@ -389,7 +389,11 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void CancelResolve() => ShowResolvePanel = false;
+    private void CancelResolve()
+    {
+        ShowResolvePanel = false;
+        ResolveNotes = "";
+    }
 
     [RelayCommand(CanExecute = nameof(CanConfirmResolve))]
     private async Task ConfirmResolveAsync()

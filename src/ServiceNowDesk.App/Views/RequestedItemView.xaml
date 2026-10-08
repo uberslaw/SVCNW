@@ -44,7 +44,6 @@
                             <StackPanel>
                                 <TextBlock Text="Close request item" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                 <ComboBox ItemsSource="{Binding ResolveChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ResolveCode}" Margin="0,0,0,8"/>
-                                <TextBox Text="{Binding ResolveNotes, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <StackPanel Orientation="Horizontal">
                                     <Button Content="Confirm close" Style="{StaticResource PrimaryButton}" Command="{Binding ConfirmResolveCommand}" Margin="0,0,8,0"/>
                                     <Button Content="Cancel" Style="{StaticResource SecondaryButton}" Command="{Binding CancelResolveCommand}"/>
@@ -157,16 +156,20 @@
                         </Grid>
                         <TextBlock Text="Description" Style="{StaticResource FieldLabel}"/>
                         <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" Margin="0,0,0,10"/>
-                        <TextBlock Text="Close notes" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding CloseNotes, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" Margin="0,0,0,12"/>
                         <ContentControl Content="{Binding}" ContentTemplate="{StaticResource JournalHistoryTemplate}" Focusable="False" IsTabStop="False"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <RadioButton Content="Work note" GroupName="ItemJournal" Margin="0,0,16,0" IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=WorkNotes}"/>
-                            <RadioButton Content="Customer comment" GroupName="ItemJournal" Foreground="{StaticResource CustomerBrush}" IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=Comments}"/>
+                        <StackPanel Visibility="{Binding ShowResolvePanel, Converter={StaticResource InverseBoolVis}}">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <RadioButton Content="Work note" GroupName="ItemJournal" Margin="0,0,16,0" IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=WorkNotes}"/>
+                                <RadioButton Content="Customer comment" GroupName="ItemJournal" Foreground="{StaticResource CustomerBrush}" IsChecked="{Binding JournalKind, Converter={StaticResource EnumEq}, ConverterParameter=Comments}"/>
+                            </StackPanel>
+                            <TextBlock Text="Visible to the requester." Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding JournalIsCustomerVisible, Converter={StaticResource BoolVis}}"/>
+                            <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"/>
+                            <Button Content="Post note" Style="{StaticResource SecondaryButton}" Command="{Binding PostJournalCommand}" HorizontalAlignment="Left"/>
                         </StackPanel>
-                        <TextBlock Text="Visible to the requester." Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding JournalIsCustomerVisible, Converter={StaticResource BoolVis}}"/>
-                        <TextBox Text="{Binding JournalText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"/>
-                        <Button Content="Post note" Style="{StaticResource SecondaryButton}" Command="{Binding PostJournalCommand}" HorizontalAlignment="Left"/>
+                        <StackPanel Visibility="{Binding ShowResolvePanel, Converter={StaticResource BoolVis}}">
+                            <TextBlock Text="Close notes" Style="{StaticResource FieldLabel}"/>
+                            <TextBox Text="{Binding ResolveNotes, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" Margin="0,0,0,8"/>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </DockPanel>
