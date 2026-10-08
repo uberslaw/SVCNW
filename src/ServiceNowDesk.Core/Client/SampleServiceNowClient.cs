@@ -1009,25 +1009,35 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     public int LockedTeamQueries { get; private set; }
 
-    public Task<IReadOnlyList<LockedLeadPerson>> ListLockedLeadTeamAsync(string? city, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<LockedLeadPerson>> ListLockedLeadTeamAsync(string? city, CancellationToken cancellationToken) =>
+        ListLockedLeadTeamAsync(city, watchedGroupName: null, cancellationToken);
+
+    public Task<IReadOnlyList<LockedLeadPerson>> ListLockedLeadTeamAsync(
+        string? city,
+        string? watchedGroupName,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!LockedLeadTeam.HasCity(city))
             return Task.FromResult<IReadOnlyList<LockedLeadPerson>>([]);
 
+        var groupName = LockedLeadTeam.NormalizeGroupName(watchedGroupName);
         LockedTeamQueries++;
-        Record("GET", "api/now/table/sys_user_grmember?sysparm_query=" + Uri.EscapeDataString(LockedLeadTeam.MembershipQuery));
-        return Task.FromResult(LockedLeadTeam.Select(city, SampleLockedMemberships()));
+        Record("GET", "api/now/table/sys_user_grmember?sysparm_query=" + Uri.EscapeDataString(LockedLeadTeam.MembershipQuery(groupName)));
+        return Task.FromResult(LockedLeadTeam.Select(city, SampleLockedMemberships(), groupName));
     }
 
     private static IReadOnlyList<LockedLeadMembership> SampleLockedMemberships() =>
     [
-        new("Client Services", "sample-user", "Alex Rivera", "Brisbane Office"),
+        // Signed-in practice user is on AUS, not APAC. APAC rows must not enter the locked roster.
+        new("Aus DT - Client Services", "sample-user", "Alex Rivera", "Brisbane Office"),
         new("Aus DT - Client Services", "user-jordan", "Jordan Lee", "Brisbane"),
         new("Aus DT - Client Services", "user-jordan", "Jordan Lee", "Brisbane"),
         new("APAC DT - Client Services", "user-sam", "Sam Patel", "Sydney Office"),
+        new("APAC DT - Client Services", "user-apac-bne", "Pat Apac", "Brisbane Office"),
         new("Network", "user-casey", "Casey Ng", "Brisbane Office"),
-        new("Client Services", "user-blank", "No Location", "")
+        new("Client Services", "user-blank", "No Location", ""),
+        new("Client Services", "user-bea", "Bea Brisbane", "Brisbane")
     ];
 
     public Task<IReadOnlyList<Choice>> ListGroupMembersAsync(string groupSysId, CancellationToken cancellationToken)

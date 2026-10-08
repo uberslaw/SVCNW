@@ -932,6 +932,26 @@ public class WorkspaceTests
     }
 
     [Fact]
+    public async Task AssignmentDropdownKeepsAusAndDoesNotTreatApacAsTheSameGroup()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.Attach(client);
+        await workspace.EnsureChoicesAsync();
+        workspace.NewRecordCommand.Execute(null);
+
+        Assert.Contains(workspace.Assignment.Groups, group => group.Value == "group-aus" && group.Label == "Aus DT - Client Services");
+        Assert.DoesNotContain(workspace.Assignment.Groups, group =>
+            group.Label.Contains("APAC", StringComparison.OrdinalIgnoreCase)
+            || group.Value.Contains("apac", StringComparison.OrdinalIgnoreCase));
+
+        workspace.Assignment.GroupId = "APAC DT - Client Services";
+        await workspace.Assignment.WhenReady;
+        Assert.Equal("APAC DT - Client Services", workspace.Assignment.GroupId);
+        Assert.NotEqual("group-aus", workspace.Assignment.GroupId);
+    }
+
+    [Fact]
     public async Task SaveAcceptsACallerTypedAsTheirExactEmail()
     {
         using var client = new SampleServiceNowClient();

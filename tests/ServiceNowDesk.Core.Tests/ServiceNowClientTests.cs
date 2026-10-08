@@ -141,7 +141,15 @@ public class ServiceNowClientTests
     {
         var handler = new StubHandler((request, _) =>
         {
-            if (request.RequestUri!.AbsolutePath.Contains("sys_user_grmember", StringComparison.Ordinal))
+            var path = request.RequestUri!.PathAndQuery;
+            if (path.Contains("/table/sys_user?", StringComparison.Ordinal)
+                && !path.Contains("sys_user_grmember", StringComparison.Ordinal)
+                && !path.Contains("sys_user_group", StringComparison.Ordinal))
+            {
+                return Api.Json("""{"result":[{"sys_id":{"value":"user-alex","display_value":"user-alex"},"name":{"value":"Alex","display_value":"Alex"},"user_name":{"value":"alex","display_value":"alex"},"email":{"value":"a@b.c","display_value":"a@b.c"},"location":{"value":"","display_value":""}}]}""");
+            }
+
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
             {
                 return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
             }
@@ -155,6 +163,53 @@ public class ServiceNowClientTests
 
         Assert.Equal(1, handler.Calls.Count(call => call.PathAndQuery.Contains("sys_user_grmember")));
         Assert.Contains("assignment_groupINgroup-cs", QueryOf(handler.Calls[^1].PathAndQuery));
+    }
+
+    [Fact]
+    public async Task MyGroupsKeepAusMembershipAndDoNotInjectApac()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            if (path.Contains("/table/sys_user?", StringComparison.Ordinal)
+                && !path.Contains("sys_user_grmember", StringComparison.Ordinal)
+                && !path.Contains("sys_user_group", StringComparison.Ordinal))
+            {
+                return Api.Json("""{"result":[{"sys_id":{"value":"user-alex","display_value":"user-alex"},"name":{"value":"Alex","display_value":"Alex"},"user_name":{"value":"alex","display_value":"alex"},"email":{"value":"a@b.c","display_value":"a@b.c"},"location":{"value":"","display_value":""}}]}""");
+            }
+
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+            {
+                var query = Uri.UnescapeDataString(path);
+                Assert.Contains("user=user-alex", query, StringComparison.Ordinal);
+                Assert.DoesNotContain("javascript:gs.getUserID()", query, StringComparison.Ordinal);
+                // ServiceNow truth: signed-in user is only in AUS DT - Client Services.
+                return Api.Json("""
+                    {"result":[
+                      {"group":{"value":"group-aus","display_value":"AUS DT - Client Services"}}
+                    ]}
+                    """);
+            }
+
+            return Api.Json(Api.IncidentList());
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        await client.GetCurrentUserAsync(CancellationToken.None);
+        var query = new TicketQuery { Assignment = AssignmentScope.MyGroups, Activity = ActivityFilter.Open };
+        await client.SearchIncidentsAsync(query, CancellationToken.None);
+
+        var membershipCalls = handler.Calls.Where(call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal)).ToArray();
+        Assert.Single(membershipCalls);
+
+        var incidentQuery = QueryOf(handler.Calls.Last(call => call.PathAndQuery.Contains("/incident", StringComparison.Ordinal)).PathAndQuery);
+        Assert.Contains("assignment_groupINgroup-aus", incidentQuery, StringComparison.Ordinal);
+        Assert.DoesNotContain("group-apac", incidentQuery, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("APAC", incidentQuery, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("LIKEClient Services", incidentQuery, StringComparison.Ordinal);
+
+        client.ClearMyGroupMembershipCache();
+        await client.SearchIncidentsAsync(query, CancellationToken.None);
+        Assert.Equal(2, handler.Calls.Count(call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -530,7 +585,15 @@ public class ServiceNowClientTests
     {
         var handler = new StubHandler((request, _) =>
         {
-            if (request.RequestUri!.AbsolutePath.Contains("sys_user_grmember", StringComparison.Ordinal))
+            var path = request.RequestUri!.PathAndQuery;
+            if (path.Contains("/table/sys_user?", StringComparison.Ordinal)
+                && !path.Contains("sys_user_grmember", StringComparison.Ordinal)
+                && !path.Contains("sys_user_group", StringComparison.Ordinal))
+            {
+                return Api.Json("""{"result":[{"sys_id":{"value":"user-alex","display_value":"user-alex"},"name":{"value":"Alex","display_value":"Alex"},"user_name":{"value":"alex","display_value":"alex"},"email":{"value":"a@b.c","display_value":"a@b.c"},"location":{"value":"","display_value":""}}]}""");
+            }
+
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
             {
                 return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
             }

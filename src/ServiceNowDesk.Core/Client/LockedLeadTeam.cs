@@ -1,7 +1,9 @@
+using ServiceNowDesk.Alerts;
+
 namespace ServiceNowDesk.Client;
 
 /// <summary>
-/// One person on the locked Leads team: a client-services member in the signed-in user's city.
+/// One person on the locked Leads team: a member of the watched group in the signed-in user's city.
 /// </summary>
 public sealed record LockedLeadPerson(string SysId, string Name);
 
@@ -11,38 +13,60 @@ public sealed record LockedLeadPerson(string SysId, string Name);
 public sealed record LockedLeadMembership(string GroupName, string UserId, string Name, string Location);
 
 /// <summary>
-/// The locked Leads roster. A client services group is any <c>sys_user_group</c> whose name
-/// contains "Client Services". The city match is the same office comparison hardware uses.
+/// The locked Leads roster. Members come from the watched assignment group by exact name
+/// (default <see cref="NotificationPreferences.DefaultGroupName"/>), never from a
+/// <c>LIKE Client Services</c> match that would also pull in APAC DT - Client Services.
+/// The city match is the same office comparison hardware uses.
 /// </summary>
 public static class LockedLeadTeam
 {
-    public const string GroupMarker = "Client Services";
-
-    public const string Explanation = "Locked team: client services in your city.";
+    public const string Explanation = "Locked team: watched group members in your city.";
 
     public const string NoLocationPrompt = "Your account has no location, so the locked team is empty.";
 
-    public const string EmptyPrompt = "No client services members are in your city.";
+    public const string EmptyPrompt = "No watched-group members are in your city.";
 
     /// <summary>
-    /// Members of groups whose name contains "Client Services". This is not a query for every user.
+    /// Exact group-name query for the watched group. Defaults to Aus DT - Client Services.
+    /// Does not use <c>LIKE</c>, so APAC DT - Client Services is never included by name similarity.
     /// </summary>
-    public const string MembershipQuery = "group.nameLIKEClient Services^ORDERBYsys_id";
+    public static string MembershipQuery(string? groupName = null)
+    {
+        var name = NormalizeGroupName(groupName);
+        return "group.name=" + AlertQueryBuilder.Quote(name) + "^ORDERBYsys_id";
+    }
+
+    public static string NormalizeGroupName(string? groupName)
+    {
+        var trimmed = (groupName ?? "").Trim();
+        return trimmed.Length == 0 ? NotificationPreferences.DefaultGroupName : trimmed;
+    }
 
     public static bool HasCity(string? city) => !string.IsNullOrWhiteSpace(city);
 
-    public static bool IsClientServicesGroup(string? name) =>
-        (name ?? "").Contains(GroupMarker, StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// True when the membership row is for the watched group by exact name (case-insensitive).
+    /// </summary>
+    public static bool IsWatchedGroup(string? membershipGroupName, string? watchedGroupName = null)
+    {
+        var watched = NormalizeGroupName(watchedGroupName);
+        var actual = (membershipGroupName ?? "").Trim();
+        return actual.Length > 0 && actual.Equals(watched, StringComparison.OrdinalIgnoreCase);
+    }
 
-    public static IReadOnlyList<LockedLeadPerson> Select(string? city, IEnumerable<LockedLeadMembership>? rows)
+    public static IReadOnlyList<LockedLeadPerson> Select(
+        string? city,
+        IEnumerable<LockedLeadMembership>? rows,
+        string? watchedGroupName = null)
     {
         if (!HasCity(city))
             return [];
 
+        var watched = NormalizeGroupName(watchedGroupName);
         var people = new Dictionary<string, LockedLeadPerson>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows ?? [])
         {
-            if (row is null || !IsClientServicesGroup(row.GroupName))
+            if (row is null || !IsWatchedGroup(row.GroupName, watched))
                 continue;
             var id = (row.UserId ?? "").Trim();
             if (id.Length == 0 || people.ContainsKey(id))

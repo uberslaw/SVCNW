@@ -115,8 +115,18 @@ public interface IServiceNowClient : IDisposable
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Members of client services groups in <paramref name="city"/>.
+    /// Members of the watched group in <paramref name="city"/>.
     /// A blank city returns an empty list and does not query the instance.
+    /// Uses the exact watched group name so APAC is not pulled in via LIKE Client Services.
     /// </summary>
     Task<IReadOnlyList<LockedLeadPerson>> ListLockedLeadTeamAsync(string? city, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Members of <paramref name="watchedGroupName"/> in <paramref name="city"/>.
+    /// A blank city returns an empty list and does not query the instance.
+    /// </summary>
+    Task<IReadOnlyList<LockedLeadPerson>> ListLockedLeadTeamAsync(
+        string? city,
+        string? watchedGroupName,
+        CancellationToken cancellationToken);
 }

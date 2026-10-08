@@ -1599,6 +1599,7 @@ public partial class MainViewModel : ObservableObject
             var localNow = DateTime.Now;
             var search = NotificationSettings.Committed.ToSearch(_signedInUserId) with
             {
+                Locations = OfficeQueue.Cities(NotificationSettings.Committed.OfficeLocations, _signedInUserLocation),
                 TeamMemberIds = TeamIdsForAlerts()
             };
 
@@ -1737,6 +1738,7 @@ public partial class MainViewModel : ObservableObject
 
             var search = NotificationSettings.Committed.ToSearch(_signedInUserId) with
             {
+                Locations = OfficeQueue.Cities(NotificationSettings.Committed.OfficeLocations, _signedInUserLocation),
                 TeamMemberIds = TeamIdsForAlerts()
             };
             var report = await client.GetAlertReportAsync(search, token).ConfigureAwait(false);
@@ -2030,7 +2032,11 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            var people = await client.ListLockedLeadTeamAsync(_signedInUserLocation, CancellationToken.None).ConfigureAwait(false);
+            var watched = NotificationSettings.Committed.WatchedGroupName;
+            var people = await client.ListLockedLeadTeamAsync(
+                _signedInUserLocation,
+                watched,
+                CancellationToken.None).ConfigureAwait(false);
             var note = people.Count == 0 ? LockedLeadTeam.EmptyPrompt : LockedLeadTeam.Explanation;
             PostToUi(() =>
             {

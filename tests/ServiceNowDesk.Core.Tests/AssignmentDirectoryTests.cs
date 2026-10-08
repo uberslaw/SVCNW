@@ -412,7 +412,10 @@ public class AssignmentDirectoryTests
             if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
             {
                 var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? "");
-                if (query.Contains("getUserID", StringComparison.Ordinal))
+                // My Groups membership (script or signed-in sys_id) must not start the directory gate.
+                if (query.Contains("getUserID", StringComparison.Ordinal)
+                    || (query.Contains("user=", StringComparison.Ordinal)
+                        && !query.Contains("userISNOTEMPTY", StringComparison.Ordinal)))
                     return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"}}]}""");
 
                 _started.TrySetResult();
