@@ -86,7 +86,6 @@ public partial class MainViewModel : ObservableObject
         _sampleClientFactory = sampleClientFactory;
         _lists = lists;
         _dailyWork = dailyWork ?? new MemoryDailyWorkStore();
-        Startup.Dismissed += (_, _) => _startupGate = false;
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
@@ -382,27 +381,29 @@ public partial class MainViewModel : ObservableObject
             _startupGate = true;
             var startup = DownloadStartupAsync(live);
             AssignmentDirectoryRefresh = startup;
+            var ranStartup = false;
             try
             {
                 if (epoch == _sessionEpoch && SelectedSection == DeskSection.Connection)
                     SelectedSection = DeskSection.Incidents;
-                await startup;
+                ranStartup = await startup;
             }
             finally
             {
+                // Keep the gate up for the whole bootstrap — dismissing the splash must
+                // not open a concurrent EnsureSection race against the download.
                 _startupGate = false;
-            }
-
-            if (epoch == _sessionEpoch)
-            {
-                _ = LoadLeadRosterAsync();
-                if (SelectedSection == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
-                    _ = LoadWorkEffortAsync(force: false);
             }
 
             if (epoch != _sessionEpoch)
                 return;
 
+            if (ranStartup)
+                PublishStartupDownloadOutcome();
+            _ = EnsureSectionAsync();
+            _ = LoadLeadRosterAsync();
+            if (SelectedSection == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
+                _ = LoadWorkEffortAsync(force: false);
             _ = Knowledge.RefreshPublishedCountAsync();
             RefreshActivity();
         }
@@ -452,7 +453,11 @@ public partial class MainViewModel : ObservableObject
             _store.Save(Connection.BuildSettings());
             await ConnectAsync();
             if (IsConnected)
-                Guided.SignInSucceeded(Startup.ShowScreen);
+            {
+                // Connect awaits bootstrap. The splash may already have self-closed; the
+                // tour advances from SplashAppeared/SplashClosed while download runs.
+                Guided.SignInSucceeded(Startup.ShowScreen || Startup.IsRunning);
+            }
             else
                 Guided.SignInFailed();
         }
@@ -1164,6 +1169,30 @@ public partial class MainViewModel : ObservableObject
 
     private Task<bool> DownloadStartupAsync(ServiceNowClient? live) =>
         RunDownloadAsync(live, StartupCacheKeys, force: Connection.DownloadCacheOnLaunch);
+
+    private void PublishStartupDownloadOutcome()
+    {
+        if (!Startup.HasFailures)
+            return;
+
+        var ticketFailures = Startup.FailureNotes
+            .Where(note => TicketBootstrapNames.Any(name =>
+                note.StartsWith(name + ":", StringComparison.Ordinal)))
+            .ToArray();
+        if (ticketFailures.Length == 0)
+            return;
+
+        ErrorMessage = ticketFailures.Length == 1
+            ? "Could not download " + ticketFailures[0]
+            : "Could not download some ticket lists. " + string.Join(" ", ticketFailures);
+        if (!string.IsNullOrWhiteSpace(ConnectedUser) && !IsSample)
+            StatusMessage = "Connected as " + ConnectedUser + ", but some lists could not be downloaded.";
+        else if (IsSample)
+            StatusMessage = "Practice data loaded, but some lists could not be downloaded.";
+    }
+
+    private static readonly string[] TicketBootstrapNames =
+        ["Incidents", "Requests", "Walk-ups", "Knowledge"];
 
     private async Task BindGroupsAsync()
     {

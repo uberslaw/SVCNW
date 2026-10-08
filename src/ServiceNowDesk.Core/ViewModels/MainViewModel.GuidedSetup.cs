@@ -35,6 +35,8 @@ public partial class MainViewModel
         {
             try
             {
+                // Hide the splash for the connection step only. Dismiss must not cancel
+                // a download that is still running — the compact bar keeps reporting it.
                 if (Startup.ShowScreen)
                     Startup.Dismiss();
             }
