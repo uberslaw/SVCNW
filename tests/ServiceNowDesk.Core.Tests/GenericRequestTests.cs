@@ -197,7 +197,12 @@ public class GenericRequestTests
 
     private static async Task WaitUntilAsync(Func<bool> ready)
     {
-        for (var attempt = 0; attempt < 40 && !ready(); attempt++)
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!ready())
+        {
+            if (DateTime.UtcNow >= deadline)
+                throw new TimeoutException("Timed out waiting for the generic request.");
             await Task.Delay(50);
+        }
     }
 }

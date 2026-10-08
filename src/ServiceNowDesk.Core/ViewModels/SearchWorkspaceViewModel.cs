@@ -151,32 +151,35 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 Limit = 25
             };
 
-            var incidents = (kind is null or DeskSection.Incidents) && IncludeIncidents
-                ? client.SearchIncidentsAsync(query, CancellationToken.None)
-                : Task.FromResult(new PagedResult<IncidentRecord>([], 0));
-            var requests = (kind is null or DeskSection.Requests) && IncludeRequests
-                ? client.SearchRequestsAsync(query, CancellationToken.None)
-                : Task.FromResult(new PagedResult<RequestRecord>([], 0));
-            var items = (kind is null or DeskSection.RequestedItems) && IncludeItems
-                ? client.SearchRequestedItemsAsync(query, CancellationToken.None)
-                : Task.FromResult(new PagedResult<RequestedItemRecord>([], 0));
             var hideKnowledge = filtersActive && IncludeKnowledge && kind is null or DeskSection.Knowledge;
             var includeArticles = (kind is null or DeskSection.Knowledge) && IncludeKnowledge && !hideKnowledge;
             if (includeArticles)
                 KnowledgeSearchRequested?.Invoke(this, EventArgs.Empty);
-            var articles = includeArticles
-                ? client.SearchKnowledgeAsync(query, CancellationToken.None)
+
+            var errors = new List<string>();
+            // Each table is on its own so one bad ServiceNow payload does not blank the page.
+            var incidentTask = (kind is null or DeskSection.Incidents) && IncludeIncidents
+                ? LoadTableAsync(version, "Incidents", errors, () => client.SearchIncidentsAsync(query, CancellationToken.None))
+                : Task.FromResult(new PagedResult<IncidentRecord>([], 0));
+            var requestTask = (kind is null or DeskSection.Requests) && IncludeRequests
+                ? LoadTableAsync(version, "Requests", errors, () => client.SearchRequestsAsync(query, CancellationToken.None))
+                : Task.FromResult(new PagedResult<RequestRecord>([], 0));
+            var itemTask = (kind is null or DeskSection.RequestedItems) && IncludeItems
+                ? LoadTableAsync(version, "Request items", errors, () => client.SearchRequestedItemsAsync(query, CancellationToken.None))
+                : Task.FromResult(new PagedResult<RequestedItemRecord>([], 0));
+            var articleTask = includeArticles
+                ? LoadTableAsync(version, "Knowledge", errors, () => client.SearchKnowledgeAsync(query, CancellationToken.None))
                 : Task.FromResult(new PagedResult<KnowledgeArticle>([], 0));
-            var walkUps = (kind is null or DeskSection.WalkUps) && IncludeWalkUps
-                ? client.SearchInteractionsAsync(query, CancellationToken.None)
+            var walkTask = (kind is null or DeskSection.WalkUps) && IncludeWalkUps
+                ? LoadTableAsync(version, "Walk-ups", errors, () => client.SearchInteractionsAsync(query, CancellationToken.None))
                 : Task.FromResult(new PagedResult<InteractionRecord>([], 0));
 
-            await Task.WhenAll(incidents, requests, items, articles, walkUps);
+            await Task.WhenAll(incidentTask, requestTask, itemTask, articleTask, walkTask);
             if (version != _runVersion)
                 return;
 
             var hits = new List<SearchHit>();
-            hits.AddRange(incidents.Result.Items.Select(record => new SearchHit
+            hits.AddRange(incidentTask.Result.Items.Select(record => new SearchHit
             {
                 Section = DeskSection.Incidents,
                 TableLabel = "Incident",
@@ -190,7 +193,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 SortKey = record.UpdatedAtValue,
                 Unassigned = record.AssignedTo.IsEmpty
             }));
-            hits.AddRange(requests.Result.Items.Select(record => new SearchHit
+            hits.AddRange(requestTask.Result.Items.Select(record => new SearchHit
             {
                 Section = DeskSection.Requests,
                 TableLabel = "Request",
@@ -203,7 +206,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 When = record.UpdatedAtDisplay,
                 SortKey = record.UpdatedAtValue
             }));
-            hits.AddRange(items.Result.Items.Select(record => new SearchHit
+            hits.AddRange(itemTask.Result.Items.Select(record => new SearchHit
             {
                 Section = DeskSection.RequestedItems,
                 TableLabel = "Request item",
@@ -217,7 +220,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 SortKey = record.UpdatedAtValue,
                 Unassigned = record.AssignedTo.IsEmpty
             }));
-            hits.AddRange(walkUps.Result.Items.Select(record => new SearchHit
+            hits.AddRange(walkTask.Result.Items.Select(record => new SearchHit
             {
                 Section = DeskSection.WalkUps,
                 TableLabel = "Walk-up",
@@ -231,7 +234,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 SortKey = record.UpdatedAtValue,
                 Unassigned = record.AssignedTo.IsEmpty
             }));
-            hits.AddRange(articles.Result.Items.Select(record => new SearchHit
+            hits.AddRange(articleTask.Result.Items.Select(record => new SearchHit
             {
                 Section = DeskSection.Knowledge,
                 TableLabel = "Knowledge",
@@ -257,7 +260,10 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             Summary = Results.Count == 1 ? "1 match" : Results.Count + " matches";
             if (hideKnowledge)
                 Summary += ". " + KnowledgeHiddenSummary;
+            ErrorMessage = string.Join(Environment.NewLine, errors);
             Remember(trimmed);
+            if (errors.Count > 0)
+                _resultsCurrent = false;
         }
         catch (Exception ex)
         {
@@ -316,6 +322,24 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     {
         _signature = Signature(text);
         _resultsCurrent = true;
+    }
+
+    private async Task<PagedResult<T>> LoadTableAsync<T>(
+        int version,
+        string label,
+        List<string> errors,
+        Func<Task<PagedResult<T>>> load)
+    {
+        try
+        {
+            return await load().ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (version == _runVersion)
+                errors.Add(label + ": " + WorkspaceMessages.Describe(ex));
+            return new PagedResult<T>([], 0);
+        }
     }
 
     private string Signature(string text) =>

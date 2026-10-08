@@ -41,6 +41,7 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     public event EventHandler<AlertKind>? QueueSelected;
     public event EventHandler<AlertAttention>? Attention;
 
+    private readonly object _gate = new();
     private string _viewerSysId = "";
     private HighlightPreferences _highlights = HighlightPreferences.Default;
     private LeadSortColumn? _sortColumn;
@@ -56,36 +57,42 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     public void Show(AlertSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        foreach (var section in Sections)
+        lock (_gate)
         {
-            var bucket = snapshot.Bucket(section.Kind);
-            section.Count = bucket.TotalCount;
-            section.Status = bucket.Status;
-            section.IsUnacknowledged = false;
-            section.Replace(bucket.Rows);
-        }
+            foreach (var section in Sections)
+            {
+                var bucket = snapshot.Bucket(section.Kind);
+                section.Count = bucket.TotalCount;
+                section.Status = bucket.Status;
+                section.IsUnacknowledged = false;
+                section.Replace(bucket.Rows);
+            }
 
-        foreach (var circle in Circles)
-        {
-            var bucket = snapshot.Bucket(circle.Kind);
-            circle.Count = bucket.TotalCount;
-            circle.Status = bucket.Status;
-            circle.IsUnacknowledged = false;
-            circle.IsJiggleCause = false;
-        }
+            foreach (var circle in Circles)
+            {
+                var bucket = snapshot.Bucket(circle.Kind);
+                circle.Count = bucket.TotalCount;
+                circle.Status = bucket.Status;
+                circle.IsUnacknowledged = false;
+                circle.IsJiggleCause = false;
+            }
 
-        AnyUnacknowledged = false;
-        PollError = "";
-        LastChecked = "Last checked " + DateTime.Now.ToString("t", CultureInfo.CurrentCulture) + ".";
-        RefreshWidget();
+            AnyUnacknowledged = false;
+            PollError = "";
+            LastChecked = "Last checked " + DateTime.Now.ToString("t", CultureInfo.CurrentCulture) + ".";
+            RefreshWidget();
+        }
     }
 
     public void RememberViewer(string? userSysId, HighlightPreferences highlights)
     {
         ArgumentNullException.ThrowIfNull(highlights);
-        _viewerSysId = userSysId?.Trim() ?? "";
-        _highlights = highlights;
-        PaintSlaAssignees();
+        lock (_gate)
+        {
+            _viewerSysId = userSysId?.Trim() ?? "";
+            _highlights = highlights;
+            PaintSlaAssignees();
+        }
     }
 
     [ObservableProperty] private bool anyUnacknowledged;
@@ -104,23 +111,30 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(watch);
-        var counts = new Dictionary<AlertKind, int>();
-        foreach (var kind in AlertCatalog.All)
-            counts[kind] = DisplayCount(kind, snapshot.Bucket(kind));
-        var decision = watch.Observe(counts);
-        foreach (var section in Sections)
-            WriteSection(section, snapshot.Bucket(section.Kind), watch.IsUnacknowledged(section.Kind));
+        AlertAttention? attention = null;
+        lock (_gate)
+        {
+            var counts = new Dictionary<AlertKind, int>();
+            foreach (var kind in AlertCatalog.All)
+                counts[kind] = DisplayCount(kind, snapshot.Bucket(kind));
+            var decision = watch.Observe(counts);
+            foreach (var section in Sections)
+                WriteSection(section, snapshot.Bucket(section.Kind), watch.IsUnacknowledged(section.Kind));
 
-        foreach (var circle in Circles)
-            WriteCircle(circle, snapshot.Bucket(circle.Kind), watch.IsUnacknowledged(circle.Kind));
+            foreach (var circle in Circles)
+                WriteCircle(circle, snapshot.Bucket(circle.Kind), watch.IsUnacknowledged(circle.Kind));
 
-        AnyUnacknowledged = watch.AnyUnacknowledged;
-        PollError = "";
-        LastChecked = "Last checked " + DateTime.Now.ToString("t", CultureInfo.CurrentCulture) + ".";
-        if (decision.HasIncrease)
-            Attention?.Invoke(this, new AlertAttention { PlaySound = true, Increased = decision.Increased });
+            AnyUnacknowledged = watch.AnyUnacknowledged;
+            PollError = "";
+            LastChecked = "Last checked " + DateTime.Now.ToString("t", CultureInfo.CurrentCulture) + ".";
+            if (decision.HasIncrease)
+                attention = new AlertAttention { PlaySound = true, Increased = decision.Increased };
 
-        RefreshWidget();
+            RefreshWidget();
+        }
+
+        if (attention is not null)
+            Attention?.Invoke(this, attention);
     }
 
     public void RefreshAcknowledgement(AlertWatchState watch)
@@ -140,26 +154,29 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
 
     public void Clear()
     {
-        foreach (var section in Sections)
+        lock (_gate)
         {
-            section.Count = 0;
-            section.Status = "";
-            section.IsUnacknowledged = false;
-            section.Replace([]);
-        }
+            foreach (var section in Sections)
+            {
+                section.Count = 0;
+                section.Status = "";
+                section.IsUnacknowledged = false;
+                section.Replace([]);
+            }
 
-        foreach (var circle in Circles)
-        {
-            circle.Count = 0;
-            circle.Status = "";
-            circle.IsUnacknowledged = false;
-            circle.IsJiggleCause = false;
-        }
+            foreach (var circle in Circles)
+            {
+                circle.Count = 0;
+                circle.Status = "";
+                circle.IsUnacknowledged = false;
+                circle.IsJiggleCause = false;
+            }
 
-        AnyUnacknowledged = false;
-        PollError = "";
-        LastChecked = "Not checked yet.";
-        RefreshWidget();
+            AnyUnacknowledged = false;
+            PollError = "";
+            LastChecked = "Not checked yet.";
+            RefreshWidget();
+        }
     }
 
     public void NotePollError(string message) => PollError = ShortPollError(message);
@@ -433,8 +450,12 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     {
         foreach (var section in Sections)
         {
-            foreach (var row in section.Rows)
+            foreach (var row in section.Rows.ToArray())
+            {
+                if (row is null)
+                    continue;
                 row.HighlightHex = SlaAssigneeHex(row);
+            }
         }
     }
 
@@ -478,14 +499,19 @@ public partial class AlertSectionModel : ObservableObject
 
     public bool IsEmpty => Count == 0;
 
+    private readonly object _rowsGate = new();
+
     public void Replace(IReadOnlyList<AlertRecord> rows)
     {
-        var selectedId = Selected?.SysId;
-        Rows.Clear();
-        foreach (var row in rows)
-            Rows.Add(AlertRow.From(row));
-        Selected = selectedId is null ? null : Rows.FirstOrDefault(row => row.SysId == selectedId);
-        OnPropertyChanged(nameof(Heading));
+        lock (_rowsGate)
+        {
+            var selectedId = Selected?.SysId;
+            Rows.Clear();
+            foreach (var row in rows ?? [])
+                Rows.Add(AlertRow.From(row));
+            Selected = selectedId is null ? null : Rows.FirstOrDefault(row => row.SysId == selectedId);
+            OnPropertyChanged(nameof(Heading));
+        }
     }
 
     partial void OnCountChanged(int value)

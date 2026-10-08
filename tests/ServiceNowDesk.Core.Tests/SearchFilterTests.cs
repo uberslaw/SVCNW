@@ -80,4 +80,31 @@ public class SearchFilterTests
         Assert.Contains(search.Results, hit => hit.Number == "INC0010007");
         Assert.DoesNotContain(search.Results, hit => hit.Number == "INC0010001");
     }
+
+    [Fact]
+    public async Task AFailedTableDoesNotBlankTheOtherSearchHits()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.Contains("/api/now/table/incident", StringComparison.Ordinal))
+                return Api.Json(Api.IncidentList());
+            if (path.Contains("/api/now/table/kb_knowledge", StringComparison.Ordinal))
+                return Api.Json("""{"result":{"not":"a list"}}""");
+            if (path.Contains("/api/now/table/interaction", StringComparison.Ordinal))
+                return Api.Json("");
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var search = new SearchWorkspaceViewModel();
+
+        await search.RunAsync(client, "revit 2026");
+
+        Assert.Equal("INC0010001", Assert.Single(search.Results).Number);
+        Assert.DoesNotContain(search.Results, hit => hit.Section == DeskSection.Knowledge);
+        Assert.Contains("Knowledge", search.ErrorMessage);
+        Assert.Contains("did not include a list", search.ErrorMessage);
+        Assert.DoesNotContain("Walk-ups", search.ErrorMessage);
+        Assert.Equal("1 match", search.Summary);
+    }
 }

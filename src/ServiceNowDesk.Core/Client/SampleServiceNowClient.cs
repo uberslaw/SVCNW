@@ -30,6 +30,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     private readonly Dictionary<string, SampleAlertSignals> _signals = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _assignedOn = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ApiActivity> _activity = [];
+    private readonly object _activityGate = new();
     private int _sequence = 1000;
     private int _unassignedQueueReads;
 
@@ -60,7 +61,14 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     public IReadOnlyList<Choice>? ContactTypeChoices { get; set; }
 
-    public IReadOnlyList<ApiActivity> RecentActivity => _activity.ToArray();
+    public IReadOnlyList<ApiActivity> RecentActivity
+    {
+        get
+        {
+            lock (_activityGate)
+                return _activity.ToArray();
+        }
+    }
 
     public void Dispose()
     {
@@ -815,7 +823,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     public Task<PagedResult<HardwareAsset>> SearchHardwareAsync(TicketQuery query, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var encoded = HardwareCatalog.ListQuery(query.Text, query.Locations);
+        var encoded = HardwareCatalog.ListQuery(query.Text, query.Locations, query.LocationSysIds);
         LastHardwareQuery = encoded;
         var matches = _hardware
             .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
@@ -825,6 +833,25 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         Record("GET", "api/now/table/alm_hardware?sysparm_query=" + Uri.EscapeDataString(encoded));
         var limit = Math.Clamp(query.Limit, 1, 100);
         return Task.FromResult(new PagedResult<HardwareAsset>(matches.Take(limit).ToArray(), matches.Length));
+    }
+
+    public Task<HardwareCatalogDownload> DownloadHardwareAsync(
+        IReadOnlyList<string>? locations,
+        IReadOnlyList<string>? locationSysIds,
+        IProgress<DownloadTick>? progress,
+        CancellationToken cancellationToken)
+    {
+        var encoded = HardwareCatalog.DownloadQuery(locations, locationSysIds);
+        LastHardwareQuery = encoded;
+        var matches = _hardware
+            .Where(HardwareCatalog.IsComputer)
+            .Where(asset => !ApplyHardwareLocationFilter || HardwareCatalog.MatchesLocation(asset, locations))
+            .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        progress?.Report(new DownloadTick(0, Math.Max(matches.Length, 1)));
+        progress?.Report(new DownloadTick(Math.Max(matches.Length, 1), Math.Max(matches.Length, 1)));
+        Record("GET", "api/now/table/alm_hardware?sysparm_query=" + Uri.EscapeDataString(encoded));
+        return Task.FromResult(new HardwareCatalogDownload(matches, false));
     }
 
     public Task<HardwareAsset> GetHardwareAsync(string sysId, CancellationToken cancellationToken)
@@ -2735,6 +2762,9 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     private static string Stamp() => DateTime.Now.ToString("yyyy-MM-dd HH:mm");
 
-    private void Record(string method, string path) =>
-        _activity.Insert(0, new ApiActivity(DateTimeOffset.Now, method, path, 200, 1));
+    private void Record(string method, string path)
+    {
+        lock (_activityGate)
+            _activity.Insert(0, new ApiActivity(DateTimeOffset.Now, method, path, 200, 1));
+    }
 }

@@ -100,9 +100,16 @@ public partial class LeadsViewModel : ObservableObject
 
         if (Members.Count > 0)
         {
-            return WorkEffortTeam.Normalize(
-                Members.Where(member => member.IsSelected)
-                    .Select(member => new WorkEffortPerson(member.SysId, member.Name, "")));
+            var picked = Members
+                .Where(member => member.IsSelected)
+                .Select(member => new WorkEffortPerson(member.SysId, member.Name, ""))
+                .ToArray();
+            if (picked.Length > 0)
+                return WorkEffortTeam.Normalize(picked);
+            // Saved empty team is intentional. Otherwise the roster arrived without ticks —
+            // keep the saved ids until the user picks people.
+            if (TeamSaved || savedIds is null)
+                return [];
         }
 
         if (savedIds is null)

@@ -77,6 +77,7 @@ public partial class MainViewModel : ObservableObject
         IDeskListStore? lists = null,
         IDailyWorkStore? dailyWork = null,
         IPersonalTaskStore? personalTasks = null,
+        IHardwareCatalogStore? hardwareCatalog = null,
         Func<IServiceNowClient>? sampleClientFactory = null)
     {
         _store = store;
@@ -90,7 +91,7 @@ public partial class MainViewModel : ObservableObject
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
-        Hardware = new HardwareWorkspaceViewModel(store);
+        Hardware = new HardwareWorkspaceViewModel(store, hardwareCatalog, CacheScope);
         Hardware.DefaultSaved += (_, _) =>
         {
             var saved = _store.Load();
@@ -1357,11 +1358,12 @@ public partial class MainViewModel : ObservableObject
     {
         _signedInUserId = "";
         _signedInUserLocation = "";
+        // Stop polls before clearing/painting notification rows so Disconnect cannot race them.
+        ReplaceClient(null);
         Notifications.RememberViewer("", Connection.Highlights);
         Leads.Board.RememberViewer("", Connection.Highlights);
         Leads.Clear();
         DailyWork.Clear();
-        ReplaceClient(null);
         IsConnected = false;
         IsSample = false;
         ConnectedUser = "";
@@ -1751,15 +1753,19 @@ public partial class MainViewModel : ObservableObject
         var sink = new WorkEffortProgressSink(this, generation, client, scale);
         try
         {
-            var report = await Task.Run(
-                () => client.GetWorkEffortAsync(scale, localNow, team, sink, cts.Token),
-                cts.Token).ConfigureAwait(false);
+            // Await the query directly. Task.Run queued behind other tests' pool work and
+            // left Work Effort stuck on "loading" until the waiters timed out.
+            var report = await client.GetWorkEffortAsync(scale, localNow, team, sink, cts.Token)
+                .ConfigureAwait(false);
             PostToUi(() =>
             {
                 if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
                     return;
-                if (!string.Equals(WorkEffortTeam.Key(Leads.DefinedTeam(Connection.LeadTeamMemberIds)), teamKey, StringComparison.Ordinal))
+                var currentKey = WorkEffortTeam.Key(Leads.DefinedTeam(Connection.LeadTeamMemberIds));
+                if (!string.Equals(currentKey, teamKey, StringComparison.Ordinal))
                 {
+                    // Keep the finished query for its team so a return visit can use it.
+                    Leads.WorkEffort.Cache(scale, localNow, report, teamKey);
                     Leads.WorkEffort.AbandonLoad();
                     if (Leads.Area == LeadArea.WorkEffort)
                         _ = LoadWorkEffortAsync(force: false);
@@ -1771,6 +1777,14 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
+            // A cancel without a replacement load must clear IsLoading; otherwise BeginLoad
+            // sees "already loading" and WaitUntil hang until the 30s timeout.
+            PostToUi(() =>
+            {
+                if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
+                    return;
+                Leads.WorkEffort.AbandonLoad();
+            });
         }
         catch (Exception ex)
         {
@@ -1780,7 +1794,12 @@ public partial class MainViewModel : ObservableObject
                 if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
                     return;
                 if (Leads.Area != LeadArea.WorkEffort || Leads.WorkEffort.Scale != scale)
+                {
+                    if (generation == _workEffortGeneration)
+                        Leads.WorkEffort.AbandonLoad();
                     return;
+                }
+
                 Leads.WorkEffort.ShowError(message);
             });
         }
@@ -1939,10 +1958,12 @@ public partial class MainViewModel : ObservableObject
 
     private void PostToUi(Action action)
     {
+        // Send (not Post) so background completions always apply before the caller
+        // continues. Post can sit forever on a sync context that never pumps in tests.
         if (_ui is null || ReferenceEquals(SynchronizationContext.Current, _ui))
             action();
         else
-            _ui.Post(_ => action(), null);
+            _ui.Send(_ => action(), null);
     }
 
     private void RefreshActivity()

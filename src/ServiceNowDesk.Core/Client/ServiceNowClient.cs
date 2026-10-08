@@ -1429,7 +1429,13 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         ArgumentNullException.ThrowIfNull(query);
         var limit = Math.Clamp(query.Limit, 1, 100);
         var offset = Math.Max(0, query.Offset);
-        var result = await GetListAsync("alm_hardware", HardwareFields, HardwareCatalog.ListQuery(query.Text, query.Locations), limit, offset, cancellationToken).ConfigureAwait(false);
+        var result = await GetListAsync(
+            "alm_hardware",
+            HardwareFields,
+            HardwareCatalog.ListQuery(query.Text, query.Locations, query.LocationSysIds),
+            limit,
+            offset,
+            cancellationToken).ConfigureAwait(false);
         using (result)
         {
             var items = RequireArray(result.Document)
@@ -1440,6 +1446,30 @@ public sealed partial class ServiceNowClient : IServiceNowClient
                 .ToArray();
             return new PagedResult<HardwareAsset>(items, result.TotalCount);
         }
+    }
+
+    public async Task<HardwareCatalogDownload> DownloadHardwareAsync(
+        IReadOnlyList<string>? locations,
+        IReadOnlyList<string>? locationSysIds,
+        IProgress<DownloadTick>? progress,
+        CancellationToken cancellationToken)
+    {
+        var assets = new List<HardwareAsset>();
+        var query = HardwareCatalog.DownloadQuery(locations, locationSysIds);
+        var truncated = await PageRowsAsync(
+            "alm_hardware",
+            HardwareFields,
+            query,
+            FormCatalogPolicy.MaxHardwareAssets,
+            progress,
+            row =>
+            {
+                var asset = RecordMapper.Hardware(row);
+                if (HardwareCatalog.IsComputer(asset))
+                    assets.Add(asset);
+            },
+            cancellationToken).ConfigureAwait(false);
+        return new HardwareCatalogDownload(assets, truncated);
     }
 
     public Task<HardwareAsset> GetHardwareAsync(string sysId, CancellationToken cancellationToken) =>
@@ -2031,7 +2061,19 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             + "&sysparm_query=" + Uri.EscapeDataString(query);
         if (suppressPaginationHeader)
             url += "&sysparm_suppress_pagination_header=true";
-        return await SendAsync(HttpMethod.Get, url, null, cancellationToken).ConfigureAwait(false);
+        var payload = await SendAsync(HttpMethod.Get, url, null, cancellationToken).ConfigureAwait(false);
+        // A blank HTTP body is stored as result:{}. List callers need an array.
+        if (TryGetResult(payload.Document, out var result)
+            && result.ValueKind == JsonValueKind.Object
+            && !result.EnumerateObject().Any())
+        {
+            var total = payload.TotalCount;
+            var next = payload.NextLink;
+            payload.Dispose();
+            return new ApiPayload(JsonDocument.Parse("""{"result":[]}"""), total, next);
+        }
+
+        return payload;
     }
 
     private async Task<ApiPayload> SendAsync(HttpMethod method, string relativeUrl, string? json, CancellationToken cancellationToken)
@@ -2890,9 +2932,19 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     {
         if (!TryGetResult(document, out var result))
             throw new ServiceNowException(200, "ServiceNow response did not include a result.", null);
-        if (result.ValueKind != JsonValueKind.Array)
+        if (result.ValueKind == JsonValueKind.Array)
+            return result;
+        if (result.ValueKind == JsonValueKind.Null)
             throw new ServiceNowException(200, "ServiceNow response did not include a list.", null);
-        return result;
+        if (result.ValueKind == JsonValueKind.Object
+            && result.TryGetProperty("message", out var message)
+            && message.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(message.GetString()))
+        {
+            throw new ServiceNowException(200, message.GetString()!.Trim(), null);
+        }
+
+        throw new ServiceNowException(200, "ServiceNow response did not include a list.", null);
     }
 
     private static bool TryGetResult(JsonDocument document, out JsonElement result) =>

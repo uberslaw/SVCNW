@@ -29,6 +29,12 @@ public static class FormCatalogPolicy
     /// </summary>
     public const int MaxKnowledgeArticles = 2000;
 
+    /// <summary>
+    /// Computer hardware rows are paged until this many are saved.
+    /// A larger CMDB keeps those rows and says the download stopped at the cap.
+    /// </summary>
+    public const int MaxHardwareAssets = 50000;
+
     public static bool IsStale(DateTimeOffset capturedAt, DateTimeOffset now) =>
         capturedAt == default || now - capturedAt >= MaxAge;
 }

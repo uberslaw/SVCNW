@@ -144,7 +144,8 @@ public static class HardwareCatalog
             return true;
 
         var display = asset.Location.Display ?? "";
-        return names.Any(name => HardwareOfficeNames.SamePlace(display, name));
+        return names.Any(name =>
+            HardwareOfficeNames.SamePlace(display, name) || HardwareOfficeNames.LoosePlace(display, name));
     }
 
     /// <summary>
@@ -154,25 +155,77 @@ public static class HardwareCatalog
     /// OR is not used: ServiceNow drops that group and the row cap then returns other cities.
     /// A quoted <c>IN</c> list is not used either: ServiceNow keeps those quote characters,
     /// so <c>location.nameIN"Brisbane","Brisbane Office"</c> matches neither stored name.
+    /// When location sys_ids are known, those are preferred so the live name spelling does not matter.
     /// </summary>
-    public static string ListQuery(string? text, IReadOnlyList<string>? locations = null)
+    public static string ListQuery(
+        string? text,
+        IReadOnlyList<string>? locations = null,
+        IReadOnlyList<string>? locationSysIds = null)
     {
         var term = EncodedQuery.Sanitize(text);
+        var branches = LocationBranches(locations, locationSysIds).ToArray();
+        if (branches.Length == 0)
+            return string.Join("^NQ", TextBranches("model_category.name=Computer", term)) + "^ORDERBYserial_number";
+
+        var parts = new List<string>();
+        foreach (var branch in branches)
+            parts.AddRange(TextBranches("model_category.name=Computer^" + branch, term));
+        return string.Join("^NQ", parts) + "^ORDERBYserial_number";
+    }
+
+    /// <summary>
+    /// Full computer download. With offices, each place is matched by sys_id, exact name,
+    /// and a <c>LIKE</c> on the city stem so "Brisbane" still finds "AU Brisbane Office".
+    /// Local <see cref="MatchesLocation"/> then keeps the rows that belong to the place.
+    /// </summary>
+    public static string DownloadQuery(
+        IReadOnlyList<string>? locations = null,
+        IReadOnlyList<string>? locationSysIds = null)
+    {
+        var branches = LocationBranches(locations, locationSysIds, includeLike: true).ToArray();
+        if (branches.Length == 0)
+            return "model_category.name=Computer^ORDERBYserial_number";
+
+        var parts = branches.Select(branch => "model_category.name=Computer^" + branch);
+        return string.Join("^NQ", parts) + "^ORDERBYserial_number";
+    }
+
+    private static IEnumerable<string> LocationBranches(
+        IReadOnlyList<string>? locations,
+        IReadOnlyList<string>? locationSysIds,
+        bool includeLike = false)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in locationSysIds ?? [])
+        {
+            var token = EncodedQuery.Sanitize(id);
+            if (token.Length == 0 || !seen.Add("id:" + token))
+                continue;
+            yield return "location=" + token;
+        }
+
         var places = OfficeNames(locations);
         var labels = places
             .SelectMany(HardwareOfficeNames.FilterLabels)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var branches = new List<string>();
-        if (labels.Length == 0)
-            branches.AddRange(TextBranches("model_category.name=Computer", term));
-        else
+        foreach (var label in labels)
         {
-            foreach (var label in labels)
-                branches.AddRange(TextBranches("model_category.name=Computer^location.name=" + Quote(label), term));
+            if (!seen.Add("name:" + label))
+                continue;
+            yield return "location.name=" + Quote(label);
         }
 
-        return string.Join("^NQ", branches) + "^ORDERBYserial_number";
+        if (!includeLike)
+            yield break;
+
+        foreach (var place in places)
+        {
+            var stem = HardwareOfficeNames.CityStem(place);
+            if (stem.Length < 3 || !seen.Add("like:" + stem))
+                continue;
+            yield return "location.nameLIKE" + EncodedQuery.Sanitize(stem);
+        }
     }
 
     private static IEnumerable<string> TextBranches(string scope, string term)
@@ -221,6 +274,26 @@ public static class HardwareOfficeNames
 {
     public static string Normalize(string? name) => (name ?? "").Trim();
 
+    /// <summary>
+    /// City without a trailing " Office", used for LIKE downloads and loose matching.
+    /// </summary>
+    public static string CityStem(string? name)
+    {
+        var trimmed = Normalize(name);
+        if (trimmed.Length == 0)
+            return "";
+
+        const string suffix = " Office";
+        if (trimmed.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && trimmed.Length > suffix.Length)
+        {
+            var stem = trimmed[..^suffix.Length].TrimEnd();
+            if (stem.Length > 0)
+                return stem;
+        }
+
+        return trimmed;
+    }
+
     public static bool SamePlace(string? left, string? right)
     {
         var a = Normalize(left);
@@ -232,6 +305,45 @@ public static class HardwareOfficeNames
             return true;
 
         return IsLongerOfficeName(a, b) || IsLongerOfficeName(b, a);
+    }
+
+    /// <summary>
+    /// True when the asset location names the office city as its own place, including a
+    /// longer path such as "AU Brisbane Office". "Cairns Depot" does not match Cairns.
+    /// </summary>
+    public static bool LoosePlace(string? locationDisplay, string? office)
+    {
+        var place = Normalize(locationDisplay);
+        var stem = CityStem(office);
+        if (place.Length == 0 || stem.Length < 3)
+            return false;
+
+        if (SamePlace(place, stem))
+            return true;
+
+        foreach (var part in place.Split(['/', '\\', ',', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (SamePlace(part, stem))
+                return true;
+
+            var index = part.IndexOf(stem, StringComparison.OrdinalIgnoreCase);
+            while (index >= 0)
+            {
+                var beforeOk = index == 0 || !char.IsLetterOrDigit(part[index - 1]);
+                var after = index + stem.Length;
+                var afterOk = after >= part.Length || !char.IsLetterOrDigit(part[after]);
+                if (beforeOk && afterOk)
+                {
+                    var rest = after < part.Length ? part[after..].Trim() : "";
+                    if (rest.Length == 0 || rest.Equals("Office", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+
+                index = part.IndexOf(stem, index + 1, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
