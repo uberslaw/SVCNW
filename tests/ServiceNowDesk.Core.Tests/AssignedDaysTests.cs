@@ -163,14 +163,15 @@ public class AssignedDaysTests
 
         var notifications = new NotificationWorkspaceViewModel();
         notifications.Show(snapshot);
-        var defaultOrder = notifications.DashboardRows.Select(row => row.Number).ToArray();
-        System.IO.File.WriteAllText("/tmp/assigned-default.txt", string.Join(",", defaultOrder));
+        Assert.Equal(
+            ["INC0010001", "REQ0010001", "RITM0010001", "INC0010002", "INC0010006", "INC0010024", "INC0010010", "RITM0010008"],
+            notifications.DashboardRows.Select(row => row.Number).ToArray());
 
         notifications.SortByCommand.Execute("DaysAssigned");
         Assert.Equal("Days assigned ▲", notifications.DaysAssignedHeader);
-        var daysOrder = notifications.DashboardRows.Select(row => row.Number).ToArray();
-        System.IO.File.WriteAllText("/tmp/assigned-days.txt", string.Join(",", daysOrder));
-        Assert.True(false);
+        Assert.Equal(
+            ["INC0010006", "INC0010002", "RITM0010001", "REQ0010001", "INC0010001", "INC0010024", "INC0010010", "RITM0010008"],
+            notifications.DashboardRows.Select(row => row.Number).ToArray());
     }
 
     [Fact]
