@@ -150,11 +150,14 @@ public partial class WorkEffortViewModel : ObservableObject
     /// </summary>
     public void AbandonLoad()
     {
-        if (!IsLoading)
-            return;
-        IsLoading = false;
-        _loadingScale = null;
-        Status = "";
+        lock (_gate)
+        {
+            if (!IsLoading)
+                return;
+            IsLoading = false;
+            _loadingScale = null;
+            Status = "";
+        }
     }
 
     public void MarkLoading()
@@ -180,7 +183,6 @@ public partial class WorkEffortViewModel : ObservableObject
     public void Show(WorkEffortReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
-        _shown = null;
         ApplyReport(report);
     }
 
@@ -335,29 +337,44 @@ public partial class WorkEffortViewModel : ObservableObject
 
     private void ShowEntry(WorkEffortCacheEntry entry)
     {
-        _shown = entry;
         // Set AsOf before ApplyReport clears IsLoading so waiters never see rows without a stamp.
-        AsOf = "As of " + entry.LoadedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
-        ApplyReport(WorkEffortScore.Present(entry.Report, UpdateMode));
+        var presented = WorkEffortScore.Present(entry.Report, UpdateMode);
+        lock (_gate)
+        {
+            _shown = entry;
+            AsOf = "As of " + entry.LoadedAt.ToString("HH:mm", CultureInfo.InvariantCulture);
+            WriteReport(presented);
+        }
+
+        RebuildBoardCredits(presented);
+        if (ShowDetail)
+            RefreshOpenDetail();
     }
 
     private void ApplyReport(WorkEffortReport report)
     {
         lock (_gate)
         {
-            Rows.Clear();
-            foreach (var row in report.Rows)
-                Rows.Add(row);
-            HasRows = Rows.Count > 0;
-            EmptyMessage = HasRows ? "" : report.EmptyMessage;
-            Shift = HasRows ? report.Shift : "";
-            Status = report.Status;
-            IsLoading = false;
-            _loadingScale = null;
-            RebuildBoardCredits(report);
-            if (ShowDetail)
-                RefreshOpenDetail();
+            _shown = null;
+            WriteReport(report);
         }
+
+        RebuildBoardCredits(report);
+        if (ShowDetail)
+            RefreshOpenDetail();
+    }
+
+    private void WriteReport(WorkEffortReport report)
+    {
+        Rows.Clear();
+        foreach (var row in report.Rows)
+            Rows.Add(row);
+        HasRows = Rows.Count > 0;
+        EmptyMessage = HasRows ? "" : report.EmptyMessage;
+        Shift = HasRows ? report.Shift : "";
+        Status = report.Status;
+        IsLoading = false;
+        _loadingScale = null;
     }
 
     private void RebuildBoardCredits(WorkEffortReport report)
