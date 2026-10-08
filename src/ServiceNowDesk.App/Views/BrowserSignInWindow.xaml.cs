@@ -46,15 +46,16 @@ public partial class BrowserSignInWindow : Window
             var environment = await CoreWebView2Environment.CreateAsync(null, folder);
             await Browser.EnsureCoreWebView2Async(environment);
             Browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
-            Browser.CoreWebView2.NewWindowRequested += (_, args) =>
+            var webView = Browser.CoreWebView2;
+            // Keep SSO popups (account picker / PIN) in this same WebView. Calling
+            // Navigate on NewWindowRequested restarts the identity flow and flashes
+            // the company sign-in UI multiple times.
+            webView.NewWindowRequested += (_, args) =>
             {
-                if (Uri.TryCreate(args.Uri, UriKind.Absolute, out var target))
-                {
-                    args.Handled = true;
-                    Browser.CoreWebView2.Navigate(target.AbsoluteUri);
-                }
+                args.NewWindow = webView;
+                args.Handled = true;
             };
-            Browser.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+            webView.NavigationCompleted += OnNavigationCompleted;
             Browser.Source = _instance;
         }
         catch (Exception ex)
@@ -86,7 +87,7 @@ public partial class BrowserSignInWindow : Window
 
     private async void UseSignIn_Click(object sender, RoutedEventArgs e)
     {
-        _classicAttempt = 2;
+        _classicAttempt = 1;
         try
         {
             await ProbeAsync(allowClassicNavigation: false);
@@ -111,6 +112,12 @@ public partial class BrowserSignInWindow : Window
             return;
         }
 
+        if (LooksLikeIdentityRedirect(source))
+        {
+            StatusText.Text = "Finish signing in with your company account.";
+            return;
+        }
+
         var raw = await Browser.CoreWebView2.CookieManager.GetCookiesAsync(_instance.AbsoluteUri);
         var cookies = raw.Select(cookie => new BrowserCookie(cookie.Name, cookie.Value, cookie.Domain, cookie.Path)).ToArray();
         if (!BrowserSessionCookies.HasServiceNowSession(cookies))
@@ -120,13 +127,15 @@ public partial class BrowserSignInWindow : Window
         }
 
         var token = await ReadTokenAsync();
-        if (token.Length == 0 && allowClassicNavigation && _classicAttempt < 2)
+        // One classic page load for g_ck — a second hop (incident list then navpage)
+        // reloads ServiceNow while SSO cookies are still settling and looks like a
+        // triple flash of the sign-in window.
+        if (token.Length == 0 && allowClassicNavigation && _classicAttempt < 1)
         {
             _classicAttempt++;
-            StatusText.Text = "Signed in. Opening the incident list to read the form token.";
-            var path = _classicAttempt == 1 ? "incident_list.do?sysparm_stack=no" : "navpage.do";
+            StatusText.Text = "Signed in. Opening ServiceNow to read the form token.";
             _probing = false;
-            Browser.CoreWebView2.Navigate(new Uri(_instance, path).AbsoluteUri);
+            Browser.CoreWebView2.Navigate(new Uri(_instance, "navpage.do").AbsoluteUri);
             return;
         }
 
@@ -149,6 +158,16 @@ public partial class BrowserSignInWindow : Window
 
         _completed = true;
         DialogResult = true;
+    }
+
+    private static bool LooksLikeIdentityRedirect(Uri source)
+    {
+        var path = source.AbsolutePath;
+        return path.Contains("saml", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("oauth", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("login_redirect", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("sso", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("auth_redirect", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<string> ReadTokenAsync()

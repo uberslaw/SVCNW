@@ -11,9 +11,22 @@ public sealed partial class StartupDownloadModel : ObservableObject
     private int _finished;
     private int _current = -1;
     private bool _dismissed;
+    private readonly List<string> _failures = [];
 
     /// <summary>True after the user closes the splash. A download that finishes on its own leaves this false.</summary>
     public bool ClosedByUser { get; private set; }
+
+    /// <summary>True when at least one section called <see cref="Fail"/> during the current run.</summary>
+    public bool HasFailures { get; private set; }
+
+    public IReadOnlyList<string> FailureNotes
+    {
+        get
+        {
+            lock (_gate)
+                return _failures.ToArray();
+        }
+    }
 
     public ObservableCollection<StartupDownloadLine> Lines { get; } = [];
 
@@ -32,11 +45,13 @@ public sealed partial class StartupDownloadModel : ObservableObject
         lock (_gate)
         {
             Lines.Clear();
+            _failures.Clear();
             _total = Math.Max(1, total);
             _finished = 0;
             _current = -1;
             _dismissed = false;
             ClosedByUser = false;
+            HasFailures = false;
             Title = Heading(null);
             IsRunning = true;
             ShowScreen = true;
@@ -114,7 +129,10 @@ public sealed partial class StartupDownloadModel : ObservableObject
             if (_current < 0 || _current >= Lines.Count)
                 return;
             var text = string.IsNullOrWhiteSpace(error) ? "Could not download this section." : error.Trim();
+            var name = Lines[_current].Name;
             Lines[_current].ShowNote(text);
+            HasFailures = true;
+            _failures.Add(name + ": " + text);
             FinishCurrent();
         }
     }
@@ -123,6 +141,8 @@ public sealed partial class StartupDownloadModel : ObservableObject
     {
         lock (_gate)
         {
+            // Closing the splash only hides it. The download keeps running and still
+            // advances lines / the compact bar until every section finishes.
             ClosedByUser = true;
             _dismissed = true;
             ShowScreen = false;
@@ -139,10 +159,12 @@ public sealed partial class StartupDownloadModel : ObservableObject
         lock (_gate)
         {
             Lines.Clear();
+            _failures.Clear();
             _finished = 0;
             _current = -1;
             _dismissed = false;
             ClosedByUser = false;
+            HasFailures = false;
             IsRunning = false;
             ShowScreen = false;
             ShowBar = false;

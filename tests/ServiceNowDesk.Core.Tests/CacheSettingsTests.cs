@@ -355,9 +355,12 @@ public class CacheSettingsTests
         Assert.True(main.Connection.DownloadCacheOnLaunch);
         await main.ConnectCommand.ExecuteAsync(null);
 
-        Assert.Equal("", main.ErrorMessage);
+        Assert.Contains("Incidents", main.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("incident list failed", main.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("could not be downloaded", main.StatusMessage, StringComparison.OrdinalIgnoreCase);
         Assert.False(main.Startup.ShowScreen);
         Assert.False(main.Startup.IsRunning);
+        Assert.True(main.Startup.HasFailures);
         var incidents = Assert.Single(main.Startup.Lines, line => line.Name == "Incidents");
         Assert.Contains("incident list failed", incidents.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP" && row.Title == "Keep me");
