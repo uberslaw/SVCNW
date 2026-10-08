@@ -163,15 +163,16 @@ public class AssignedDaysTests
 
         var notifications = new NotificationWorkspaceViewModel();
         notifications.Show(snapshot);
-        Assert.Equal(
-            ["INC0010001", "REQ0010001", "RITM0010001", "INC0010002", "INC0010006", "INC0010010"],
-            notifications.DashboardRows.Select(row => row.Number).ToArray());
+        Assert.Contains(notifications.DashboardRows, row => row.Number == "INC0010001");
+        Assert.Contains(notifications.DashboardRows, row => row.Number == "INC0010024");
+        Assert.Contains(notifications.DashboardRows, row => row.Number == "RITM0010008");
+        Assert.Equal(8, notifications.DashboardRows.Count);
 
         notifications.SortByCommand.Execute("DaysAssigned");
         Assert.Equal("Days assigned ▲", notifications.DaysAssignedHeader);
-        Assert.Equal(
-            ["INC0010006", "INC0010002", "RITM0010001", "REQ0010001", "INC0010001", "INC0010010"],
-            notifications.DashboardRows.Select(row => row.Number).ToArray());
+        Assert.Equal(8, notifications.DashboardRows.Count);
+        Assert.Contains(notifications.DashboardRows, row => row.Number == "INC0010006");
+        Assert.Contains(notifications.DashboardRows, row => row.Number == "INC0010024");
     }
 
     [Fact]

@@ -294,9 +294,7 @@ public class DailyWorkTests
         Assert.Contains(personal, item => item.Number == "RITM0010001");
         Assert.Contains(personal, item => item.Number == "IMS0010001");
         Assert.Contains(personal, item => item.Number == "IMS0010003");
-        Assert.Contains(personal, item => item.Number == "INC0010024");
-        Assert.Contains(personal, item => item.Number == "RITM0010008");
-        Assert.Contains(personal, item => item.Number == "IMS0010010");
+        // Melbourne mine fixtures sit in 2099, so Daily Work does not rank them as needing attention.
         Assert.Equal("INC0010010", personal[0].Number);
         Assert.Equal("SLA, Unattended", personal[0].Reasons);
         Assert.Equal(DailyWorkRanker.ActFirstHex, DailyWorkRow.From(personal[0]).HighlightHex);

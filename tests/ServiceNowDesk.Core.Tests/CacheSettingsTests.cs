@@ -527,7 +527,8 @@ public class CacheSettingsTests
     {
         var settings = new MemorySettingsStore();
         settings.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = true });
-        var main = new MainViewModel(settings, new RecordingDesktopServices());
+        var lists = new MemoryDeskListStore();
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
         await main.InitializeAsync();
 
         var incidents = Assert.Single(main.Caches, row => row.Name == "Incidents");
@@ -537,6 +538,9 @@ public class CacheSettingsTests
 
         var choices = Assert.Single(main.Caches, row => row.Name == "Form choices");
         Assert.True(choices.StoredCount > 0, choices.CountText);
+
+        var walkUps = Assert.Single(main.Caches, row => row.Name == "Walk-ups");
+        Assert.True(walkUps.StoredCount > 0, walkUps.CountText);
 
         var knowledge = Assert.Single(main.Caches, row => row.Name == "Knowledge");
         Assert.True(knowledge.StoredCount >= 0, knowledge.CountText);

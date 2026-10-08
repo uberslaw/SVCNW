@@ -223,24 +223,37 @@ public partial class MainViewModel
         }
     }
 
-    private int StoredCountFor(string key, DeskListSnapshot? lists, FormCatalogSnapshot? catalog, ServiceNowClient? live) =>
-        key switch
+    private int StoredCountFor(string key, DeskListSnapshot? lists, FormCatalogSnapshot? catalog, ServiceNowClient? live)
+    {
+        var fromDisk = key switch
         {
-            "incidents" => lists?.Incidents?.Items.Count ?? 0,
-            "requests" => lists?.Requests?.Items.Count ?? 0,
-            "request-items" => lists?.RequestItems?.Items.Count ?? 0,
-            "walk-ups" => lists?.WalkUps?.Items.Count ?? 0,
-            "knowledge" => lists?.Knowledge?.Items.Count
-                ?? (Knowledge.HasArticles ? Knowledge.Articles.Count : 0),
-            "choices" => catalog?.Choices.Sum(list => list.Choices?.Count ?? 0)
-                ?? (live is null ? CountPracticeStamp("choices") : 0),
-            "groups" => catalog?.Groups.Count
-                ?? (live is null ? Incidents.Assignment.Groups.Count(choice => !string.IsNullOrEmpty(choice.Value)) : 0),
-            "members" => catalog?.Members.Count ?? 0,
-            "service-offerings" => catalog?.ServiceOfferings.Count ?? 0,
-            "configuration-items" => catalog?.ConfigurationItems.Count ?? 0,
+            "incidents" => lists?.Incidents?.Items.Count,
+            "requests" => lists?.Requests?.Items.Count,
+            "request-items" => lists?.RequestItems?.Items.Count,
+            "walk-ups" => lists?.WalkUps?.Items.Count,
+            "knowledge" => lists?.Knowledge?.Items.Count,
+            "choices" => catalog is null ? null : catalog.Choices.Sum(list => list.Choices?.Count ?? 0),
+            "groups" => catalog?.Groups.Count,
+            "members" => catalog?.Members.Count,
+            "service-offerings" => catalog?.ServiceOfferings.Count,
+            "configuration-items" => catalog?.ConfigurationItems.Count,
+            _ => null
+        };
+        if (fromDisk is int count)
+            return count;
+
+        return key switch
+        {
+            "incidents" => Incidents.Items.Count,
+            "requests" => Requests.Items.Count,
+            "request-items" => RequestedItems.Items.Count,
+            "walk-ups" => WalkUps.Items.Count,
+            "knowledge" => Knowledge.Articles.Count,
+            "choices" => live is null ? CountPracticeStamp("choices") : 0,
+            "groups" => Incidents.Assignment.Groups.Count(choice => !string.IsNullOrEmpty(choice.Value)),
             _ => 0
         };
+    }
 
     private static DateTimeOffset CapturedAtFor(string key, DeskListSnapshot? lists, FormCatalogSnapshot? catalog) =>
         key switch
