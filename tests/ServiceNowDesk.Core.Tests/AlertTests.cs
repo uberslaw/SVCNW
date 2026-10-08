@@ -1198,9 +1198,12 @@ public class AlertTests
         Assert.All(personal, call =>
         {
             Assert.DoesNotContain(team, call.Query);
-            Assert.DoesNotContain("^NQ", call.Query);
+            Assert.DoesNotContain("location.nameIN", call.Query);
             Assert.DoesNotContain("assignment_groupIN", call.Query);
             Assert.DoesNotContain("sysparm_suppress_pagination_header", call.PathAndQuery);
+            // Requests have no location field; incidents / items / walk-ups stay in-office.
+            if (!call.PathAndQuery.Contains("/sc_request", StringComparison.Ordinal))
+                Assert.Contains("location.name", call.Query);
         });
 
         var groupCalls = decoded.Where(call => call.Query.Contains("assignment_groupIN", StringComparison.Ordinal)).ToArray();
@@ -1323,6 +1326,7 @@ public class AlertTests
         + "\"assigned_to\":{\"value\":\"" + assigneeId + "\",\"display_value\":\"Alex\"},"
         + "\"assigned_to.user_name\":{\"value\":\"" + assigneeUser + "\"},"
         + "\"assignment_group\":{\"value\":\"group-cs\",\"display_value\":\"Client Services\"},"
+        + "\"location\":{\"value\":\"loc-bne\",\"display_value\":\"Brisbane\"},"
         + "\"sys_updated_on\":{\"value\":\"2026-10-01 09:00:00\",\"display_value\":\"2026-10-01 09:00\"},"
         + "\"sys_updated_by\":{\"value\":\"alex.rivera\"},"
         + "\"caller_id.user_name\":{\"value\":\"jordan.lee\"},"
@@ -1346,6 +1350,7 @@ public class AlertTests
           "state": {"value": "2", "display_value": "In Progress"},
           "assigned_to": {"value": "sample-user", "display_value": "Alex Rivera"},
           "assignment_group": {"value": "group-cs", "display_value": "Client Services"},
+          "location": {"value": "loc-bne", "display_value": "Brisbane"},
           "sys_updated_on": {"value": "2026-10-01 09:00:00", "display_value": "2026-10-01 09:00"},
           "sys_updated_by": {"value": "{{updatedBy}}", "display_value": "{{updatedBy}}"},
           "caller_id.user_name": {"value": "{{caller}}", "display_value": "{{caller}}"},
