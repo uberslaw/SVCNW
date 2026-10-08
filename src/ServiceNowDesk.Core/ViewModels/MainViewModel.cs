@@ -1208,11 +1208,27 @@ public partial class MainViewModel : ObservableObject
             return true;
         if (string.IsNullOrWhiteSpace(settings.InstanceUrl))
             return false;
-        if (settings.AuthMode != ServiceNowAuthMode.BrowserSession)
-            return true;
 
-        return !string.IsNullOrWhiteSpace(settings.SessionCookie)
-            && !string.IsNullOrWhiteSpace(settings.UserToken);
+        // A default instance URL alone is not a saved sign-in. Guided setup and other
+        // settings writes fill the Arup URL; auto-connect still needs credentials.
+        return settings.AuthMode switch
+        {
+            ServiceNowAuthMode.BrowserSession =>
+                !string.IsNullOrWhiteSpace(settings.SessionCookie)
+                && !string.IsNullOrWhiteSpace(settings.UserToken),
+            ServiceNowAuthMode.Basic =>
+                !string.IsNullOrWhiteSpace(settings.Username)
+                && !string.IsNullOrWhiteSpace(settings.Password),
+            ServiceNowAuthMode.OAuthPassword =>
+                !string.IsNullOrWhiteSpace(settings.Username)
+                && !string.IsNullOrWhiteSpace(settings.Password)
+                && !string.IsNullOrWhiteSpace(settings.ClientId)
+                && !string.IsNullOrWhiteSpace(settings.ClientSecret),
+            ServiceNowAuthMode.OAuthClientCredentials =>
+                !string.IsNullOrWhiteSpace(settings.ClientId)
+                && !string.IsNullOrWhiteSpace(settings.ClientSecret),
+            _ => false
+        };
     }
 
     private void WatchBrowserSession(ServiceNowClient live)
