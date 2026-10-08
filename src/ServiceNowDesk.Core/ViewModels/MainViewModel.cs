@@ -1022,9 +1022,13 @@ public partial class MainViewModel : ObservableObject
         if (_loadedFor.TryGetValue(DeskSection.WalkUps, out var walksLoaded) && walksLoaded.Length > 0)
             return false;
 
-        var rows = Incidents.Items.Select(row => TagMixRow(row, "INC", DeskSection.Incidents))
-            .Concat(RequestedItems.Items.Select(row => TagMixRow(row, "RITM", DeskSection.RequestedItems)))
-            .Concat(WalkUps.Items.Select(row => TagMixRow(row, "IMS", DeskSection.WalkUps)))
+        // Snapshot before composing — alert/queue loops can touch these collections.
+        var incidents = Incidents.Items.ToArray();
+        var items = RequestedItems.Items.ToArray();
+        var walks = WalkUps.Items.ToArray();
+        var rows = incidents.Select(row => TagMixRow(row, "INC", DeskSection.Incidents))
+            .Concat(items.Select(row => TagMixRow(row, "RITM", DeskSection.RequestedItems)))
+            .Concat(walks.Select(row => TagMixRow(row, "IMS", DeskSection.WalkUps)))
             .OrderByDescending(row => row.SortKey, StringComparer.Ordinal)
             .ThenBy(row => row.Number, StringComparer.Ordinal)
             .ToArray();

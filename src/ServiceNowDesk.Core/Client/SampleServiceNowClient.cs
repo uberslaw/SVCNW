@@ -30,6 +30,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     private readonly Dictionary<string, SampleAlertSignals> _signals = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _assignedOn = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ApiActivity> _activity = [];
+    private readonly object _data = new();
     private int _sequence = 1000;
     private int _unassignedQueueReads;
 
@@ -84,7 +85,10 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
         Record("GET", "api/now/table/incident");
         var watched = EncodedQuery.Sanitize(watchedGroupName);
-        var rows = _incidents
+        IncidentRecord[] source;
+        lock (_data)
+            source = _incidents.ToArray();
+        var rows = source
             .Where(record => IsOpenUnassigned(record) && InGroupQueue(record, watched))
             .Select(record => Describe(
                 DeskSection.Incidents,
@@ -423,7 +427,10 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken)
     {
-        var matches = _incidents.Where(record => Passes(
+        IncidentRecord[] source;
+        lock (_data)
+            source = _incidents.ToArray();
+        var matches = source.Where(record => Passes(
             query,
             IdOf(record.AssignedTo),
             IdOf(record.AssignmentGroup),
@@ -482,7 +489,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             UpdatedAtValue = now,
             Active = true
         };
-        _incidents.Insert(0, record);
+        lock (_data)
+            _incidents.Insert(0, record);
         Record("POST", "api/now/table/incident");
         return Task.FromResult(record);
     }
@@ -644,7 +652,10 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     public Task<PagedResult<RequestedItemRecord>> SearchRequestedItemsAsync(TicketQuery query, CancellationToken cancellationToken)
     {
-        var matches = _items.Where(record =>
+        RequestedItemRecord[] source;
+        lock (_data)
+            source = _items.ToArray();
+        var matches = source.Where(record =>
             (string.IsNullOrWhiteSpace(query.ParentRequestId) || record.Request.SysId == query.ParentRequestId)
             && Passes(
                 query,
@@ -1104,7 +1115,10 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     public Task<PagedResult<InteractionRecord>> SearchInteractionsAsync(TicketQuery query, CancellationToken cancellationToken)
     {
-        var matches = _interactions.Where(record =>
+        InteractionRecord[] source;
+        lock (_data)
+            source = _interactions.ToArray();
+        var matches = source.Where(record =>
             string.Equals(record.Type, DefaultChoices.WalkUpType, StringComparison.OrdinalIgnoreCase)
             && Passes(
                 query,
@@ -2403,7 +2417,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     private void AddIncident(IncidentRecord record, params JournalEntry[] notes)
     {
-        _incidents.Add(record);
+        lock (_data)
+            _incidents.Add(record);
         if (notes.Length > 0)
             _journal[record.SysId] = notes.ToList();
     }
