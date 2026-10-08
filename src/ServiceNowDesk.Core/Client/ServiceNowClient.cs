@@ -1093,15 +1093,15 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     {
         var id = EncodedQuery.SafeToken(sysId, "record id");
         var safeTable = EncodedQuery.SafeToken(table, "table");
-        ServiceNowException? blocked = null;
         IReadOnlyList<JournalEntry> rows;
         try
         {
             rows = await LoadJournalRowsAsync(id, cancellationToken).ConfigureAwait(false);
         }
-        catch (ServiceNowException ex) when (ex.StatusCode is 403 or 404)
+        catch (ServiceNowException ex) when (ex.StatusCode is 403 or 404 || IsHtmlPayloadMessage(ex))
         {
-            blocked = ex;
+            // ACL denials and HTML login pages for sys_journal_field must not fail
+            // the whole ticket editor — fall back to activity fields, then empty.
             rows = [];
         }
 
@@ -1114,11 +1114,13 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         if (activity.Count > 0)
             return NewestFirst(activity);
 
-        if (blocked is not null)
-            throw blocked;
-
+        // HTML pages and table ACLs on sys_journal_field must not fail the editor —
+        // the record is already loaded and Save must stay usable.
         return NewestFirst(rows);
     }
+
+    private static bool IsHtmlPayloadMessage(ServiceNowException error) =>
+        error.Message.Contains("web page instead of API data", StringComparison.OrdinalIgnoreCase);
 
     private async Task<IReadOnlyList<JournalEntry>> LoadJournalRowsAsync(string id, CancellationToken cancellationToken)
     {
@@ -2134,12 +2136,22 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         // 403 is usually a table ACL. Only treat it as a dead browser session when
         // ServiceNow explicitly says the user is not authenticated — otherwise a
         // denied list during bootstrap would wipe a fresh sign-in.
+        // HTML login/error pages must not clear the session either: a single
+        // Forbidden lookup (journal, members, attachments) often returns a web
+        // page whose body can contain the words "not authenticated".
         if (statusCode == 403)
+        {
+            if (LooksLikeHtml(body))
+                return false;
             return LooksUnauthenticated(body)
                 || LooksUnauthenticated(error.Message)
                 || LooksUnauthenticated(error.Detail);
+        }
         return false;
     }
+
+    private static bool LooksLikeHtml(string? text) =>
+        text is not null && text.TrimStart().StartsWith('<');
 
     private static bool LooksUnauthenticated(string? text) =>
         text is not null

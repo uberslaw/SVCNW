@@ -20,6 +20,13 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         ServiceOffering = new ReferenceChoiceField((client, token) => client.ListServiceOfferingsAsync(token));
         ConfigurationItem = new ReferenceChoiceField((client, token) => client.ListConfigurationItemsAsync(token), searchRemote: true);
         Assignment.Changed += (_, _) => Touch();
+        // ComboBox SelectedValue can update MemberId/GroupId without raising Changed while
+        // the member list is rebuilding — PropertyChanged still fires, so Touch here too.
+        Assignment.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(AssignmentFields.MemberId) or nameof(AssignmentFields.GroupId))
+                Touch();
+        };
         ServiceOffering.Changed += (_, _) => Touch();
         ConfigurationItem.Changed += (_, _) => Touch();
         ResolveChoiceLabel = "Outcome";
@@ -127,8 +134,8 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             || CloseNotes != record.CloseNotes
             || HoldReason != record.HoldReason
             || FollowUp != record.FollowUp
-            || Assignment.MemberId != record.AssignedTo.SysId
-            || Assignment.GroupId != record.AssignmentGroup.SysId
+            || !SameId(Assignment.MemberId, record.AssignedTo.SysId)
+            || !SameId(Assignment.GroupId, record.AssignmentGroup.SysId)
             || !SameId(ServiceOffering.Id, record.ServiceOffering.SysId)
             || !SameId(ConfigurationItem.Id, record.ConfigurationItem.SysId);
     }
@@ -177,9 +184,9 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             CloseNotes = FieldDiff.Changed(CloseNotes, record.CloseNotes),
             HoldReason = FieldDiff.Changed(HoldReason, record.HoldReason),
             FollowUp = FieldDiff.Changed((FollowUp ?? "").Trim(), record.FollowUp),
-            AssignedToId = !string.IsNullOrEmpty(Assignment.MemberId) && Assignment.MemberId != record.AssignedTo.SysId ? Assignment.MemberId : null,
+            AssignedToId = !string.IsNullOrEmpty(Assignment.MemberId) && !SameId(Assignment.MemberId, record.AssignedTo.SysId) ? Assignment.MemberId : null,
             ClearAssignedTo = string.IsNullOrEmpty(Assignment.MemberId) && !record.AssignedTo.IsEmpty,
-            AssignmentGroupId = !string.IsNullOrEmpty(Assignment.GroupId) && Assignment.GroupId != record.AssignmentGroup.SysId ? Assignment.GroupId : null,
+            AssignmentGroupId = !string.IsNullOrEmpty(Assignment.GroupId) && !SameId(Assignment.GroupId, record.AssignmentGroup.SysId) ? Assignment.GroupId : null,
             ClearAssignmentGroup = string.IsNullOrEmpty(Assignment.GroupId) && !record.AssignmentGroup.IsEmpty,
             ServiceOfferingId = !string.IsNullOrEmpty(ServiceOffering.Id) && !SameId(ServiceOffering.Id, record.ServiceOffering.SysId) ? ServiceOffering.Id : null,
             ClearServiceOffering = string.IsNullOrEmpty(ServiceOffering.Id) && !record.ServiceOffering.IsEmpty,
@@ -247,7 +254,7 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
     partial void OnFollowUpChanged(string value) => Touch();
 
     private static bool SameId(string? left, string? right) =>
-        string.Equals(left ?? "", right ?? "", StringComparison.Ordinal);
+        string.Equals(left ?? "", right ?? "", StringComparison.OrdinalIgnoreCase);
 
     private async Task LoadHoldReasonsAsync()
     {

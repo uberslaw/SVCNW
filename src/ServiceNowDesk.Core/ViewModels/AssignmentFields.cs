@@ -46,9 +46,22 @@ public sealed class AssignmentFields : ObservableObject
 
     public bool GroupsLoaded { get; private set; }
 
-    public string MemberHint => string.IsNullOrEmpty(GroupId)
-        ? "Choose a group to list its members."
-        : Members.Count <= 1 ? "No members are saved for this group yet." : "";
+    public string MemberHint
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(MemberLookupError))
+                return MemberLookupError;
+            if (string.IsNullOrEmpty(GroupId))
+                return "Choose a group to list its members.";
+            return Members.Count <= 1 ? "No members are saved for this group yet." : "";
+        }
+    }
+
+    /// <summary>
+    /// Set when ListGroupMembers fails (HTML/ACL). Does not clear the session or block Save.
+    /// </summary>
+    public string MemberLookupError { get; private set; } = "";
 
     /// <summary>
     /// The name of the selected member. Empty when nobody is assigned. Never the sys_id.
@@ -143,6 +156,7 @@ public sealed class AssignmentFields : ObservableObject
             GroupId = "";
             KeepBlankMember();
             MemberId = "";
+            MemberLookupError = "";
             // Push the blank value again after the row is in the list. A combo writes null when its selection is missing.
             OnPropertyChanged(nameof(GroupId));
             OnPropertyChanged(nameof(MemberId));
@@ -157,6 +171,7 @@ public sealed class AssignmentFields : ObservableObject
     public void Clear()
     {
         GroupsLoaded = false;
+        MemberLookupError = "";
         ClearSelection();
         Groups.Clear();
         Groups.Add(new Choice("", "Unassigned"));
@@ -233,15 +248,17 @@ public sealed class AssignmentFields : ObservableObject
     private async Task LoadMembersCoreAsync(int version, string groupId, string memberId, string memberLabel, bool keepMissing)
     {
         IReadOnlyList<Choice> members = [];
+        string? lookupError = null;
         if (_client is not null && !string.IsNullOrWhiteSpace(groupId))
         {
             try
             {
                 members = await _client.ListGroupMembersAsync(groupId, CancellationToken.None);
             }
-            catch
+            catch (Exception ex)
             {
                 members = [];
+                lookupError = DescribeMemberLookupFailure(ex);
             }
         }
 
@@ -272,12 +289,27 @@ public sealed class AssignmentFields : ObservableObject
             MemberId = keep;
             OnPropertyChanged(nameof(MemberId));
             OnPropertyChanged(nameof(SelectedMemberLabel));
+            MemberLookupError = lookupError ?? "";
             OnPropertyChanged(nameof(MemberHint));
         }
         finally
         {
             _applying = false;
+            // ComboBox selection changes during Members rebuild are swallowed while
+            // applying. Notify once the list settles so IsDirty/CanSave recalculate.
+            Changed?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    private static string DescribeMemberLookupFailure(Exception ex)
+    {
+        if (ex is ServiceNowException snow
+            && snow.Message.Contains("web page instead of API data", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Could not load group members from the Table API. You can still change Assigned to and Save.";
+        }
+
+        return "Could not load group members. You can still change Assigned to and Save.";
     }
 
     private void ReorderGroups()
