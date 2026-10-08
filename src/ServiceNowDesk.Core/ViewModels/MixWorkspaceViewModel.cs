@@ -27,8 +27,14 @@ public partial class MixWorkspaceViewModel : ObservableObject
 
     public MixWorkspaceViewModel()
     {
-        Preset = Presets.Single(preset => preset.Assignment == AssignmentScope.MyGroups);
+        Preset = Presets.Single(preset => preset.Assignment == AssignmentScope.Mine);
     }
+
+    /// <summary>
+    /// Optional host hook: when it returns true, <see cref="RefreshAsync"/> skips the network.
+    /// Used after splash preload so My Tickets can paint from the desk list caches.
+    /// </summary>
+    public Func<Task<bool>>? TryLoadFromHostCacheAsync { get; set; }
 
     public IReadOnlyList<PresetOption> Presets { get; } = PresetCatalog.Mix;
     public ObservableCollection<TicketRow> Items { get; } = [];
@@ -132,9 +138,31 @@ public partial class MixWorkspaceViewModel : ObservableObject
         await RefreshAsync().ConfigureAwait(true);
     }
 
+    public void ShowCachedRows(IReadOnlyList<TicketRow> rows)
+    {
+        _suppressSelection = true;
+        Items.Clear();
+        foreach (var row in rows)
+        {
+            PrepareRow?.Invoke(row);
+            Items.Add(row);
+        }
+
+        TotalCount = rows.Count;
+        Selected = null;
+        _bound = null;
+        ErrorMessage = "";
+        HasLoaded = true;
+        IsLoading = false;
+        _suppressSelection = false;
+    }
+
     public async Task RefreshAsync()
     {
         if (_client is null)
+            return;
+
+        if (TryLoadFromHostCacheAsync is not null && await TryLoadFromHostCacheAsync().ConfigureAwait(true))
             return;
 
         var version = ++_loadVersion;

@@ -108,7 +108,7 @@
 
             <TextBlock Text="Cache" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
-                       Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Incident templates and the saved sign-in stay where they are."/>
+                       Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Rows show the last good download, how many stale items were cleared, how many fresh items were downloaded, and any error. Incident templates and the saved sign-in stay where they are."/>
 
             <CheckBox Content="Download cache on launch or new browser session"
                       IsChecked="{Binding Connection.DownloadCacheOnLaunch}"
@@ -130,9 +130,15 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontSize="14"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" FontSize="14"/>
+                                    <TextBlock Text="{Binding LastGoodText}" Margin="0,4,0,0" FontSize="12"
+                                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               AutomationProperties.Name="{Binding Name, StringFormat=Last good download for {0}}"/>
+                                </StackPanel>
                                 <Button Grid.Column="1" Width="36" Height="32" Padding="0" Cursor="Hand"
                                         Style="{StaticResource SecondaryButton}"
+                                        VerticalAlignment="Top"
                                         Command="{Binding DataContext.RefreshCacheCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}"
                                         IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
@@ -140,18 +146,23 @@
                                         AutomationProperties.Name="{Binding Name, StringFormat=Refresh {0}}">
                                     <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE72C;" FontSize="14" HorizontalAlignment="Center"/>
                                 </Button>
-                                <TextBlock Grid.Column="2" Text="{Binding Status}" Margin="14,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsFailed}" Value="True">
-                                                    <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+                                <StackPanel Grid.Column="2" Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Status}" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsFailed}" Value="True">
+                                                        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding LastAttemptText}" Margin="0,4,0,0" FontSize="12"
+                                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Visibility="{Binding LastAttemptText, Converter={StaticResource StringVis}}"/>
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </DataTemplate>

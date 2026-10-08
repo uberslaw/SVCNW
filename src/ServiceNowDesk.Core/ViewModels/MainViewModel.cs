@@ -63,7 +63,30 @@ public partial class MainViewModel : ObservableObject
     ]);
     private bool _startupGate;
     private int _downloadBusy;
-    private static readonly string[] StartupCacheKeys = ["choices", "groups", "members", "service-offerings", "configuration-items", "incidents", "requests", "walk-ups", "knowledge"];
+    /// <summary>
+    /// Splash order: Mix ticket sections first (incidents, request items, walk-ups), then the rest.
+    /// </summary>
+    private static readonly string[] StartupCacheKeys =
+    [
+        "incidents",
+        "request-items",
+        "walk-ups",
+        "requests",
+        "knowledge",
+        "choices",
+        "groups",
+        "members",
+        "service-offerings",
+        "configuration-items"
+    ];
+
+    private static readonly HashSet<string> MixTicketCacheKeys = new(StringComparer.Ordinal)
+    {
+        "incidents",
+        "request-items",
+        "walk-ups"
+    };
+
     private int _knowledgeQuiet;
 
     public MainViewModel(
@@ -102,6 +125,7 @@ public partial class MainViewModel : ObservableObject
         WalkUps = new InteractionWorkspaceViewModel(desktop, recent);
         WalkUps.IncidentRequested += (_, conversion) => ConvertOpenTask = OpenConvertedIncidentAsync(conversion);
         Mix = new MixWorkspaceViewModel();
+        Mix.TryLoadFromHostCacheAsync = () => Task.FromResult(TrySeedMixFromDeskCaches());
         Mix.OpenRequested += (_, row) => MixOpenTask = OpenMixRowAsync(row);
         Search = new SearchWorkspaceViewModel();
         Knowledge = new KnowledgeWorkspaceViewModel(desktop);
@@ -973,9 +997,63 @@ public partial class MainViewModel : ObservableObject
             return;
 
         Mix.SearchText = SearchText;
+        if (TrySeedMixFromDeskCaches())
+            return;
+
         await Mix.RefreshAsync();
         _loadedFor[DeskSection.InTheMix] = SearchText;
     }
+
+    /// <summary>
+    /// When Mix is on My Tickets with an empty search and the three desk lists are already
+    /// loaded for that same empty search, paint Mix from those rows without another round-trip.
+    /// </summary>
+    private bool TrySeedMixFromDeskCaches()
+    {
+        if (Mix.Preset.Assignment != AssignmentScope.Mine || Mix.Preset.Activity != ActivityFilter.Open)
+            return false;
+        if (!string.IsNullOrWhiteSpace(Mix.SearchText) || !string.IsNullOrWhiteSpace(SearchText))
+            return false;
+        if (!Incidents.HasLoaded || !RequestedItems.HasLoaded || !WalkUps.HasLoaded)
+            return false;
+        if (_loadedFor.TryGetValue(DeskSection.Incidents, out var incidentsLoaded) && incidentsLoaded.Length > 0)
+            return false;
+        if (_loadedFor.TryGetValue(DeskSection.RequestedItems, out var itemsLoaded) && itemsLoaded.Length > 0)
+            return false;
+        if (_loadedFor.TryGetValue(DeskSection.WalkUps, out var walksLoaded) && walksLoaded.Length > 0)
+            return false;
+
+        // Snapshot before composing — alert/queue loops can touch these collections.
+        var incidents = Incidents.Items.ToArray();
+        var items = RequestedItems.Items.ToArray();
+        var walks = WalkUps.Items.ToArray();
+        var rows = incidents.Select(row => TagMixRow(row, "INC", DeskSection.Incidents))
+            .Concat(items.Select(row => TagMixRow(row, "RITM", DeskSection.RequestedItems)))
+            .Concat(walks.Select(row => TagMixRow(row, "IMS", DeskSection.WalkUps)))
+            .OrderByDescending(row => row.SortKey, StringComparer.Ordinal)
+            .ThenBy(row => row.Number, StringComparer.Ordinal)
+            .ToArray();
+        Mix.ShowCachedRows(rows);
+        _loadedFor[DeskSection.InTheMix] = "";
+        return true;
+    }
+
+    private static TicketRow TagMixRow(TicketRow row, string kind, DeskSection source) => new()
+    {
+        SysId = row.SysId,
+        Number = row.Number,
+        Title = row.Title,
+        StateLabel = row.StateLabel,
+        Tone = row.Tone,
+        Meta = row.Meta,
+        When = row.When,
+        Badge = row.Badge,
+        Unassigned = row.Unassigned,
+        StateValue = row.StateValue,
+        SortKey = row.SortKey,
+        Kind = kind,
+        Source = source
+    };
 
     private void ApplyOfficeCities()
     {
@@ -1228,7 +1306,7 @@ public partial class MainViewModel : ObservableObject
     }
 
     private static readonly string[] TicketBootstrapNames =
-        ["Incidents", "Requests", "Walk-ups", "Knowledge"];
+        ["Incidents", "Requests", "Request items", "Walk-ups", "Knowledge"];
 
     private async Task BindGroupsAsync()
     {
@@ -1704,8 +1782,26 @@ public partial class MainViewModel : ObservableObject
 
     private void Paint(IEnumerable<TicketRow> rows)
     {
-        foreach (var row in rows)
+        foreach (var row in SnapshotRows(rows))
             _rows.Paint(row);
+    }
+
+    private static TicketRow[] SnapshotRows(IEnumerable<TicketRow> rows)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                return rows.ToArray();
+            }
+            catch (ArgumentException)
+            {
+                // Collection mutated by a list reload on another thread (common in tests
+                // without a UI SynchronizationContext).
+            }
+        }
+
+        return [];
     }
 
     private CancellationTokenSource? _workEffortCts;

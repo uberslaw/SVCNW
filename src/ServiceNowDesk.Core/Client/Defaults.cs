@@ -179,7 +179,8 @@ public static class PresetCatalog
     public static IReadOnlyList<PresetOption> WalkUps { get; } = Incidents;
 
     /// <summary>
-    /// The combined list uses the same three actions. My Team is the default selection.
+    /// The combined list uses the same three actions. My Tickets is the default selection
+    /// so splash preload of incidents, request items, and walk-ups can open Mix immediately.
     /// </summary>
     public static IReadOnlyList<PresetOption> Mix { get; } =
     [

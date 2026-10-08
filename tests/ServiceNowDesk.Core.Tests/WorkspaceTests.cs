@@ -892,7 +892,10 @@ public class WorkspaceTests
         Assert.False(main.Startup.ShowScreen);
         Assert.False(main.Startup.ShowBar);
         Assert.False(main.Startup.IsRunning);
-        Assert.Equal(9, main.Startup.Lines.Count);
+        Assert.Equal(10, main.Startup.Lines.Count);
+        Assert.Equal("Incidents", main.Startup.Lines[0].Name);
+        Assert.Equal("Request items", main.Startup.Lines[1].Name);
+        Assert.Equal("Walk-ups", main.Startup.Lines[2].Name);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Knowledge" && line.Percent == 100);
         Assert.Contains(main.Startup.Lines, line => line.Name == "Service offerings");
         Assert.Contains(main.Startup.Lines, line => line.Name == "Configuration items");
