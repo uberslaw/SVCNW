@@ -48,6 +48,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private List<Choice> _configurationItems = [];
     private bool _configurationItemsReady;
     private string[]? _groupIds;
+    private string? _signedInUserSysId;
     private Task? _directoryRefresh;
 
     private ServiceNowClient(HttpClient http, ServiceNowSession session, IFormCatalogStore? formCatalog)
@@ -151,6 +152,16 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         PersistCatalog();
     }
 
+    /// <summary>
+    /// Drops the in-memory My Groups id list so the next list/alert query reloads
+    /// <c>sys_user_grmember</c> for the signed-in user. Does not touch the form catalog.
+    /// </summary>
+    public void ClearMyGroupMembershipCache()
+    {
+        lock (_cacheGate)
+            _groupIds = null;
+    }
+
     public void ClearServiceOfferingCache()
     {
         lock (_cacheGate)
@@ -185,6 +196,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             _membersByGroup.Clear();
             _groupsWithMemberList.Clear();
             _completeMemberGroups.Clear();
+            _groupIds = null;
             _snapshot.Members = [];
             _snapshot.DirectoryComplete = false;
             _snapshot.MembersVerified = false;
@@ -210,6 +222,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             _configurationItems = [];
             _configurationItemsReady = false;
             _groupIds = null;
+            _signedInUserSysId = null;
             _snapshot.Choices = [];
             _snapshot.CatalogItems = [];
             _snapshot.Groups = [];
@@ -272,7 +285,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             var row = array[0];
             var name = SnowField.Read(row, "name").Display;
             var userName = SnowField.Read(row, "user_name").Display;
-            return new CurrentUser(
+            var user = new CurrentUser(
                 SnowField.Read(row, "sys_id").Value,
                 string.IsNullOrWhiteSpace(name) ? userName : name,
                 userName,
@@ -280,6 +293,15 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             {
                 Location = SnowField.Read(row, "location").Display
             };
+            lock (_cacheGate)
+            {
+                if (_signedInUserSysId is not null
+                    && !_signedInUserSysId.Equals(user.SysId, StringComparison.OrdinalIgnoreCase))
+                    _groupIds = null;
+                _signedInUserSysId = user.SysId;
+            }
+
+            return user;
         }
     }
 
@@ -1835,33 +1857,62 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private async Task<string> MyGroupsClauseAsync(CancellationToken cancellationToken)
     {
         if (_groupIds is null)
-        {
-            var result = await GetListAsync(
-                "sys_user_grmember",
-                "group",
-                "user=javascript:gs.getUserID()",
-                50,
-                0,
-                cancellationToken).ConfigureAwait(false);
-            using (result)
-            {
-                var ids = new List<string>();
-                foreach (var row in RequireArray(result.Document).EnumerateArray())
-                {
-                    var group = SnowField.Read(row, "group").Value;
-                    if (group.Length == 0)
-                        continue;
-                    ids.Add(EncodedQuery.SafeToken(group, "group id"));
-                }
-
-                _groupIds = ids.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            }
-        }
+            _groupIds = await LoadMemberGroupIdsAsync(cancellationToken).ConfigureAwait(false);
 
         if (_groupIds.Length == 0)
             return "sys_id=NO_GROUP_MEMBERSHIP";
 
         return "assignment_groupIN" + string.Join(",", _groupIds);
+    }
+
+    /// <summary>
+    /// Real <c>sys_user_grmember</c> rows for the signed-in user only. Uses the resolved
+    /// sys_id (not <c>javascript:gs.getUserID()</c>) so a failed script filter cannot widen
+    /// the result set, and pages past the first fifty memberships.
+    /// </summary>
+    private async Task<string[]> LoadMemberGroupIdsAsync(CancellationToken cancellationToken)
+    {
+        var userId = await EnsureSignedInUserSysIdAsync(cancellationToken).ConfigureAwait(false);
+        var ids = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await PageRowsAsync(
+            "sys_user_grmember",
+            "group",
+            "user=" + EncodedQuery.SafeToken(userId, "user id") + "^ORDERBYsys_id",
+            FormCatalogPolicy.MaxAssignmentGroups,
+            null,
+            row =>
+            {
+                var group = SnowField.Read(row, "group").Value;
+                if (group.Length == 0)
+                    return;
+                try
+                {
+                    var token = EncodedQuery.SafeToken(group, "group id");
+                    if (seen.Add(token))
+                        ids.Add(token);
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
+        return ids.ToArray();
+    }
+
+    private async Task<string> EnsureSignedInUserSysIdAsync(CancellationToken cancellationToken)
+    {
+        lock (_cacheGate)
+        {
+            if (!string.IsNullOrWhiteSpace(_signedInUserSysId))
+                return _signedInUserSysId;
+        }
+
+        var user = await GetCurrentUserAsync(cancellationToken).ConfigureAwait(false);
+        var id = (user.SysId ?? "").Trim();
+        if (id.Length == 0)
+            throw new ServiceNowException(404, "Signed in, but ServiceNow did not return a user id for this account.", null);
+        return id;
     }
 
     private async Task<T> GetOneAsync<T>(string table, string sysId, string fields, Func<JsonElement, T> map, CancellationToken cancellationToken)
