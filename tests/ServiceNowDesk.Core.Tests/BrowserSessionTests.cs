@@ -1,5 +1,6 @@
 using System.Net;
 using ServiceNowDesk.Client;
+using ServiceNowDesk.GuidedSetup;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Services;
 using ServiceNowDesk.ViewModels;
@@ -97,6 +98,39 @@ public class BrowserSessionTests
 
         var ex = await Assert.ThrowsAsync<ServiceNowException>(() => client.GetCurrentUserAsync(CancellationToken.None));
 
+        Assert.Contains("sign in with the browser again", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task TableAclForbiddenDoesNotRejectTheBrowserSession()
+    {
+        var handler = new StubHandler((_, _) => Api.Json(
+            """{"error":{"message":"Insufficient rights","detail":"ACL blocked incident"},"status":"failure"}""",
+            HttpStatusCode.Forbidden));
+        using var client = ServiceNowClient.Create(BrowserSession(), handler);
+        var rejected = 0;
+        client.BrowserSessionRejected += (_, _) => rejected++;
+
+        var ex = await Assert.ThrowsAsync<ServiceNowException>(() => client.GetCurrentUserAsync(CancellationToken.None));
+
+        Assert.Equal(0, rejected);
+        Assert.DoesNotContain("sign in with the browser again", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ACL blocked incident", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UnauthenticatedForbiddenStillRejectsTheBrowserSession()
+    {
+        var handler = new StubHandler((_, _) => Api.Json(
+            """{"error":{"message":"Required to provide Auth information","detail":"User Not Authenticated"},"status":"failure"}""",
+            HttpStatusCode.Forbidden));
+        using var client = ServiceNowClient.Create(BrowserSession(), handler);
+        var rejected = 0;
+        client.BrowserSessionRejected += (_, _) => rejected++;
+
+        var ex = await Assert.ThrowsAsync<ServiceNowException>(() => client.GetCurrentUserAsync(CancellationToken.None));
+
+        Assert.Equal(1, rejected);
         Assert.Contains("sign in with the browser again", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -313,8 +347,9 @@ public class BrowserSessionTests
         Assert.False(main.IsConnected);
         Assert.False(main.IsBusy);
         Assert.Equal(DeskSection.Connection, main.SelectedSection);
-        Assert.Equal("", main.ErrorMessage);
+        Assert.Equal(BrowserSignInClock.ExpiredStatus, main.ErrorMessage);
         Assert.Equal(BrowserSignInClock.ExpiredStatus, main.StatusMessage);
+        Assert.Equal("No browser sign-in yet.", main.Connection.BrowserSessionStatus);
         Assert.True(main.ConnectCommand.CanExecute(null));
         Assert.Equal("", store.Current.SessionCookie);
         Assert.Equal("", store.Current.UserToken);
@@ -378,8 +413,9 @@ public class BrowserSessionTests
 
         Assert.False(main.IsConnected);
         Assert.Equal(DeskSection.Connection, main.SelectedSection);
-        Assert.Equal("", main.ErrorMessage);
+        Assert.Equal(BrowserSignInClock.ExpiredStatus, main.ErrorMessage);
         Assert.Equal(BrowserSignInClock.ExpiredStatus, main.StatusMessage);
+        Assert.Equal("No browser sign-in yet.", main.Connection.BrowserSessionStatus);
         Assert.True(main.ConnectCommand.CanExecute(null));
         Assert.Equal("", store.Current.SessionCookie);
         Assert.Equal("", store.Current.UserToken);
@@ -418,14 +454,178 @@ public class BrowserSessionTests
         Assert.NotEmpty(handler.Calls);
         Assert.False(main.IsConnected);
         Assert.Equal(DeskSection.Connection, main.SelectedSection);
-        Assert.Equal("", main.ErrorMessage);
+        Assert.Equal(BrowserSignInClock.ExpiredStatus, main.ErrorMessage);
         Assert.Equal(BrowserSignInClock.ExpiredStatus, main.StatusMessage);
+        Assert.Equal("No browser sign-in yet.", main.Connection.BrowserSessionStatus);
         Assert.True(main.ConnectCommand.CanExecute(null));
         Assert.Equal("", store.Current.SessionCookie);
         Assert.Equal("", store.Current.UserToken);
         Assert.Null(store.Current.SignedInAt);
         Assert.Equal("https://kept.service-now.com", store.Current.InstanceUrl);
         AssertNotificationSettings(store.Current);
+    }
+
+    [Fact]
+    public async Task AclForbiddenDuringBrowserBootstrapKeepsTheSavedSession()
+    {
+        var signedIn = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var store = new MemorySettingsStore();
+        store.Save(SavedBrowser(signedIn, signedInOnly: true));
+        var rejected = 0;
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (IsUserLookup(path))
+                return User();
+            if (path.Contains("/incident", StringComparison.Ordinal)
+                || path.Contains("kb_knowledge", StringComparison.Ordinal)
+                || path.Contains("interaction", StringComparison.Ordinal))
+            {
+                return Api.Json(
+                    """{"error":{"message":"Insufficient rights","detail":"ACL blocked"},"status":"failure"}""",
+                    HttpStatusCode.Forbidden);
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = new MainViewModel(
+            store,
+            new RecordingDesktopServices(),
+            clientFactory: (session, catalog) =>
+            {
+                var client = ServiceNowClient.Create(session, handler, catalog);
+                client.BrowserSessionRejected += (_, _) => rejected++;
+                return client;
+            });
+        main.Connection.DownloadCacheOnLaunch = true;
+
+        await main.InitializeAsync();
+
+        Assert.Equal(0, rejected);
+        Assert.True(main.IsConnected);
+        Assert.Contains("Connected as", main.StatusMessage);
+        Assert.Equal("glide_user_session=abc", store.Current.SessionCookie);
+        Assert.Equal("tok-ck", store.Current.UserToken);
+        Assert.Contains("Browser sign-in saved", main.Connection.BrowserSessionStatus);
+        Assert.NotEqual("No browser sign-in yet.", main.Connection.BrowserSessionStatus);
+    }
+
+    [Fact]
+    public async Task BrowserSignInSaveIsRecognizedForAutoConnect()
+    {
+        var store = new MemorySettingsStore();
+        store.Save(new DeskSettings
+        {
+            InstanceUrl = DeskSettings.DefaultInstanceUrl,
+            AuthMode = ServiceNowAuthMode.BrowserSession
+        });
+        var connects = 0;
+        var signIn = new CountingBrowserSignIn(() =>
+        {
+            connects++;
+            return new BrowserSignInResult("glide_user_session=fresh", "tok-fresh", DateTimeOffset.UtcNow.AddHours(4));
+        });
+        var handler = new StubHandler((request, _) => LiveOrEmpty(request));
+        var main = new MainViewModel(
+            store,
+            new RecordingDesktopServices(),
+            browserSignIn: signIn,
+            clientFactory: (session, catalog) => ServiceNowClient.Create(session, handler, catalog));
+
+        await main.InitializeAsync();
+        Assert.False(main.IsConnected);
+        Assert.Equal(0, signIn.Calls);
+        Assert.Equal("No browser sign-in yet.", main.Connection.BrowserSessionStatus);
+
+        await main.SignInWithBrowserCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, signIn.Calls);
+        Assert.True(main.IsConnected);
+        Assert.Equal("glide_user_session=fresh", store.Current.SessionCookie);
+        Assert.Equal("tok-fresh", store.Current.UserToken);
+        Assert.Contains("Browser sign-in saved", main.Connection.BrowserSessionStatus);
+        Assert.Contains("Connected as", main.StatusMessage);
+
+        // A second Connect while the first auth owned the gate must be ignored.
+        // After sign-in finishes the gate is free; overlapping Connect during sign-in
+        // is covered by ConcurrentConnectIsIgnoredWhileBrowserSignInRuns.
+        var again = new MainViewModel(
+            store,
+            new RecordingDesktopServices(),
+            clientFactory: (session, catalog) =>
+            {
+                connects++;
+                return ServiceNowClient.Create(session, handler, catalog);
+            });
+        await again.InitializeAsync();
+        Assert.True(again.IsConnected);
+        Assert.Equal(2, connects);
+        Assert.Contains("Connected as", again.StatusMessage);
+    }
+
+    [Fact]
+    public async Task ConcurrentConnectIsIgnoredWhileBrowserSignInRuns()
+    {
+        var releaseSignIn = new TaskCompletionSource();
+        var signInStarted = new TaskCompletionSource();
+        var store = new MemorySettingsStore();
+        store.Save(new DeskSettings
+        {
+            InstanceUrl = "https://example.service-now.com",
+            AuthMode = ServiceNowAuthMode.BrowserSession
+        });
+        var clients = 0;
+        var signIn = new GatedBrowserSignIn(signInStarted, releaseSignIn);
+        var handler = new StubHandler((request, _) => LiveOrEmpty(request));
+        var main = new MainViewModel(
+            store,
+            new RecordingDesktopServices(),
+            browserSignIn: signIn,
+            clientFactory: (session, catalog) =>
+            {
+                Interlocked.Increment(ref clients);
+                return ServiceNowClient.Create(session, handler, catalog);
+            });
+
+        var signInTask = main.SignInWithBrowserCommand.ExecuteAsync(null);
+        await signInStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.Equal(0, clients);
+
+        releaseSignIn.TrySetResult();
+        await signInTask;
+
+        Assert.Equal(1, clients);
+        Assert.Equal(1, signIn.Calls);
+        Assert.True(main.IsConnected);
+        Assert.Contains("Browser sign-in saved", main.Connection.BrowserSessionStatus);
+    }
+
+    [Fact]
+    public async Task DefaultInstanceUrlAloneDoesNotAutoConnect()
+    {
+        var store = new MemorySettingsStore();
+        store.Save(new DeskSettings
+        {
+            InstanceUrl = DeskSettings.DefaultInstanceUrl,
+            AuthMode = ServiceNowAuthMode.BrowserSession
+        });
+        var used = 0;
+        var main = new MainViewModel(
+            store,
+            new RecordingDesktopServices(),
+            clientFactory: (_, _) =>
+            {
+                used++;
+                throw new InvalidOperationException("Default URL must not auto-connect.");
+            });
+
+        await main.InitializeAsync();
+
+        Assert.Equal(0, used);
+        Assert.False(main.IsConnected);
+        Assert.Equal("No browser sign-in yet.", main.Connection.BrowserSessionStatus);
+        Assert.Equal(GuidedSetupOfferKind.Full, main.Guided.OfferKind);
     }
 
     [Fact]
@@ -566,4 +766,28 @@ public class BrowserSessionTests
     });
 
     private static string NewFolder() => Path.Combine(Path.GetTempPath(), "snd-" + Guid.NewGuid().ToString("N"));
+
+    private sealed class CountingBrowserSignIn(Func<BrowserSignInResult> factory) : IBrowserSignIn
+    {
+        public int Calls { get; private set; }
+
+        public Task<BrowserSignInResult> SignInAsync(Uri instanceUri, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(factory());
+        }
+    }
+
+    private sealed class GatedBrowserSignIn(TaskCompletionSource started, TaskCompletionSource release) : IBrowserSignIn
+    {
+        public int Calls { get; private set; }
+
+        public async Task<BrowserSignInResult> SignInAsync(Uri instanceUri, CancellationToken cancellationToken)
+        {
+            Calls++;
+            started.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+            return new BrowserSignInResult("glide_user_session=gated", "tok-gated", DateTimeOffset.UtcNow.AddHours(4));
+        }
+    }
 }
