@@ -31,7 +31,7 @@ public partial class IncidentView
 
     private void ApplyEditorOnly()
     {
-        EditorPane.Apply(EditorOnly, Layout, ListPane);
+        EditorPane.Apply(EditorOnly, Layout, ListPane, emptyState: EmptyState);
         if (!EditorOnly)
             FitListColumn();
     }

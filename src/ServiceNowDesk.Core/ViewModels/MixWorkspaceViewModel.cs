@@ -33,7 +33,6 @@ public partial class MixWorkspaceViewModel : ObservableObject
     public IReadOnlyList<PresetOption> Presets { get; } = PresetCatalog.Mix;
     public ObservableCollection<TicketRow> Items { get; } = [];
     public Action<TicketRow>? PrepareRow { get; set; }
-    public RecordWorkspaceViewModel? Editor { get; private set; }
     public IReadOnlyList<string> OfficeCities => _officeCities;
 
     public IReadOnlyList<string> TeamMemberIds => _teamMemberIds;
@@ -41,13 +40,14 @@ public partial class MixWorkspaceViewModel : ObservableObject
     [ObservableProperty] private TicketRow? selected;
     [ObservableProperty] private PresetOption preset;
     [ObservableProperty] private string searchText = "";
+    [ObservableProperty] private RecordWorkspaceViewModel? editor;
     [ObservableProperty] private string editorKey = "";
     [ObservableProperty] private bool isLoading;
     [ObservableProperty] private bool hasLoaded;
     [ObservableProperty] private int totalCount;
     [ObservableProperty] private string errorMessage = "";
 
-    public bool HasMixEditor => EditorKey.Length > 0;
+    public bool HasMixEditor => Editor is not null || EditorKey.Length > 0;
 
     public bool ShowIncidentEditor => EditorKey == nameof(DeskSection.Incidents);
 
@@ -93,8 +93,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
         Items.Clear();
         Selected = null;
         _bound = null;
-        Editor = null;
-        EditorKey = "";
+        ClearEditor();
         HasLoaded = false;
         TotalCount = 0;
         ErrorMessage = "";
@@ -103,8 +102,15 @@ public partial class MixWorkspaceViewModel : ObservableObject
 
     public void ShowEditor(RecordWorkspaceViewModel workspace)
     {
+        ArgumentNullException.ThrowIfNull(workspace);
         Editor = workspace;
         EditorKey = workspace.Section.ToString();
+    }
+
+    public void ClearEditor()
+    {
+        Editor = null;
+        EditorKey = "";
     }
 
     public void RememberOpened(TicketRow row) => _bound = row;
@@ -276,6 +282,14 @@ public partial class MixWorkspaceViewModel : ObservableObject
         Kind = kind,
         Source = source
     };
+
+    partial void OnEditorChanged(RecordWorkspaceViewModel? value)
+    {
+        OnPropertyChanged(nameof(HasMixEditor));
+        OnPropertyChanged(nameof(ShowEmptyPrompt));
+        OnPropertyChanged(nameof(EmptyPrompt));
+        OnPropertyChanged(nameof(OpenEditorCount));
+    }
 
     partial void OnEditorKeyChanged(string value)
     {

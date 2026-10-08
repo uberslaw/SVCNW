@@ -438,14 +438,19 @@
                         <Button Content="Open in browser" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left"
                                 Command="{Binding OpenUnknownInBrowserCommand}" AutomationProperties.Name="Open in browser"/>
                     </StackPanel>
-                    <local:IncidentView DataContext="{Binding IncidentEditor}" EditorOnly="True"
-                                        Visibility="{Binding ShowIncidentEditor, Converter={StaticResource BoolVis}}"/>
-                    <local:RequestView DataContext="{Binding RequestEditor}" EditorOnly="True"
-                                       Visibility="{Binding ShowRequestEditor, Converter={StaticResource BoolVis}}"/>
-                    <local:RequestedItemView DataContext="{Binding RequestedItemEditor}" EditorOnly="True"
-                                             Visibility="{Binding ShowRequestedItemEditor, Converter={StaticResource BoolVis}}"/>
-                    <local:InteractionView DataContext="{Binding WalkUpEditor}" EditorOnly="True"
-                                           Visibility="{Binding ShowWalkUpEditor, Converter={StaticResource BoolVis}}"/>
+                    <!-- Visibility on the wrapper; DataContext on the child. Same-element bindings resolve Show* against the page VM and every editor stays Visible. -->
+                    <Grid Visibility="{Binding ShowIncidentEditor, Converter={StaticResource BoolVis}}">
+                        <local:IncidentView DataContext="{Binding IncidentEditor}" EditorOnly="True"/>
+                    </Grid>
+                    <Grid Visibility="{Binding ShowRequestEditor, Converter={StaticResource BoolVis}}">
+                        <local:RequestView DataContext="{Binding RequestEditor}" EditorOnly="True"/>
+                    </Grid>
+                    <Grid Visibility="{Binding ShowRequestedItemEditor, Converter={StaticResource BoolVis}}">
+                        <local:RequestedItemView DataContext="{Binding RequestedItemEditor}" EditorOnly="True"/>
+                    </Grid>
+                    <Grid Visibility="{Binding ShowWalkUpEditor, Converter={StaticResource BoolVis}}">
+                        <local:InteractionView DataContext="{Binding WalkUpEditor}" EditorOnly="True"/>
+                    </Grid>
                 </Grid>
             </ScrollViewer>
         </Border>

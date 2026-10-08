@@ -153,7 +153,9 @@ public class InTheMixTests
         main.Mix.Selected = row;
         await main.MixOpenTask;
         Assert.Equal(DeskSection.Incidents.ToString(), main.Mix.EditorKey);
+        Assert.Same(main.Incidents, main.Mix.Editor);
         Assert.Equal(1, main.Mix.OpenEditorCount);
+        Assert.True(main.Mix.HasMixEditor);
         Assert.True(main.Mix.ShowIncidentEditor);
         Assert.False(main.Mix.ShowRequestedItemEditor);
         Assert.False(main.Mix.ShowWalkUpEditor);
@@ -161,6 +163,32 @@ public class InTheMixTests
         Assert.True(main.Incidents.HasEditor);
         Assert.Equal("INC0010019", main.Incidents.Number);
 
+        var ritm = main.Mix.Items.First(item => item.Kind == "RITM");
+        main.Mix.Selected = ritm;
+        await main.MixOpenTask;
+        Assert.Same(main.RequestedItems, main.Mix.Editor);
+        Assert.Equal(1, main.Mix.OpenEditorCount);
+        Assert.True(main.Mix.ShowRequestedItemEditor);
+        Assert.False(main.Mix.ShowIncidentEditor);
+        Assert.False(main.Mix.ShowWalkUpEditor);
+
+        var walk = main.Mix.Items.First(item => item.Kind == "IMS");
+        main.Mix.Selected = walk;
+        await main.MixOpenTask;
+        Assert.Same(main.WalkUps, main.Mix.Editor);
+        Assert.Equal(1, main.Mix.OpenEditorCount);
+        Assert.True(main.Mix.ShowWalkUpEditor);
+        Assert.False(main.Mix.ShowIncidentEditor);
+        Assert.False(main.Mix.ShowRequestedItemEditor);
+
+        main.Mix.ClearEditor();
+        Assert.Null(main.Mix.Editor);
+        Assert.Equal(0, main.Mix.OpenEditorCount);
+        Assert.Equal("Select a ticket.", main.Mix.EmptyPrompt);
+
+        main.Mix.ShowEditor(main.Incidents);
+        Assert.Same(main.Incidents, main.Mix.Editor);
+        Assert.True(main.Mix.ShowIncidentEditor);
         main.Incidents.ShortDescription = "Updated from the mix";
         await main.Incidents.SaveCommand.ExecuteAsync(null);
         Assert.True(string.IsNullOrEmpty(main.Incidents.ErrorMessage), main.Incidents.ErrorMessage);

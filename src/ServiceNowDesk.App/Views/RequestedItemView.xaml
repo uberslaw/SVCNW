@@ -13,7 +13,7 @@
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <Button x:Name="CreateNewButton" Grid.Row="0" Grid.ColumnSpan="3" Content="Create New" Style="{StaticResource PrimaryButton}"
+        <Button x:Name="CreateNewButton" Grid.Row="0" Grid.ColumnSpan="3" Content="Create New" Style="{StaticResource ChipButton}"
                 Command="{Binding CreateNewCommand}" HorizontalAlignment="Left" Margin="0,0,0,12"
                 AutomationProperties.Name="Create New"/>
 
@@ -25,7 +25,7 @@
         </DockPanel>
 
         <Grid Grid.Row="1" Grid.Column="2">
-            <TextBlock Text="Select a request item." FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}"/>
+            <TextBlock x:Name="EmptyState" Text="Select a request item." FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}"/>
             <DockPanel Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
                 <StackPanel DockPanel.Dock="Top">
                     <Border Style="{StaticResource Banner}" Background="{StaticResource ErrorSoftBrush}" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}">

@@ -5,12 +5,25 @@ namespace ServiceNowDesk.Views;
 
 public static class EditorPane
 {
-    public static void Apply(bool editorOnly, Grid layout, FrameworkElement list, FrameworkElement? extra = null)
+    public static void Apply(
+        bool editorOnly,
+        Grid layout,
+        FrameworkElement list,
+        FrameworkElement? extra = null,
+        FrameworkElement? emptyState = null)
     {
         var hidden = editorOnly ? Visibility.Collapsed : Visibility.Visible;
         list.Visibility = hidden;
         if (extra is not null)
             extra.Visibility = hidden;
+        if (emptyState is not null)
+        {
+            if (editorOnly)
+                emptyState.Visibility = Visibility.Collapsed;
+            else
+                emptyState.ClearValue(UIElement.VisibilityProperty);
+        }
+
         if (layout.ColumnDefinitions.Count < 2)
             return;
         layout.ColumnDefinitions[0].Width = editorOnly ? new GridLength(0) : new GridLength(400);
