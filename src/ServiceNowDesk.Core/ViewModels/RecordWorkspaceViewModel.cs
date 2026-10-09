@@ -405,8 +405,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     [RelayCommand]
     private void CancelResolve()
     {
+        // Hide resolve UI and leave draft outcome/notes so Resolve again keeps them.
         ShowResolvePanel = false;
-        ResolveNotes = "";
     }
 
     [RelayCommand(CanExecute = nameof(CanConfirmResolve))]
