@@ -1,5 +1,7 @@
 using System.Text;
+using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.WorkEffort;
 
 namespace ServiceNowDesk.Services;
 
@@ -14,6 +16,26 @@ public interface IDesktopServices
     /// Returns the path written, or null when the user cancels.
     /// </summary>
     string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null);
+}
+
+/// <summary>
+/// Opens a Work Effort credited ticket in its own window so several can stay open at once.
+/// </summary>
+public interface ITicketPopOut
+{
+    void Show(WorkEffortCredit credit, IServiceNowClient client);
+}
+
+public sealed class RecordingTicketPopOut : ITicketPopOut
+{
+    public List<WorkEffortCredit> Opened { get; } = [];
+
+    public void Show(WorkEffortCredit credit, IServiceNowClient client)
+    {
+        ArgumentNullException.ThrowIfNull(credit);
+        ArgumentNullException.ThrowIfNull(client);
+        Opened.Add(credit);
+    }
 }
 
 public interface ISettingsStore

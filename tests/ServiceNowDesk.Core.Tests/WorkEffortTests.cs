@@ -888,6 +888,77 @@ public class WorkEffortTests
         Assert.Equal(WorkEffortDetail.NotLoadedMessage, unloaded.DetailEmptyMessage);
     }
 
+    [Fact]
+    public async Task DoubleClickRowOpensDetailWithContributingTicketSysIds()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        await OpenWorkEffortAsync(page, client, Now, force: false, []);
+
+        var alex = page.Rows.Single(row => row.Name == "Alex Rivera");
+        page.ShowPersonDetail(alex);
+
+        Assert.True(page.ShowDetail);
+        Assert.True(page.DetailHasRows);
+        Assert.Contains(page.DetailLines, line => line.DisplayNumber == "INC0010001");
+        Assert.All(page.DetailLines, line =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(line.RecordSysId));
+            Assert.Equal(alex.PersonSysId, line.PersonSysId, ignoreCase: true);
+        });
+    }
+
+    [Fact]
+    public async Task OpenCreditCommandRaisesOpenTicketRequested()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        await OpenWorkEffortAsync(page, client, Now, force: false, []);
+        var alex = page.Rows.Single(row => row.Name == "Alex Rivera");
+        page.ShowCellDetail(alex, WorkEffortColumn.IncOpened);
+        var credit = Assert.Single(page.DetailLines);
+        WorkEffortCredit? opened = null;
+        page.OpenTicketRequested += (_, line) => opened = line;
+
+        page.OpenCreditCommand.Execute(credit);
+
+        Assert.NotNull(opened);
+        Assert.Equal(credit.RecordSysId, opened!.RecordSysId);
+        Assert.Equal(credit.DisplayNumber, opened.DisplayNumber);
+        Assert.Equal(DeskSection.Incidents, opened.Section);
+    }
+
+    [Fact]
+    public async Task ConnectedDeskOpensWorkEffortTicketInPopOut()
+    {
+        var popOut = new RecordingTicketPopOut();
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            sampleClientFactory: () => new SampleServiceNowClient(),
+            ticketPopOut: popOut);
+        main.Connection.UseSampleData = true;
+        main.Connection.DownloadCacheOnLaunch = false;
+        main.Connection.LeadsPassword = "iddqd";
+        main.Connection.UnlockLeads();
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.True(main.IsConnected);
+
+        using var client = new SampleServiceNowClient();
+        var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, SampleTeam, CancellationToken.None);
+        main.Leads.WorkEffort.Remember(WorkEffortScale.Today, Now, report);
+        var alex = main.Leads.WorkEffort.Rows.Single(row => row.Name == "Alex Rivera");
+        main.Leads.WorkEffort.ShowCellDetail(alex, WorkEffortColumn.IncOpened);
+        var credit = Assert.Single(main.Leads.WorkEffort.DetailLines);
+
+        main.Leads.WorkEffort.OpenCreditCommand.Execute(credit);
+
+        var opened = Assert.Single(popOut.Opened);
+        Assert.Equal(credit.RecordSysId, opened.RecordSysId);
+        Assert.Equal(credit.DisplayNumber, opened.DisplayNumber);
+        Assert.False(main.Leads.ShowIncidentEditor);
+    }
+
     private static Func<HttpRequestMessage, string, HttpResponseMessage> HistoryResponder() =>
         (request, _) =>
         {

@@ -47,8 +47,9 @@
             </TextBlock>
         </StackPanel>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel MaxWidth="980" HorizontalAlignment="Left" Margin="8,0,8,8">
-            <StackPanel Visibility="{Binding ShowQueues, Converter={StaticResource BoolVis}}">
+        <StackPanel Margin="8,0,8,8">
+            <StackPanel MaxWidth="980" HorizontalAlignment="Left"
+                        Visibility="{Binding ShowQueues, Converter={StaticResource BoolVis}}">
                 <TextBlock Text="{Binding RosterNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding RosterNote, Converter={StaticResource StringVis}}"/>
                 <TextBlock Text="{Binding LockedTeamNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
@@ -201,7 +202,7 @@
                 <TextBlock Text="{Binding LockedTeamNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding LockedTeamNote, Converter={StaticResource StringVis}}"/>
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                           Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. Daily updates is on when this panel opens: one update credit (0.3) per person, per ticket, per local day. Allow multiple updates counts each save. An open, resolve, or close is not also an update on that same day. A later day still counts. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Figures load the first time you open a time scale each day. The update switch uses that loaded history and does not ask ServiceNow again. Refresh reloads the scale you are looking at. Leaving this page does not stop the load. After figures load, click a name for every ticket that person was credited, or a count cell for that metric alone. Export writes a CSV for the open detail or the full board."/>
+                           Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. Daily updates is on when this panel opens: one update credit (0.3) per person, per ticket, per local day. Allow multiple updates counts each save. An open, resolve, or close is not also an update on that same day. A later day still counts. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Figures load the first time you open a time scale each day. The update switch uses that loaded history and does not ask ServiceNow again. Refresh reloads the scale you are looking at. Leaving this page does not stop the load. After figures load, double-click a row for every ticket that person was credited, or a count cell for that metric alone. Double-click a ticket in the detail list to open it in its own window; several can stay open at once. Export writes a CSV for the open detail or the full board."/>
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -273,84 +274,92 @@
                            AutomationProperties.Name="Work Effort update shift"/>
                 <TextBlock Text="{Binding WorkEffort.EmptyMessage}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding WorkEffort.EmptyMessage, Converter={StaticResource StringVis}}"/>
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                              Visibility="{Binding WorkEffort.HasRows, Converter={StaticResource BoolVis}}">
-                    <StackPanel MinWidth="1040">
-                        <Grid Margin="10,0,10,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="160"/>
-                                <ColumnDefinition Width="84"/>
-                                <ColumnDefinition Width="84"/>
-                                <ColumnDefinition Width="84"/>
-                                <ColumnDefinition Width="84"/>
-                                <ColumnDefinition Width="84"/>
-                                <ColumnDefinition Width="84"/>
-                                <ColumnDefinition Width="84"/>
-                                <ColumnDefinition Width="84"/>
-                                <ColumnDefinition Width="84"/>
-                                <ColumnDefinition Width="72"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Name" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock Grid.Column="1" Text="INC opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="2" Text="INC resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="3" Text="INC updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="4" Text="RITM opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="5" Text="RITM resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="6" Text="RITM updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="7" Text="IMS opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="8" Text="IMS resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="9" Text="IMS updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="10" Text="Total" Style="{StaticResource FieldLabel}" TextAlignment="Right"/>
-                        </Grid>
-                        <ListBox ItemsSource="{Binding WorkEffort.Rows}"
-                                 Style="{StaticResource DeskList}"
-                                 ItemContainerStyle="{StaticResource EffortRow}"
-                                 AutomationProperties.Name="Work Effort"
-                                 BorderThickness="1">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="160"/>
-                                            <ColumnDefinition Width="84"/>
-                                            <ColumnDefinition Width="84"/>
-                                            <ColumnDefinition Width="84"/>
-                                            <ColumnDefinition Width="84"/>
-                                            <ColumnDefinition Width="84"/>
-                                            <ColumnDefinition Width="84"/>
-                                            <ColumnDefinition Width="84"/>
-                                            <ColumnDefinition Width="84"/>
-                                            <ColumnDefinition Width="84"/>
-                                            <ColumnDefinition Width="72"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                                   Cursor="Hand" MouseLeftButtonUp="EffortName_MouseLeftButtonUp"
-                                                   ToolTip="Show every ticket credited to this person"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding IncOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                   Cursor="Hand" Tag="IncOpened" MouseLeftButtonUp="EffortCell_MouseLeftButtonUp"/>
-                                        <TextBlock Grid.Column="2" Text="{Binding IncResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                   Cursor="Hand" Tag="IncResolved" MouseLeftButtonUp="EffortCell_MouseLeftButtonUp"/>
-                                        <TextBlock Grid.Column="3" Text="{Binding IncUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                   Cursor="Hand" Tag="IncUpdated" MouseLeftButtonUp="EffortCell_MouseLeftButtonUp"/>
-                                        <TextBlock Grid.Column="4" Text="{Binding RitmOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                   Cursor="Hand" Tag="RitmOpened" MouseLeftButtonUp="EffortCell_MouseLeftButtonUp"/>
-                                        <TextBlock Grid.Column="5" Text="{Binding RitmResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                   Cursor="Hand" Tag="RitmResolved" MouseLeftButtonUp="EffortCell_MouseLeftButtonUp"/>
-                                        <TextBlock Grid.Column="6" Text="{Binding RitmUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                   Cursor="Hand" Tag="RitmUpdated" MouseLeftButtonUp="EffortCell_MouseLeftButtonUp"/>
-                                        <TextBlock Grid.Column="7" Text="{Binding ImsOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                   Cursor="Hand" Tag="ImsOpened" MouseLeftButtonUp="EffortCell_MouseLeftButtonUp"/>
-                                        <TextBlock Grid.Column="8" Text="{Binding ImsResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                   Cursor="Hand" Tag="ImsResolved" MouseLeftButtonUp="EffortCell_MouseLeftButtonUp"/>
-                                        <TextBlock Grid.Column="9" Text="{Binding ImsUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                   Cursor="Hand" Tag="ImsUpdated" MouseLeftButtonUp="EffortCell_MouseLeftButtonUp"/>
-                                        <TextBlock Grid.Column="10" Text="{Binding WeightedText}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </StackPanel>
-                </ScrollViewer>
+                <StackPanel Visibility="{Binding WorkEffort.HasRows, Converter={StaticResource BoolVis}}">
+                    <Grid Margin="10,0,10,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" MinWidth="96"/>
+                            <ColumnDefinition Width="*" MinWidth="52"/>
+                            <ColumnDefinition Width="*" MinWidth="52"/>
+                            <ColumnDefinition Width="*" MinWidth="52"/>
+                            <ColumnDefinition Width="*" MinWidth="52"/>
+                            <ColumnDefinition Width="*" MinWidth="52"/>
+                            <ColumnDefinition Width="*" MinWidth="52"/>
+                            <ColumnDefinition Width="*" MinWidth="52"/>
+                            <ColumnDefinition Width="*" MinWidth="52"/>
+                            <ColumnDefinition Width="*" MinWidth="52"/>
+                            <ColumnDefinition Width="0.9*" MinWidth="48"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Name" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Grid.Column="1" Text="INC opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="2" Text="INC resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="3" Text="INC updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="4" Text="RITM opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="5" Text="RITM resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="6" Text="RITM updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="7" Text="IMS opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="8" Text="IMS resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="9" Text="IMS updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="10" Text="Total" Style="{StaticResource FieldLabel}" TextAlignment="Right"/>
+                    </Grid>
+                    <ListBox ItemsSource="{Binding WorkEffort.Rows}"
+                             Style="{StaticResource DeskList}"
+                             ItemContainerStyle="{StaticResource EffortRow}"
+                             AutomationProperties.Name="Work Effort"
+                             BorderThickness="1"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             MouseDoubleClick="EffortRows_MouseDoubleClick">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="2*" MinWidth="96"/>
+                                        <ColumnDefinition Width="*" MinWidth="52"/>
+                                        <ColumnDefinition Width="*" MinWidth="52"/>
+                                        <ColumnDefinition Width="*" MinWidth="52"/>
+                                        <ColumnDefinition Width="*" MinWidth="52"/>
+                                        <ColumnDefinition Width="*" MinWidth="52"/>
+                                        <ColumnDefinition Width="*" MinWidth="52"/>
+                                        <ColumnDefinition Width="*" MinWidth="52"/>
+                                        <ColumnDefinition Width="*" MinWidth="52"/>
+                                        <ColumnDefinition Width="*" MinWidth="52"/>
+                                        <ColumnDefinition Width="0.9*" MinWidth="48"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                               Cursor="Hand" MouseLeftButtonDown="EffortName_MouseLeftButtonDown"
+                                               ToolTip="Double-click for every ticket credited to this person"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding IncOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Cursor="Hand" Tag="IncOpened" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
+                                               ToolTip="Double-click for tickets in this cell"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding IncResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Cursor="Hand" Tag="IncResolved" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
+                                               ToolTip="Double-click for tickets in this cell"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding IncUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Cursor="Hand" Tag="IncUpdated" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
+                                               ToolTip="Double-click for tickets in this cell"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding RitmOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Cursor="Hand" Tag="RitmOpened" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
+                                               ToolTip="Double-click for tickets in this cell"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding RitmResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Cursor="Hand" Tag="RitmResolved" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
+                                               ToolTip="Double-click for tickets in this cell"/>
+                                    <TextBlock Grid.Column="6" Text="{Binding RitmUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Cursor="Hand" Tag="RitmUpdated" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
+                                               ToolTip="Double-click for tickets in this cell"/>
+                                    <TextBlock Grid.Column="7" Text="{Binding ImsOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Cursor="Hand" Tag="ImsOpened" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
+                                               ToolTip="Double-click for tickets in this cell"/>
+                                    <TextBlock Grid.Column="8" Text="{Binding ImsResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Cursor="Hand" Tag="ImsResolved" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
+                                               ToolTip="Double-click for tickets in this cell"/>
+                                    <TextBlock Grid.Column="9" Text="{Binding ImsUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                               Cursor="Hand" Tag="ImsUpdated" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
+                                               ToolTip="Double-click for tickets in this cell"/>
+                                    <TextBlock Grid.Column="10" Text="{Binding WeightedText}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
                 <TextBlock Text="{Binding WorkEffort.ExportNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"
                            Visibility="{Binding WorkEffort.ExportNote, Converter={StaticResource StringVis}}"/>
                 <Border Margin="0,16,0,0" Padding="12" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
@@ -375,16 +384,16 @@
                                    Visibility="{Binding WorkEffort.DetailEmptyMessage, Converter={StaticResource StringVis}}"/>
                         <Grid Margin="0,0,0,4" Visibility="{Binding WorkEffort.DetailHasRows, Converter={StaticResource BoolVis}}">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="110"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="56"/>
-                                <ColumnDefinition Width="72"/>
-                                <ColumnDefinition Width="140"/>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="1.2*" MinWidth="88"/>
+                                <ColumnDefinition Width="2.4*" MinWidth="120"/>
+                                <ColumnDefinition Width="0.7*" MinWidth="48"/>
+                                <ColumnDefinition Width="0.9*" MinWidth="56"/>
+                                <ColumnDefinition Width="1.4*" MinWidth="100"/>
+                                <ColumnDefinition Width="1.2*" MinWidth="80"/>
+                                <ColumnDefinition Width="*" MinWidth="72"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock Grid.Column="1" Text="Title" Style="{StaticResource FieldLabel}"/>
+                            <TextBlock Grid.Column="1" Text="Short description" Style="{StaticResource FieldLabel}"/>
                             <TextBlock Grid.Column="2" Text="Table" Style="{StaticResource FieldLabel}"/>
                             <TextBlock Grid.Column="3" Text="Metric" Style="{StaticResource FieldLabel}"/>
                             <TextBlock Grid.Column="4" Text="When" Style="{StaticResource FieldLabel}"/>
@@ -396,27 +405,29 @@
                                  MaxHeight="280"
                                  Visibility="{Binding WorkEffort.DetailHasRows, Converter={StaticResource BoolVis}}"
                                  AutomationProperties.Name="Work Effort detail lines"
-                                 BorderThickness="0">
+                                 BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 MouseDoubleClick="EffortCredit_MouseDoubleClick">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Margin="0,2">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="110"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="56"/>
-                                            <ColumnDefinition Width="72"/>
-                                            <ColumnDefinition Width="140"/>
-                                            <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="1.2*" MinWidth="88"/>
+                                            <ColumnDefinition Width="2.4*" MinWidth="120"/>
+                                            <ColumnDefinition Width="0.7*" MinWidth="48"/>
+                                            <ColumnDefinition Width="0.9*" MinWidth="56"/>
+                                            <ColumnDefinition Width="1.4*" MinWidth="100"/>
+                                            <ColumnDefinition Width="1.2*" MinWidth="80"/>
+                                            <ColumnDefinition Width="*" MinWidth="72"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding DisplayNumber}" Foreground="{StaticResource AccentBrush}" Cursor="Hand"
-                                                   MouseLeftButtonUp="EffortCreditNumber_MouseLeftButtonUp" TextTrimming="CharacterEllipsis"
-                                                   ToolTip="Open this ticket"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                   MouseLeftButtonDown="EffortCreditNumber_MouseLeftButtonDown" TextTrimming="CharacterEllipsis" TextWrapping="Wrap"
+                                                   ToolTip="Double-click to open in a pop-out window"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="2" Text="{Binding TableLabel}" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="3" Text="{Binding MetricLabel}" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="4" Text="{Binding WhenText}" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="5" Text="{Binding PersonName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding WhenText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="5" Text="{Binding PersonName}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="6" Text="{Binding Day}" VerticalAlignment="Center"/>
                                     </Grid>
                                 </DataTemplate>
