@@ -214,4 +214,9 @@ public sealed class AlertAttention : EventArgs
     public bool PlaySound { get; init; }
 
     public IReadOnlyList<AlertKind> Increased { get; init; } = [];
+
+    /// <summary>
+    /// True when the unassigned pickup SLA crossed a new 10% band and the desktop widget should jiggle.
+    /// </summary>
+    public bool PickupSlaThreshold { get; init; }
 }

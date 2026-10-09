@@ -22,6 +22,7 @@ public partial class AlertWidgetWindow : Window
     private static readonly IntPtr HwndTopmost = new(-1);
     private static readonly TimeSpan TopmostRefresh = TimeSpan.FromSeconds(4);
     private const double IndicatorStrip = 4;
+    private const double PickupSlaStrip = 10;
     private const double WidgetFallbackWidth = 280;
     private const double WidgetFallbackHeight = 44;
 
@@ -34,6 +35,7 @@ public partial class AlertWidgetWindow : Window
     private NotificationSettingsViewModel? _settings;
     private bool _mainMinimized;
     private IReadOnlyList<AlertKind>? _pendingCauses;
+    private bool _pendingPickupSla;
     private DispatcherTimer? _dropTimer;
     private bool _allowClose;
     private bool _opening;
@@ -59,7 +61,10 @@ public partial class AlertWidgetWindow : Window
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(settings);
         if (_model is not null)
+        {
             _model.Attention -= OnAttention;
+            _model.PropertyChanged -= OnModelPropertyChanged;
+        }
         if (_settings is not null)
             _settings.PropertyChanged -= OnSettingsChanged;
 
@@ -67,9 +72,18 @@ public partial class AlertWidgetWindow : Window
         _settings = settings;
         DataContext = model;
         model.Attention += OnAttention;
+        model.PropertyChanged += OnModelPropertyChanged;
         settings.PropertyChanged += OnSettingsChanged;
         EnsureTimer();
         ApplyPresence();
+    }
+
+    private void OnModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(NotificationWorkspaceViewModel.HasPickupSla)
+            or nameof(NotificationWorkspaceViewModel.PickupLabel)
+            or nameof(NotificationWorkspaceViewModel.PickupBarPercent))
+            ApplyChrome();
     }
 
     public void SetMainMinimized(bool minimized)
@@ -128,10 +142,28 @@ public partial class AlertWidgetWindow : Window
         if (_settings is null || _model is null)
             return;
 
+        if (attention.PickupSlaThreshold)
+            PresentPickupSla(_settings.ActivePlaySoundWhenJiggling);
+
         var decision = AlertJiggleRules.IncreaseDue(
             _settings.ActiveJiggleWhen,
             new AlertPollDecision(attention.Increased));
         Present(decision, _settings.ActivePlaySoundWhenJiggling);
+    }
+
+    private void PresentPickupSla(bool playSound)
+    {
+        if (_model is null || _settings is null)
+            return;
+
+        if (!DesktopAllowed() || !IsVisible)
+        {
+            _pendingPickupSla = true;
+            return;
+        }
+
+        _pendingPickupSla = false;
+        BeginPickupDrop(playSound);
     }
 
     private bool DesktopAllowed() =>
@@ -169,6 +201,54 @@ public partial class AlertWidgetWindow : Window
         EnsureTopmostTimer();
         ApplyChrome();
         FlushPending();
+        FlushPendingPickup();
+    }
+
+    private void FlushPendingPickup()
+    {
+        if (!_pendingPickupSla || _model is null || _settings is null || !DesktopAllowed())
+            return;
+        if (!_model.HasPickupSla)
+        {
+            _pendingPickupSla = false;
+            return;
+        }
+
+        _pendingPickupSla = false;
+        BeginPickupDrop(_settings.ActivePlaySoundWhenJiggling);
+    }
+
+    private void BeginPickupDrop(bool playSound)
+    {
+        if (_settings is null || _model is null || !IsVisible || !_model.HasPickupSla)
+            return;
+
+        _model.ShowPickupJiggle(true);
+        if (playSound)
+            _sound.Play(_settings.ActiveSoundPath);
+
+        var maximize = _settings.ActiveMaximizeWhenJiggling;
+        _motion.SetTimerDrop(maximize);
+        var generation = ++_dropGeneration;
+        ApplyChrome();
+        if (maximize)
+            StartWiggle(generation, _settings.ActiveJiggleSpeed);
+        PinTopmost();
+
+        _dropTimer?.Stop();
+        var seconds = Math.Max(1, _settings.ActiveDurationSeconds);
+        var hold = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+        _dropTimer = hold;
+        hold.Tick += (_, _) =>
+        {
+            hold.Stop();
+            if (generation != _dropGeneration)
+                return;
+            _motion.SetTimerDrop(false);
+            _model.ShowPickupJiggle(false);
+            ApplyChrome();
+        };
+        hold.Start();
     }
 
     private void BeginIntervalDrop()
@@ -248,6 +328,7 @@ public partial class AlertWidgetWindow : Window
             if (generation != _dropGeneration)
                 return;
             _motion.SetTimerDrop(false);
+            _model.ShowPickupJiggle(false);
             ApplyChrome();
         };
         hold.Start();
@@ -302,7 +383,8 @@ public partial class AlertWidgetWindow : Window
             var barOpen = _motion.BarOpen;
             DropPanel.Visibility = barOpen ? Visibility.Visible : Visibility.Collapsed;
             Width = width;
-            Height = barOpen ? openHeight : IndicatorStrip;
+            var restHeight = IndicatorStrip + (_model is { HasPickupSla: true } ? PickupSlaStrip : 0);
+            Height = barOpen ? openHeight : restHeight;
             if (!_wiggling)
             {
                 BeginAnimation(LeftProperty, null);
@@ -346,6 +428,15 @@ public partial class AlertWidgetWindow : Window
     {
         if (sender is FrameworkElement { DataContext: AlertCircleModel circle })
             OpenFromCircle(circle.Kind);
+        e.Handled = true;
+    }
+
+    private void PickupSla_Click(object sender, RoutedEventArgs e)
+    {
+        if (_model is null)
+            return;
+        if (_model.OpenPickupCommand.CanExecute(null))
+            _model.OpenPickupCommand.Execute(null);
         e.Handled = true;
     }
 

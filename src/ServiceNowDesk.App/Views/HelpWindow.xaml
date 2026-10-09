@@ -209,6 +209,8 @@
                                        Text="A thin strip at the top center of the screen is the desktop widget. Rest the pointer on it to drop the bar."/>
                             <TextBlock Style="{StaticResource HelpBody}"
                                        Text="The bar also drops when a jiggle fires, and the portion that caused it is highlighted."/>
+                            <TextBlock Style="{StaticResource HelpBody}"
+                                       Text="Under the strip, a pickup SLA bar tracks the worst unassigned incident in your groups and the watched group at a configured office. Progress is elapsed time since opened_at against a two-hour pickup window, with marks every 10%. Crossing a 10% band jiggles the widget. Click the bar to open that ticket."/>
                             <TextBlock Style="{StaticResource HelpBody}" Margin="0"
                                        Text="Settings chooses whether the strip is there while this window is open, and whether a jiggle repeats on a timer or only for a new alert."/>
                         </StackPanel>

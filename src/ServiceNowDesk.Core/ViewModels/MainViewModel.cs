@@ -1672,7 +1672,9 @@ public partial class MainViewModel : ObservableObject
                 if (step is not null)
                     DailyWork.ShowGroupQueue(queue, step.State, localNow, search.Locations);
 
-                if (queueError is not null)
+                if (queueError is null)
+                    Notifications.ApplyPickupQueue(queue, localNow, search.Locations);
+                else
                     Notifications.NotePollError(WorkspaceMessages.Describe(queueError));
 
                 if (!string.IsNullOrEmpty(status))
@@ -1749,11 +1751,13 @@ public partial class MainViewModel : ObservableObject
                 TeamMemberIds = TeamIdsForAlerts()
             };
             var report = await client.GetAlertReportAsync(search, token).ConfigureAwait(false);
+            var localNow = DateTime.Now;
             PostToUi(() =>
             {
                 if (generation != _alertGeneration || !ReferenceEquals(client, _client))
                     return;
                 Notifications.Apply(report.Personal, _watch);
+                Notifications.TickPickupSla(localNow);
                 Leads.Show(report.Leads);
                 DailyWork.Show(report.Daily, _signedInUserId, TeamIdsForAlerts());
                 _rows.Use(report.Personal);

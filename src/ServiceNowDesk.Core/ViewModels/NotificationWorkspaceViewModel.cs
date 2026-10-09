@@ -42,6 +42,9 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     public event EventHandler<AlertAttention>? Attention;
 
     private readonly object _gate = new();
+    private readonly PickupSlaWatch _pickupWatch = new();
+    private IReadOnlyList<WatchedRecord> _pickupQueue = [];
+    private IReadOnlyList<string>? _pickupOffices;
     private string _viewerSysId = "";
     private HighlightPreferences _highlights = HighlightPreferences.Default;
     private LeadSortColumn? _sortColumn;
@@ -106,6 +109,19 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool hasDashboardRows;
     [ObservableProperty] private bool widgetHasUnread;
     [ObservableProperty] private AlertKind selectedQueue = AlertKind.AssignedToMe;
+    [ObservableProperty] private bool hasPickupSla;
+    [ObservableProperty] private double pickupPercent;
+    [ObservableProperty] private double pickupBarPercent;
+    [ObservableProperty] private string pickupLabel = "";
+    [ObservableProperty] private string pickupToolTip = "";
+    [ObservableProperty] private string pickupNumber = "";
+    [ObservableProperty] private string pickupSysId = "";
+    [ObservableProperty] private DeskSection pickupSection = DeskSection.Incidents;
+    [ObservableProperty] private string pickupTitle = "";
+    [ObservableProperty] private bool isPickupJiggleCause;
+    [ObservableProperty] private int pickupScopedCount;
+
+    public IReadOnlyList<int> PickupTicks { get; } = PickupSla.TickMarks();
 
     public void Apply(AlertSnapshot snapshot, AlertWatchState watch)
     {
@@ -175,8 +191,123 @@ public partial class NotificationWorkspaceViewModel : ObservableObject
             AnyUnacknowledged = false;
             PollError = "";
             LastChecked = "Not checked yet.";
+            ClearPickupSla();
             RefreshWidget();
         }
+    }
+
+    /// <summary>
+    /// Office-scoped unassigned group queue used for the two-hour pickup SLA bar under the widget.
+    /// </summary>
+    public void ApplyPickupQueue(
+        IReadOnlyList<WatchedRecord> queue,
+        DateTime now,
+        IReadOnlyList<string>? officeLocations = null)
+    {
+        ArgumentNullException.ThrowIfNull(queue);
+        AlertAttention? attention = null;
+        lock (_gate)
+        {
+            _pickupQueue = queue;
+            _pickupOffices = officeLocations;
+            attention = PublishPickup(now);
+        }
+
+        if (attention is not null)
+            Attention?.Invoke(this, attention);
+    }
+
+    /// <summary>
+    /// Recompute pickup progress from the last queue without another ServiceNow round-trip.
+    /// Call on the faster alert poll so the bar and 10% jiggle keep moving between group-queue fetches.
+    /// </summary>
+    public void TickPickupSla(DateTime now)
+    {
+        AlertAttention? attention = null;
+        lock (_gate)
+        {
+            if (_pickupQueue.Count == 0 && !HasPickupSla)
+                return;
+            attention = PublishPickup(now);
+        }
+
+        if (attention is not null)
+            Attention?.Invoke(this, attention);
+    }
+
+    public void ShowPickupJiggle(bool active) => IsPickupJiggleCause = active;
+
+    [RelayCommand]
+    private void OpenPickup()
+    {
+        if (!HasPickupSla || string.IsNullOrWhiteSpace(PickupSysId))
+            return;
+        var row = new AlertRow
+        {
+            Kind = AlertKind.WatchedGroup,
+            Section = PickupSection,
+            SysId = PickupSysId,
+            Number = PickupNumber,
+            Title = PickupTitle,
+            State = "",
+            Group = "",
+            Location = "",
+            Updated = ""
+        };
+        OpenRequested?.Invoke(this, row);
+    }
+
+    private AlertAttention? PublishPickup(DateTime now)
+    {
+        var snapshot = PickupSla.SelectWorst(_pickupQueue, now, _pickupOffices);
+        var decision = _pickupWatch.Observe(snapshot);
+        if (snapshot is null)
+        {
+            WritePickup(null);
+            return null;
+        }
+
+        WritePickup(snapshot);
+        return decision.Due
+            ? new AlertAttention { PickupSlaThreshold = true, PlaySound = false }
+            : null;
+    }
+
+    private void WritePickup(PickupSlaSnapshot? snapshot)
+    {
+        if (snapshot is null)
+        {
+            HasPickupSla = false;
+            PickupPercent = 0;
+            PickupBarPercent = 0;
+            PickupLabel = "";
+            PickupToolTip = "";
+            PickupNumber = "";
+            PickupSysId = "";
+            PickupTitle = "";
+            PickupScopedCount = 0;
+            IsPickupJiggleCause = false;
+            return;
+        }
+
+        HasPickupSla = true;
+        PickupPercent = snapshot.Percent;
+        PickupBarPercent = PickupSla.BarFillPercent(snapshot.Percent);
+        PickupLabel = PickupSla.FormatLabel(snapshot);
+        PickupToolTip = PickupSla.FormatToolTip(snapshot);
+        PickupNumber = snapshot.Number;
+        PickupSysId = snapshot.SysId;
+        PickupSection = snapshot.Section;
+        PickupTitle = snapshot.Title;
+        PickupScopedCount = snapshot.ScopedCount;
+    }
+
+    private void ClearPickupSla()
+    {
+        _pickupQueue = [];
+        _pickupOffices = null;
+        _pickupWatch.Reset();
+        WritePickup(null);
     }
 
     public void NotePollError(string message) => PollError = ShortPollError(message);

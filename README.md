@@ -76,6 +76,8 @@ Updated by caller lists a record only when the caller made the latest update, it
 
 SLA breaching is rebuilt on every check. It keeps an open incident, request item, or walk-up only when the ticket is assigned to you, or has no assignee and sits in one of your groups or the watched group. Resolved, closed, and cancelled tickets drop off even when the old breach flag is still set. A ticket assigned to someone else in the group is not listed.
 
+The desktop notification strip also shows a pickup SLA bar under the coloured segments. It uses the same unassigned group-queue population as Daily Work (your groups and the watched group, limited to the notification offices). Progress is elapsed time since `opened_at` against a two-hour pickup window. The bar follows the worst (highest percent) ticket, marks every 10%, and jiggles when a new 10% band is crossed. Click the bar to open that ticket.
+
 F5 refreshes the list you are looking at. It does not open the download screen. To force a saved copy to download again, open Settings and use Cache. Each row has a refresh button. Refresh all clears every listed cache and downloads them again. That screen does not delete incident templates or the saved sign-in. A failed refresh leaves the other caches in place.
 
 Type a caller's name, user id, or email. The desk searches ServiceNow as you type. If that text matches one person, Save uses that person. If several people match, choose the row from the list.
