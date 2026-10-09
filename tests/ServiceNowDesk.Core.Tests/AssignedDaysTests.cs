@@ -292,15 +292,13 @@ public class AssignedDaysTests
                 return Api.Json("""{"error":{"message":"ACL","detail":"sys_audit denied"}}""", HttpStatusCode.Forbidden);
             if (path.Contains("/sys_journal_field", StringComparison.Ordinal))
             {
-                return Api.Json(
-                    "{"result":["
-                    + "{"sys_id":{"value":"j-assign","display_value":"j-assign"},"element_id":{"value":"inc-old","display_value":"inc-old"},"element":{"value":"work_notes","display_value":"work_notes"},"name":{"value":"task","display_value":"task"},"value":{"value":"Assigned to changed from Jordan Lee to Alex Rivera","display_value":"Assigned to changed from Jordan Lee to Alex Rivera"},"sys_created_on":{"value":""
-                    + assignedStamp
-                    + "","display_value":""
-                    + assignedStamp
-                    + ""},"sys_created_by":{"value":"system","display_value":"system"}},"
-                    + "{"sys_id":{"value":"j-work","display_value":"j-work"},"element_id":{"value":"inc-old","display_value":"inc-old"},"element":{"value":"work_notes","display_value":"work_notes"},"name":{"value":"task","display_value":"task"},"value":{"value":"Printer tray replaced.","display_value":"Printer tray replaced."},"sys_created_on":{"value":"2026-09-28 10:40:00","display_value":"2026-09-28 10:40"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"}}"
-                    + "]}");
+                var payload = """
+                    {"result":[
+                      {"sys_id":{"value":"j-assign","display_value":"j-assign"},"element_id":{"value":"inc-old","display_value":"inc-old"},"element":{"value":"work_notes","display_value":"work_notes"},"name":{"value":"task","display_value":"task"},"value":{"value":"Assigned to changed from Jordan Lee to Alex Rivera","display_value":"Assigned to changed from Jordan Lee to Alex Rivera"},"sys_created_on":{"value":"__STAMP__","display_value":"__STAMP__"},"sys_created_by":{"value":"system","display_value":"system"}},
+                      {"sys_id":{"value":"j-work","display_value":"j-work"},"element_id":{"value":"inc-old","display_value":"inc-old"},"element":{"value":"work_notes","display_value":"work_notes"},"name":{"value":"task","display_value":"task"},"value":{"value":"Printer tray replaced.","display_value":"Printer tray replaced."},"sys_created_on":{"value":"2026-09-28 10:40:00","display_value":"2026-09-28 10:40"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"}}
+                    ]}
+                    """.Replace("__STAMP__", assignedStamp, StringComparison.Ordinal);
+                return Api.Json(payload);
             }
 
             if (path.Contains("/incident", StringComparison.Ordinal)
