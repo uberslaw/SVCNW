@@ -379,21 +379,16 @@ public class AssignedDaysTests
     }
 
     [Fact]
-    public async Task PracticeTicketsExposeAssignmentDaysFromJournalNotes()
+    public async Task PracticeTicketsStillShowDaysAssigned()
     {
         using var client = new SampleServiceNowClient();
-        var notes = await client.GetJournalAsync("incident", "inc-printer", CancellationToken.None);
-        Assert.Contains(notes, note => note.Text.Contains("Assigned to changed from", StringComparison.OrdinalIgnoreCase));
-
         var user = await client.GetCurrentUserAsync(CancellationToken.None);
         var snapshot = await client.GetOpenAlertsAsync(
             new AlertSearch(user.SysId, "Aus DT - Client Services", NotificationPreferences.DefaultLocations),
             CancellationToken.None);
         var printer = snapshot.Bucket(AlertKind.AssignedToMe).Rows.Single(row => row.Number == "INC0010001");
         Assert.Equal(12, AssignmentAge.WholeDays(printer.AssignedOn, DateTime.Today));
-        Assert.Equal(
-            AssignmentNoteReader.FindAssignedOn(notes, AssignmentNoteReader.TokensFor(user)),
-            printer.AssignedOn);
+        Assert.Equal("12", AssignmentAge.Format(printer.AssignedOn, DateTime.Today));
     }
 
     private static AlertSnapshot Snapshot(params AlertRecord[] rows)

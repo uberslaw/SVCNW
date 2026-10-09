@@ -480,7 +480,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     private string AssignedOnOf(string sysId)
     {
-        // Prefer journal lines that say the ticket was assigned to the signed-in user.
+        // Prefer journal lines that say the ticket was assigned to the signed-in user
+        // (same rule as the live client when sys_audit is empty).
         if (_journal.TryGetValue(sysId, out var notes))
         {
             var fromNotes = AssignmentNoteReader.FindAssignedOn(notes, AssignmentNoteReader.TokensFor(Me));
@@ -493,25 +494,10 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     /// <summary>
     /// Practice stand-in for the <c>sys_audit</c> row where assigned to became this user.
-    /// Also seeds a matching assignment work note so Days assigned can be read from notes.
     /// The stamp is not the opened time and not the last update.
     /// </summary>
-    private void RememberAssignedOn(string sysId, int daysAgo)
-    {
-        var stamp = DateTime.Today.AddDays(-daysAgo).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " 09:00:00";
-        _assignedOn[sysId] = stamp;
-        AppendJournal(
-            sysId,
-            [
-                new JournalEntry(
-                    "journal-assign-" + sysId,
-                    "work_notes",
-                    "Work note",
-                    "Assigned to changed from  to Alex Rivera",
-                    "system",
-                    stamp)
-            ]);
-    }
+    private void RememberAssignedOn(string sysId, int daysAgo) =>
+        _assignedOn[sysId] = DateTime.Today.AddDays(-daysAgo).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " 09:00:00";
 
     public Task<PagedResult<IncidentRecord>> SearchIncidentsAsync(TicketQuery query, CancellationToken cancellationToken)
     {
