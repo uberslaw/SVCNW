@@ -1,5 +1,6 @@
 using System.Globalization;
 using ServiceNowDesk.Client;
+using ServiceNowDesk.Services;
 using ServiceNowDesk.ViewModels;
 
 namespace ServiceNowDesk.Tests;
