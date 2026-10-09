@@ -574,7 +574,7 @@ public class WorkspaceTests
     }
 
     [Fact]
-    public async Task RequestItemCloseNotesStayHiddenUntilCloseItemAndRestoreOnCancel()
+    public async Task RequestItemCloseNotesStayHiddenUntilCloseItemAndKeepDraftOnCancel()
     {
         using var client = new SampleServiceNowClient();
         var items = new RequestedItemWorkspaceViewModel(new RecordingDesktopServices());
@@ -595,8 +595,69 @@ public class WorkspaceTests
 
         items.CancelResolveCommand.Execute(null);
         Assert.False(items.ShowResolvePanel);
-        Assert.Equal("", items.ResolveNotes);
-        Assert.False(items.ConfirmResolveCommand.CanExecute(null));
+        Assert.Equal("Ready to hand off.", items.ResolveNotes);
+
+        items.BeginResolveCommand.Execute(null);
+        Assert.True(items.ShowResolvePanel);
+        Assert.Equal("Ready to hand off.", items.ResolveNotes);
+        Assert.True(items.ConfirmResolveCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task IncidentResolveCancelKeepsDraftNotesAndRestoresUi()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.Attach(client);
+        await workspace.EnsureChoicesAsync();
+        await workspace.OpenFromSearchAsync("inc-printer");
+
+        var priorState = workspace.State;
+        Assert.False(workspace.ShowResolvePanel);
+
+        workspace.BeginResolveCommand.Execute(null);
+        Assert.True(workspace.ShowResolvePanel);
+        Assert.False(string.IsNullOrWhiteSpace(workspace.ResolveCode));
+
+        workspace.ResolveNotes = "Cleared the jam; waiting on reprint.";
+        var resolveCode = workspace.ResolveCode;
+        Assert.True(workspace.ConfirmResolveCommand.CanExecute(null));
+
+        workspace.CancelResolveCommand.Execute(null);
+        Assert.False(workspace.ShowResolvePanel);
+        Assert.Equal(priorState, workspace.State);
+        Assert.Equal("Cleared the jam; waiting on reprint.", workspace.ResolveNotes);
+        Assert.Equal(resolveCode, workspace.ResolveCode);
+
+        workspace.BeginResolveCommand.Execute(null);
+        Assert.True(workspace.ShowResolvePanel);
+        Assert.Equal("Cleared the jam; waiting on reprint.", workspace.ResolveNotes);
+        Assert.Equal(resolveCode, workspace.ResolveCode);
+        Assert.True(workspace.ConfirmResolveCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task IncidentResolvedStateChoiceOpensResolvePanelAndCancelLeavesDraft()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.Attach(client);
+        await workspace.EnsureChoicesAsync();
+        await workspace.OpenFromSearchAsync("inc-printer");
+
+        var priorState = workspace.State;
+        workspace.State = "6";
+        Assert.True(workspace.ShowResolvePanel);
+        Assert.Equal(priorState, workspace.State);
+
+        workspace.ResolveNotes = "User confirmed printer works.";
+        workspace.CancelResolveCommand.Execute(null);
+        Assert.False(workspace.ShowResolvePanel);
+        Assert.Equal(priorState, workspace.State);
+        Assert.Equal("User confirmed printer works.", workspace.ResolveNotes);
+
+        workspace.BeginResolveCommand.Execute(null);
+        Assert.Equal("User confirmed printer works.", workspace.ResolveNotes);
     }
 
     [Fact]
