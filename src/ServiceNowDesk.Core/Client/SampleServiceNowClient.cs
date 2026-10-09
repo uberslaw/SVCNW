@@ -478,8 +478,19 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         record.AssignedTo.SysId ?? "",
         AssignedOnOf(record.SysId));
 
-    private string AssignedOnOf(string sysId) =>
-        _assignedOn.TryGetValue(sysId, out var when) ? when : "";
+    private string AssignedOnOf(string sysId)
+    {
+        // Prefer journal lines that say the ticket was assigned to the signed-in user
+        // (same rule as the live client when sys_audit is empty).
+        if (_journal.TryGetValue(sysId, out var notes))
+        {
+            var fromNotes = AssignmentNoteReader.FindAssignedOn(notes, AssignmentNoteReader.TokensFor(Me));
+            if (!string.IsNullOrWhiteSpace(fromNotes))
+                return fromNotes;
+        }
+
+        return _assignedOn.TryGetValue(sysId, out var when) ? when : "";
+    }
 
     /// <summary>
     /// Practice stand-in for the <c>sys_audit</c> row where assigned to became this user.
@@ -2612,15 +2623,27 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
 
     private void RememberJournal(string sysId, params JournalEntry[] notes)
     {
-        if (notes.Length > 0)
-            _journal[sysId] = notes.ToList();
+        if (notes.Length == 0)
+            return;
+        AppendJournal(sysId, notes);
+    }
+
+    private void AppendJournal(string sysId, IEnumerable<JournalEntry> notes)
+    {
+        if (!_journal.TryGetValue(sysId, out var list))
+        {
+            list = [];
+            _journal[sysId] = list;
+        }
+
+        list.AddRange(notes);
     }
 
     private void AddInteraction(InteractionRecord record, params JournalEntry[] notes)
     {
         _interactions.Add(record);
         if (notes.Length > 0)
-            _journal[record.SysId] = notes.ToList();
+            AppendJournal(record.SysId, notes);
     }
 
     private void AddIncident(IncidentRecord record, params JournalEntry[] notes)
@@ -2628,7 +2651,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         lock (_data)
             _incidents.Add(record);
         if (notes.Length > 0)
-            _journal[record.SysId] = notes.ToList();
+            AppendJournal(record.SysId, notes);
     }
 
     private static readonly ReferenceSuggestion[] Users =

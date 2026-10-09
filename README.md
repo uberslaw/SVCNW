@@ -45,7 +45,7 @@ Resolved, closed, and cancelled records stay out of Notifications, Leads, Daily 
 
 Unattended tickets are still open, including on hold, and nobody has updated them for 24 hours. In Notifications that queue is only tickets assigned to the signed-in user.
 
-Assigned to me has a Days assigned column. The number is whole days on this PC since the ticket was assigned to you. Assigned today is 0, and yesterday is 1. That time is the audit of assigned to changing to you, not the last update and not when the ticket was opened. A missing time is blank and sorts last. The queue opens with the longest assignment at the top. Click a column heading to sort by that column, and click the same heading again to reverse it. The heading shows which way the list is sorted. The other notification queues stay in their current order until you click a heading.
+Assigned to me has a Days assigned column. The number is whole days on this PC since the ticket was assigned to you. Assigned today is 0, and yesterday is 1. That time is first the audit of assigned to changing to you; when audit is blocked or empty, it is the newest work note or comment that says the ticket was assigned to you (for example "Assigned to changed from … to …" or "Assigned to me"). It is not the last update and not when the ticket was opened. A missing time is blank and sorts last. The queue opens with the longest assignment at the top. Click a column heading to sort by that column, and click the same heading again to reverse it. The heading shows which way the list is sorted. The other notification queues stay in their current order until you click a heading.
 
 Daily Work, in the left navigation, lists what to attend to from the notification queues (SLA breaching, updated by caller, follow-up passed, unattended, or Returned by DT). Red means act first (priority 1 or SLA breaching), yellow means next (caller update or follow-up passed), and green means after those. Click a column header — including Colour — to sort ascending or descending. The desk saves the list once each local day; later checks show what left and what arrived. My team uses the people ticked under Leads. The reports are on this PC in `%AppData%\ServiceNowDesk\daily-work.json`.
 
@@ -95,7 +95,7 @@ The signed-in user needs the same rights they already use in the web UI, typical
 - read and write `incident`, `sc_request`, `sc_req_item`, `interaction`, and `alm_hardware`
 - create `interaction_related_record` rows when converting a walk-up to an incident
 - read `sys_user`, `sys_user_group`, `sys_choice`, and `sys_journal_field`
-- read `sys_audit` for the Assigned to me days column. The queue still loads when that table is blocked
+- read `sys_audit` for the Assigned to me days column, and `sys_journal_field` when audit has no row. The queue still loads when either table is blocked
 - read attachments on incidents and request items (`/api/now/attachment`)
 - order from the service catalog if you use **Order catalog**
 

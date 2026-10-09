@@ -48,6 +48,48 @@ public class AssignedDaysTests
     }
 
     [Fact]
+    public void AssignmentJournalQueryBatchesElementIds()
+    {
+        var queries = AlertQueryBuilder.AssignmentJournalQueries(["inc-old", "inc-old", "ritm-new", "bad^id", ""]);
+        var query = Assert.Single(queries);
+        Assert.Contains("element_idINinc-old,ritm-new", query);
+        Assert.Contains("elementINcomments,additional_comments,work_notes", query);
+        Assert.Contains("ORDERBYDESCsys_created_on", query);
+        Assert.DoesNotContain("bad", query);
+        Assert.Empty(AlertQueryBuilder.AssignmentJournalQueries([]));
+        Assert.Empty(AlertQueryBuilder.AssignmentJournalQueries(null));
+
+        var many = Enumerable.Range(0, 41).Select(index => "task" + index.ToString("00", CultureInfo.InvariantCulture)).ToArray();
+        Assert.Equal(2, AlertQueryBuilder.AssignmentJournalQueries(many).Count);
+    }
+
+    [Fact]
+    public void JournalNotesSupplyAssignedOnDaysAndIgnoreUnrelatedNotes()
+    {
+        var today = DateTime.Today;
+        var assignedStamp = today.AddDays(-7).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " 09:15:00";
+        var laterWork = today.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " 11:00:00";
+        var olderOther = today.AddDays(-20).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " 08:00:00";
+        var notes = new[]
+        {
+            new JournalEntry("j1", "work_notes", "Work note", "Assigned to changed from Jordan Lee to Alex Rivera", "system", assignedStamp),
+            new JournalEntry("j2", "work_notes", "Work note", "Replaced the tray.", "alex.rivera", laterWork),
+            new JournalEntry("j3", "work_notes", "Work note", "Assigned to changed from  to Casey Ng", "system", olderOther)
+        };
+
+        var when = AssignmentNoteReader.FindAssignedOn(notes, AssignmentNoteReader.TokensFor("Alex Rivera", "alex.rivera"));
+        Assert.Equal(assignedStamp, when);
+        Assert.Equal(7, AssignmentAge.WholeDays(when, today));
+        Assert.Equal("7", AssignmentAge.Format(when, today));
+
+        Assert.Null(AssignmentNoteReader.FindAssignedOn(notes, AssignmentNoteReader.TokensFor("Nobody")));
+        Assert.Null(AssignmentNoteReader.FindAssignedOn([], AssignmentNoteReader.TokensFor("Alex Rivera")));
+        Assert.True(AssignmentNoteReader.IndicatesAssignmentTo("Assigned to me.", ["me", "Alex Rivera"]));
+        Assert.True(AssignmentNoteReader.IndicatesAssignmentTo("Assigned to: Alex Rivera", ["Alex Rivera"]));
+        Assert.False(AssignmentNoteReader.IndicatesAssignmentTo("Assigned to Melanie", ["me"]));
+    }
+
+    [Fact]
     public void AssignedToMeOpensLongestFirstAndHeadersToggle()
     {
         var notifications = new NotificationWorkspaceViewModel();
@@ -239,7 +281,57 @@ public class AssignedDaysTests
     }
 
     [Fact]
-    public async Task ABlockedAuditLeavesAssignedDaysBlankAndTheOtherQueuesLoad()
+    public async Task ABlockedAuditReadsAssignmentDaysFromJournalNotes()
+    {
+        var assignedStamp = DateTime.Today.AddDays(-4).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " 09:15:00";
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? "");
+            if (path.Contains("/sys_audit", StringComparison.Ordinal))
+                return Api.Json("""{"error":{"message":"ACL","detail":"sys_audit denied"}}""", HttpStatusCode.Forbidden);
+            if (path.Contains("/sys_journal_field", StringComparison.Ordinal))
+            {
+                var payload = """
+                    {"result":[
+                      {"sys_id":{"value":"j-assign","display_value":"j-assign"},"element_id":{"value":"inc-old","display_value":"inc-old"},"element":{"value":"work_notes","display_value":"work_notes"},"name":{"value":"task","display_value":"task"},"value":{"value":"Assigned to changed from Jordan Lee to Alex Rivera","display_value":"Assigned to changed from Jordan Lee to Alex Rivera"},"sys_created_on":{"value":"__STAMP__","display_value":"__STAMP__"},"sys_created_by":{"value":"system","display_value":"system"}},
+                      {"sys_id":{"value":"j-work","display_value":"j-work"},"element_id":{"value":"inc-old","display_value":"inc-old"},"element":{"value":"work_notes","display_value":"work_notes"},"name":{"value":"task","display_value":"task"},"value":{"value":"Printer tray replaced.","display_value":"Printer tray replaced."},"sys_created_on":{"value":"2026-09-28 10:40:00","display_value":"2026-09-28 10:40"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"}}
+                    ]}
+                    """.Replace("__STAMP__", assignedStamp, StringComparison.Ordinal);
+                return Api.Json(payload);
+            }
+
+            if (path.Contains("/incident", StringComparison.Ordinal)
+                && query.Contains("assigned_to=sample-user", StringComparison.Ordinal)
+                && query.Contains("sysparm_fields=sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active", StringComparison.Ordinal)
+                && !query.Contains("assignment_group.name", StringComparison.Ordinal))
+                return Api.Json("{\"result\":[" + IncidentJson("inc-old", "INC0090001", "2", "In Progress") + "]}");
+            if (path.Contains("/incident", StringComparison.Ordinal)
+                && query.Contains("assignment_group.name", StringComparison.Ordinal)
+                && query.Contains("sysparm_fields=sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active", StringComparison.Ordinal))
+                return Api.Json("{\"result\":[" + IncidentJson("inc-group", "INC0090008", "1", "New") + "]}");
+            return Api.Json("""{"result":[]}""");
+        });
+
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var snapshot = await client.GetOpenAlertsAsync(
+            new AlertSearch("sample-user", "Aus DT - Client Services", ["Brisbane"]),
+            CancellationToken.None);
+
+        var assigned = Assert.Single(snapshot.Bucket(AlertKind.AssignedToMe).Rows);
+        Assert.Equal("INC0090001", assigned.Number);
+        Assert.Equal(assignedStamp, assigned.AssignedOn);
+        Assert.Equal(4, AssignmentAge.WholeDays(assigned.AssignedOn, DateTime.Today));
+        Assert.Equal("2026-09-28 10:40", assigned.Updated);
+        Assert.NotEqual(assigned.Updated, assigned.AssignedOn);
+        Assert.Equal("INC0090008", Assert.Single(snapshot.Bucket(AlertKind.WatchedGroup).Rows).Number);
+        Assert.Equal("", snapshot.Bucket(AlertKind.SlaBreaching).Status);
+        Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("/sys_audit", StringComparison.Ordinal));
+        Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("/sys_journal_field", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ABlockedAuditAndNoAssignmentNotesLeavesAssignedDaysBlank()
     {
         var handler = new StubHandler((request, _) =>
         {
@@ -247,6 +339,8 @@ public class AssignedDaysTests
             var query = Uri.UnescapeDataString(request.RequestUri?.Query ?? "");
             if (path.Contains("/sys_audit", StringComparison.Ordinal))
                 return Api.Json("""{"error":{"message":"ACL","detail":"sys_audit denied"}}""", HttpStatusCode.Forbidden);
+            if (path.Contains("/sys_journal_field", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":{"value":"j-work","display_value":"j-work"},"element_id":{"value":"inc-old","display_value":"inc-old"},"element":{"value":"work_notes","display_value":"work_notes"},"name":{"value":"task","display_value":"task"},"value":{"value":"Checked the printer.","display_value":"Checked the printer."},"sys_created_on":{"value":"2026-09-28 10:40:00","display_value":"2026-09-28 10:40"},"sys_created_by":{"value":"alex.rivera","display_value":"alex.rivera"}}]}""");
             if (path.Contains("/incident", StringComparison.Ordinal)
                 && query.Contains("assigned_to=sample-user", StringComparison.Ordinal)
                 && query.Contains("sysparm_fields=sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active", StringComparison.Ordinal)
@@ -269,12 +363,11 @@ public class AssignedDaysTests
         Assert.Equal("", assigned.AssignedOn);
         Assert.Equal("2026-09-28 10:40", assigned.Updated);
         Assert.Equal("INC0090008", Assert.Single(snapshot.Bucket(AlertKind.WatchedGroup).Rows).Number);
-        Assert.Equal("", snapshot.Bucket(AlertKind.SlaBreaching).Status);
-        Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("/sys_audit", StringComparison.Ordinal));
+        Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("/sys_journal_field", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task AnEmptyAssignedQueueDoesNotAskForAuditHistory()
+    public async Task AnEmptyAssignedQueueDoesNotAskForAuditOrJournalHistory()
     {
         var handler = new StubHandler((_, _) => Api.Json("""{"result":[]}"""));
         using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
@@ -282,6 +375,20 @@ public class AssignedDaysTests
 
         Assert.Equal(0, snapshot.Count(AlertKind.AssignedToMe));
         Assert.DoesNotContain(handler.Calls, call => call.PathAndQuery.Contains("/sys_audit", StringComparison.Ordinal));
+        Assert.DoesNotContain(handler.Calls, call => call.PathAndQuery.Contains("/sys_journal_field", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task PracticeTicketsStillShowDaysAssigned()
+    {
+        using var client = new SampleServiceNowClient();
+        var user = await client.GetCurrentUserAsync(CancellationToken.None);
+        var snapshot = await client.GetOpenAlertsAsync(
+            new AlertSearch(user.SysId, "Aus DT - Client Services", NotificationPreferences.DefaultLocations),
+            CancellationToken.None);
+        var printer = snapshot.Bucket(AlertKind.AssignedToMe).Rows.Single(row => row.Number == "INC0010001");
+        Assert.Equal(12, AssignmentAge.WholeDays(printer.AssignedOn, DateTime.Today));
+        Assert.Equal("12", AssignmentAge.Format(printer.AssignedOn, DateTime.Today));
     }
 
     private static AlertSnapshot Snapshot(params AlertRecord[] rows)

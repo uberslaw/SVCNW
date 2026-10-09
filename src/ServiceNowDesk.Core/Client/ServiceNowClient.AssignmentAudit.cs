@@ -8,11 +8,15 @@ namespace ServiceNowDesk.Client;
 public sealed partial class ServiceNowClient
 {
     private const string AssignmentAuditFields = "documentkey,fieldname,newvalue,sys_created_on";
+    private const string AssignmentJournalFields = "sys_id,element_id,element,name,value,sys_created_on,sys_created_by";
     private const int AssignmentAuditLimit = 200;
 
     /// <summary>
-    /// Fills <see cref="AlertRecord.AssignedOn"/> from <c>sys_audit</c> for these rows only.
-    /// A blocked or failed history read leaves the date blank and does not fail the rest of the report.
+    /// Fills <see cref="AlertRecord.AssignedOn"/> for these rows.
+    /// Prefer <c>sys_audit</c> where <c>assigned_to</c> became this user. When that table is
+    /// blocked or has no row, read journal / work notes for the newest line that assigns the
+    /// ticket to the current assignee (or "me"). A total miss leaves the date blank and does
+    /// not fail the rest of the report.
     /// </summary>
     private async Task<IReadOnlyList<AlertRecord>> AttachAssignmentTimesAsync(
         string userSysId,
@@ -22,11 +26,28 @@ public sealed partial class ServiceNowClient
         if (rows.Count == 0)
             return rows;
 
-        var queries = AlertQueryBuilder.AssignmentAuditQueries(userSysId, rows.Select(row => row.SysId));
-        if (queries.Count == 0)
+        var times = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        await TryFillFromAuditAsync(userSysId, rows, times, cancellationToken).ConfigureAwait(false);
+
+        var missing = rows.Where(row => !times.ContainsKey(row.SysId)).ToArray();
+        if (missing.Length > 0)
+            await TryFillFromJournalAsync(missing, times, cancellationToken).ConfigureAwait(false);
+
+        if (times.Count == 0)
             return rows;
 
-        var times = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        return rows
+            .Select(row => times.TryGetValue(row.SysId, out var when) ? row with { AssignedOn = when } : row)
+            .ToArray();
+    }
+
+    private async Task TryFillFromAuditAsync(
+        string userSysId,
+        IReadOnlyList<AlertRecord> rows,
+        Dictionary<string, string> times,
+        CancellationToken cancellationToken)
+    {
+        var queries = AlertQueryBuilder.AssignmentAuditQueries(userSysId, rows.Select(row => row.SysId));
         foreach (var query in queries)
         {
             try
@@ -37,13 +58,41 @@ public sealed partial class ServiceNowClient
             {
             }
         }
+    }
 
-        if (times.Count == 0)
-            return rows;
+    private async Task TryFillFromJournalAsync(
+        IReadOnlyList<AlertRecord> rows,
+        Dictionary<string, string> times,
+        CancellationToken cancellationToken)
+    {
+        var queries = AlertQueryBuilder.AssignmentJournalQueries(rows.Select(row => row.SysId));
+        if (queries.Count == 0)
+            return;
 
-        return rows
-            .Select(row => times.TryGetValue(row.SysId, out var when) ? row with { AssignedOn = when } : row)
-            .ToArray();
+        var notesByRecord = new Dictionary<string, List<JournalEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var query in queries)
+        {
+            try
+            {
+                await ReadAssignmentJournalAsync(query, notesByRecord, cancellationToken).ConfigureAwait(false);
+            }
+            catch (ServiceNowException)
+            {
+            }
+        }
+
+        foreach (var row in rows)
+        {
+            if (times.ContainsKey(row.SysId))
+                continue;
+            if (!notesByRecord.TryGetValue(row.SysId, out var notes) || notes.Count == 0)
+                continue;
+
+            var tokens = AssignmentNoteReader.TokensFor(row.Assignee);
+            var when = AssignmentNoteReader.FindAssignedOn(notes, tokens);
+            if (!string.IsNullOrWhiteSpace(when))
+                times[row.SysId] = when;
+        }
     }
 
     private async Task ReadAssignmentAuditAsync(
@@ -57,6 +106,39 @@ public sealed partial class ServiceNowClient
         {
             foreach (var row in RequireArray(result.Document).EnumerateArray())
                 ConsiderAssignmentAudit(userSysId, row, times);
+        }
+    }
+
+    private async Task ReadAssignmentJournalAsync(
+        string query,
+        Dictionary<string, List<JournalEntry>> notesByRecord,
+        CancellationToken cancellationToken)
+    {
+        var result = await GetListAsync(
+            "sys_journal_field",
+            AssignmentJournalFields,
+            query,
+            AssignmentAuditLimit,
+            0,
+            cancellationToken).ConfigureAwait(false);
+        using (result)
+        {
+            foreach (var row in RequireArray(result.Document).EnumerateArray())
+            {
+                var key = Text(SnowField.Read(row, "element_id"));
+                if (key.Length == 0)
+                    continue;
+                var note = RecordMapper.Journal(row);
+                if (string.IsNullOrWhiteSpace(note.Text))
+                    continue;
+                if (!notesByRecord.TryGetValue(key, out var list))
+                {
+                    list = [];
+                    notesByRecord[key] = list;
+                }
+
+                list.Add(note);
+            }
         }
     }
 

@@ -4,6 +4,9 @@ namespace ServiceNowDesk.Alerts;
 
 /// <summary>
 /// Whole local calendar days since a ticket was assigned. Today is 0. Yesterday is 1.
+/// The stamp comes from <c>sys_audit</c> assigned_to→me when available, otherwise from
+/// the newest journal note that indicates assignment to the current assignee (see
+/// <see cref="AssignmentNoteReader"/>).
 /// </summary>
 public static class AssignmentAge
 {
