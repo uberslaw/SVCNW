@@ -21,6 +21,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IDailyWorkStore _dailyWork;
     private readonly Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? _clientFactory;
     private readonly Func<IServiceNowClient>? _sampleClientFactory;
+    private readonly ITicketPopOut? _ticketPopOut;
     private int _convertingNote;
     private readonly Stack<DeskSection> _returnStack = [];
     private IServiceNowClient? _client;
@@ -102,7 +103,8 @@ public partial class MainViewModel : ObservableObject
         IPersonalTaskStore? personalTasks = null,
         IHardwareCatalogStore? hardwareCatalog = null,
         Func<IServiceNowClient>? sampleClientFactory = null,
-        IQueueDismissalStore? queueDismissals = null)
+        IQueueDismissalStore? queueDismissals = null,
+        ITicketPopOut? ticketPopOut = null)
     {
         _store = store;
         _desktop = desktop;
@@ -110,6 +112,7 @@ public partial class MainViewModel : ObservableObject
         _formCatalog = formCatalog;
         _clientFactory = clientFactory;
         _sampleClientFactory = sampleClientFactory;
+        _ticketPopOut = ticketPopOut;
         _lists = lists;
         _dailyWork = dailyWork ?? new MemoryDailyWorkStore();
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
@@ -143,7 +146,7 @@ public partial class MainViewModel : ObservableObject
         Leads.WorkEffort.UseDesktop(desktop);
         Leads.OpenUnknownRecord = OpenUnknownLeadRecord;
         Leads.Board.OpenRequested += (_, row) => _ = Leads.OpenTicketAsync(row);
-        Leads.WorkEffort.OpenTicketRequested += (_, credit) => _ = Leads.OpenWorkEffortTicketAsync(credit);
+        Leads.WorkEffort.OpenTicketRequested += (_, credit) => OpenWorkEffortCredit(credit);
         DailyWork.OpenRequested += (_, row) => _ = OpenDailyWorkAsync(row);
         DailyWork.IncidentRequested += (_, row) => NoteConvertTask = ConvertNoteAsync(row, incident: true);
         DailyWork.RequestedItemRequested += (_, row) => NoteConvertTask = ConvertNoteAsync(row, incident: false);
@@ -1823,6 +1826,17 @@ public partial class MainViewModel : ObservableObject
     /// only the previous Work Effort query. Coming back while it is running does not start a second one.
     /// A finished background load is cached for the local day and that team.
     /// </summary>
+    private void OpenWorkEffortCredit(WorkEffortCredit credit)
+    {
+        if (_ticketPopOut is not null && _client is not null)
+        {
+            _ticketPopOut.Show(credit, _client);
+            return;
+        }
+
+        _ = Leads.OpenWorkEffortTicketAsync(credit);
+    }
+
     private async Task LoadWorkEffortAsync(bool force)
     {
         if (Leads.Area != LeadArea.WorkEffort)

@@ -40,7 +40,8 @@ public partial class App : Application
             dailyWork: FileDailyWorkStore.InApplicationData(),
             personalTasks: FilePersonalTaskStore.InApplicationData(),
             hardwareCatalog: FileHardwareCatalogStore.InApplicationData(),
-            queueDismissals: FileQueueDismissalStore.InApplicationData());
+            queueDismissals: FileQueueDismissalStore.InApplicationData(),
+            ticketPopOut: new WindowsTicketPopOut());
         var window = new MainWindow { DataContext = main };
         MainWindow = window;
         window.Show();
