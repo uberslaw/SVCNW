@@ -43,6 +43,11 @@ public partial class LeadsView
 
     private void EffortRows_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
+        if (e.Handled)
+            return;
+        // Count cells handle their own double-click; do not also open the person detail.
+        if (e.OriginalSource is FrameworkElement { Tag: string })
+            return;
         if (DataContext is not LeadsViewModel leads)
             return;
         if (sender is not ListBox list)
