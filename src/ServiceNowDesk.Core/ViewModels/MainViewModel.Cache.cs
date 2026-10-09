@@ -651,7 +651,7 @@ public partial class MainViewModel
     {
         var rows = list.Items.Select(ToTicket).ToArray();
         var workspace = WorkspaceFor(key);
-        workspace.ShowCachedRows(rows, list.TotalCount > 0 ? list.TotalCount : rows.Length);
+        workspace.ShowCachedRows(rows, list.TotalCount > 0 ? list.TotalCount : rows.Length, list.CapturedAt);
         if (!string.IsNullOrWhiteSpace(list.FilterSummary))
             workspace.FilterSummary = list.FilterSummary;
         if (!string.IsNullOrWhiteSpace(list.EncodedQuery))

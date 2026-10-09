@@ -561,7 +561,7 @@ public partial class MainViewModel : ObservableObject
         if (SelectedSection == DeskSection.InTheMix)
         {
             Mix.SearchText = SearchText;
-            await Mix.RefreshAsync();
+            await Mix.RefreshAsync(forceLive: true);
             if (string.IsNullOrEmpty(Mix.ErrorMessage))
                 _loadedFor[DeskSection.InTheMix] = SearchText;
             else
@@ -1038,9 +1038,24 @@ public partial class MainViewModel : ObservableObject
             .OrderByDescending(row => row.SortKey, StringComparer.Ordinal)
             .ThenBy(row => row.Number, StringComparer.Ordinal)
             .ToArray();
-        Mix.ShowCachedRows(rows);
+        var asOf = OldestListStamp(Incidents.ListRefreshedAt, RequestedItems.ListRefreshedAt, WalkUps.ListRefreshedAt);
+        Mix.ShowCachedRows(rows, asOf);
         _loadedFor[DeskSection.InTheMix] = "";
         return true;
+    }
+
+    private static DateTimeOffset? OldestListStamp(params DateTimeOffset?[] stamps)
+    {
+        DateTimeOffset? oldest = null;
+        foreach (var stamp in stamps)
+        {
+            if (stamp is not { } at || at == default)
+                continue;
+            if (oldest is null || at < oldest)
+                oldest = at;
+        }
+
+        return oldest;
     }
 
     private static TicketRow TagMixRow(TicketRow row, string kind, DeskSection source) => new()

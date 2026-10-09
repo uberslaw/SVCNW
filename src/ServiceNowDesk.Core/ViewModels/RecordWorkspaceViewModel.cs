@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
@@ -86,6 +87,13 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string attachmentNote = "";
     [ObservableProperty] private string filterSummary = "";
     [ObservableProperty] private string lastEncodedQuery = "";
+    [ObservableProperty] private string listRefreshedText = "";
+
+    /// <summary>When the visible list was last loaded (live or from a saved copy).</summary>
+    public DateTimeOffset? ListRefreshedAt { get; private set; }
+
+    /// <summary>Clock for list "As of" stamps. Tests may replace this.</summary>
+    internal Func<DateTimeOffset> ListClock { get; set; } = static () => DateTimeOffset.Now;
 
     public bool HasJournalText => !string.IsNullOrWhiteSpace(JournalText);
 
@@ -155,6 +163,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         TotalCount = 0;
         Attachments.Clear();
         AttachmentNote = "";
+        ListRefreshedText = "";
+        ListRefreshedAt = null;
         OnDetached();
         _suppressSelection = false;
         Applying = false;
@@ -174,7 +184,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     public virtual Task EnsureChoicesAsync() => Task.CompletedTask;
 
-    public void ShowCachedRows(IReadOnlyList<TicketRow> rows, int totalCount)
+    public void ShowCachedRows(IReadOnlyList<TicketRow> rows, int totalCount, DateTimeOffset? capturedAt = null)
     {
         var visible = rows.Where(ShowsOnThisList).ToArray();
         _suppressSelection = true;
@@ -191,6 +201,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         ErrorMessage = "";
         HasLoaded = true;
         RefreshFilterChrome(BuildQuery(), Client?.LastTicketEncodedQuery ?? LastEncodedQuery);
+        MarkListRefreshed(capturedAt);
     }
 
     /// <summary>
@@ -232,6 +243,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
                 TotalCount = 0;
                 _suppressSelection = false;
                 HasLoaded = true;
+                MarkListRefreshed();
                 return;
             }
 
@@ -266,6 +278,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             _suppressSelection = false;
             HasLoaded = true;
             RefreshFilterChrome(query, Client?.LastTicketEncodedQuery ?? "");
+            MarkListRefreshed();
         }
         catch (Exception ex)
         {
@@ -277,6 +290,13 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             if (version == _loadVersion)
                 IsLoading = false;
         }
+    }
+
+    protected void MarkListRefreshed(DateTimeOffset? when = null)
+    {
+        var stamp = when is { } at && at != default ? at : ListClock();
+        ListRefreshedAt = stamp;
+        ListRefreshedText = "As of " + stamp.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
     }
 
     [RelayCommand(CanExecute = nameof(CanCreate))]

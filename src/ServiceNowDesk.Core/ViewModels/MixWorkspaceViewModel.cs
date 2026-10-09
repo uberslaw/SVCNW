@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Client;
@@ -54,6 +55,13 @@ public partial class MixWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string errorMessage = "";
     [ObservableProperty] private string filterSummary = "";
     [ObservableProperty] private string lastEncodedQuery = "";
+    [ObservableProperty] private string listRefreshedText = "";
+
+    /// <summary>When the visible list was last loaded (live or from a saved copy).</summary>
+    public DateTimeOffset? ListRefreshedAt { get; private set; }
+
+    /// <summary>Clock for list "As of" stamps. Tests may replace this.</summary>
+    internal Func<DateTimeOffset> ListClock { get; set; } = static () => DateTimeOffset.Now;
 
     public bool HasMixEditor => Editor is not null || EditorKey.Length > 0;
 
@@ -105,6 +113,8 @@ public partial class MixWorkspaceViewModel : ObservableObject
         HasLoaded = false;
         TotalCount = 0;
         ErrorMessage = "";
+        ListRefreshedText = "";
+        ListRefreshedAt = null;
         _suppressSelection = false;
     }
 
@@ -140,7 +150,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
         await RefreshAsync().ConfigureAwait(true);
     }
 
-    public void ShowCachedRows(IReadOnlyList<TicketRow> rows)
+    public void ShowCachedRows(IReadOnlyList<TicketRow> rows, DateTimeOffset? capturedAt = null)
     {
         _suppressSelection = true;
         Items.Clear();
@@ -158,14 +168,26 @@ public partial class MixWorkspaceViewModel : ObservableObject
         IsLoading = false;
         _suppressSelection = false;
         RefreshFilterChrome(BuildQuery(), _client?.LastTicketEncodedQuery ?? LastEncodedQuery);
+        MarkListRefreshed(capturedAt);
     }
 
-    public async Task RefreshAsync()
+    /// <summary>
+    /// Reloads the mix list. When <paramref name="forceLive"/> is true (Refresh button / F5),
+    /// always queries ServiceNow. Otherwise My Tickets may paint from desk list caches.
+    /// </summary>
+    public Task RefreshAsync(bool forceLive = false) => RefreshCoreAsync(forceLive);
+
+    [RelayCommand]
+    private Task Refresh() => RefreshCoreAsync(forceLive: true);
+
+    private async Task RefreshCoreAsync(bool forceLive)
     {
         if (_client is null)
             return;
 
-        if (TryLoadFromHostCacheAsync is not null && await TryLoadFromHostCacheAsync().ConfigureAwait(true))
+        if (!forceLive
+            && TryLoadFromHostCacheAsync is not null
+            && await TryLoadFromHostCacheAsync().ConfigureAwait(true))
             return;
 
         var version = ++_loadVersion;
@@ -229,6 +251,8 @@ public partial class MixWorkspaceViewModel : ObservableObject
             ErrorMessage = string.Join(Environment.NewLine, errors);
             HasLoaded = errors.Count == 0;
             RefreshFilterChrome(query, _client?.LastTicketEncodedQuery ?? "");
+            if (errors.Count == 0)
+                MarkListRefreshed();
         }
         catch (Exception ex)
         {
@@ -240,6 +264,13 @@ public partial class MixWorkspaceViewModel : ObservableObject
             if (version == _loadVersion)
                 IsLoading = false;
         }
+    }
+
+    private void MarkListRefreshed(DateTimeOffset? when = null)
+    {
+        var stamp = when is { } at && at != default ? at : ListClock();
+        ListRefreshedAt = stamp;
+        ListRefreshedText = "As of " + stamp.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
     }
 
     private async Task<TicketRow[]> LoadTableAsync(
