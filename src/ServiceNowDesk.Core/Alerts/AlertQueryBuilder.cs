@@ -171,12 +171,61 @@ public static class AlertQueryBuilder
         if (officeLocations is not null)
         {
             // Apply location per segment so an existing ^NQ in the group filter is not
-            // split across offices (which would leave unscoped branches).
+            // split across offices (which would leave unscoped branches). Callers that
+            // hit the Table API with several watched offices should use
+            // <see cref="UnassignedInGroupsQueries"/> so each city is its own request.
             var cities = OfficeCities(officeLocations);
             segments = segments.Select(segment => OfficeQueue.ApplyTo(segment, cities)).ToList();
         }
 
         return string.Join("^NQ", segments) + "^ORDERBYDESCsys_updated_on";
+    }
+
+    /// <summary>
+    /// Same filters as <see cref="UnassignedInGroups"/>, split so each watched office is a
+    /// separate encoded query. Empty when there is no group scope.
+    /// </summary>
+    public static IReadOnlyList<string> UnassignedInGroupsQueries(
+        IReadOnlyList<string>? groupIds,
+        string? watchedGroupName,
+        IReadOnlyList<string>? officeLocations = null)
+    {
+        var open = StillWorking(DeskSection.Incidents);
+        var groups = new List<string>();
+        foreach (var id in groupIds ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+            try
+            {
+                groups.Add(EncodedQuery.SafeToken(id, "group id"));
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        var segments = new List<string>();
+        var distinct = groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (distinct.Length > 0)
+            segments.Add("assigned_toISEMPTY^assignment_groupIN" + string.Join(",", distinct) + "^" + open);
+
+        var watched = Quote(watchedGroupName);
+        if (watched.Length > 0)
+            segments.Add("assigned_toISEMPTY^assignment_group.name=" + watched + "^" + open);
+
+        if (segments.Count == 0)
+            return [];
+
+        const string order = "^ORDERBYDESCsys_updated_on";
+        if (officeLocations is null)
+            return [string.Join("^NQ", segments) + order];
+
+        var cities = OfficeCities(officeLocations);
+        return segments
+            .SelectMany(segment => OfficeQueue.Queries(segment, cities))
+            .Select(query => query.Contains("^ORDERBY", StringComparison.Ordinal) ? query : query + order)
+            .ToArray();
     }
 
     public static IReadOnlyList<string> LeadQueries(string? groupName, IEnumerable<string>? memberIds, DeskSection section = DeskSection.Incidents)

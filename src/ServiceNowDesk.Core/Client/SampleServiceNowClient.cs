@@ -2814,7 +2814,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         if (query.OfficeLocations is not null
             && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
             && query.TeamMemberIds is null)
-            return OfficeQueue.ApplyTo(encoded, query.OfficeLocations);
+            return string.Join(" | ", OfficeQueue.Queries(encoded, query.OfficeLocations));
         return encoded;
     }
 

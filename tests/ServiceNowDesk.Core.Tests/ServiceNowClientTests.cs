@@ -622,6 +622,24 @@ public class ServiceNowClientTests
         Assert.Contains("location.name=", officeQuery, StringComparison.Ordinal);
         Assert.Contains("Brisbane", officeQuery, StringComparison.Ordinal);
         Assert.Contains("Brisbane Office", officeQuery, StringComparison.Ordinal);
+
+        var split = AlertQueryBuilder.UnassignedInGroupsQueries(
+            ["group-cs"],
+            "Aus DT - Client Services",
+            ["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"]);
+        Assert.Equal(10, split.Count);
+        Assert.All(split, query =>
+        {
+            Assert.Contains("assigned_toISEMPTY", query, StringComparison.Ordinal);
+            Assert.Contains("location.name=", query, StringComparison.Ordinal);
+            Assert.DoesNotContain("location.nameIN", query, StringComparison.Ordinal);
+            Assert.DoesNotContain("LIKEClient Services", query, StringComparison.Ordinal);
+        });
+        Assert.Contains(split, query => query.Contains("assignment_groupINgroup-cs", StringComparison.Ordinal)
+            && query.Contains("location.name=\"Brisbane Office\"", StringComparison.Ordinal));
+        Assert.Contains(split, query => query.Contains("assignment_group.name=\"Aus DT - Client Services\"", StringComparison.Ordinal)
+            && query.Contains("location.name=\"Brisbane\"", StringComparison.Ordinal)
+            && !query.Contains("Maroochydore", StringComparison.Ordinal));
     }
 
     private static string FieldsOf(string pathAndQuery)

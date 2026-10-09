@@ -298,10 +298,12 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             };
             lock (_cacheGate)
             {
-                if (_signedInUserSysId is not null
-                    && !_signedInUserSysId.Equals(user.SysId, StringComparison.OrdinalIgnoreCase))
+                var incoming = (user.SysId ?? "").Trim();
+                // Drop any membership list loaded before Connect resolved a sys_id (javascript
+                // probes often return nobody and must not stick as an empty cache).
+                if (!string.Equals(_signedInUserSysId, incoming, StringComparison.OrdinalIgnoreCase))
                     _groupIds = null;
-                _signedInUserSysId = user.SysId;
+                _signedInUserSysId = incoming.Length == 0 ? null : incoming;
             }
 
             return user;
@@ -356,12 +358,14 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             groupIds = [];
         }
 
-        var query = AlertQueryBuilder.UnassignedInGroups(groupIds, watchedGroupName, officeLocations);
-        if (query is null)
+        var queries = AlertQueryBuilder.UnassignedInGroupsQueries(groupIds, watchedGroupName, officeLocations);
+        if (queries.Count == 0)
             return [];
 
-        var rows = await LoadPopulationAsync("incident", UnassignedQueueFields, query, DeskSection.Incidents, cancellationToken).ConfigureAwait(false);
-        var open = rows.Where(record => string.IsNullOrWhiteSpace(record.AssignedToSysId)).ToArray();
+        var rows = new List<WatchedRecord>();
+        foreach (var query in queries)
+            rows.AddRange(await LoadPopulationAsync("incident", UnassignedQueueFields, query, DeskSection.Incidents, cancellationToken).ConfigureAwait(false));
+        var open = DistinctWatched(rows.Where(record => string.IsNullOrWhiteSpace(record.AssignedToSysId)));
         if (officeLocations is not null)
             open = open.Where(record => OfficeQueue.Matches(record.Location, officeLocations)).ToArray();
         if (open.Length == 0)
@@ -1787,19 +1791,57 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         SearchFieldSet textFields = SearchFieldSet.Task)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var clause = await BuildClauseAsync(query, textFields, cancellationToken).ConfigureAwait(false);
-        LastTicketEncodedQuery = clause;
+        var clauses = await BuildClausesAsync(query, textFields, cancellationToken).ConfigureAwait(false);
+        LastTicketEncodedQuery = string.Join(" | ", clauses);
         var limit = Math.Clamp(query.Limit, 1, 100);
         var offset = Math.Max(0, query.Offset);
-        var result = await GetListAsync(table, fields, clause, limit, offset, cancellationToken).ConfigureAwait(false);
-        using (result)
+        if (clauses.Count == 1)
         {
-            var items = RequireArray(result.Document).EnumerateArray().Select(map).ToArray();
-            return new PagedResult<T>(items, result.TotalCount);
+            var result = await GetListAsync(table, fields, clauses[0], limit, offset, cancellationToken).ConfigureAwait(false);
+            using (result)
+            {
+                var items = RequireArray(result.Document).EnumerateArray().Select(map).ToArray();
+                return new PagedResult<T>(items, result.TotalCount);
+            }
         }
+
+        // One request per watched office. A single ApplyTo chain for five cities packs ten
+        // location branches into sysparm_query and often comes back empty on the Table API.
+        var merged = new List<T>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var clause in clauses)
+        {
+            var result = await GetListAsync(table, fields, clause, limit, 0, cancellationToken).ConfigureAwait(false);
+            using (result)
+            {
+                foreach (var row in RequireArray(result.Document).EnumerateArray().Select(map))
+                {
+                    var id = RecordSysId(row);
+                    if (id.Length > 0 && !seen.Add(id))
+                        continue;
+                    merged.Add(row);
+                }
+            }
+        }
+
+        var ordered = merged
+            .OrderByDescending(RecordSortKey, StringComparer.Ordinal)
+            .Skip(offset)
+            .Take(limit)
+            .ToArray();
+        return new PagedResult<T>(ordered, merged.Count);
     }
 
     private async Task<string> BuildClauseAsync(TicketQuery query, SearchFieldSet textFields, CancellationToken cancellationToken)
+    {
+        var clauses = await BuildClausesAsync(query, textFields, cancellationToken).ConfigureAwait(false);
+        return clauses[0];
+    }
+
+    private async Task<IReadOnlyList<string>> BuildClausesAsync(
+        TicketQuery query,
+        SearchFieldSet textFields,
+        CancellationToken cancellationToken)
     {
         var assignment = query.AssignmentClause;
         if (string.IsNullOrWhiteSpace(assignment))
@@ -1852,9 +1894,29 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         if (query.OfficeLocations is not null
             && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
             && query.TeamMemberIds is null)
-            return OfficeQueue.ApplyTo(encoded, query.OfficeLocations);
-        return encoded;
+            return OfficeQueue.Queries(encoded, query.OfficeLocations);
+        return [encoded];
     }
+
+    private static string RecordSysId<T>(T item) => item switch
+    {
+        IncidentRecord record => record.SysId,
+        RequestRecord record => record.SysId,
+        RequestedItemRecord record => record.SysId,
+        InteractionRecord record => record.SysId,
+        KnowledgeArticle record => record.SysId,
+        _ => ""
+    };
+
+    private static string RecordSortKey<T>(T item) => item switch
+    {
+        IncidentRecord record => record.UpdatedAtValue,
+        RequestRecord record => record.UpdatedAtValue,
+        RequestedItemRecord record => record.UpdatedAtValue,
+        InteractionRecord record => record.UpdatedAtValue,
+        KnowledgeArticle record => record.UpdatedAtValue,
+        _ => ""
+    };
 
     private string? SignedInUserSysId()
     {
@@ -1882,7 +1944,18 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private async Task<string> MyGroupsClauseAsync(CancellationToken cancellationToken)
     {
         if (_groupIds is null)
-            _groupIds = await LoadMemberGroupIdsAsync(cancellationToken).ConfigureAwait(false);
+        {
+            var ids = await LoadMemberGroupIdsAsync(cancellationToken).ConfigureAwait(false);
+            lock (_cacheGate)
+            {
+                // Cache only when the signed-in sys_id is known (or membership already
+                // returned rows). An empty javascript:gs.getUserID() probe must not stick.
+                if (!string.IsNullOrWhiteSpace(_signedInUserSysId) || ids.Length > 0)
+                    _groupIds = ids;
+                else
+                    return "sys_id=NO_GROUP_MEMBERSHIP";
+            }
+        }
 
         if (_groupIds.Length == 0)
             return "sys_id=NO_GROUP_MEMBERSHIP";

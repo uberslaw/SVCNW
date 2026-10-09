@@ -27,6 +27,22 @@ public class InTheMixTests
         Assert.DoesNotContain("(", brisbane);
         Assert.DoesNotContain("^OR", brisbane);
         Assert.Equal("sys_id=NO_OFFICE", OfficeQueue.LocationClause([]));
+        var five = OfficeQueue.Queries(
+            "assignment_groupINgroup-aus^active=true^stateNOT IN6,7,8^ORDERBYDESCsys_updated_on",
+            ["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"]);
+        Assert.Equal(5, five.Count);
+        Assert.All(five, query =>
+        {
+            Assert.Contains("assignment_groupINgroup-aus", query, StringComparison.Ordinal);
+            Assert.Contains("active=true^stateNOT IN6,7,8", query, StringComparison.Ordinal);
+            Assert.Contains("location.name=", query, StringComparison.Ordinal);
+            Assert.DoesNotContain("location.nameIN", query, StringComparison.Ordinal);
+            Assert.DoesNotContain("LIKEClient Services", query, StringComparison.Ordinal);
+            Assert.DoesNotContain("APAC", query, StringComparison.Ordinal);
+        });
+        Assert.Contains(five, query => query.Contains("location.name=\"Brisbane Office\"", StringComparison.Ordinal));
+        Assert.Contains(five, query => query.Contains("location.name=\"Brisbane\"", StringComparison.Ordinal)
+            && !query.Contains("Maroochydore", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -326,6 +342,77 @@ public class InTheMixTests
         Assert.Contains("assignment_groupINgroup-cs", none);
         Assert.Contains("sys_id=NO_OFFICE", none);
         Assert.DoesNotContain("^NQ", none);
+    }
+
+    [Fact]
+    public async Task MyTeamSplitsWatchedOfficesAndKeepsUnassignedGroupTickets()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri!.PathAndQuery;
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"group":{"value":"group-aus","display_value":"AUS DT - Client Services"}}]}""");
+            if (path.Contains("/table/sys_user?", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":{"value":"user-alex","display_value":"user-alex"},"name":{"value":"Alex","display_value":"Alex"},"user_name":{"value":"alex","display_value":"alex"},"email":{"value":"a@b.c","display_value":"a@b.c"},"location":{"value":"","display_value":"Brisbane Office"}}]}""");
+            if (path.Contains("/incident", StringComparison.Ordinal))
+            {
+                var query = Uri.UnescapeDataString(path);
+                Assert.Contains("assignment_groupINgroup-aus", query, StringComparison.Ordinal);
+                Assert.DoesNotContain("location.nameIN", query, StringComparison.Ordinal);
+                Assert.DoesNotContain("APAC", query, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("LIKEClient Services", query, StringComparison.Ordinal);
+                if (query.Contains("location.name=\"Brisbane Office\"", StringComparison.Ordinal)
+                    || query.Contains("location.name=\"Brisbane\"", StringComparison.Ordinal))
+                {
+                    return Api.Json("""
+                        {"result":[
+                          {"sys_id":{"value":"inc-4440","display_value":"inc-4440"},"number":{"value":"INC1004440","display_value":"INC1004440"},"short_description":{"value":"25H2","display_value":"25H2"},"state":{"value":"1","display_value":"New"},"priority":{"value":"4","display_value":"4 - Low"},"assigned_to":{"value":"","display_value":""},"assignment_group":{"value":"group-aus","display_value":"AUS DT - Client Services"},"location":{"value":"loc-bne","display_value":"Brisbane Office"},"active":{"value":"true","display_value":"true"},"sys_updated_on":{"value":"2026-10-09 01:00:00","display_value":"2026-10-09 01:00:00"},"opened_at":{"value":"2026-10-09 01:00:00","display_value":"2026-10-09 01:00:00"}}
+                        ]}
+                        """);
+                }
+
+                return Api.Json("""{"result":[]}""");
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        await client.GetCurrentUserAsync(CancellationToken.None);
+
+        var offices = new[] { "Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns" };
+        var page = await client.SearchIncidentsAsync(new TicketQuery
+        {
+            Assignment = AssignmentScope.MyGroups,
+            Activity = ActivityFilter.Open,
+            OfficeLocations = offices
+        }, CancellationToken.None);
+
+        var incidentCalls = handler.Calls
+            .Select(call => call.PathAndQuery)
+            .Where(path => path.Contains("/api/now/table/incident", StringComparison.Ordinal))
+            .Select(QueryOf)
+            .ToArray();
+        Assert.Equal(5, incidentCalls.Length);
+        Assert.All(incidentCalls, query =>
+        {
+            Assert.Equal(2, query.Split("^NQ").Length);
+            Assert.Contains("assignment_groupINgroup-aus", query, StringComparison.Ordinal);
+            Assert.Contains("active=true^stateNOT IN6,7,8", query, StringComparison.Ordinal);
+        });
+        Assert.Contains(incidentCalls, query => query.Contains("location.name=\"Brisbane Office\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(client.LastTicketEncodedQuery, "location.nameIN", StringComparison.Ordinal);
+        Assert.Contains(" | ", client.LastTicketEncodedQuery, StringComparison.Ordinal);
+        Assert.Equal("INC1004440", Assert.Single(page.Items).Number);
+        Assert.True(page.Items[0].AssignedTo.IsEmpty);
+
+        var unassigned = await client.SearchIncidentsAsync(new TicketQuery
+        {
+            Assignment = AssignmentScope.Unassigned,
+            Activity = ActivityFilter.Open,
+            OfficeLocations = offices
+        }, CancellationToken.None);
+        Assert.Equal("INC1004440", Assert.Single(unassigned.Items).Number);
+        Assert.Equal(10, handler.Calls.Count(call => call.PathAndQuery.Contains("/api/now/table/incident", StringComparison.Ordinal)));
     }
 
     [Fact]

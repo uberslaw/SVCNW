@@ -55,12 +55,32 @@ public static class OfficeQueue
     /// An <c>IN</c> list keeps the quote characters, so <c>location.nameIN"Brisbane","Brisbane Office"</c>
     /// matches neither name and the queue comes back empty. A parenthesized <c>OR</c> is not
     /// used: ServiceNow drops that group. An empty city list matches nothing.
+    /// Prefer <see cref="Queries"/> for list downloads with several watched offices: one long
+    /// <c>^NQ</c> chain is often truncated or ignored by the Table API and returns zero rows.
     /// </summary>
     public static string ApplyTo(string? encodedQuery, IReadOnlyList<string>? cities)
     {
         var (body, order) = SplitOrder(encodedQuery);
         var branches = Equalities(cities).Select(equality => body.Length == 0 ? equality : body + "^" + equality);
         return string.Join("^NQ", branches) + order;
+    }
+
+    /// <summary>
+    /// One office-scoped query per city (stem + " Office" still share a request via <c>^NQ</c>).
+    /// List My Team / Unassigned and Daily Work use this so five watched offices do not pack
+    /// ten location branches into a single <c>sysparm_query</c>.
+    /// </summary>
+    public static IReadOnlyList<string> Queries(string? encodedQuery, IReadOnlyList<string>? cities)
+    {
+        var places = (cities ?? [])
+            .Select(HardwareOfficeNames.Normalize)
+            .Where(city => city.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (places.Length == 0)
+            return [ApplyTo(encodedQuery, cities)];
+
+        return places.Select(city => ApplyTo(encodedQuery, [city])).ToArray();
     }
 
     private static IReadOnlyList<string> Equalities(IReadOnlyList<string>? cities)
