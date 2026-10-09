@@ -659,7 +659,10 @@ public sealed class AlertRow : INotifyPropertyChanged
     public required string Location { get; init; }
     public required string Updated { get; init; }
 
-    /// <summary>When this ticket was assigned to the signed-in user. Blank when that time is unknown.</summary>
+    /// <summary>
+    /// When this ticket was assigned to the signed-in user (audit, else assignment journal note).
+    /// Blank when that time is unknown.
+    /// </summary>
     public string AssignedOn { get; init; } = "";
 
     public string DaysAssigned => AssignmentAge.Format(AssignedOn, DateTime.Today);
