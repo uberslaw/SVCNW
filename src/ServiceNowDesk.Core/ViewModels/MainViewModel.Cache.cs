@@ -269,7 +269,7 @@ public partial class MainViewModel
         };
     }
 
-    private static DateTimeOffset CapturedAtFor(string key, DeskListSnapshot? lists, FormCatalogSnapshot? catalog) =>
+    private DateTimeOffset CapturedAtFor(string key, DeskListSnapshot? lists, FormCatalogSnapshot? catalog) =>
         key switch
         {
             "incidents" => lists?.Incidents?.CapturedAt ?? default,
