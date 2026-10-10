@@ -57,6 +57,7 @@ public static class DeskSettingsFile
         public bool HardwareOfficeOverride { get; set; }
         public int? NotificationPollSeconds { get; set; }
         public bool? DownloadCacheOnLaunch { get; set; }
+        public Dictionary<string, bool>? CacheDownloadOnLaunch { get; set; }
         public List<string>? EnabledHighlights { get; set; }
         public int LegendIntensityVersion { get; set; }
         public int? LegendIntensity { get; set; }
@@ -97,6 +98,7 @@ public static class DeskSettingsFile
             HardwareOfficeOverride = settings.HardwareOfficeOverride,
             NotificationPollSeconds = settings.NotificationPollSeconds,
             DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch,
+            CacheDownloadOnLaunch = CopyLaunchMap(settings.CacheDownloadOnLaunch),
             EnabledHighlights = settings.EnabledHighlights is null ? null : [.. settings.EnabledHighlights],
             LegendIntensityVersion = settings.LegendIntensityVersion,
             LegendIntensity = settings.LegendIntensity,
@@ -138,6 +140,7 @@ public static class DeskSettingsFile
             HardwareOfficeOverride = HardwareOfficeOverride,
             NotificationPollSeconds = NotificationPollSeconds ?? 60,
             DownloadCacheOnLaunch = DownloadCacheOnLaunch ?? true,
+            CacheDownloadOnLaunch = CopyLaunchMap(CacheDownloadOnLaunch),
             EnabledHighlights = EnabledHighlights is null ? null : [.. EnabledHighlights],
             LegendIntensityVersion = LegendIntensityVersion,
             LegendIntensity = LegendIntensity,
@@ -161,5 +164,8 @@ public static class DeskSettingsFile
 
         private static Dictionary<string, int>? CopyIntensities(Dictionary<string, int>? intensities) =>
             intensities is null ? null : new Dictionary<string, int>(intensities, StringComparer.OrdinalIgnoreCase);
+
+        private static Dictionary<string, bool>? CopyLaunchMap(Dictionary<string, bool>? map) =>
+            map is null ? null : new Dictionary<string, bool>(map, StringComparer.OrdinalIgnoreCase);
     }
 }

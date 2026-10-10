@@ -138,6 +138,12 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _catalog.Count == 0
         || FormCatalogPolicy.IsStale(_catalogCapturedAt, DateTimeOffset.UtcNow);
 
+    /// <summary>Computers currently held in the hardware cache (in memory or last load from disk).</summary>
+    public int CatalogCount => _catalog.Count;
+
+    /// <summary>When the hardware catalog was last saved; default when never downloaded.</summary>
+    public DateTimeOffset CatalogCapturedAt => _catalogCapturedAt;
+
     /// <summary>
     /// Loads the on-disk catalog immediately (local office seeds only — no network) so
     /// search and office filters work while startup or a background refresh is still running.

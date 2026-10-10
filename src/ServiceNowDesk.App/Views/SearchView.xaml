@@ -27,6 +27,7 @@
                 <ListBox x:Name="StateFilter"
                          ItemsSource="{Binding StateOptions}"
                          SelectionMode="Extended"
+                         IsSynchronizedWithCurrentItem="False"
                          BorderThickness="0"
                          Background="{StaticResource CardBrush}"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"

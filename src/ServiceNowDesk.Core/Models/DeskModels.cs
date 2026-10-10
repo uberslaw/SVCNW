@@ -223,7 +223,18 @@ public sealed class DeskSettings
     public bool HardwareOfficeOverride { get; set; }
 
     public int NotificationPollSeconds { get; set; } = 60;
+    /// <summary>
+    /// Master "Download all on launch". When true, every cache type downloads on launch unless
+    /// <see cref="CacheDownloadOnLaunch"/> turns an individual key off.
+    /// </summary>
     public bool DownloadCacheOnLaunch { get; set; } = true;
+
+    /// <summary>
+    /// Per-cache launch download toggles keyed by cache row key (incidents, hardware, …).
+    /// Null means every cache follows <see cref="DownloadCacheOnLaunch"/>.
+    /// Missing keys default to true when the master is on.
+    /// </summary>
+    public Dictionary<string, bool>? CacheDownloadOnLaunch { get; set; }
 
     /// <summary>People ticked on Leads, My team. Null and an empty list both mean nobody is selected.</summary>
     public List<string>? LeadTeamMemberIds { get; set; }

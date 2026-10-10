@@ -97,14 +97,22 @@ public partial class MainViewModel
             row.ReportSuccess(run.StaleCleared, run.FreshCount, run.CapturedAt, run.Note);
     }
 
-    private async Task<bool> RunDownloadAsync(ServiceNowClient? live, IReadOnlyList<string> keys, bool force)
+    private Task<bool> RunDownloadAsync(ServiceNowClient? live, IReadOnlyList<string> keys, bool force) =>
+        RunDownloadAsync(live, keys, force, forceKey: null);
+
+    private async Task<bool> RunDownloadAsync(
+        ServiceNowClient? live,
+        IReadOnlyList<string> keys,
+        bool force,
+        Func<string, bool>? forceKey)
     {
         if (Interlocked.CompareExchange(ref _downloadBusy, 1, 0) != 0)
             return false;
 
         try
         {
-            if (!force && keys.All(key => !NeedsDownload(live, key)))
+            bool ForceFor(string key) => force || (forceKey?.Invoke(key) ?? false);
+            if (keys.All(key => !ForceFor(key) && !NeedsDownload(live, key)))
             {
                 Startup.Reset();
                 await ApplyFreshCachesAsync(live);
@@ -120,7 +128,7 @@ public partial class MainViewModel
             var mixFailed = false;
             foreach (var key in keys)
             {
-                var run = await RunKeyedSectionAsync(live, key, force);
+                var run = await RunKeyedSectionAsync(live, key, ForceFor(key));
                 if (!mixLeft.Remove(key))
                     continue;
                 if (run.Error is not null)
@@ -182,6 +190,7 @@ public partial class MainViewModel
         "configuration-items" => DownloadConfigurationItemsAsync(live, force),
         "incidents" or "requests" or "request-items" or "walk-ups" => DownloadListAsync(key, force),
         "knowledge" => DownloadKnowledgeSectionAsync(force),
+        "hardware" => DownloadHardwareSectionAsync(force),
         _ => Task.FromResult(new SectionOutcome(false, null))
     };
 
@@ -235,6 +244,7 @@ public partial class MainViewModel
             "request-items" => lists?.RequestItems?.Items.Count,
             "walk-ups" => lists?.WalkUps?.Items.Count,
             "knowledge" => lists?.Knowledge?.Items.Count,
+            "hardware" => Hardware.CatalogCount > 0 ? Hardware.CatalogCount : null,
             "choices" => catalog is null ? null : catalog.Choices.Sum(list => list.Choices?.Count ?? 0),
             "groups" => catalog?.Groups.Count,
             "members" => catalog?.Members.Count,
@@ -252,6 +262,7 @@ public partial class MainViewModel
             "request-items" => RequestedItems.Items.Count,
             "walk-ups" => WalkUps.Items.Count,
             "knowledge" => Knowledge.Articles.Count,
+            "hardware" => Hardware.CatalogCount,
             "choices" => live is null ? CountPracticeStamp("choices") : 0,
             "groups" => Incidents.Assignment.Groups.Count(choice => !string.IsNullOrEmpty(choice.Value)),
             _ => 0
@@ -266,6 +277,7 @@ public partial class MainViewModel
             "request-items" => lists?.RequestItems?.CapturedAt ?? default,
             "walk-ups" => lists?.WalkUps?.CapturedAt ?? default,
             "knowledge" => lists?.Knowledge?.CapturedAt ?? default,
+            "hardware" => Hardware.CatalogCapturedAt,
             "choices" => FirstStamp(catalog?.CapturedAt ?? default, lists?.ChoicesCapturedAt ?? default),
             "groups" => FirstStamp(catalog?.DirectoryCapturedAt ?? default, lists?.GroupsCapturedAt ?? default),
             "members" => FirstStamp(catalog?.DirectoryCapturedAt ?? default, lists?.MembersCapturedAt ?? default),
@@ -811,6 +823,7 @@ public partial class MainViewModel
         "request-items" => "Request items",
         "walk-ups" => "Walk-ups",
         "knowledge" => "Knowledge",
+        "hardware" => "Hardware",
         _ => key
     };
 
@@ -951,9 +964,29 @@ public partial class MainViewModel
     {
         if (_client is null)
             return;
-        if (!Connection.DownloadCacheOnLaunch && !Hardware.CatalogNeedsRefresh)
+        // Checked = always refresh on launch. Unchecked = only when the saved catalog is missing/stale.
+        if (!Connection.LaunchDownloadEnabled("hardware") && !Hardware.CatalogNeedsRefresh)
             return;
         _ = Hardware.RefreshCatalogInBackgroundAsync();
+    }
+
+    private async Task<SectionOutcome> DownloadHardwareSectionAsync(bool force)
+    {
+        if (_client is null)
+            return new SectionOutcome(false, null);
+
+        Hardware.ShowSavedCatalog();
+        var before = Hardware.CatalogCount;
+        var beforeAt = Hardware.CatalogCapturedAt;
+        if (!force && !Hardware.CatalogNeedsRefresh)
+            return new SectionOutcome(true, null, 0, before, beforeAt);
+
+        await Hardware.RefreshCatalogInBackgroundAsync();
+        var after = Hardware.CatalogCount;
+        var at = Hardware.CatalogCapturedAt;
+        if (at == default)
+            at = DateTimeOffset.UtcNow;
+        return new SectionOutcome(false, null, Math.Max(0, before), after, at);
     }
 
     private async Task PrimeSampleKnowledgeAsync()
@@ -978,9 +1011,8 @@ public partial class MainViewModel
     {
         if (_client is null)
             return;
-        // Same force rule as splash caches: download on launch when the setting is on,
-        // otherwise only when the saved list is missing or older than a day.
-        if (!Connection.DownloadCacheOnLaunch && !NeedsDownload(null, "knowledge"))
+        // Checked = refresh on launch. Unchecked = only when the saved list is missing or stale.
+        if (!Connection.LaunchDownloadEnabled("knowledge") && !NeedsDownload(null, "knowledge"))
             return;
         _ = RefreshKnowledgeQuietlyAsync();
     }

@@ -109,6 +109,33 @@ public class SearchFilterTests
     }
 
     [Fact]
+    public async Task SearchKeepsHitsUntilReplaceAndDoesNotAutoApplyFirstState()
+    {
+        using var client = new SampleServiceNowClient();
+        var search = new SearchWorkspaceViewModel();
+
+        await search.RunAsync(client, "printer");
+        Assert.True(search.Results.Count > 0, search.Summary);
+        Assert.Empty(search.SelectedStates);
+        Assert.Equal("All states", search.StateFilterSummary);
+        Assert.Contains("match", search.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(" of ", search.Summary, StringComparison.Ordinal);
+
+        // Spurious empty selection (ItemsSource rebuild) must not clear real hits.
+        search.SetSelectedStates([]);
+        Assert.True(search.Results.Count > 0, search.Summary);
+        Assert.Empty(search.SelectedStates);
+
+        // Applying a catalog state that matches none of these hits must report 0 of N.
+        Assert.Contains("Closed Abandoned", search.StateOptions);
+        search.SetSelectedStates(["Closed Abandoned"]);
+        Assert.Empty(search.Results);
+        Assert.Contains(" of ", search.Summary, StringComparison.Ordinal);
+        search.ClearStateFilter();
+        Assert.True(search.Results.Count > 0, search.Summary);
+    }
+
+    [Fact]
     public async Task StateFilterUsesCatalogUnionAndMultiSelectNarrowsResults()
     {
         using var client = new SampleServiceNowClient();

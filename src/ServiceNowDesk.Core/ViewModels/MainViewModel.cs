@@ -56,6 +56,7 @@ public partial class MainViewModel : ObservableObject
         new CacheRowModel("request-items", "Request items"),
         new CacheRowModel("walk-ups", "Walk-ups"),
         new CacheRowModel("knowledge", "Knowledge"),
+        new CacheRowModel("hardware", "Hardware"),
         new CacheRowModel("choices", "Form choices"),
         new CacheRowModel("groups", "Assignment groups"),
         new CacheRowModel("members", "Assignment group members"),
@@ -230,7 +231,15 @@ public partial class MainViewModel : ObservableObject
             Connection.Notifications.JiggleSpeed = NotificationSettings.ActiveJiggleSpeed;
             _store.Save(Connection.BuildSettings());
         };
-        Connection.DownloadCachePreferenceChanged += (_, _) => _store.Save(Connection.BuildSettings());
+        Connection.DownloadCachePreferenceChanged += (_, _) =>
+        {
+            SyncCacheLaunchTogglesFromConnection();
+            _store.Save(Connection.BuildSettings());
+        };
+        Connection.EnsureLaunchKeys(Caches.Select(row => row.Key));
+        SyncCacheLaunchTogglesFromConnection();
+        foreach (var row in Caches)
+            row.PropertyChanged += OnCacheRowPropertyChanged;
         Connection.LeadsAccessChanged += (_, _) =>
         {
             _store.Save(Connection.BuildSettings());
@@ -340,6 +349,7 @@ public partial class MainViewModel : ObservableObject
     {
         var settings = _store.Load();
         Connection.Load(settings);
+        SyncCacheLaunchTogglesFromConnection();
         Leads.ApplyTeamState(Connection.LeadTeamSaved, Connection.LeadsTeamLocked);
         NotificationSettings.Load(Connection.Notifications);
         Legend.Load(Connection.Highlights);
@@ -1318,7 +1328,41 @@ public partial class MainViewModel : ObservableObject
     }
 
     private Task<bool> DownloadStartupAsync(ServiceNowClient? live) =>
-        RunDownloadAsync(live, StartupCacheKeys, force: Connection.DownloadCacheOnLaunch);
+        RunDownloadAsync(
+            live,
+            StartupCacheKeys,
+            force: false,
+            forceKey: Connection.LaunchDownloadEnabled);
+
+    private bool _syncingCacheLaunchRows;
+
+    private void OnCacheRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_syncingCacheLaunchRows
+            || e.PropertyName != nameof(CacheRowModel.DownloadOnLaunch)
+            || sender is not CacheRowModel row)
+            return;
+        Connection.RememberCacheLaunch(row.Key, row.DownloadOnLaunch);
+    }
+
+    private void SyncCacheLaunchTogglesFromConnection()
+    {
+        Connection.EnsureLaunchKeys(Caches.Select(row => row.Key));
+        _syncingCacheLaunchRows = true;
+        try
+        {
+            foreach (var row in Caches)
+            {
+                var on = Connection.LaunchDownloadEnabled(row.Key);
+                if (row.DownloadOnLaunch != on)
+                    row.DownloadOnLaunch = on;
+            }
+        }
+        finally
+        {
+            _syncingCacheLaunchRows = false;
+        }
+    }
 
     private void PublishStartupDownloadOutcome()
     {

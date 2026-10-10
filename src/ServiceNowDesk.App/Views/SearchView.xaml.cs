@@ -63,11 +63,19 @@ public partial class SearchView
 
     private void StateFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        // Rebuilding StateOptions during a search clears ListBox selection; ignore until load finishes.
+        // Rebuilding StateOptions (and WPF current-item sync) must not apply a state filter
+        // before hits arrive — that left users at "0 of N" / empty results while Loading….
         if (_syncingStates || DataContext is not SearchWorkspaceViewModel search || search.IsLoading)
             return;
 
-        var labels = StateFilter.SelectedItems.Cast<object>().Select(item => item?.ToString() ?? "").Where(label => label.Length > 0);
+        var labels = StateFilter.SelectedItems.Cast<object>()
+            .Select(item => item?.ToString() ?? "")
+            .Where(label => label.Length > 0)
+            .ToArray();
+        // Ignore no-op clears that fire when the ItemsSource is rebuilt.
+        if (labels.Length == 0 && search.SelectedStates.Count == 0)
+            return;
+
         search.SetSelectedStates(labels);
     }
 

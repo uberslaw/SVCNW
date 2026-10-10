@@ -201,6 +201,7 @@ public class CacheSettingsTests
         Assert.Contains(main.Caches, row => row.Name == "Service offerings");
         Assert.Contains(main.Caches, row => row.Name == "Configuration items");
         Assert.Contains(main.Caches, row => row.Name == "Walk-ups");
+        Assert.Contains(main.Caches, row => row.Name == "Hardware");
         Assert.DoesNotContain(main.Caches, row => row.Name.Contains("SLA", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -221,6 +222,37 @@ public class CacheSettingsTests
         Assert.Equal("https://example.service-now.com", again.BuildSettings().InstanceUrl);
         again.DownloadCacheOnLaunch = true;
         Assert.True(again.BuildSettings().DownloadCacheOnLaunch);
+    }
+
+    [Fact]
+    public void PerCacheLaunchTogglesRoundTripAndDriveMasterCheckbox()
+    {
+        var connection = new ConnectionViewModel();
+        connection.EnsureLaunchKeys(["incidents", "hardware", "knowledge", "choices"]);
+        Assert.True(connection.DownloadCacheOnLaunch);
+        Assert.True(connection.LaunchDownloadEnabled("hardware"));
+
+        connection.RememberCacheLaunch("hardware", false);
+        Assert.False(connection.DownloadCacheOnLaunch);
+        Assert.False(connection.LaunchDownloadEnabled("hardware"));
+        Assert.True(connection.LaunchDownloadEnabled("incidents"));
+
+        var saved = connection.BuildSettings();
+        Assert.False(saved.DownloadCacheOnLaunch);
+        Assert.NotNull(saved.CacheDownloadOnLaunch);
+        Assert.False(saved.CacheDownloadOnLaunch!["hardware"]);
+        Assert.True(saved.CacheDownloadOnLaunch["incidents"]);
+
+        var again = new ConnectionViewModel();
+        again.Load(saved);
+        again.EnsureLaunchKeys(["incidents", "hardware", "knowledge", "choices"]);
+        Assert.False(again.DownloadCacheOnLaunch);
+        Assert.False(again.LaunchDownloadEnabled("hardware"));
+        Assert.True(again.LaunchDownloadEnabled("incidents"));
+
+        again.DownloadCacheOnLaunch = true;
+        Assert.True(again.LaunchDownloadEnabled("hardware"));
+        Assert.True(again.LaunchDownloadEnabled("knowledge"));
     }
 
     [Fact]
@@ -552,6 +584,47 @@ public class CacheSettingsTests
 
         var knowledge = Assert.Single(main.Caches, row => row.Name == "Knowledge");
         Assert.True(knowledge.StoredCount >= 0, knowledge.CountText);
+
+        var hardware = Assert.Single(main.Caches, row => row.Name == "Hardware");
+        Assert.True(hardware.StoredCount >= 0, hardware.CountText);
+        Assert.True(hardware.DownloadOnLaunch);
+        Assert.All(main.Caches, row => Assert.True(row.DownloadOnLaunch));
+    }
+
+    [Fact]
+    public async Task UncheckedLaunchToggleSkipsForceRefreshForThatCache()
+    {
+        var lists = new MemoryDeskListStore();
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings
+        {
+            UseSampleData = true,
+            DownloadCacheOnLaunch = false,
+            CacheDownloadOnLaunch = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["incidents"] = false,
+                ["requests"] = false,
+                ["request-items"] = false,
+                ["walk-ups"] = false,
+                ["knowledge"] = false,
+                ["hardware"] = false,
+                ["choices"] = false,
+                ["groups"] = false,
+                ["members"] = false,
+                ["service-offerings"] = false,
+                ["configuration-items"] = false
+            }
+        });
+        lists.Save(DeskListScope.Practice, FreshPractice("INC-KEEP", "Kept"));
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
+
+        await main.InitializeAsync();
+
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP");
+        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010001");
+        Assert.False(main.Connection.DownloadCacheOnLaunch);
+        Assert.All(main.Caches, row => Assert.False(row.DownloadOnLaunch));
+        Assert.Contains(main.Caches, row => row.Name == "Hardware");
     }
 
     [Fact]

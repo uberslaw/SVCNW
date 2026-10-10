@@ -203,7 +203,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             var walkTask = (kind is null or DeskSection.WalkUps) && IncludeWalkUps
                 ? LoadTableAsync(version, "Walk-ups", errors, () => client.SearchInteractionsAsync(query, CancellationToken.None))
                 : Task.FromResult(new PagedResult<InteractionRecord>([], 0));
-            var statesTask = LoadStateOptionsAsync(client, CancellationToken.None);
+            var statesTask = LoadStateOptionsAsync(version, client, CancellationToken.None);
 
             await Task.WhenAll(incidentTask, requestTask, itemTask, articleTask, walkTask, statesTask);
             if (version != _runVersion)
@@ -279,12 +279,17 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 SortKey = record.UpdatedAtValue
             }));
 
+            if (version != _runVersion)
+                return;
+
             MergeHitStates(hits);
             Query = trimmed;
             _resultSummary = hits.Count == 1 ? "1 match" : hits.Count + " matches";
             if (hideKnowledge)
                 _resultSummary += ". " + KnowledgeHiddenSummary;
             ErrorMessage = string.Join(Environment.NewLine, errors);
+            // Publish hits before clearing IsLoading so a ListBox SelectionChanged from
+            // StateOptions rebuild cannot filter an empty _hits list down to 0 rows.
             ReplaceHits(hits);
             Remember(trimmed);
             if (errors.Count > 0)
@@ -431,7 +436,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         }
     }
 
-    private async Task LoadStateOptionsAsync(IServiceNowClient client, CancellationToken cancellationToken)
+    private async Task LoadStateOptionsAsync(int version, IServiceNowClient client, CancellationToken cancellationToken)
     {
         var labels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (IncludeIncidents)
@@ -445,6 +450,9 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         if (IncludeKnowledge)
             AddChoiceLabels(labels, await SafeChoicesAsync(client, "kb_knowledge", "workflow_state", cancellationToken).ConfigureAwait(true));
 
+        // Stale searches must not wipe StateOptions / selection while a newer run is in flight.
+        if (version != _runVersion)
+            return;
         ReplaceStateOptions(labels);
     }
 
@@ -527,7 +535,11 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     {
         IEnumerable<SearchHit> rows = _hits;
         if (_selectedStates.Count > 0)
-            rows = rows.Where(hit => _selectedStates.Contains(hit.StateLabel));
+        {
+            rows = rows.Where(hit =>
+                !string.IsNullOrWhiteSpace(hit.StateLabel)
+                && _selectedStates.Contains(hit.StateLabel.Trim()));
+        }
 
         rows = OrderHits(rows);
 

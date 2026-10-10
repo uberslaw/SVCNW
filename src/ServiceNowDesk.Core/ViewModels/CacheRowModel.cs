@@ -21,6 +21,8 @@ public sealed partial class CacheRowModel : ObservableObject
     [ObservableProperty] private string lastAttemptText = "";
     [ObservableProperty] private bool isFailed;
     [ObservableProperty] private bool isBusy;
+    /// <summary>When true, this cache downloads on launch / new browser session.</summary>
+    [ObservableProperty] private bool downloadOnLaunch = true;
 
     public DateTimeOffset? LastGoodAt { get; private set; }
     public int StoredCount { get; private set; }

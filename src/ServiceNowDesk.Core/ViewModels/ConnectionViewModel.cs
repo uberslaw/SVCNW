@@ -48,6 +48,11 @@ public partial class ConnectionViewModel : ObservableObject
     public event EventHandler? LeadsAccessChanged;
 
     private bool _loadingSettings;
+    private bool _syncingLaunchMaster;
+
+    /// <summary>Per-cache launch download flags keyed like Settings cache rows (incidents, hardware, …).</summary>
+    public Dictionary<string, bool> CacheDownloadOnLaunch { get; private set; } =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public NotificationPreferences Notifications { get; private set; } = NotificationPreferences.From(new DeskSettings());
 
@@ -77,9 +82,57 @@ public partial class ConnectionViewModel : ObservableObject
     partial void OnSessionCapturedAtChanged(DateTimeOffset? value) => UpdateBrowserStatus();
     partial void OnDownloadCacheOnLaunchChanged(bool value)
     {
-        if (!_loadingSettings)
-            DownloadCachePreferenceChanged?.Invoke(this, EventArgs.Empty);
+        if (_loadingSettings || _syncingLaunchMaster)
+            return;
+        // Master checkbox selects or clears every individual launch toggle.
+        foreach (var key in CacheDownloadOnLaunch.Keys.ToArray())
+            CacheDownloadOnLaunch[key] = value;
+        DownloadCachePreferenceChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    public void EnsureLaunchKeys(IEnumerable<string> keys)
+    {
+        foreach (var key in keys)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                continue;
+            var trimmed = key.Trim();
+            if (!CacheDownloadOnLaunch.ContainsKey(trimmed))
+                CacheDownloadOnLaunch[trimmed] = DownloadCacheOnLaunch;
+        }
+    }
+
+    public void RememberCacheLaunch(string key, bool downloadOnLaunch)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return;
+        CacheDownloadOnLaunch[key.Trim()] = downloadOnLaunch;
+        if (_loadingSettings)
+            return;
+        _syncingLaunchMaster = true;
+        try
+        {
+            DownloadCacheOnLaunch = CacheDownloadOnLaunch.Count > 0 && CacheDownloadOnLaunch.Values.All(on => on);
+        }
+        finally
+        {
+            _syncingLaunchMaster = false;
+        }
+
+        DownloadCachePreferenceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public bool LaunchDownloadEnabled(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return DownloadCacheOnLaunch;
+        return CacheDownloadOnLaunch.TryGetValue(key.Trim(), out var on) ? on : DownloadCacheOnLaunch;
+    }
+
+    private static Dictionary<string, bool>? CopyLaunchMap(Dictionary<string, bool>? map) =>
+        map is null || map.Count == 0
+            ? null
+            : new Dictionary<string, bool>(map, StringComparer.OrdinalIgnoreCase);
 
     public DeskSettings BuildSettings()
     {
@@ -97,7 +150,8 @@ public partial class ConnectionViewModel : ObservableObject
             SignedInAt = SignedInAt,
             SessionExpiresAt = SessionExpiresAt,
             UseSampleData = UseSampleData,
-            DownloadCacheOnLaunch = DownloadCacheOnLaunch
+            DownloadCacheOnLaunch = DownloadCacheOnLaunch,
+            CacheDownloadOnLaunch = CopyLaunchMap(CacheDownloadOnLaunch)
         };
         Notifications.ApplyTo(settings);
         Highlights.ApplyTo(settings);
@@ -197,7 +251,13 @@ public partial class ConnectionViewModel : ObservableObject
         SignedInAt = settings.SignedInAt;
         SessionExpiresAt = settings.SessionExpiresAt;
         UseSampleData = settings.UseSampleData;
-        DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch;
+        CacheDownloadOnLaunch = settings.CacheDownloadOnLaunch is null
+            ? new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, bool>(settings.CacheDownloadOnLaunch, StringComparer.OrdinalIgnoreCase);
+        // Prefer the per-cache map when present so the master checkbox matches the boxes.
+        DownloadCacheOnLaunch = CacheDownloadOnLaunch.Count > 0
+            ? CacheDownloadOnLaunch.Values.All(on => on)
+            : settings.DownloadCacheOnLaunch;
         Notifications = NotificationPreferences.From(settings);
         Highlights = HighlightPreferences.From(settings);
         LeadTeamMemberIds = settings.LeadTeamMemberIds is null
