@@ -686,26 +686,6 @@ public partial class MainViewModel
         cacheRow?.SetStoredCount(list.Items.Count);
     }
 
-    private CachedTicketList? ClearList(string key)
-    {
-        if (_lists is null)
-            return null;
-        var snapshot = LoadLists() ?? new DeskListSnapshot();
-        var previous = ListFor(snapshot, key);
-        AssignList(snapshot, key, null);
-        _lists.Save(CacheScope(), snapshot);
-        return previous;
-    }
-
-    private void RestoreList(string key, CachedTicketList? previous)
-    {
-        if (_lists is null)
-            return;
-        var snapshot = LoadLists() ?? new DeskListSnapshot();
-        AssignList(snapshot, key, previous);
-        _lists.Save(CacheScope(), snapshot);
-    }
-
     private void RememberPracticeStamp(string key)
     {
         if (_lists is null || _client is ServiceNowClient)

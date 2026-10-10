@@ -81,6 +81,93 @@ public class StartupDownloadLifecycleTests
     }
 
     [Fact]
+    public async Task SavedCachesStaySearchableWhileStartupDownloadRuns()
+    {
+        var release = new TaskCompletionSource();
+        var started = new TaskCompletionSource();
+        var session = Api.BasicSession();
+        var scope = DeskListScope.ForInstance(session.InstanceUri);
+        var lists = new MemoryDeskListStore();
+        var now = DateTimeOffset.UtcNow;
+        lists.Save(scope, new DeskListSnapshot
+        {
+            Incidents = new CachedTicketList
+            {
+                CapturedAt = now,
+                TotalCount = 1,
+                Items =
+                [
+                    new CachedTicketRow
+                    {
+                        SysId = "inc-disk",
+                        Number = "INC-DISK",
+                        Title = "From disk",
+                        StateLabel = "Open",
+                        Tone = "open"
+                    }
+                ]
+            }
+        });
+        var hardware = new MemoryHardwareCatalogStore();
+        hardware.Save(scope, new HardwareCatalogSnapshot
+        {
+            CapturedAt = now,
+            AllLocations = true,
+            Items =
+            [
+                new HardwareAsset
+                {
+                    SysId = "hw-disk",
+                    SerialNumber = "DISKSERIAL",
+                    Model = "HP EliteBook From Disk",
+                    ModelCategory = HardwareCatalog.Computer,
+                    Location = new ReferenceValue("loc-bne", "Brisbane Office"),
+                    InstallStatus = HardwareCatalog.InUse,
+                    InstallStatusLabel = HardwareCatalog.InUse
+                }
+            ]
+        });
+
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            clientFactory: (_, catalog) => ServiceNowClient.Create(session, new GatedListHandler(started, release), catalog),
+            lists: lists,
+            hardwareCatalog: hardware);
+        main.Connection.InstanceUrl = "https://example.service-now.com";
+        main.Connection.Username = "alex";
+        main.Connection.Password = "secret";
+        main.Connection.UseSampleData = false;
+        main.Connection.DownloadCacheOnLaunch = true;
+
+        var connect = main.ConnectCommand.ExecuteAsync(null);
+        try
+        {
+            var startedOrGaveUp = await Task.WhenAny(started.Task, Task.Delay(TimeSpan.FromSeconds(20)));
+            Assert.Same(started.Task, startedOrGaveUp);
+            Assert.True(main.Startup.IsRunning);
+
+            main.CloseStartupCommand.Execute(null);
+            Assert.Contains(main.Incidents.Items, row => row.Number == "INC-DISK");
+
+            main.SelectedSection = DeskSection.Hardware;
+            Assert.Contains(main.Hardware.Items, asset => asset.SerialNumber == "DISKSERIAL");
+            main.Hardware.SerialFilter = "DISK";
+            Assert.Equal("DISKSERIAL", Assert.Single(main.Hardware.Items).SerialNumber);
+            main.Hardware.SerialFilter = "";
+            Assert.False(connect.IsCompleted);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        await connect;
+        await main.AssignmentDirectoryRefresh;
+        Assert.False(main.Startup.IsRunning);
+    }
+
+    [Fact]
     public async Task GuidedSetupClosingTheSplashDoesNotCancelBootstrap()
     {
         var release = new TaskCompletionSource();

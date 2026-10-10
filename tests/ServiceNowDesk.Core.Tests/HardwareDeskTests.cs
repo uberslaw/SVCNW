@@ -527,15 +527,20 @@ public class HardwareDeskTests
 
         var workspace = new HardwareWorkspaceViewModel(settings, catalog);
         workspace.Attach(proxy);
-        await workspace.RefreshAsync();
+        // Disk first — no await on network — so the tab is searchable before refresh.
+        workspace.ShowSavedCatalog();
         Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
         Assert.DoesNotContain(workspace.Items, asset => asset.SerialNumber == "BNEDURING");
+        Assert.Contains("computers saved", workspace.CatalogStatus, StringComparison.OrdinalIgnoreCase);
 
+        workspace.SerialFilter = savedSerial[..Math.Min(4, savedSerial.Length)];
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
+
+        workspace.SerialFilter = "";
         var download = workspace.RefreshAllCatalogCommand.ExecuteAsync(null);
         var started = await Task.WhenAny(gate.Started.Task, Task.Delay(TimeSpan.FromSeconds(10)));
         Assert.Same(gate.Started.Task, started);
         Assert.True(workspace.IsDownloading);
-        Assert.Contains("saved on this PC", workspace.CatalogStatus, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
 
         workspace.SerialFilter = savedSerial;
@@ -549,6 +554,43 @@ public class HardwareDeskTests
         Assert.False(workspace.IsDownloading);
         Assert.Contains(workspace.Items, asset => asset.SerialNumber == "BNEDURING");
         Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
+    }
+
+    [Fact]
+    public async Task EmptyFullRefreshKeepsTheSavedCatalog()
+    {
+        using var client = new SampleServiceNowClient();
+        var catalog = new MemoryHardwareCatalogStore();
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane"], HardwareOfficeOverride = true });
+
+        var seed = new HardwareWorkspaceViewModel(settings, catalog);
+        seed.Attach(client);
+        await seed.RefreshAsync();
+        var savedCount = seed.Items.Count;
+        Assert.True(savedCount > 0);
+        var savedSerial = seed.Items[0].SerialNumber;
+
+        client.RemoveHardware(_ => true);
+        Assert.Equal(0, client.HardwareCount);
+
+        var workspace = new HardwareWorkspaceViewModel(settings, catalog);
+        workspace.Attach(client);
+        workspace.ShowSavedCatalog();
+        Assert.Equal(savedCount, workspace.Items.Count);
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
+
+        await workspace.RefreshAllCatalogCommand.ExecuteAsync(null);
+
+        Assert.False(workspace.IsDownloading);
+        Assert.Equal(savedCount, workspace.Items.Count);
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
+        Assert.Contains("kept the", workspace.CatalogStatus, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("saved on this PC", workspace.CatalogStatus, StringComparison.OrdinalIgnoreCase);
+
+        var reloaded = catalog.Load(DeskListScope.Practice);
+        Assert.NotNull(reloaded);
+        Assert.True(reloaded.Items.Count >= savedCount);
     }
 
     [Fact]
