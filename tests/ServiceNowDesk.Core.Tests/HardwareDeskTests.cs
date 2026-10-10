@@ -450,7 +450,9 @@ public class HardwareDeskTests
 
         workspace.LocationFilter = "Brisbane";
         workspace.StateFilter = "In transit";
+        await workspace.ColumnFiltersReady;
         Assert.Equal(2, workspace.Items.Count);
+        Assert.Equal(2, workspace.ShownCount);
         Assert.All(workspace.Items, asset =>
         {
             Assert.Contains("Brisbane", asset.Location.Display, StringComparison.OrdinalIgnoreCase);
@@ -458,13 +460,16 @@ public class HardwareDeskTests
         });
 
         workspace.SerialFilter = "5CD";
+        await workspace.ColumnFiltersReady;
         Assert.Equal("5CD6220GYW", Assert.Single(workspace.Items).SerialNumber);
 
         workspace.CommentsFilter = "shelf";
+        await workspace.ColumnFiltersReady;
         Assert.Empty(workspace.Items);
 
         workspace.SerialFilter = "";
         workspace.CommentsFilter = "";
+        await workspace.ColumnFiltersReady;
         Assert.Equal(2, workspace.Items.Count);
         Assert.Equal(gets, HardwareGets(client));
     }
@@ -481,17 +486,91 @@ public class HardwareDeskTests
         Assert.True(all > 1);
 
         workspace.ModelFilter = "fury";
+        await workspace.ColumnFiltersReady;
         var fury = Assert.Single(workspace.Items);
         Assert.Contains("Fury", fury.Model, StringComparison.OrdinalIgnoreCase);
 
         workspace.AssignedFilter = "nobody-matches-this";
+        await workspace.ColumnFiltersReady;
         Assert.Empty(workspace.Items);
 
         workspace.AssignedFilter = "";
+        await workspace.ColumnFiltersReady;
         Assert.Equal("HP ZBook Fury 16 G9", Assert.Single(workspace.Items).Model);
 
         workspace.ModelFilter = "";
+        await workspace.ColumnFiltersReady;
         Assert.Equal(all, workspace.Items.Count);
+    }
+
+    [Fact]
+    public async Task ColumnFilterShowsFilteringUntilShownCountUpdates()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+        workspace.Attach(client);
+        await workspace.RefreshAsync();
+        await workspace.SearchAllLocationsCommand.ExecuteAsync(null);
+        var all = workspace.ShownCount;
+        Assert.True(all > 1);
+        Assert.False(workspace.IsFiltering);
+
+        workspace.ModelFilter = "fury";
+        Assert.True(workspace.IsFiltering);
+        Assert.Equal(all, workspace.ShownCount);
+
+        await workspace.ColumnFiltersReady;
+        Assert.False(workspace.IsFiltering);
+        Assert.Equal(1, workspace.ShownCount);
+        Assert.Contains("Fury", Assert.Single(workspace.Items).Model, StringComparison.OrdinalIgnoreCase);
+
+        workspace.ModelFilter = "";
+        Assert.True(workspace.IsFiltering);
+        await workspace.ColumnFiltersReady;
+        Assert.False(workspace.IsFiltering);
+        Assert.Equal(all, workspace.ShownCount);
+    }
+
+    [Fact]
+    public async Task EveryColumnFilterNarrowsShownCount()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenHardwareAsync(client);
+        var all = workspace.ShownCount;
+        Assert.Equal(5, all);
+
+        await AssertFilterNarrowsAsync(workspace, () => workspace.SerialFilter = "5CD", all);
+        workspace.SerialFilter = "";
+        await workspace.ColumnFiltersReady;
+
+        await AssertFilterNarrowsAsync(workspace, () => workspace.ModelFilter = "Fury", all);
+        workspace.ModelFilter = "";
+        await workspace.ColumnFiltersReady;
+
+        await AssertFilterNarrowsAsync(workspace, () => workspace.AssignedFilter = "nobody-matches-this", all, expectEmpty: true);
+        workspace.AssignedFilter = "";
+        await workspace.ColumnFiltersReady;
+
+        await AssertFilterNarrowsAsync(workspace, () => workspace.LocationFilter = "Brisbane", all);
+        workspace.LocationFilter = "";
+        await workspace.ColumnFiltersReady;
+
+        await AssertFilterNarrowsAsync(workspace, () => workspace.StateFilter = "In transit", all);
+        workspace.StateFilter = "";
+        await workspace.ColumnFiltersReady;
+
+        workspace.SubstatusFilter = "zzzz-no-such-substate";
+        await workspace.ColumnFiltersReady;
+        Assert.Equal(0, workspace.ShownCount);
+        workspace.SubstatusFilter = "";
+        await workspace.ColumnFiltersReady;
+
+        workspace.CommentsFilter = "zzzz-no-such-comment";
+        await workspace.ColumnFiltersReady;
+        Assert.Equal(0, workspace.ShownCount);
+        workspace.CommentsFilter = "";
+        await workspace.ColumnFiltersReady;
+        Assert.Equal(all, workspace.ShownCount);
     }
 
     [Fact]
@@ -534,9 +613,11 @@ public class HardwareDeskTests
         Assert.Contains("computers saved", workspace.CatalogStatus, StringComparison.OrdinalIgnoreCase);
 
         workspace.SerialFilter = savedSerial[..Math.Min(4, savedSerial.Length)];
+        await workspace.ColumnFiltersReady;
         Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
 
         workspace.SerialFilter = "";
+        await workspace.ColumnFiltersReady;
         var download = workspace.RefreshAllCatalogCommand.ExecuteAsync(null);
         var started = await Task.WhenAny(gate.Started.Task, Task.Delay(TimeSpan.FromSeconds(10)));
         Assert.Same(gate.Started.Task, started);
@@ -544,10 +625,12 @@ public class HardwareDeskTests
         Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
 
         workspace.SerialFilter = savedSerial;
+        await workspace.ColumnFiltersReady;
         Assert.Equal(savedSerial, Assert.Single(workspace.Items).SerialNumber);
         Assert.DoesNotContain(workspace.Items, asset => asset.SerialNumber == "BNEDURING");
 
         workspace.SerialFilter = "";
+        await workspace.ColumnFiltersReady;
         hold.SetResult();
         await download;
 
@@ -1063,6 +1146,22 @@ public class HardwareDeskTests
 
     private static int HardwareGets(SampleServiceNowClient client) =>
         client.RecentActivity.Count(activity => activity.Method == "GET" && activity.Path.Contains("alm_hardware", StringComparison.Ordinal));
+
+    private static async Task AssertFilterNarrowsAsync(
+        HardwareWorkspaceViewModel workspace,
+        Action setFilter,
+        int all,
+        bool expectEmpty = false)
+    {
+        setFilter();
+        Assert.True(workspace.IsFiltering);
+        await workspace.ColumnFiltersReady;
+        Assert.False(workspace.IsFiltering);
+        if (expectEmpty)
+            Assert.Equal(0, workspace.ShownCount);
+        else
+            Assert.True(workspace.ShownCount < all);
+    }
 
     private static async Task<HardwareWorkspaceViewModel> OpenHardwareAsync(SampleServiceNowClient client)
     {

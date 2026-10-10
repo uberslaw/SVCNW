@@ -439,7 +439,7 @@
     <Style x:Key="DeskColumnFilter" TargetType="TextBox">
         <Setter Property="MinHeight" Value="28"/>
         <Setter Property="Padding" Value="6,4"/>
-        <Setter Property="Margin" Value="0,4,0,0"/>
+        <Setter Property="Margin" Value="0,0,0,0"/>
     </Style>
 
     <Style x:Key="DeskListItem" TargetType="ListBoxItem">

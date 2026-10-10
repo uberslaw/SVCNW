@@ -154,8 +154,10 @@ public class StartupDownloadLifecycleTests
             main.SelectedSection = DeskSection.Hardware;
             Assert.Contains(main.Hardware.Items, asset => asset.SerialNumber == "DISKSERIAL");
             main.Hardware.SerialFilter = "DISK";
+            await main.Hardware.ColumnFiltersReady;
             Assert.Equal("DISKSERIAL", Assert.Single(main.Hardware.Items).SerialNumber);
             main.Hardware.SerialFilter = "";
+            await main.Hardware.ColumnFiltersReady;
             Assert.False(connect.IsCompleted);
         }
         finally

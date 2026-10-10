@@ -120,7 +120,10 @@
                     </Grid>
                 </StackPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
-                    <TextBlock Text="{Binding Items.Count, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding ShownCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="  Filtering…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
+                               Visibility="{Binding IsFiltering, Converter={StaticResource BoolVis}}"
+                               AutomationProperties.Name="Hardware filtering status"/>
                     <TextBlock Text="  Loading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
                     <TextBlock Text="  Downloading…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}"/>
                     <Grid Margin="12,0,0,0" VerticalAlignment="Center">
@@ -159,10 +162,42 @@
                     </Grid>
                 </DockPanel>
                 <!--
-                  Column header TextBoxes are not in the DataGrid visual tree when bindings first resolve,
-                  so RelativeSource AncestorType=DataGrid never reaches the workspace VM (filters look typed
-                  but never update SerialFilter/ModelFilter/…). ElementName uses the view namescope instead.
+                  Filters must live in the UserControl namescope. DataGridColumn.Header content is not in the
+                  DataGrid visual/namescope tree, so RelativeSource AncestorType=DataGrid and ElementName
+                  bindings to HardwareList both fail — typed text never reaches *Filter properties.
                 -->
+                <Grid x:Name="HardwareFilters" DockPanel.Dock="Top" Margin="1,0,1,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.2*" MinWidth="96"/>
+                        <ColumnDefinition Width="2.4*" MinWidth="120"/>
+                        <ColumnDefinition Width="1.2*" MinWidth="96"/>
+                        <ColumnDefinition Width="1.2*" MinWidth="96"/>
+                        <ColumnDefinition Width="*" MinWidth="80"/>
+                        <ColumnDefinition Width="1.1*" MinWidth="96"/>
+                        <ColumnDefinition Width="1.5*" MinWidth="110"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Style="{StaticResource DeskColumnFilter}" Margin="6,0,4,0"
+                             Text="{Binding SerialFilter, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Filter serial"/>
+                    <TextBox Grid.Column="1" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
+                             Text="{Binding ModelFilter, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Filter model"/>
+                    <TextBox Grid.Column="2" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
+                             Text="{Binding AssignedFilter, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Filter assigned to"/>
+                    <TextBox Grid.Column="3" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
+                             Text="{Binding LocationFilter, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Filter location"/>
+                    <TextBox Grid.Column="4" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
+                             Text="{Binding StateFilter, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Filter state"/>
+                    <TextBox Grid.Column="5" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
+                             Text="{Binding SubstatusFilter, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Filter substate"/>
+                    <TextBox Grid.Column="6" Style="{StaticResource DeskColumnFilter}" Margin="2,0,6,0"
+                             Text="{Binding CommentsFilter, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Filter comments"/>
+                </Grid>
                 <DataGrid x:Name="HardwareList"
                           ItemsSource="{Binding Items}"
                           SelectedItem="{Binding Selected}"
@@ -170,87 +205,25 @@
                           ColumnHeaderStyle="{StaticResource DeskDataGridColumnHeader}"
                           CellStyle="{StaticResource DeskDataGridCell}"
                           RowStyle="{StaticResource DeskDataGridRow}"
+                          ColumnHeaderHeight="28"
                           CanUserResizeColumns="True"
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                           AutomationProperties.Name="Hardware list">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Binding="{Binding SerialNumber}" Width="1.2*" MinWidth="96"
-                                            ElementStyle="{StaticResource DeskDataGridAccentText}">
-                            <DataGridTextColumn.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Serial" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                                    <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.SerialFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
-                                             AutomationProperties.Name="Filter serial"/>
-                                </StackPanel>
-                            </DataGridTextColumn.Header>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Binding="{Binding Model}" Width="2.4*" MinWidth="120"
-                                            ElementStyle="{StaticResource DeskDataGridText}">
-                            <DataGridTextColumn.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Model" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                                    <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.ModelFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
-                                             AutomationProperties.Name="Filter model"/>
-                                </StackPanel>
-                            </DataGridTextColumn.Header>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Binding="{Binding AssignedTo.Display}" Width="1.2*" MinWidth="96"
-                                            ElementStyle="{StaticResource DeskDataGridText}">
-                            <DataGridTextColumn.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Assigned to" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                                    <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.AssignedFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
-                                             AutomationProperties.Name="Filter assigned to"/>
-                                </StackPanel>
-                            </DataGridTextColumn.Header>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Binding="{Binding Location.Display}" Width="1.2*" MinWidth="96"
-                                            ElementStyle="{StaticResource DeskDataGridText}">
-                            <DataGridTextColumn.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Location" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                                    <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.LocationFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
-                                             AutomationProperties.Name="Filter location"/>
-                                </StackPanel>
-                            </DataGridTextColumn.Header>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Binding="{Binding InstallStatusLabel}" Width="*" MinWidth="80"
-                                            ElementStyle="{StaticResource DeskDataGridText}">
-                            <DataGridTextColumn.Header>
-                                <StackPanel>
-                                    <TextBlock Text="State" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                                    <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.StateFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
-                                             AutomationProperties.Name="Filter state"/>
-                                </StackPanel>
-                            </DataGridTextColumn.Header>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Binding="{Binding SubstatusLabel}" Width="1.1*" MinWidth="96"
-                                            ElementStyle="{StaticResource DeskDataGridText}">
-                            <DataGridTextColumn.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Substate" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                                    <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.SubstatusFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
-                                             AutomationProperties.Name="Filter substate"/>
-                                </StackPanel>
-                            </DataGridTextColumn.Header>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Binding="{Binding Comments}" Width="1.5*" MinWidth="110"
-                                            ElementStyle="{StaticResource DeskDataGridText}">
-                            <DataGridTextColumn.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Comments" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                                    <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.CommentsFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
-                                             AutomationProperties.Name="Filter comments"/>
-                                </StackPanel>
-                            </DataGridTextColumn.Header>
-                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="1.2*" MinWidth="96"
+                                            ElementStyle="{StaticResource DeskDataGridAccentText}"/>
+                        <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="2.4*" MinWidth="120"
+                                            ElementStyle="{StaticResource DeskDataGridText}"/>
+                        <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo.Display}" Width="1.2*" MinWidth="96"
+                                            ElementStyle="{StaticResource DeskDataGridText}"/>
+                        <DataGridTextColumn Header="Location" Binding="{Binding Location.Display}" Width="1.2*" MinWidth="96"
+                                            ElementStyle="{StaticResource DeskDataGridText}"/>
+                        <DataGridTextColumn Header="State" Binding="{Binding InstallStatusLabel}" Width="*" MinWidth="80"
+                                            ElementStyle="{StaticResource DeskDataGridText}"/>
+                        <DataGridTextColumn Header="Substate" Binding="{Binding SubstatusLabel}" Width="1.1*" MinWidth="96"
+                                            ElementStyle="{StaticResource DeskDataGridText}"/>
+                        <DataGridTextColumn Header="Comments" Binding="{Binding Comments}" Width="1.5*" MinWidth="110"
+                                            ElementStyle="{StaticResource DeskDataGridText}"/>
                     </DataGrid.Columns>
                 </DataGrid>
             </DockPanel>

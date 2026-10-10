@@ -9,6 +9,12 @@ namespace ServiceNowDesk.ViewModels;
 
 public partial class HardwareWorkspaceViewModel : ObservableObject
 {
+    /// <summary>
+    /// Pause after the last column-filter keystroke before rebuilding the visible list.
+    /// Keeps typing responsive on large catalogs and drives the Filtering… indicator.
+    /// </summary>
+    public static readonly TimeSpan ColumnFilterDelay = TimeSpan.FromMilliseconds(150);
+
     private readonly ISettingsStore? _settings;
     private readonly IHardwareCatalogStore _catalogStore;
     private readonly Func<string> _cacheScope;
@@ -16,10 +22,12 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     private readonly List<HardwareAsset> _loadedRows = [];
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private CancellationTokenSource? _downloadCts;
+    private CancellationTokenSource? _columnFilterCts;
     private IServiceNowClient? _client;
     private HardwareAsset? _loaded;
     private bool _choicesReady;
     private bool _suppressSelection;
+    private bool _suppressColumnFilterSchedule;
     private bool _officesReady;
     private bool _locationLookupDone;
     private bool _suppressOffice;
@@ -76,6 +84,11 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     public Task StockroomApply { get; private set; } = Task.CompletedTask;
     public Task OfficeLoad { get; private set; } = Task.CompletedTask;
 
+    /// <summary>
+    /// Completes when the latest scheduled column-filter pass has been applied (or cancelled).
+    /// </summary>
+    public Task ColumnFiltersReady { get; private set; } = Task.CompletedTask;
+
     public event EventHandler? DefaultSaved;
 
     [ObservableProperty] private string searchText = "";
@@ -95,6 +108,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool isDirty;
     [ObservableProperty] private bool isLoading;
     [ObservableProperty] private bool isDownloading;
+    [ObservableProperty] private bool isFiltering;
     [ObservableProperty] private int downloadPercent;
     [ObservableProperty] private string errorMessage = "";
     [ObservableProperty] private string editorMessage = "";
@@ -193,6 +207,11 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         Stockroom.Clear();
         ReceiveStockroom.Clear();
         Batch.Clear();
+        _columnFilterCts?.Cancel();
+        _columnFilterCts = null;
+        ColumnFiltersReady = Task.CompletedTask;
+        IsFiltering = false;
+        _suppressColumnFilterSchedule = true;
         SerialFilter = "";
         ModelFilter = "";
         AssignedFilter = "";
@@ -200,6 +219,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         StateFilter = "";
         SubstatusFilter = "";
         CommentsFilter = "";
+        _suppressColumnFilterSchedule = false;
         SearchTipsOpen = false;
         OfficeSearchText = "";
         OfficeStatus = "";
@@ -207,7 +227,13 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         DownloadPercent = 0;
         IsDownloading = false;
         OnPropertyChanged(nameof(OfficeSelectionSummary));
+        OnPropertyChanged(nameof(ShownCount));
     }
+
+    /// <summary>
+    /// Rows currently visible after office and column filters. Notifies when the list rebuilds.
+    /// </summary>
+    public int ShownCount => Items.Count;
 
     public string OfficeSelectionSummary
     {
@@ -729,19 +755,47 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         ApplyCatalogToRows(SelectedOfficeNames());
     }
 
-    partial void OnSerialFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+    partial void OnSerialFilterChanged(string value) => ScheduleColumnFilters();
 
-    partial void OnModelFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+    partial void OnModelFilterChanged(string value) => ScheduleColumnFilters();
 
-    partial void OnAssignedFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+    partial void OnAssignedFilterChanged(string value) => ScheduleColumnFilters();
 
-    partial void OnLocationFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+    partial void OnLocationFilterChanged(string value) => ScheduleColumnFilters();
 
-    partial void OnStateFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+    partial void OnStateFilterChanged(string value) => ScheduleColumnFilters();
 
-    partial void OnSubstatusFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+    partial void OnSubstatusFilterChanged(string value) => ScheduleColumnFilters();
 
-    partial void OnCommentsFilterChanged(string value) => ApplyColumnFilters(Selected?.SysId);
+    partial void OnCommentsFilterChanged(string value) => ScheduleColumnFilters();
+
+    private void ScheduleColumnFilters()
+    {
+        if (_suppressColumnFilterSchedule)
+            return;
+
+        IsFiltering = true;
+        _columnFilterCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _columnFilterCts = cts;
+        ColumnFiltersReady = ApplyColumnFiltersWhenQuietAsync(cts.Token);
+    }
+
+    private async Task ApplyColumnFiltersWhenQuietAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(ColumnFilterDelay, token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        ApplyColumnFiltersCore(Selected?.SysId);
+        if (!token.IsCancellationRequested)
+            IsFiltering = false;
+    }
 
     [RelayCommand]
     private async Task SearchAllLocationsAsync()
@@ -1192,6 +1246,15 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     private void ApplyColumnFilters(string? keepSysId)
     {
+        _columnFilterCts?.Cancel();
+        _columnFilterCts = null;
+        ColumnFiltersReady = Task.CompletedTask;
+        ApplyColumnFiltersCore(keepSysId);
+        IsFiltering = false;
+    }
+
+    private void ApplyColumnFiltersCore(string? keepSysId)
+    {
         _suppressSelection = true;
         Items.Clear();
         foreach (var asset in _loadedRows)
@@ -1204,6 +1267,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             ? null
             : Items.FirstOrDefault(asset => asset.SysId == keepSysId);
         _suppressSelection = false;
+        OnPropertyChanged(nameof(ShownCount));
     }
 
     private bool PassesColumnFilters(HardwareAsset asset) =>
