@@ -131,7 +131,7 @@ public class StartupDownloadLifecycleTests
         var main = new MainViewModel(
             new MemorySettingsStore(),
             new RecordingDesktopServices(),
-            clientFactory: (_, catalog) => ServiceNowClient.Create(session, new GatedListHandler(started, release), catalog),
+            clientFactory: (_, catalog) => ServiceNowClient.Create(session, new GatedIncidentHandler(started, release), catalog),
             lists: lists,
             hardwareCatalog: hardware);
         main.Connection.InstanceUrl = "https://example.service-now.com";
@@ -143,6 +143,7 @@ public class StartupDownloadLifecycleTests
         var connect = main.ConnectCommand.ExecuteAsync(null);
         try
         {
+            // Hold the first incident page so the disk list stays on screen mid-download.
             var startedOrGaveUp = await Task.WhenAny(started.Task, Task.Delay(TimeSpan.FromSeconds(20)));
             Assert.Same(started.Task, startedOrGaveUp);
             Assert.True(main.Startup.IsRunning);
@@ -165,6 +166,7 @@ public class StartupDownloadLifecycleTests
         await connect;
         await main.AssignmentDirectoryRefresh;
         Assert.False(main.Startup.IsRunning);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-NEW");
     }
 
     [Fact]
@@ -429,6 +431,42 @@ public class StartupDownloadLifecycleTests
                     total: 1);
             }
 
+            if (IsUser(path))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            return Api.Json("""{"result":[]}""");
+        }
+    }
+
+    /// <summary>
+    /// Holds the first incident list page so disk rows stay visible mid-startup download.
+    /// </summary>
+    private sealed class GatedIncidentHandler : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource _started;
+        private readonly TaskCompletionSource _release;
+
+        public GatedIncidentHandler(TaskCompletionSource started, TaskCompletionSource release)
+        {
+            _started = started;
+            _release = release;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (path.Contains("/incident", StringComparison.Ordinal))
+            {
+                _started.TrySetResult();
+                await _release.Task.WaitAsync(cancellationToken);
+                return Api.Json(
+                    """{"result":[{"sys_id":"inc-new","number":"INC-NEW","short_description":"Downloaded","state":"2","sys_updated_on":"2026-10-06 09:00:00"}]}""",
+                    total: 1);
+            }
+
+            if (path.Contains("sys_user_group", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"sys_id":"group-cs","name":"Client Services"}]}""", total: 1);
+            if (path.Contains("sys_user_grmember", StringComparison.Ordinal))
+                return Api.Json("""{"result":[{"group":{"value":"group-cs","display_value":"Client Services"},"user":{"value":"user-alex","display_value":"Alex Rivera"}}]}""");
             if (IsUser(path))
                 return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
             return Api.Json("""{"result":[]}""");
