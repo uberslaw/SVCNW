@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.ExceptionServices;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Mapping;
 using ServiceNowDesk.Models;
@@ -465,6 +467,88 @@ public class HardwareDeskTests
         workspace.CommentsFilter = "";
         Assert.Equal(2, workspace.Items.Count);
         Assert.Equal(gets, HardwareGets(client));
+    }
+
+    [Fact]
+    public async Task PlainModelFilterMatchesContainsAndClears()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+        workspace.Attach(client);
+        await workspace.RefreshAsync();
+        await workspace.SearchAllLocationsCommand.ExecuteAsync(null);
+        var all = workspace.Items.Count;
+        Assert.True(all > 1);
+
+        workspace.ModelFilter = "fury";
+        var fury = Assert.Single(workspace.Items);
+        Assert.Contains("Fury", fury.Model, StringComparison.OrdinalIgnoreCase);
+
+        workspace.AssignedFilter = "nobody-matches-this";
+        Assert.Empty(workspace.Items);
+
+        workspace.AssignedFilter = "";
+        Assert.Equal("HP ZBook Fury 16 G9", Assert.Single(workspace.Items).Model);
+
+        workspace.ModelFilter = "";
+        Assert.Equal(all, workspace.Items.Count);
+    }
+
+    [Fact]
+    public async Task SavedCatalogIsSearchableWhileRefreshAllDownloads()
+    {
+        using var inner = new SampleServiceNowClient();
+        var catalog = new MemoryHardwareCatalogStore();
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane"], HardwareOfficeOverride = true });
+
+        var seed = new HardwareWorkspaceViewModel(settings, catalog);
+        seed.Attach(inner);
+        await seed.RefreshAsync();
+        Assert.Contains(seed.Items, asset => asset.Location.Display == "Brisbane Office");
+        var savedSerial = seed.Items.First(asset => asset.Location.Display == "Brisbane Office").SerialNumber;
+
+        inner.AddComputer(new HardwareAsset
+        {
+            SysId = "hw-bne-during-download",
+            SerialNumber = "BNEDURING",
+            Model = "HP EliteBook During Download",
+            ModelCategory = HardwareCatalog.Computer,
+            Location = new ReferenceValue("loc-bne", "Brisbane Office"),
+            InstallStatus = HardwareCatalog.InUse,
+            InstallStatusLabel = HardwareCatalog.InUse
+        });
+
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proxy = DispatchProxy.Create<IServiceNowClient, HardwareDownloadHold>();
+        var gate = (HardwareDownloadHold)proxy;
+        gate.Inner = inner;
+        gate.Ready = hold;
+
+        var workspace = new HardwareWorkspaceViewModel(settings, catalog);
+        workspace.Attach(proxy);
+        await workspace.RefreshAsync();
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
+        Assert.DoesNotContain(workspace.Items, asset => asset.SerialNumber == "BNEDURING");
+
+        var download = workspace.RefreshAllCatalogCommand.ExecuteAsync(null);
+        var started = await Task.WhenAny(gate.Started.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+        Assert.Same(gate.Started.Task, started);
+        Assert.True(workspace.IsDownloading);
+        Assert.Contains("saved on this PC", workspace.CatalogStatus, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
+
+        workspace.SerialFilter = savedSerial;
+        Assert.Equal(savedSerial, Assert.Single(workspace.Items).SerialNumber);
+        Assert.DoesNotContain(workspace.Items, asset => asset.SerialNumber == "BNEDURING");
+
+        workspace.SerialFilter = "";
+        hold.SetResult();
+        await download;
+
+        Assert.False(workspace.IsDownloading);
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == "BNEDURING");
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == savedSerial);
     }
 
     [Fact]
@@ -948,4 +1032,40 @@ public class HardwareDeskTests
 
     private static int HardwarePatches(SampleServiceNowClient client) =>
         client.RecentActivity.Count(activity => activity.Method == "PATCH" && activity.Path.Contains("alm_hardware", StringComparison.Ordinal));
+}
+
+public class HardwareDownloadHold : DispatchProxy
+{
+    public SampleServiceNowClient Inner { get; set; } = null!;
+    public TaskCompletionSource Ready { get; set; } = null!;
+    public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+    {
+        if (targetMethod is null)
+            throw new InvalidOperationException("Missing ServiceNow method.");
+        if (targetMethod.Name == nameof(IServiceNowClient.DownloadHardwareAsync))
+            return HoldDownloadAsync(args ?? []);
+
+        try
+        {
+            return targetMethod.Invoke(Inner, args);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
+    }
+
+    private async Task<HardwareCatalogDownload> HoldDownloadAsync(object?[] args)
+    {
+        Started.TrySetResult();
+        await Ready.Task.ConfigureAwait(false);
+        var locations = args[0] as IReadOnlyList<string>;
+        var ids = args[1] as IReadOnlyList<string>;
+        var progress = args[2] as IProgress<DownloadTick>;
+        var token = args.Length > 3 && args[3] is CancellationToken ct ? ct : CancellationToken.None;
+        return await Inner.DownloadHardwareAsync(locations, ids, progress, token).ConfigureAwait(false);
+    }
 }

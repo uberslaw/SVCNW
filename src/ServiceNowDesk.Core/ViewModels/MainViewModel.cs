@@ -425,6 +425,8 @@ public partial class MainViewModel : ObservableObject
             StartGroupQueueLoop();
             _loadedFor.Clear();
             ShowSavedKnowledge();
+            Hardware.ShowSavedCatalog();
+            ShowSavedTicketLists();
             if (settings.UseSampleData && !Knowledge.HasArticles)
                 await PrimeSampleKnowledgeAsync();
             _startupGate = true;
@@ -454,6 +456,7 @@ public partial class MainViewModel : ObservableObject
             if (SelectedSection == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
                 _ = LoadWorkEffortAsync(force: false);
             StartBackgroundKnowledgeRefresh();
+            StartBackgroundHardwareRefresh();
             _ = Knowledge.RefreshPublishedCountAsync();
             RefreshActivity();
         }
@@ -762,7 +765,15 @@ public partial class MainViewModel : ObservableObject
             or DeskSection.WalkUps
             or DeskSection.Search;
         UpdateBack();
-        if (IsConnected && !_openingRecord && !_preserveNavigation && !_startupGate)
+        if (!IsConnected || _openingRecord || _preserveNavigation)
+            return;
+
+        // During splash downloads, still surface on-disk caches so Hardware search and
+        // ticket lists work immediately. Full EnsureSection waits until bootstrap ends
+        // so it cannot race the keyed download loop.
+        if (_startupGate)
+            ShowSavedForSection(SelectedSection);
+        else
             _ = EnsureSectionAsync();
     }
 

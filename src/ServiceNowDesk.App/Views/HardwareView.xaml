@@ -158,7 +158,13 @@
                         </Popup>
                     </Grid>
                 </DockPanel>
-                <DataGrid ItemsSource="{Binding Items}"
+                <!--
+                  Column header TextBoxes are not in the DataGrid visual tree when bindings first resolve,
+                  so RelativeSource AncestorType=DataGrid never reaches the workspace VM (filters look typed
+                  but never update SerialFilter/ModelFilter/…). ElementName uses the view namescope instead.
+                -->
+                <DataGrid x:Name="HardwareList"
+                          ItemsSource="{Binding Items}"
                           SelectedItem="{Binding Selected}"
                           Style="{StaticResource DeskDataGrid}"
                           ColumnHeaderStyle="{StaticResource DeskDataGridColumnHeader}"
@@ -174,7 +180,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Serial" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
                                     <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.SerialFilter, RelativeSource={RelativeSource AncestorType=DataGrid}, UpdateSourceTrigger=PropertyChanged}"
+                                             Text="{Binding DataContext.SerialFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="Filter serial"/>
                                 </StackPanel>
                             </DataGridTextColumn.Header>
@@ -185,7 +191,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Model" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
                                     <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.ModelFilter, RelativeSource={RelativeSource AncestorType=DataGrid}, UpdateSourceTrigger=PropertyChanged}"
+                                             Text="{Binding DataContext.ModelFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="Filter model"/>
                                 </StackPanel>
                             </DataGridTextColumn.Header>
@@ -196,7 +202,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Assigned to" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
                                     <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.AssignedFilter, RelativeSource={RelativeSource AncestorType=DataGrid}, UpdateSourceTrigger=PropertyChanged}"
+                                             Text="{Binding DataContext.AssignedFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="Filter assigned to"/>
                                 </StackPanel>
                             </DataGridTextColumn.Header>
@@ -207,7 +213,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Location" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
                                     <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.LocationFilter, RelativeSource={RelativeSource AncestorType=DataGrid}, UpdateSourceTrigger=PropertyChanged}"
+                                             Text="{Binding DataContext.LocationFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="Filter location"/>
                                 </StackPanel>
                             </DataGridTextColumn.Header>
@@ -218,7 +224,7 @@
                                 <StackPanel>
                                     <TextBlock Text="State" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
                                     <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.StateFilter, RelativeSource={RelativeSource AncestorType=DataGrid}, UpdateSourceTrigger=PropertyChanged}"
+                                             Text="{Binding DataContext.StateFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="Filter state"/>
                                 </StackPanel>
                             </DataGridTextColumn.Header>
@@ -229,7 +235,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Substate" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
                                     <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.SubstatusFilter, RelativeSource={RelativeSource AncestorType=DataGrid}, UpdateSourceTrigger=PropertyChanged}"
+                                             Text="{Binding DataContext.SubstatusFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="Filter substate"/>
                                 </StackPanel>
                             </DataGridTextColumn.Header>
@@ -240,7 +246,7 @@
                                 <StackPanel>
                                     <TextBlock Text="Comments" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
                                     <TextBox Style="{StaticResource DeskColumnFilter}"
-                                             Text="{Binding DataContext.CommentsFilter, RelativeSource={RelativeSource AncestorType=DataGrid}, UpdateSourceTrigger=PropertyChanged}"
+                                             Text="{Binding DataContext.CommentsFilter, ElementName=HardwareList, UpdateSourceTrigger=PropertyChanged}"
                                              AutomationProperties.Name="Filter comments"/>
                                 </StackPanel>
                             </DataGridTextColumn.Header>

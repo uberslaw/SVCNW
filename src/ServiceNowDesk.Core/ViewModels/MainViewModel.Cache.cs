@@ -565,17 +565,13 @@ public partial class MainViewModel
             return new SectionOutcome(true, null, CapturedAt: cached?.CapturedAt);
         }
 
-        CachedTicketList? previous = null;
-        var stale = 0;
-        if (force)
-        {
-            previous = ClearList(key);
-            stale = previous?.Items.Count ?? 0;
-        }
-        else
-        {
-            stale = ListFor(LoadLists(), key)?.Items.Count ?? 0;
-        }
+        // Keep the prior list on disk and on screen while the refresh runs. Clearing the
+        // file at the start made mid-download navigation look empty even when a good
+        // cache existed; restore-on-failure is unnecessary when we never wipe first.
+        var previous = ListFor(LoadLists(), key);
+        var stale = previous?.Items.Count ?? 0;
+        if (previous is { Items.Count: > 0 })
+            ApplyList(key, previous);
 
         try
         {
@@ -590,18 +586,29 @@ public partial class MainViewModel
             var encoded = _client?.LastTicketEncodedQuery ?? workspace.LastEncodedQuery;
             workspace.RememberDownloadQuery(encoded);
             if (string.IsNullOrWhiteSpace(workspace.SearchText))
+            {
+                // An empty download must not wipe a good prior cache.
+                if (workspace.Items.Count == 0 && previous is { Items.Count: > 0 })
+                {
+                    ApplyList(key, previous);
+                    return new SectionOutcome(
+                        false,
+                        "Download returned no rows; kept the saved list.",
+                        stale,
+                        previous.Items.Count,
+                        previous.CapturedAt);
+                }
+
                 SaveWorkspaceList(section, workspace);
+            }
+
             var captured = DateTimeOffset.UtcNow;
             return new SectionOutcome(false, null, stale, workspace.Items.Count, captured);
         }
         catch
         {
-            if (force)
-            {
-                RestoreList(key, previous);
-                if (previous is not null)
-                    ApplyList(key, previous);
-            }
+            if (previous is not null)
+                ApplyList(key, previous);
 
             throw;
         }
@@ -905,6 +912,68 @@ public partial class MainViewModel
         if (list?.Items is not { Count: > 0 })
             return;
         Knowledge.ShowArticles(list.Items.Select(KnowledgeListRow.FromCached));
+    }
+
+    /// <summary>
+    /// Surfaces every non-empty ticket list from disk, including stale copies, so tabs
+    /// remain usable while a forced launch download is still running.
+    /// </summary>
+    private void ShowSavedTicketLists()
+    {
+        ShowSavedList("incidents");
+        ShowSavedList("requests");
+        ShowSavedList("request-items");
+        ShowSavedList("walk-ups");
+        TrySeedMixFromDeskCaches();
+    }
+
+    private void ShowSavedList(string key)
+    {
+        var list = ListFor(LoadLists(), key);
+        if (list?.Items is not { Count: > 0 })
+            return;
+        ApplyList(key, list);
+    }
+
+    private void ShowSavedForSection(DeskSection section)
+    {
+        switch (section)
+        {
+            case DeskSection.Hardware:
+                Hardware.ShowSavedCatalog();
+                break;
+            case DeskSection.Incidents:
+                ShowSavedList("incidents");
+                break;
+            case DeskSection.Requests:
+                ShowSavedList("requests");
+                break;
+            case DeskSection.RequestedItems:
+                ShowSavedList("request-items");
+                break;
+            case DeskSection.WalkUps:
+                ShowSavedList("walk-ups");
+                break;
+            case DeskSection.InTheMix:
+                TrySeedMixFromDeskCaches();
+                break;
+            case DeskSection.Knowledge:
+                ShowSavedKnowledge();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// After connect, refresh hardware off the splash path. The saved catalog stays
+    /// searchable; a failed or empty refresh keeps the previous copy.
+    /// </summary>
+    private void StartBackgroundHardwareRefresh()
+    {
+        if (_client is null)
+            return;
+        if (!Connection.DownloadCacheOnLaunch && !Hardware.CatalogNeedsRefresh)
+            return;
+        _ = Hardware.RefreshCatalogInBackgroundAsync();
     }
 
     private async Task PrimeSampleKnowledgeAsync()

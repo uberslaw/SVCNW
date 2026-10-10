@@ -21,10 +21,12 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     private bool _choicesReady;
     private bool _suppressSelection;
     private bool _officesReady;
+    private bool _locationLookupDone;
     private bool _suppressOffice;
     private bool _missingLocationNotice;
     private bool _overrideActive;
     private bool _catalogIsAllLocations;
+    private DateTimeOffset _catalogCapturedAt;
     private string _signedInLocation = "";
     private int _substateGeneration;
 
@@ -112,7 +114,41 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _client = client;
         _choicesReady = false;
         _officesReady = false;
+        _locationLookupDone = false;
     }
+
+    /// <summary>
+    /// True when the in-memory catalog is empty or older than <see cref="FormCatalogPolicy.MaxAge"/>.
+    /// </summary>
+    public bool CatalogNeedsRefresh =>
+        _catalog.Count == 0
+        || FormCatalogPolicy.IsStale(_catalogCapturedAt, DateTimeOffset.UtcNow);
+
+    /// <summary>
+    /// Loads the on-disk catalog immediately (local office seeds only — no network) so
+    /// search and office filters work while startup or a background refresh is still running.
+    /// </summary>
+    public void ShowSavedCatalog()
+    {
+        if (_client is null)
+            return;
+
+        if (!_officesReady)
+            PrepareOfficesLocal();
+        if (_catalog.Count == 0)
+            LoadCatalogFromStore();
+
+        var offices = SelectedOfficeNames();
+        ApplyCatalogToRows(offices);
+        PublishScope(offices);
+    }
+
+    /// <summary>
+    /// Replaces the saved catalog in the background. The current list stays searchable
+    /// until the download finishes and is applied.
+    /// </summary>
+    public Task RefreshCatalogInBackgroundAsync() =>
+        DownloadCatalogAsync(allLocations: true, merge: false);
 
     public void RememberViewer(CurrentUser? user)
     {
@@ -133,6 +169,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _client = null;
         _choicesReady = false;
         _officesReady = false;
+        _locationLookupDone = false;
         _missingLocationNotice = false;
         _overrideActive = false;
         _signedInLocation = "";
@@ -143,6 +180,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _downloadCts?.Cancel();
         _catalog.Clear();
         _catalogIsAllLocations = false;
+        _catalogCapturedAt = default;
         _loadedRows.Clear();
         Items.Clear();
         _suppressOffice = true;
@@ -192,17 +230,27 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         {
             IsLoading = true;
             ErrorMessage = "";
+
+            // Disk first: office seeds + saved catalog before any network so search works
+            // while location lookups / choice lists / a background refresh are still running.
             if (!_officesReady)
-                await PrepareOfficesAsync();
-            await EnsureChoicesAsync();
+                PrepareOfficesLocal();
             if (_catalog.Count == 0)
                 LoadCatalogFromStore();
 
             var offices = SelectedOfficeNames();
             ApplyCatalogToRows(offices);
             PublishScope(offices);
+            var hadCached = _catalog.Count > 0;
 
-            if (_catalog.Count == 0)
+            await EnsureChoicesAsync();
+            await EnsureReferenceLocationsAsync();
+
+            offices = SelectedOfficeNames();
+            ApplyCatalogToRows(offices);
+            PublishScope(offices);
+
+            if (!hadCached && _catalog.Count == 0)
             {
                 // First open downloads every computer so office checkboxes can filter locally.
                 _refreshGate.Release();
@@ -216,6 +264,11 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
                 {
                     await _refreshGate.WaitAsync();
                 }
+            }
+            else if (hadCached && CatalogNeedsRefresh && !IsDownloading)
+            {
+                // Keep the saved list searchable; replace it when the refresh finishes.
+                _ = DownloadCatalogAsync(allLocations: true, merge: false);
             }
             else if (offices.Count > 0 && _loadedRows.Count == 0)
             {
@@ -249,13 +302,32 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         var token = _downloadCts.Token;
         IsDownloading = true;
         DownloadPercent = 0;
-        CatalogStatus = allLocations ? "Downloading all computers…" : "Downloading computers for the selected office…";
         ErrorMessage = "";
+
+        // Prefer the last on-disk catalog immediately so search/filters work while the network run finishes.
+        if (_catalog.Count == 0)
+            LoadCatalogFromStore();
+        var selectedBeforeDownload = SelectedOfficeNames();
+        if (_catalog.Count > 0)
+        {
+            // Keep the current office selection on screen; the finished download refreshes rows afterward.
+            ApplyCatalogToRows(selectedBeforeDownload);
+            PublishScope(selectedBeforeDownload);
+        }
+
+        var usingSaved = _catalog.Count;
+        CatalogStatus = usingSaved > 0
+            ? (allLocations ? "Downloading all computers…" : "Downloading computers for the selected office…")
+              + " Using "
+              + usingSaved.ToString(System.Globalization.CultureInfo.InvariantCulture)
+              + " saved on this PC."
+            : (allLocations ? "Downloading all computers…" : "Downloading computers for the selected office…");
 
         try
         {
             if (!_officesReady)
-                await PrepareOfficesAsync();
+                PrepareOfficesLocal();
+            await EnsureReferenceLocationsAsync();
 
             IReadOnlyList<string> offices = allLocations ? [] : SelectedOfficeNames();
             IReadOnlyList<string> ids = allLocations ? [] : SelectedLocationSysIds();
@@ -272,6 +344,16 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             var kept = downloaded.Assets
                 .Where(asset => allLocations || HardwareCatalog.MatchesLocation(asset, offices))
                 .ToArray();
+
+            // An empty full refresh must not wipe a good prior cache (same lesson as ticket lists).
+            if (kept.Length == 0 && previousCount > 0 && !(merge && !allLocations))
+            {
+                DownloadPercent = 100;
+                CatalogStatus = "Download returned no computers; kept the "
+                    + previousCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " saved on this PC.";
+                return;
+            }
 
             var newCount = 0;
             var updatedCount = 0;
@@ -371,12 +453,14 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         if (snapshot?.Items is null || snapshot.Items.Count == 0)
         {
             _catalogIsAllLocations = false;
+            _catalogCapturedAt = default;
             CatalogStatus = "No computers saved on this PC yet.";
             return;
         }
 
         _catalog.AddRange(snapshot.Items);
         _catalogIsAllLocations = snapshot.AllLocations;
+        _catalogCapturedAt = snapshot.CapturedAt;
         CatalogStatus = _catalog.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
             + " computers saved"
             + (snapshot.CapturedAt == default
@@ -386,9 +470,10 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     private void SaveCatalogToStore(IReadOnlyList<string> offices)
     {
+        _catalogCapturedAt = DateTimeOffset.UtcNow;
         _catalogStore.Save(_cacheScope(), new HardwareCatalogSnapshot
         {
-            CapturedAt = DateTimeOffset.UtcNow,
+            CapturedAt = _catalogCapturedAt,
             AllLocations = _catalogIsAllLocations,
             Offices = offices.ToList(),
             Items = [.. _catalog]
@@ -667,13 +752,13 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             office.IsSelected = false;
         _suppressOffice = false;
         OnPropertyChanged(nameof(OfficeSelectionSummary));
+        // Show whatever is already on disk / in memory immediately; refresh in the background when needed.
+        if (_catalog.Count == 0)
+            LoadCatalogFromStore();
+        ApplyCatalogToRows([]);
+        PublishScope([]);
         if (_catalog.Count == 0 || !_catalogIsAllLocations)
             await DownloadCatalogAsync(allLocations: true, merge: false);
-        else
-        {
-            ApplyCatalogToRows([]);
-            PublishScope([]);
-        }
     }
 
     [RelayCommand]
@@ -896,8 +981,15 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         SaveCatalogToStore(SelectedOfficeNames());
     }
 
-    private async Task PrepareOfficesAsync()
+    /// <summary>
+    /// Seeds office checkboxes from known cities, the signed-in account, and any override.
+    /// Does not call ServiceNow — safe to run before splash downloads finish.
+    /// </summary>
+    private void PrepareOfficesLocal()
     {
+        if (_officesReady)
+            return;
+
         _suppressOffice = true;
         try
         {
@@ -905,7 +997,6 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             foreach (var name in HardwareCatalog.KnownOfficeNames)
                 EnsureOffice(name, false, HardwareOfficeLabelKind.Seed);
             EnsureOffice(_signedInLocation, false, HardwareOfficeLabelKind.Account);
-            await AddReferenceLocationsAsync();
 
             if (ReadOverride(out var saved))
             {
@@ -931,6 +1022,15 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             _suppressOffice = false;
             _officesReady = true;
         }
+    }
+
+    private async Task EnsureReferenceLocationsAsync()
+    {
+        if (_locationLookupDone || _client is null)
+            return;
+
+        _locationLookupDone = true;
+        await AddReferenceLocationsAsync();
     }
 
     private async Task AddReferenceLocationsAsync()
@@ -1046,6 +1146,8 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
         _missingLocationNotice = false;
         var offices = SelectedOfficeNames();
+        if (_catalog.Count == 0)
+            LoadCatalogFromStore();
         ApplyCatalogToRows(offices);
         PublishScope(offices);
         if (_catalog.Count == 0)
