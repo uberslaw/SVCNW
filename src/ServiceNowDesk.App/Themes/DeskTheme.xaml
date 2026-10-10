@@ -426,6 +426,10 @@
         </Style.Triggers>
     </Style>
 
+    <Style x:Key="SearchDataGridRow" TargetType="DataGridRow" BasedOn="{StaticResource DeskDataGridRow}">
+        <Setter Property="Background" Value="{Binding HighlightHex, Converter={StaticResource HexBrush}}"/>
+    </Style>
+
     <Style x:Key="DeskDataGridText" TargetType="TextBlock">
         <Setter Property="VerticalAlignment" Value="Center"/>
         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>

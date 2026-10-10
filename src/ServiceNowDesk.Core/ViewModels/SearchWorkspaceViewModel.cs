@@ -13,12 +13,21 @@ namespace ServiceNowDesk.ViewModels;
 public sealed partial class SearchWorkspaceViewModel : ObservableObject
 {
     public const string KnowledgeHiddenSummary = "Knowledge is hidden while assignment or opened-date filters are set.";
+    public const string SortType = "Type";
+    public const string SortNumber = "Number";
+    public const string SortTitle = "Title";
+    public const string SortMeta = "Meta";
+    public const string SortState = "State";
+    public const string SortWhen = "When";
 
     private IServiceNowClient? _client;
     private int _runVersion;
     private bool _resultsCurrent;
     private bool _suppressFilter;
     private string _signature = "";
+    private string _resultSummary = "";
+    private readonly List<SearchHit> _hits = [];
+    private readonly HashSet<string> _selectedStates = new(StringComparer.OrdinalIgnoreCase);
 
     [ObservableProperty] private SearchHit? selected;
     [ObservableProperty] private bool includeIncidents = true;
@@ -32,12 +41,18 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string filterMessage = "";
     [ObservableProperty] private DateTime? openedFrom;
     [ObservableProperty] private DateTime? openedTo;
+    [ObservableProperty] private string sortColumn = SortWhen;
+    [ObservableProperty] private bool sortAscending;
+    [ObservableProperty] private string groupColumn = "";
+    [ObservableProperty] private string stateFilterSummary = "All states";
 
     public ObservableCollection<SearchHit> Results { get; } = [];
+    public ObservableCollection<string> StateOptions { get; } = [];
     public ReferenceFieldModel AssignmentGroup { get; }
     public ReferenceFieldModel Assignee { get; }
 
     public event EventHandler? SearchFiltersChanged;
+    public event EventHandler? PresentationChanged;
 
     public SearchWorkspaceViewModel()
     {
@@ -50,6 +65,13 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     public Action<SearchHit>? PrepareHit { get; set; }
 
     public string Query { get; private set; } = "";
+
+    public IReadOnlyCollection<string> SelectedStates => _selectedStates;
+
+    public bool IsStateSelected(string? label) =>
+        !string.IsNullOrWhiteSpace(label) && _selectedStates.Contains(label.Trim());
+
+    public bool HasGrouping => !string.IsNullOrWhiteSpace(GroupColumn);
 
     public void Attach(IServiceNowClient? client) => _client = client;
 
@@ -75,12 +97,23 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         OpenedFrom = null;
         OpenedTo = null;
         FilterMessage = "";
+        _hits.Clear();
+        _selectedStates.Clear();
+        StateOptions.Clear();
         Results.Clear();
         Selected = null;
+        SortColumn = SortWhen;
+        SortAscending = false;
+        GroupColumn = "";
+        StateFilterSummary = "All states";
+        _resultSummary = "";
         Summary = "Search incidents, requests, items, walk-ups, and knowledge articles.";
         ErrorMessage = "";
         IsLoading = false;
         _suppressFilter = false;
+        OnPropertyChanged(nameof(HasGrouping));
+        OnPropertyChanged(nameof(SelectedStates));
+        PresentationChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public async Task RunAsync(IServiceNowClient? client, string? text)
@@ -99,8 +132,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             if (version != _runVersion)
                 return;
             Query = trimmed;
-            Results.Clear();
-            Selected = null;
+            ReplaceHits([]);
             ErrorMessage = "";
             Summary = FilterMessage;
             Remember(trimmed);
@@ -115,8 +147,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             if (version != _runVersion)
                 return;
             Query = trimmed;
-            Results.Clear();
-            Selected = null;
+            ReplaceHits([]);
             Summary = "Type at least 2 characters. Numbers such as INC0010001, IMS0010001, or KB0001001 can be shorter.";
             Remember(trimmed);
             return;
@@ -127,8 +158,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             if (version != _runVersion)
                 return;
             Query = trimmed;
-            Results.Clear();
-            Selected = null;
+            ReplaceHits([]);
             Summary = "Choose at least one record type.";
             Remember(trimmed);
             return;
@@ -173,8 +203,9 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             var walkTask = (kind is null or DeskSection.WalkUps) && IncludeWalkUps
                 ? LoadTableAsync(version, "Walk-ups", errors, () => client.SearchInteractionsAsync(query, CancellationToken.None))
                 : Task.FromResult(new PagedResult<InteractionRecord>([], 0));
+            var statesTask = LoadStateOptionsAsync(client, CancellationToken.None);
 
-            await Task.WhenAll(incidentTask, requestTask, itemTask, articleTask, walkTask);
+            await Task.WhenAll(incidentTask, requestTask, itemTask, articleTask, walkTask, statesTask);
             if (version != _runVersion)
                 return;
 
@@ -248,19 +279,13 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 SortKey = record.UpdatedAtValue
             }));
 
-            var previous = Selected?.SysId;
-            Results.Clear();
-            foreach (var hit in hits.OrderByDescending(hit => hit.SortKey, StringComparer.Ordinal))
-            {
-                PrepareHit?.Invoke(hit);
-                Results.Add(hit);
-            }
-            Selected = previous is null ? null : Results.FirstOrDefault(hit => hit.SysId == previous);
+            MergeHitStates(hits);
             Query = trimmed;
-            Summary = Results.Count == 1 ? "1 match" : Results.Count + " matches";
+            _resultSummary = hits.Count == 1 ? "1 match" : hits.Count + " matches";
             if (hideKnowledge)
-                Summary += ". " + KnowledgeHiddenSummary;
+                _resultSummary += ". " + KnowledgeHiddenSummary;
             ErrorMessage = string.Join(Environment.NewLine, errors);
+            ReplaceHits(hits);
             Remember(trimmed);
             if (errors.Count > 0)
                 _resultsCurrent = false;
@@ -278,6 +303,70 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             if (version == _runVersion)
                 IsLoading = false;
         }
+    }
+
+    public void SetSelectedStates(IEnumerable<string>? labels)
+    {
+        _selectedStates.Clear();
+        if (labels is not null)
+        {
+            foreach (var label in labels)
+            {
+                if (!string.IsNullOrWhiteSpace(label))
+                    _selectedStates.Add(label.Trim());
+            }
+        }
+
+        PruneSelectedStates();
+        UpdateStateFilterSummary();
+        OnPropertyChanged(nameof(SelectedStates));
+        ApplyPresentation();
+    }
+
+    public void ClearStateFilter() => SetSelectedStates(null);
+
+    public void ToggleSort(string column)
+    {
+        var key = NormalizeColumn(column);
+        if (string.IsNullOrEmpty(key))
+            return;
+
+        if (string.Equals(SortColumn, key, StringComparison.Ordinal))
+            SortAscending = !SortAscending;
+        else
+        {
+            SortColumn = key;
+            SortAscending = string.Equals(key, SortNumber, StringComparison.Ordinal)
+                || string.Equals(key, SortTitle, StringComparison.Ordinal)
+                || string.Equals(key, SortType, StringComparison.Ordinal)
+                || string.Equals(key, SortMeta, StringComparison.Ordinal)
+                || string.Equals(key, SortState, StringComparison.Ordinal);
+        }
+
+        ApplyPresentation();
+    }
+
+    public void GroupBy(string column)
+    {
+        var key = NormalizeColumn(column);
+        if (string.IsNullOrEmpty(key))
+            return;
+
+        GroupColumn = string.Equals(GroupColumn, key, StringComparison.Ordinal) ? "" : key;
+        OnPropertyChanged(nameof(HasGrouping));
+        ApplyPresentation();
+        PresentationChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    [RelayCommand]
+    private void ClearGrouping()
+    {
+        if (string.IsNullOrEmpty(GroupColumn))
+            return;
+        GroupColumn = "";
+        OnPropertyChanged(nameof(HasGrouping));
+        ApplyPresentation();
+        PresentationChanged?.Invoke(this, EventArgs.Empty);
     }
 
     [RelayCommand]
@@ -342,6 +431,189 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         }
     }
 
+    private async Task LoadStateOptionsAsync(IServiceNowClient client, CancellationToken cancellationToken)
+    {
+        var labels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (IncludeIncidents)
+            AddChoiceLabels(labels, await SafeChoicesAsync(client, "incident", "state", cancellationToken).ConfigureAwait(true));
+        if (IncludeRequests)
+            AddChoiceLabels(labels, await SafeChoicesAsync(client, "sc_request", "request_state", cancellationToken).ConfigureAwait(true));
+        if (IncludeItems)
+            AddChoiceLabels(labels, await SafeChoicesAsync(client, "sc_req_item", "state", cancellationToken).ConfigureAwait(true));
+        if (IncludeWalkUps)
+            AddChoiceLabels(labels, await SafeChoicesAsync(client, "interaction", "state", cancellationToken).ConfigureAwait(true));
+        if (IncludeKnowledge)
+            AddChoiceLabels(labels, await SafeChoicesAsync(client, "kb_knowledge", "workflow_state", cancellationToken).ConfigureAwait(true));
+
+        ReplaceStateOptions(labels);
+    }
+
+    private static async Task<IReadOnlyList<Choice>> SafeChoicesAsync(
+        IServiceNowClient client,
+        string table,
+        string element,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var choices = await client.GetChoicesAsync(table, element, null, cancellationToken).ConfigureAwait(true);
+            if (choices.Count > 0)
+                return choices;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Choice catalog is presentation-only; search hits still load.
+        }
+
+        return DefaultChoices.For(table, element);
+    }
+
+    private void MergeHitStates(IEnumerable<SearchHit> hits)
+    {
+        var labels = new HashSet<string>(StateOptions, StringComparer.OrdinalIgnoreCase);
+        foreach (var hit in hits)
+        {
+            if (!string.IsNullOrWhiteSpace(hit.StateLabel))
+                labels.Add(hit.StateLabel.Trim());
+        }
+
+        ReplaceStateOptions(labels);
+    }
+
+    private void ReplaceStateOptions(IEnumerable<string> labels)
+    {
+        var ordered = labels
+            .Where(label => !string.IsNullOrWhiteSpace(label))
+            .Select(label => label.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(label => label, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        StateOptions.Clear();
+        foreach (var label in ordered)
+            StateOptions.Add(label);
+
+        PruneSelectedStates();
+        UpdateStateFilterSummary();
+        OnPropertyChanged(nameof(SelectedStates));
+    }
+
+    private void PruneSelectedStates()
+    {
+        if (_selectedStates.Count == 0 || StateOptions.Count == 0)
+            return;
+
+        var allowed = new HashSet<string>(StateOptions, StringComparer.OrdinalIgnoreCase);
+        _selectedStates.RemoveWhere(label => !allowed.Contains(label));
+    }
+
+    private void UpdateStateFilterSummary()
+    {
+        StateFilterSummary = _selectedStates.Count == 0
+            ? "All states"
+            : _selectedStates.Count == 1
+                ? _selectedStates.First()
+                : _selectedStates.Count + " states";
+    }
+
+    private void ReplaceHits(IReadOnlyList<SearchHit> hits)
+    {
+        _hits.Clear();
+        _hits.AddRange(hits);
+        ApplyPresentation();
+    }
+
+    private void ApplyPresentation()
+    {
+        IEnumerable<SearchHit> rows = _hits;
+        if (_selectedStates.Count > 0)
+            rows = rows.Where(hit => _selectedStates.Contains(hit.StateLabel));
+
+        rows = OrderHits(rows);
+
+        var previous = Selected?.SysId;
+        Results.Clear();
+        foreach (var hit in rows)
+        {
+            PrepareHit?.Invoke(hit);
+            Results.Add(hit);
+        }
+
+        Selected = previous is null ? null : Results.FirstOrDefault(hit => hit.SysId == previous);
+        UpdateSummary();
+        PresentationChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private IEnumerable<SearchHit> OrderHits(IEnumerable<SearchHit> rows)
+    {
+        var ordered = rows.ToList();
+        if (ordered.Count <= 1)
+            return ordered;
+
+        var comparer = StringComparer.OrdinalIgnoreCase;
+        Func<SearchHit, string> primary = SortKeyFor(SortColumn);
+        Func<SearchHit, string> group = string.IsNullOrEmpty(GroupColumn)
+            ? _ => ""
+            : SortKeyFor(GroupColumn);
+
+        IOrderedEnumerable<SearchHit> sorted = SortAscending
+            ? ordered.OrderBy(group, comparer).ThenBy(primary, comparer).ThenBy(hit => hit.Number, comparer)
+            : ordered.OrderBy(group, comparer).ThenByDescending(primary, comparer).ThenBy(hit => hit.Number, comparer);
+
+        // Default "When" uses SortKey (sys_updated_on value) so order matches ServiceNow timestamps.
+        if (string.Equals(SortColumn, SortWhen, StringComparison.Ordinal))
+        {
+            sorted = SortAscending
+                ? ordered.OrderBy(group, comparer).ThenBy(hit => hit.SortKey, StringComparer.Ordinal).ThenBy(hit => hit.Number, comparer)
+                : ordered.OrderBy(group, comparer).ThenByDescending(hit => hit.SortKey, StringComparer.Ordinal).ThenBy(hit => hit.Number, comparer);
+        }
+
+        return sorted;
+    }
+
+    private static Func<SearchHit, string> SortKeyFor(string column) => column switch
+    {
+        SortType => hit => hit.TableLabel,
+        SortNumber => hit => hit.Number,
+        SortTitle => hit => hit.Title,
+        SortMeta => hit => hit.Meta,
+        SortState => hit => hit.StateLabel,
+        SortWhen => hit => hit.When,
+        _ => hit => hit.SortKey
+    };
+
+    private static string NormalizeColumn(string? column) => (column ?? "").Trim() switch
+    {
+        SortType or "TableLabel" or "Type" => SortType,
+        SortNumber or "Number" => SortNumber,
+        SortTitle or "Title" => SortTitle,
+        SortMeta or "Meta" => SortMeta,
+        SortState or "StateLabel" or "State" => SortState,
+        SortWhen or "When" or "Updated" => SortWhen,
+        _ => ""
+    };
+
+    private void UpdateSummary()
+    {
+        if (_hits.Count == 0)
+        {
+            if (!string.IsNullOrWhiteSpace(_resultSummary))
+                Summary = _resultSummary;
+            return;
+        }
+
+        if (_selectedStates.Count == 0 || Results.Count == _hits.Count)
+        {
+            Summary = _resultSummary;
+            return;
+        }
+
+        var shown = Results.Count == 1 ? "1" : Results.Count.ToString(CultureInfo.InvariantCulture);
+        Summary = shown + " of " + _hits.Count.ToString(CultureInfo.InvariantCulture) + " matches";
+        if (_resultSummary.Contains(KnowledgeHiddenSummary, StringComparison.Ordinal))
+            Summary += ". " + KnowledgeHiddenSummary;
+    }
+
     private string Signature(string text) =>
         text
         + "\n" + (AssignmentGroup.SysId ?? "")
@@ -364,6 +636,17 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         _client is null
             ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
             : _client.MatchUsersAsync(text, cancellationToken);
+
+    private static void AddChoiceLabels(HashSet<string> labels, IReadOnlyList<Choice> choices)
+    {
+        foreach (var choice in choices)
+        {
+            if (!string.IsNullOrWhiteSpace(choice.Label))
+                labels.Add(choice.Label.Trim());
+            else if (!string.IsNullOrWhiteSpace(choice.Value))
+                labels.Add(choice.Value.Trim());
+        }
+    }
 
     private static string JoinMeta(params string[] parts) =>
         string.Join(" · ", parts.Where(part => !string.IsNullOrWhiteSpace(part)));

@@ -132,6 +132,18 @@ public static class DefaultChoices
         new("closed_abandoned", "Closed Abandoned")
     ];
 
+    /// <summary>
+    /// Knowledge workflow states are not in the form-catalog preload; search uses these defaults.
+    /// </summary>
+    public static IReadOnlyList<Choice> KnowledgeStates { get; } =
+    [
+        new("draft", "Draft"),
+        new("review", "Review"),
+        new("published", "Published"),
+        new("retired", "Retired"),
+        new("outdated", "Outdated")
+    ];
+
     public static IReadOnlyList<Choice> For(string table, string element) => (table, element) switch
     {
         ("incident", "state") => IncidentStates,
@@ -149,6 +161,7 @@ public static class DefaultChoices
         ("sc_req_item", "hold_reason") => HoldReasons,
         ("interaction", "state") => InteractionStates,
         ("interaction", "type") => InteractionTypes,
+        ("kb_knowledge", "workflow_state") => KnowledgeStates,
         _ => []
     };
 }

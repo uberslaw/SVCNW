@@ -107,4 +107,85 @@ public class SearchFilterTests
         Assert.DoesNotContain("Walk-ups", search.ErrorMessage);
         Assert.Equal("1 match", search.Summary);
     }
+
+    [Fact]
+    public async Task StateFilterUsesCatalogUnionAndMultiSelectNarrowsResults()
+    {
+        using var client = new SampleServiceNowClient();
+        var search = new SearchWorkspaceViewModel();
+
+        await search.RunAsync(client, "printer");
+        Assert.True(search.Results.Count > 1);
+        Assert.Contains("New", search.StateOptions);
+        Assert.Contains("In Progress", search.StateOptions);
+        Assert.Contains("Requested", search.StateOptions);
+        Assert.Contains("Open", search.StateOptions);
+        Assert.Contains("Published", search.StateOptions);
+        Assert.Equal("All states", search.StateFilterSummary);
+
+        search.SetSelectedStates(["In Progress", "Published"]);
+        Assert.Equal(2, search.SelectedStates.Count);
+        Assert.All(search.Results, hit => Assert.True(
+            hit.StateLabel is "In Progress" or "Published"));
+        Assert.Contains(search.Results, hit => hit.Number == "INC0010001");
+        Assert.Contains(search.Results, hit => hit.Section == DeskSection.Knowledge);
+        Assert.DoesNotContain(search.Results, hit => hit.StateLabel == "New");
+        Assert.Contains(" of ", search.Summary);
+
+        search.ClearStateFilter();
+        Assert.Empty(search.SelectedStates);
+        Assert.Equal("All states", search.StateFilterSummary);
+        Assert.Contains(search.Results, hit => hit.StateLabel == "New" || hit.Number == "INC0010001" || hit.Section == DeskSection.Knowledge);
+    }
+
+    [Fact]
+    public async Task SortAndGroupReorderCurrentResultsWithoutResearch()
+    {
+        using var client = new SampleServiceNowClient();
+        var search = new SearchWorkspaceViewModel();
+        search.IncludeKnowledge = false;
+        search.IncludeRequests = false;
+        search.IncludeItems = false;
+        search.IncludeWalkUps = false;
+
+        await search.RunAsync(client, "INC");
+        Assert.True(search.Results.Count >= 2);
+        var before = search.Results.Select(hit => hit.Number).ToArray();
+
+        search.ToggleSort(SearchWorkspaceViewModel.SortNumber);
+        Assert.Equal(SearchWorkspaceViewModel.SortNumber, search.SortColumn);
+        Assert.True(search.SortAscending);
+        var ascending = search.Results.Select(hit => hit.Number).ToArray();
+        Assert.Equal(ascending.OrderBy(number => number, StringComparer.OrdinalIgnoreCase), ascending);
+        Assert.NotEqual(before, ascending);
+
+        search.ToggleSort(SearchWorkspaceViewModel.SortNumber);
+        Assert.False(search.SortAscending);
+        var descending = search.Results.Select(hit => hit.Number).ToArray();
+        Assert.Equal(descending.OrderByDescending(number => number, StringComparer.OrdinalIgnoreCase), descending);
+
+        search.GroupBy(SearchWorkspaceViewModel.SortState);
+        Assert.True(search.HasGrouping);
+        Assert.Equal(SearchWorkspaceViewModel.SortState, search.GroupColumn);
+        var grouped = search.Results.Select(hit => hit.StateLabel).ToArray();
+        Assert.Equal(grouped.Distinct(StringComparer.OrdinalIgnoreCase).Count(), CountGroupRuns(grouped));
+
+        search.ClearGroupingCommand.Execute(null);
+        Assert.False(search.HasGrouping);
+        Assert.Equal("", search.GroupColumn);
+    }
+
+    private static int CountGroupRuns(IReadOnlyList<string> labels)
+    {
+        if (labels.Count == 0)
+            return 0;
+        var runs = 1;
+        for (var i = 1; i < labels.Count; i++)
+        {
+            if (!string.Equals(labels[i - 1], labels[i], StringComparison.OrdinalIgnoreCase))
+                runs++;
+        }
+
+        return runs;
+    }
 }

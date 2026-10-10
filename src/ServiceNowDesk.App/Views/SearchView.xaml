@@ -20,41 +20,80 @@
             <TextBlock Text="Opened" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
             <DatePicker SelectedDate="{Binding OpenedFrom}" Width="130" Margin="0,0,6,6" ToolTip="Opened on or after"/>
             <TextBlock Text="to" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-            <DatePicker SelectedDate="{Binding OpenedTo}" Width="130" Margin="0,0,0,6" ToolTip="Opened on or before"/>
+            <DatePicker SelectedDate="{Binding OpenedTo}" Width="130" Margin="0,0,14,6" ToolTip="Opened on or before"/>
+            <TextBlock Text="State" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+            <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Width="220" Height="88" Margin="0,0,8,6"
+                    ToolTip="Ctrl+click to select multiple states. Empty selection shows all states.">
+                <ListBox x:Name="StateFilter"
+                         ItemsSource="{Binding StateOptions}"
+                         SelectionMode="Extended"
+                         BorderThickness="0"
+                         Background="{StaticResource CardBrush}"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         SelectionChanged="StateFilter_SelectionChanged"
+                         AutomationProperties.Name="State filter"/>
+            </Border>
+            <StackPanel Margin="0,0,0,6" VerticalAlignment="Center">
+                <TextBlock Text="{Binding StateFilterSummary}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
+                <Button Content="Clear states" Style="{StaticResource QuietButton}" Padding="6,2" MinHeight="24"
+                        Click="ClearStates_Click" ToolTip="Clear state selection (show all)"
+                        AutomationProperties.Name="Clear state filter"/>
+            </StackPanel>
         </WrapPanel>
         <TextBlock DockPanel.Dock="Top" Text="{Binding FilterMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding FilterMessage, Converter={StaticResource StringVis}}"/>
         <TextBlock DockPanel.Dock="Top" Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}"/>
-        <TextBlock DockPanel.Dock="Bottom" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" Text="Double-click a row, or press Enter, to open it. Back on the record returns to this list."/>
-        <ListBox x:Name="Results"
-                 ItemsSource="{Binding Results}"
-                 SelectedItem="{Binding Selected}"
-                 Style="{StaticResource DeskList}"
-                 ItemContainerStyle="{StaticResource TicketListItem}"
-                 MouseDoubleClick="Results_MouseDoubleClick"
-                 PreviewKeyDown="Results_PreviewKeyDown">
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="110"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="160"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="{Binding TableLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                            <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Margin="8,0">
-                            <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding Meta}" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" HorizontalAlignment="Right">
-                            <TextBlock Text="{Binding StateLabel}" HorizontalAlignment="Right"/>
-                            <TextBlock Text="{Binding When}" FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right"/>
-                        </StackPanel>
-                    </Grid>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Button DockPanel.Dock="Right" Content="Clear grouping" Style="{StaticResource QuietButton}" Padding="6,2" MinHeight="24"
+                    Command="{Binding ClearGroupingCommand}"
+                    Visibility="{Binding HasGrouping, Converter={StaticResource BoolVis}}"
+                    AutomationProperties.Name="Clear grouping"/>
+            <TextBlock Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                       Text="Double-click a row, or press Enter, to open it. Click a column header to sort. Right-click a header to group by that column. Back on the record returns to this list."/>
+        </DockPanel>
+        <DataGrid x:Name="Results"
+                  ItemsSource="{Binding Results}"
+                  SelectedItem="{Binding Selected}"
+                  Style="{StaticResource DeskDataGrid}"
+                  ColumnHeaderStyle="{StaticResource DeskDataGridColumnHeader}"
+                  CellStyle="{StaticResource DeskDataGridCell}"
+                  RowStyle="{StaticResource SearchDataGridRow}"
+                  ColumnHeaderHeight="28"
+                  CanUserSortColumns="False"
+                  CanUserResizeColumns="True"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  MouseDoubleClick="Results_MouseDoubleClick"
+                  PreviewKeyDown="Results_PreviewKeyDown"
+                  AutomationProperties.Name="Search results">
+            <DataGrid.GroupStyle>
+                <GroupStyle>
+                    <GroupStyle.HeaderTemplate>
+                        <DataTemplate>
+                            <Border Background="{StaticResource AccentSoftBrush}" Padding="8,4" Margin="0,0,0,2">
+                                <TextBlock FontWeight="SemiBold" Foreground="{StaticResource TextBrush}">
+                                    <Run Text="{Binding Name, Mode=OneWay}"/>
+                                    <Run Text="  ("/>
+                                    <Run Text="{Binding ItemCount, Mode=OneWay}"/>
+                                    <Run Text=")"/>
+                                </TextBlock>
+                            </Border>
+                        </DataTemplate>
+                    </GroupStyle.HeaderTemplate>
+                </GroupStyle>
+            </DataGrid.GroupStyle>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Type" Binding="{Binding TableLabel}" Width="100" MinWidth="80"
+                                    ElementStyle="{StaticResource DeskDataGridText}" SortMemberPath="TableLabel"/>
+                <DataGridTextColumn Header="Number" Binding="{Binding Number}" Width="110" MinWidth="90"
+                                    ElementStyle="{StaticResource DeskDataGridAccentText}" SortMemberPath="Number"/>
+                <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="2*" MinWidth="140"
+                                    ElementStyle="{StaticResource DeskDataGridText}" SortMemberPath="Title"/>
+                <DataGridTextColumn Header="Meta" Binding="{Binding Meta}" Width="*" MinWidth="100"
+                                    ElementStyle="{StaticResource DeskDataGridText}" SortMemberPath="Meta"/>
+                <DataGridTextColumn Header="State" Binding="{Binding StateLabel}" Width="120" MinWidth="90"
+                                    ElementStyle="{StaticResource DeskDataGridText}" SortMemberPath="StateLabel"/>
+                <DataGridTextColumn Header="Updated" Binding="{Binding When}" Width="130" MinWidth="100"
+                                    ElementStyle="{StaticResource DeskDataGridText}" SortMemberPath="When"/>
+            </DataGrid.Columns>
+        </DataGrid>
     </DockPanel>
 </UserControl>
