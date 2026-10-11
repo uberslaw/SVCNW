@@ -47,17 +47,19 @@ public partial class NavigationOrderTests
     }
 
     [Fact]
-    public void LeadsAppearsAfterConnectionOnlyWhenUnlocked()
+    public void LeadsAppearsFirstOnlyWhenUnlocked()
     {
         var locked = DeskNavigation.Visible(false).Select(item => item.Section).ToArray();
         Assert.DoesNotContain(DeskSection.Leads, locked);
         Assert.DoesNotContain(DeskSection.Legend, locked);
         Assert.Equal(DeskSection.Connection, locked[^1]);
+        Assert.Equal(DeskSection.DailyWork, locked[0]);
 
         var unlocked = DeskNavigation.Visible(true).Select(item => item.Section).ToArray();
-        var connection = Array.IndexOf(unlocked, DeskSection.Connection);
-        Assert.Equal(DeskSection.Leads, unlocked[connection + 1]);
-        Assert.Equal(DeskSection.Leads, unlocked[^1]);
+        Assert.Equal(DeskSection.Leads, unlocked[0]);
+        Assert.Equal(DeskSection.DailyWork, unlocked[1]);
+        Assert.DoesNotContain(DeskSection.Legend, unlocked);
+        Assert.Equal(DeskSection.Connection, unlocked[^1]);
         Assert.Equal(MainOrder, unlocked.Where(section => section != DeskSection.Leads).Select(LabelOf).ToArray());
     }
 
@@ -75,7 +77,7 @@ public partial class NavigationOrderTests
     }
 
     [Fact]
-    public void LeadsToggleOnTheShellStillSitsAfterConnection()
+    public void LeadsToggleOnTheShellStillSitsFirstWhenUnlocked()
     {
         var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices());
         Assert.Equal(MainOrder, main.Navigation.Select(item => item.Label).ToArray());
@@ -87,8 +89,8 @@ public partial class NavigationOrderTests
         main.Connection.UnlockLeadsCommand.Execute(null);
 
         var unlocked = main.Navigation.Select(item => item.Section).ToArray();
-        var connection = Array.IndexOf(unlocked, DeskSection.Connection);
-        Assert.Equal(DeskSection.Leads, unlocked[connection + 1]);
+        Assert.Equal(DeskSection.Leads, unlocked[0]);
+        Assert.Equal(DeskSection.DailyWork, unlocked[1]);
         Assert.True(main.TrySelect(DeskSection.Leads));
         Assert.Equal(DeskSection.Leads, main.SelectedSection);
         Assert.True(main.Navigation.Single(item => item.Section == DeskSection.Leads).IsSelected);
