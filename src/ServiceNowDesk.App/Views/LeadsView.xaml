@@ -394,14 +394,38 @@
                                 <ColumnDefinition Width="1*" MinWidth="80"/>
                                 <ColumnDefinition Width="88" MinWidth="72"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock Grid.Column="1" Text="Short description" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock Grid.Column="2" Text="Table" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock Grid.Column="3" Text="Metric" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock Grid.Column="4" Text="Work Type" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock Grid.Column="5" Text="When" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock Grid.Column="6" Text="Person" Style="{StaticResource FieldLabel}"/>
-                            <TextBlock Grid.Column="7" Text="Day" Style="{StaticResource FieldLabel}"/>
+                            <Button Content="{Binding WorkEffort.DetailNumberHeader}" Style="{StaticResource QuietButton}"
+                                    HorizontalContentAlignment="Left" Padding="0"
+                                    Command="{Binding WorkEffort.SortDetailByCommand}" CommandParameter="Number"
+                                    AutomationProperties.Name="Sort by number"/>
+                            <Button Grid.Column="1" Content="{Binding WorkEffort.DetailTitleHeader}" Style="{StaticResource QuietButton}"
+                                    HorizontalContentAlignment="Left" Padding="0"
+                                    Command="{Binding WorkEffort.SortDetailByCommand}" CommandParameter="Title"
+                                    AutomationProperties.Name="Sort by short description"/>
+                            <Button Grid.Column="2" Content="{Binding WorkEffort.DetailTableHeader}" Style="{StaticResource QuietButton}"
+                                    HorizontalContentAlignment="Left" Padding="0"
+                                    Command="{Binding WorkEffort.SortDetailByCommand}" CommandParameter="Table"
+                                    AutomationProperties.Name="Sort by table"/>
+                            <Button Grid.Column="3" Content="{Binding WorkEffort.DetailMetricHeader}" Style="{StaticResource QuietButton}"
+                                    HorizontalContentAlignment="Left" Padding="0"
+                                    Command="{Binding WorkEffort.SortDetailByCommand}" CommandParameter="Metric"
+                                    AutomationProperties.Name="Sort by metric"/>
+                            <Button Grid.Column="4" Content="{Binding WorkEffort.DetailWorkTypeHeader}" Style="{StaticResource QuietButton}"
+                                    HorizontalContentAlignment="Left" Padding="0"
+                                    Command="{Binding WorkEffort.SortDetailByCommand}" CommandParameter="WorkType"
+                                    AutomationProperties.Name="Sort by work type"/>
+                            <Button Grid.Column="5" Content="{Binding WorkEffort.DetailWhenHeader}" Style="{StaticResource QuietButton}"
+                                    HorizontalContentAlignment="Left" Padding="0"
+                                    Command="{Binding WorkEffort.SortDetailByCommand}" CommandParameter="When"
+                                    AutomationProperties.Name="Sort by when"/>
+                            <Button Grid.Column="6" Content="{Binding WorkEffort.DetailPersonHeader}" Style="{StaticResource QuietButton}"
+                                    HorizontalContentAlignment="Left" Padding="0"
+                                    Command="{Binding WorkEffort.SortDetailByCommand}" CommandParameter="Person"
+                                    AutomationProperties.Name="Sort by person"/>
+                            <Button Grid.Column="7" Content="{Binding WorkEffort.DetailDayHeader}" Style="{StaticResource QuietButton}"
+                                    HorizontalContentAlignment="Left" Padding="0"
+                                    Command="{Binding WorkEffort.SortDetailByCommand}" CommandParameter="Day"
+                                    AutomationProperties.Name="Sort by day"/>
                         </Grid>
                         <ListBox ItemsSource="{Binding WorkEffort.DetailLines}"
                                  Style="{StaticResource DeskList}"

@@ -951,6 +951,40 @@ public class WorkEffortTests
     }
 
     [Fact]
+    public async Task DetailColumnHeadersSortAscendingThenDescending()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        await OpenWorkEffortAsync(page, client, Now, force: false, []);
+        page.ShowPersonDetail(page.Rows.Single(row => row.Name == "Alex Rivera"));
+        Assert.True(page.DetailLines.Count >= 2);
+        Assert.Equal("Number", page.DetailNumberHeader);
+
+        page.SortDetailByCommand.Execute("Number");
+        Assert.Equal("Number ▲", page.DetailNumberHeader);
+        // Number sort is digit-aware: INC0010001, RITM0010002, IMS0010003.
+        Assert.Equal(
+            ["INC0010001", "RITM0010002", "IMS0010003"],
+            page.DetailLines.Select(line => line.DisplayNumber).Distinct().ToArray());
+
+        page.SortDetailByCommand.Execute("Number");
+        Assert.Equal("Number ▼", page.DetailNumberHeader);
+        Assert.Equal(
+            ["IMS0010003", "RITM0010002", "INC0010001"],
+            page.DetailLines.Select(line => line.DisplayNumber).Distinct().ToArray());
+
+        page.SortDetailByCommand.Execute("Metric");
+        Assert.Equal("Metric ▲", page.DetailMetricHeader);
+        Assert.Equal("Number", page.DetailNumberHeader);
+        var metrics = page.DetailLines.Select(line => line.MetricLabel).ToArray();
+        Assert.Equal(metrics.OrderBy(value => value, StringComparer.OrdinalIgnoreCase), metrics);
+
+        page.CloseDetailCommand.Execute(null);
+        Assert.Equal("Number", page.DetailNumberHeader);
+        Assert.Equal("Metric", page.DetailMetricHeader);
+    }
+
+    [Fact]
     public async Task OpenCreditCommandRaisesOpenTicketRequested()
     {
         using var client = new SampleServiceNowClient();

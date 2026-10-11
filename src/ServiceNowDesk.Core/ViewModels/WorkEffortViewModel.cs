@@ -16,6 +16,8 @@ public partial class WorkEffortViewModel : ObservableObject
     private WorkEffortCacheEntry? _shown;
     private IDesktopServices? _desktop;
     private IReadOnlyList<WorkEffortCredit> _boardCredits = [];
+    private WorkEffortDetailSortColumn? _detailSortColumn;
+    private bool _detailSortDescending;
 
     public WorkEffortViewModel()
     {
@@ -48,6 +50,15 @@ public partial class WorkEffortViewModel : ObservableObject
     [ObservableProperty] private string detailEmptyMessage = "";
     [ObservableProperty] private bool detailHasRows;
     [ObservableProperty] private string exportNote = "";
+
+    public string DetailNumberHeader => DetailSortHeader("Number", WorkEffortDetailSortColumn.Number);
+    public string DetailTitleHeader => DetailSortHeader("Short description", WorkEffortDetailSortColumn.Title);
+    public string DetailTableHeader => DetailSortHeader("Table", WorkEffortDetailSortColumn.Table);
+    public string DetailMetricHeader => DetailSortHeader("Metric", WorkEffortDetailSortColumn.Metric);
+    public string DetailWorkTypeHeader => DetailSortHeader("Work Type", WorkEffortDetailSortColumn.WorkType);
+    public string DetailWhenHeader => DetailSortHeader("When", WorkEffortDetailSortColumn.When);
+    public string DetailPersonHeader => DetailSortHeader("Person", WorkEffortDetailSortColumn.Person);
+    public string DetailDayHeader => DetailSortHeader("Day", WorkEffortDetailSortColumn.Day);
 
     public void UseDesktop(IDesktopServices desktop) => _desktop = desktop;
 
@@ -297,6 +308,24 @@ public partial class WorkEffortViewModel : ObservableObject
     private void CloseDetail() => ClearDetail();
 
     [RelayCommand]
+    private void SortDetailBy(string? column)
+    {
+        if (!Enum.TryParse<WorkEffortDetailSortColumn>(column, ignoreCase: true, out var parsed))
+            return;
+        if (_detailSortColumn != parsed)
+        {
+            _detailSortColumn = parsed;
+            _detailSortDescending = false;
+        }
+        else
+        {
+            _detailSortDescending = !_detailSortDescending;
+        }
+
+        ApplyDetailSort();
+    }
+
+    [RelayCommand]
     private void OpenCredit(WorkEffortCredit? credit)
     {
         if (credit is null || string.IsNullOrWhiteSpace(credit.RecordSysId))
@@ -485,6 +514,7 @@ public partial class WorkEffortViewModel : ObservableObject
         DetailEmptyMessage = DetailHasRows ? "" : empty;
         ShowDetail = true;
         ExportNote = "";
+        ApplyDetailSort();
     }
 
     private void ClearDetail()
@@ -495,6 +525,43 @@ public partial class WorkEffortViewModel : ObservableObject
         DetailHasRows = false;
         DetailLines.Clear();
         ExportNote = "";
+        _detailSortColumn = null;
+        _detailSortDescending = false;
+        NotifyDetailSortHeaders();
+    }
+
+    private void ApplyDetailSort()
+    {
+        NotifyDetailSortHeaders();
+        if (_detailSortColumn is not WorkEffortDetailSortColumn column || DetailLines.Count < 2)
+            return;
+        var sorted = DetailLines.Select((line, index) => (line, index)).ToList();
+        sorted.Sort((left, right) =>
+        {
+            var compared = WorkEffortCreditSort.Compare(left.line, right.line, column, _detailSortDescending);
+            return compared != 0 ? compared : left.index.CompareTo(right.index);
+        });
+        for (var index = 0; index < sorted.Count; index++)
+        {
+            var current = DetailLines.IndexOf(sorted[index].line);
+            if (current != index)
+                DetailLines.Move(current, index);
+        }
+    }
+
+    private string DetailSortHeader(string title, WorkEffortDetailSortColumn column) =>
+        _detailSortColumn == column ? title + (_detailSortDescending ? " ▼" : " ▲") : title;
+
+    private void NotifyDetailSortHeaders()
+    {
+        OnPropertyChanged(nameof(DetailNumberHeader));
+        OnPropertyChanged(nameof(DetailTitleHeader));
+        OnPropertyChanged(nameof(DetailTableHeader));
+        OnPropertyChanged(nameof(DetailMetricHeader));
+        OnPropertyChanged(nameof(DetailWorkTypeHeader));
+        OnPropertyChanged(nameof(DetailWhenHeader));
+        OnPropertyChanged(nameof(DetailPersonHeader));
+        OnPropertyChanged(nameof(DetailDayHeader));
     }
 
     private void WriteCsv(string fileName, IEnumerable<WorkEffortCredit> lines)

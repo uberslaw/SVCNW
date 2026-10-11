@@ -123,6 +123,82 @@ public enum WorkEffortColumn
     ImsUpdated
 }
 
+/// <summary>
+/// Sortable columns on the Work Effort ticket detail list.
+/// </summary>
+public enum WorkEffortDetailSortColumn
+{
+    Number,
+    Title,
+    Table,
+    Metric,
+    WorkType,
+    When,
+    Person,
+    Day
+}
+
+public static class WorkEffortCreditSort
+{
+    public static int Compare(WorkEffortCredit left, WorkEffortCredit right, WorkEffortDetailSortColumn column, bool descending)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        var compared = column switch
+        {
+            WorkEffortDetailSortColumn.When => left.When.CompareTo(right.When),
+            WorkEffortDetailSortColumn.Number => CompareNumber(left.DisplayNumber, right.DisplayNumber),
+            _ => CompareText(Text(left, column), Text(right, column))
+        };
+        return descending ? -compared : compared;
+    }
+
+    private static int CompareNumber(string left, string right)
+    {
+        if (TryDigits(left, out var leftNumber) && TryDigits(right, out var rightNumber))
+        {
+            var numeric = leftNumber.CompareTo(rightNumber);
+            if (numeric != 0)
+                return numeric;
+        }
+
+        return string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CompareText(string left, string right)
+    {
+        var leftEmpty = string.IsNullOrWhiteSpace(left);
+        var rightEmpty = string.IsNullOrWhiteSpace(right);
+        if (leftEmpty || rightEmpty)
+        {
+            if (leftEmpty && rightEmpty)
+                return 0;
+            return leftEmpty ? 1 : -1;
+        }
+
+        return string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryDigits(string text, out long value)
+    {
+        var digits = new string(text.Where(char.IsDigit).ToArray());
+        return long.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out value) && digits.Length > 0;
+    }
+
+    private static string Text(WorkEffortCredit line, WorkEffortDetailSortColumn column) => column switch
+    {
+        WorkEffortDetailSortColumn.Number => line.DisplayNumber,
+        WorkEffortDetailSortColumn.Title => line.Title ?? "",
+        WorkEffortDetailSortColumn.Table => line.TableLabel,
+        WorkEffortDetailSortColumn.Metric => line.MetricLabel,
+        WorkEffortDetailSortColumn.WorkType => line.WorkTypeLabel,
+        WorkEffortDetailSortColumn.When => line.WhenText,
+        WorkEffortDetailSortColumn.Person => line.PersonName,
+        WorkEffortDetailSortColumn.Day => line.Day ?? "",
+        _ => ""
+    };
+}
+
 public static class WorkEffortDetail
 {
     public const string EmptyCellMessage = "Nothing credited in this cell for the loaded period.";
