@@ -55,6 +55,7 @@ public static class DeskSettingsFile
         public List<string>? OfficeLocations { get; set; }
         public List<string>? HardwareOfficeLocations { get; set; }
         public bool HardwareOfficeOverride { get; set; }
+        public List<string>? RegionOffices { get; set; }
         public int? NotificationPollSeconds { get; set; }
         public bool? DownloadCacheOnLaunch { get; set; }
         public Dictionary<string, bool>? CacheDownloadOnLaunch { get; set; }
@@ -101,6 +102,7 @@ public static class DeskSettingsFile
             OfficeLocations = settings.OfficeLocations is null ? null : [.. settings.OfficeLocations],
             HardwareOfficeLocations = settings.HardwareOfficeLocations is null ? null : [.. settings.HardwareOfficeLocations],
             HardwareOfficeOverride = settings.HardwareOfficeOverride,
+            RegionOffices = settings.RegionOffices is null ? null : [.. settings.RegionOffices],
             NotificationPollSeconds = settings.NotificationPollSeconds,
             DownloadCacheOnLaunch = settings.DownloadCacheOnLaunch,
             CacheDownloadOnLaunch = CopyLaunchMap(settings.CacheDownloadOnLaunch),
@@ -148,6 +150,7 @@ public static class DeskSettingsFile
             OfficeLocations = OfficeLocations,
             HardwareOfficeLocations = HardwareOfficeLocations is null ? null : [.. HardwareOfficeLocations],
             HardwareOfficeOverride = HardwareOfficeOverride,
+            RegionOffices = RegionOffices is null ? null : [.. RegionOffices],
             NotificationPollSeconds = NotificationPollSeconds ?? 60,
             DownloadCacheOnLaunch = DownloadCacheOnLaunch ?? true,
             CacheDownloadOnLaunch = CopyLaunchMap(CacheDownloadOnLaunch),

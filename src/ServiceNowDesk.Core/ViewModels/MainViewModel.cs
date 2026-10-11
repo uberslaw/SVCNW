@@ -143,6 +143,12 @@ public partial class MainViewModel : ObservableObject
         Notifications = new NotificationWorkspaceViewModel();
         NotificationSettings = new NotificationSettingsViewModel();
         Legend = new LegendSettingsViewModel();
+        Region = new RegionSettingsViewModel();
+        Region.Changed += (_, _) =>
+        {
+            Connection.RememberRegionOffices(Region.SelectedOffices);
+            _store.Save(Connection.BuildSettings());
+        };
         Leads = new LeadsViewModel();
         DailyWork = new DailyWorkViewModel(
             _dailyWork,
@@ -338,6 +344,7 @@ public partial class MainViewModel : ObservableObject
     public NotificationWorkspaceViewModel Notifications { get; }
     public NotificationSettingsViewModel NotificationSettings { get; }
     public LegendSettingsViewModel Legend { get; }
+    public RegionSettingsViewModel Region { get; }
     public LeadsViewModel Leads { get; }
     public DailyWorkViewModel DailyWork { get; }
     public Task SearchOpenTask { get; private set; } = Task.CompletedTask;
@@ -418,6 +425,7 @@ public partial class MainViewModel : ObservableObject
         Leads.ApplyTeamState(Connection.LeadTeamSaved, Connection.LeadsTeamLocked);
         NotificationSettings.Load(Connection.Notifications);
         Legend.Load(Connection.Highlights);
+        Region.Load(settings.RegionOffices);
         _rows.Use(Connection.Highlights);
         var expired = BrowserSignInClock.IsSavedSessionExpired(settings, DateTimeOffset.UtcNow);
         Guided.Load(Connection.GuidedSetupOffer, Connection.GuidedSetupFinished);

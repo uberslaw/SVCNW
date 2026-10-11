@@ -82,7 +82,7 @@
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <TextBlock Text="Offices" Style="{StaticResource FieldLabel}"/>
                     <TextBlock Text="{Binding AccountOfficeText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                    <TextBlock Text="The list starts at the office on the signed-in account. Launch and Refresh this office download only the checked offices into the saved list on this PC. Checkboxes change the filter without downloading again. Refresh all or All locations downloads every location (opt-in). Override office remembers the checked offices on this PC. Clear override returns to your office." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <TextBlock Text="The list starts at the office on the signed-in account. Launch and Refresh this office download only the checked offices into the saved list on this PC. Checkboxes change the filter without downloading again. Refresh all downloads every location (opt-in). Region limits the list to the offices chosen in Settings. Override office remembers the checked offices on this PC. Clear override returns to your office." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <TextBox Text="{Binding OfficeSearchText, UpdateSourceTrigger=PropertyChanged}"
                              MinHeight="28" Padding="6,4" Margin="0,0,0,6"
                              AutomationProperties.Name="Find office"/>
@@ -100,8 +100,9 @@
                     </Border>
                     <TextBlock Text="{Binding OfficeSelectionSummary}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <Button Content="All locations" Style="{StaticResource SecondaryButton}" Command="{Binding SearchAllLocationsCommand}" Margin="0,0,8,0"
-                                IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBool}}"/>
+                        <Button Content="Region" Style="{StaticResource SecondaryButton}" Command="{Binding ApplyRegionCommand}" Margin="0,0,8,0"
+                                ToolTip="Show hardware at the offices saved in Settings"
+                                AutomationProperties.Name="Region"/>
                         <Button Content="Override office" Style="{StaticResource SecondaryButton}" Command="{Binding OverrideOfficeCommand}" Margin="0,0,8,0"/>
                         <Button Content="Clear override" Style="{StaticResource SecondaryButton}" Command="{Binding ClearOverrideCommand}" Margin="0,0,8,0"/>
                         <Button Content="Refresh this office" Style="{StaticResource SecondaryButton}" Command="{Binding RefreshOfficeCatalogCommand}" Margin="0,0,8,0"
@@ -166,34 +167,44 @@
                   DataGrid visual/namescope tree, so RelativeSource AncestorType=DataGrid and ElementName
                   bindings to HardwareList both fail — typed text never reaches *Filter properties.
                 -->
+                <ScrollViewer x:Name="HardwareTableScroll"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled"
+                              HorizontalAlignment="Stretch"
+                              Focusable="False">
+                <DockPanel x:Name="HardwareTableContent" HorizontalAlignment="Left">
                 <Grid x:Name="HardwareFilters" DockPanel.Dock="Top" Margin="1,0,1,4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="1.2*" MinWidth="96"/>
-                        <ColumnDefinition Width="2.4*" MinWidth="120"/>
+                        <ColumnDefinition Width="2.4*" MinWidth="148"/>
                         <ColumnDefinition Width="1.2*" MinWidth="96"/>
-                        <ColumnDefinition Width="1.2*" MinWidth="96"/>
-                        <ColumnDefinition Width="*" MinWidth="80"/>
-                        <ColumnDefinition Width="1.1*" MinWidth="96"/>
+                        <ColumnDefinition Width="1.2*" MinWidth="124"/>
+                        <ColumnDefinition Width="*" MinWidth="108"/>
+                        <ColumnDefinition Width="1.1*" MinWidth="124"/>
                         <ColumnDefinition Width="1.5*" MinWidth="110"/>
                     </Grid.ColumnDefinitions>
                     <TextBox Style="{StaticResource DeskColumnFilter}" Margin="6,0,4,0"
                              Text="{Binding SerialFilter, UpdateSourceTrigger=PropertyChanged}"
                              AutomationProperties.Name="Filter serial"/>
-                    <TextBox Grid.Column="1" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
-                             Text="{Binding ModelFilter, UpdateSourceTrigger=PropertyChanged}"
-                             AutomationProperties.Name="Filter model"/>
+                    <controls:ChoiceFilterBox x:Name="ModelFilterBox" Grid.Column="1" Margin="2,0,4,0"
+                                              CountText="{Binding ModelFilterCountText}"
+                                              FilterName="Filter model"
+                                              ClearName="Clear model filter"/>
                     <TextBox Grid.Column="2" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
                              Text="{Binding AssignedFilter, UpdateSourceTrigger=PropertyChanged}"
                              AutomationProperties.Name="Filter assigned to"/>
-                    <TextBox Grid.Column="3" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
-                             Text="{Binding LocationFilter, UpdateSourceTrigger=PropertyChanged}"
-                             AutomationProperties.Name="Filter location"/>
-                    <TextBox Grid.Column="4" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
-                             Text="{Binding StateFilter, UpdateSourceTrigger=PropertyChanged}"
-                             AutomationProperties.Name="Filter state"/>
-                    <TextBox Grid.Column="5" Style="{StaticResource DeskColumnFilter}" Margin="2,0,4,0"
-                             Text="{Binding SubstatusFilter, UpdateSourceTrigger=PropertyChanged}"
-                             AutomationProperties.Name="Filter substate"/>
+                    <controls:ChoiceFilterBox x:Name="LocationFilterBox" Grid.Column="3" Margin="2,0,4,0"
+                                              CountText="{Binding LocationFilterCountText}"
+                                              FilterName="Filter location"
+                                              ClearName="Clear location filter"/>
+                    <controls:ChoiceFilterBox x:Name="StateFilterBox" Grid.Column="4" Margin="2,0,4,0"
+                                              CountText="{Binding StateFilterCountText}"
+                                              FilterName="Filter state"
+                                              ClearName="Clear state filter"/>
+                    <controls:ChoiceFilterBox x:Name="SubstateFilterBox" Grid.Column="5" Margin="2,0,4,0"
+                                              CountText="{Binding SubstateFilterCountText}"
+                                              FilterName="Filter substate"
+                                              ClearName="Clear substate filter"/>
                     <TextBox Grid.Column="6" Style="{StaticResource DeskColumnFilter}" Margin="2,0,6,0"
                              Text="{Binding CommentsFilter, UpdateSourceTrigger=PropertyChanged}"
                              AutomationProperties.Name="Filter comments"/>
@@ -213,19 +224,19 @@
                         <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="1.2*" MinWidth="96"
                                             SortMemberPath="SerialNumber"
                                             ElementStyle="{StaticResource DeskDataGridAccentText}"/>
-                        <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="2.4*" MinWidth="120"
+                        <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="2.4*" MinWidth="148"
                                             SortMemberPath="Model"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                         <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo.Display}" Width="1.2*" MinWidth="96"
                                             SortMemberPath="AssignedTo.Display"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="Location" Binding="{Binding Location.Display}" Width="1.2*" MinWidth="96"
+                        <DataGridTextColumn Header="Location" Binding="{Binding Location.Display}" Width="1.2*" MinWidth="124"
                                             SortMemberPath="Location.Display"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="State" Binding="{Binding InstallStatusLabel}" Width="*" MinWidth="80"
+                        <DataGridTextColumn Header="State" Binding="{Binding InstallStatusLabel}" Width="*" MinWidth="108"
                                             SortMemberPath="InstallStatusLabel"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="Substate" Binding="{Binding SubstatusLabel}" Width="1.1*" MinWidth="96"
+                        <DataGridTextColumn Header="Substate" Binding="{Binding SubstatusLabel}" Width="1.1*" MinWidth="124"
                                             SortMemberPath="SubstatusLabel"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                         <DataGridTextColumn Header="Comments" Binding="{Binding Comments}" Width="1.5*" MinWidth="110"
@@ -233,6 +244,8 @@
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                     </DataGrid.Columns>
                 </DataGrid>
+                </DockPanel>
+                </ScrollViewer>
             </DockPanel>
 
             <DockPanel Grid.Column="2">

@@ -11,10 +11,15 @@ namespace ServiceNowDesk.Views;
 public partial class HardwareView
 {
     private HardwareWorkspaceViewModel? _hardware;
+    private bool _pullingChoices;
 
     public HardwareView()
     {
         InitializeComponent();
+        ModelFilterBox.SelectionChanged += (_, _) => ApplyChoice(hardware => hardware.SetModelFilter(ModelFilterBox.SelectedValues));
+        LocationFilterBox.SelectionChanged += (_, _) => ApplyChoice(hardware => hardware.SetLocationFilter(LocationFilterBox.SelectedValues));
+        StateFilterBox.SelectionChanged += (_, _) => ApplyChoice(hardware => hardware.SetStateFilter(StateFilterBox.SelectedValues));
+        SubstateFilterBox.SelectionChanged += (_, _) => ApplyChoice(hardware => hardware.SetSubstateFilter(SubstateFilterBox.SelectedValues));
         DataContextChanged += (_, _) => HookHardware();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -46,6 +51,7 @@ public partial class HardwareView
         {
             _hardware.PropertyChanged += Hardware_PropertyChanged;
             SyncSortHeaders();
+            PullChoiceFilters();
         }
     }
 
@@ -61,6 +67,35 @@ public partial class HardwareView
                 or nameof(HardwareWorkspaceViewModel.CommentsHeader))
         {
             SyncSortHeaders();
+        }
+
+        if (e.PropertyName is null or nameof(HardwareWorkspaceViewModel.ChoiceFilterRevision))
+            PullChoiceFilters();
+    }
+
+    private void ApplyChoice(Action<HardwareWorkspaceViewModel> apply)
+    {
+        if (_pullingChoices || _hardware is null)
+            return;
+        apply(_hardware);
+    }
+
+    private void PullChoiceFilters()
+    {
+        if (_hardware is null)
+            return;
+
+        _pullingChoices = true;
+        try
+        {
+            ModelFilterBox.SetItems(_hardware.ModelChoices, _hardware.SelectedModelFilters);
+            LocationFilterBox.SetItems(_hardware.LocationChoices, _hardware.SelectedLocationFilters);
+            StateFilterBox.SetItems(_hardware.StateChoices, _hardware.SelectedStateFilters);
+            SubstateFilterBox.SetItems(_hardware.SubstateChoices, _hardware.SelectedSubstateFilters);
+        }
+        finally
+        {
+            _pullingChoices = false;
         }
     }
 
@@ -128,8 +163,22 @@ public partial class HardwareView
     {
         var columns = HardwareList.Columns;
         var definitions = HardwareFilters.ColumnDefinitions;
-        if (columns.Count != definitions.Count)
+        if (columns.Count != definitions.Count || columns.Count == 0)
             return;
+
+        var host = HardwareTableScroll.ActualWidth;
+        if (double.IsNaN(host) || double.IsInfinity(host) || host <= 1)
+            return;
+
+        double minSum = 0;
+        foreach (var column in columns)
+            minSum += column.MinWidth;
+
+        // Keep the filter row and grid on one width. When the columns' minimums
+        // exceed the pane, the shared scroller moves instead of clipping the X buttons.
+        var contentWidth = Math.Max(host, minSum);
+        if (double.IsNaN(HardwareTableContent.Width) || Math.Abs(HardwareTableContent.Width - contentWidth) > 0.5)
+            HardwareTableContent.Width = contentWidth;
 
         for (var i = 0; i < columns.Count; i++)
         {

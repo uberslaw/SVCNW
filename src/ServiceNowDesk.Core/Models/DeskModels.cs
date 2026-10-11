@@ -230,6 +230,12 @@ public sealed class DeskSettings
     /// </summary>
     public bool HardwareOfficeOverride { get; set; }
 
+    /// <summary>
+    /// Office names chosen as "my region" on Settings. Null or empty means the Hardware
+    /// Region button does not filter. Names are the office labels from the region catalog.
+    /// </summary>
+    public List<string>? RegionOffices { get; set; }
+
     public int NotificationPollSeconds { get; set; } = 60;
     /// <summary>
     /// Master "Download all on launch". When true, every cache type downloads on launch unless

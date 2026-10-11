@@ -397,13 +397,13 @@ public class HardwareDeskTests
         Assert.Same(keep, workspace.Selected);
         Assert.Equal("5CG30710BR", workspace.Selected?.SerialNumber);
 
-        workspace.LocationFilter = "Hong";
+        workspace.SetLocationFilter(["Hong Kong Office"]);
         await workspace.ColumnFiltersReady;
         Assert.Equal("Serial ▼", workspace.SerialHeader);
         Assert.Equal("5CG30710BR", Assert.Single(workspace.Items).SerialNumber);
         Assert.Equal("5CG30710BR", workspace.Selected?.SerialNumber);
 
-        workspace.LocationFilter = "";
+        workspace.ClearLocationFilter();
         await workspace.ColumnFiltersReady;
         Assert.Equal("Serial ▼", workspace.SerialHeader);
         Assert.Equal(
@@ -534,8 +534,8 @@ public class HardwareDeskTests
         Assert.Equal(5, workspace.Items.Count);
         var gets = HardwareGets(client);
 
-        workspace.LocationFilter = "Brisbane";
-        workspace.StateFilter = "In transit";
+        workspace.SetLocationFilter(["Brisbane Office"]);
+        workspace.SetStateFilter(["In transit"]);
         await workspace.ColumnFiltersReady;
         Assert.Equal(2, workspace.Items.Count);
         Assert.Equal(2, workspace.ShownCount);
@@ -571,7 +571,7 @@ public class HardwareDeskTests
         var all = workspace.Items.Count;
         Assert.True(all > 1);
 
-        workspace.ModelFilter = "fury";
+        workspace.SetModelFilter(["HP ZBook Fury 16 G9"]);
         await workspace.ColumnFiltersReady;
         var fury = Assert.Single(workspace.Items);
         Assert.Contains("Fury", fury.Model, StringComparison.OrdinalIgnoreCase);
@@ -584,7 +584,7 @@ public class HardwareDeskTests
         await workspace.ColumnFiltersReady;
         Assert.Equal("HP ZBook Fury 16 G9", Assert.Single(workspace.Items).Model);
 
-        workspace.ModelFilter = "";
+        workspace.ClearModelFilter();
         await workspace.ColumnFiltersReady;
         Assert.Equal(all, workspace.Items.Count);
     }
@@ -601,7 +601,7 @@ public class HardwareDeskTests
         Assert.True(all > 1);
         Assert.False(workspace.IsFiltering);
 
-        workspace.ModelFilter = "fury";
+        workspace.SetModelFilter(["HP ZBook Fury 16 G9"]);
         Assert.True(workspace.IsFiltering);
         Assert.Equal(all, workspace.ShownCount);
 
@@ -610,7 +610,7 @@ public class HardwareDeskTests
         Assert.Equal(1, workspace.ShownCount);
         Assert.Contains("Fury", Assert.Single(workspace.Items).Model, StringComparison.OrdinalIgnoreCase);
 
-        workspace.ModelFilter = "";
+        workspace.ClearModelFilter();
         Assert.True(workspace.IsFiltering);
         await workspace.ColumnFiltersReady;
         Assert.False(workspace.IsFiltering);
@@ -629,26 +629,26 @@ public class HardwareDeskTests
         workspace.SerialFilter = "";
         await workspace.ColumnFiltersReady;
 
-        await AssertFilterNarrowsAsync(workspace, () => workspace.ModelFilter = "Fury", all);
-        workspace.ModelFilter = "";
+        await AssertFilterNarrowsAsync(workspace, () => workspace.SetModelFilter(["HP ZBook Fury 16 G9"]), all);
+        workspace.ClearModelFilter();
         await workspace.ColumnFiltersReady;
 
         await AssertFilterNarrowsAsync(workspace, () => workspace.AssignedFilter = "nobody-matches-this", all, expectEmpty: true);
         workspace.AssignedFilter = "";
         await workspace.ColumnFiltersReady;
 
-        await AssertFilterNarrowsAsync(workspace, () => workspace.LocationFilter = "Brisbane", all);
-        workspace.LocationFilter = "";
+        await AssertFilterNarrowsAsync(workspace, () => workspace.SetLocationFilter(["Brisbane Office"]), all);
+        workspace.ClearLocationFilter();
         await workspace.ColumnFiltersReady;
 
-        await AssertFilterNarrowsAsync(workspace, () => workspace.StateFilter = "In transit", all);
-        workspace.StateFilter = "";
+        await AssertFilterNarrowsAsync(workspace, () => workspace.SetStateFilter(["In transit"]), all);
+        workspace.ClearStateFilter();
         await workspace.ColumnFiltersReady;
 
-        workspace.SubstatusFilter = "zzzz-no-such-substate";
+        workspace.SetSubstateFilter(["Available"]);
         await workspace.ColumnFiltersReady;
-        Assert.Equal(0, workspace.ShownCount);
-        workspace.SubstatusFilter = "";
+        Assert.Equal(1, workspace.ShownCount);
+        workspace.ClearSubstateFilter();
         await workspace.ColumnFiltersReady;
 
         workspace.CommentsFilter = "zzzz-no-such-comment";

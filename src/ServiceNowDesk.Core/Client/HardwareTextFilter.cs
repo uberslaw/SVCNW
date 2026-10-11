@@ -15,10 +15,14 @@ public static class HardwareTextFilter
 
     public const string SearchTipsBody =
         "Column filters run on this PC against the computers already downloaded.\n\n"
+        + "State, substate, model, and location are choice lists. The closed box shows how many choices are selected. "
+        + "Open the list and Ctrl+click to select more than one. The X beside the box clears that list. "
+        + "None selected (0) shows every value in that column.\n\n"
+        + "Serial, assigned to, and comments stay text filters.\n\n"
         + "• Plain text (no * or ?) matches anywhere in the cell (contains).\n"
         + "  Example: Z6 matches EliteBook Z6 G5.\n\n"
         + "• * matches any number of characters (including none).\n"
-        + "  Example: *Z6*G5* matches models with Z6 then later G5.\n\n"
+        + "  Example: *Z6*G5* matches text with Z6 then later G5.\n\n"
         + "• ? matches exactly one character.\n"
         + "  Example: EliteBook Z? G5 matches EliteBook Z6 G5.\n\n"
         + "• Start / end match: omit * on that side.\n"
@@ -26,7 +30,7 @@ public static class HardwareTextFilter
         + "• Multiple terms: use + between them (AND). Order does not matter.\n"
         + "  Example: Z6 + G5 requires both spans.\n\n"
         + "• Filters in different columns combine (all must match).\n"
-        + "• Matching is case-insensitive.";
+        + "• Choice lists match the selected values (any of them). Text matching is case-insensitive.";
 
     public static bool Matches(string? value, string? expression)
     {

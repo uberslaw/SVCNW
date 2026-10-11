@@ -104,6 +104,9 @@
                     </StackPanel>
                 </Border>
 
+                <TextBlock Text="Region" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
+                <views:RegionSettingsView DataContext="{Binding}"/>
+
                 <TextBlock Text="Legend" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
                 <views:LegendView DataContext="{Binding}"/>
             </StackPanel>

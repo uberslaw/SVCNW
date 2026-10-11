@@ -73,6 +73,9 @@ public partial class ConnectionViewModel : ObservableObject
     /// <summary>True when <see cref="HardwareOfficeLocations"/> was set with Override office.</summary>
     public bool HardwareOfficeOverride { get; private set; }
 
+    /// <summary>Offices chosen on Settings as "my region". Null means none are saved.</summary>
+    public List<string>? RegionOffices { get; private set; }
+
     public GuidedSetupOfferChoice GuidedSetupOffer { get; private set; }
 
     public bool GuidedSetupFinished { get; private set; }
@@ -170,6 +173,7 @@ public partial class ConnectionViewModel : ObservableObject
             ? CopyHardwareOffices(HardwareOfficeLocations) ?? []
             : CopyHardwareOffices(HardwareOfficeLocations);
         settings.HardwareOfficeOverride = HardwareOfficeOverride;
+        settings.RegionOffices = CopyRegionOffices(RegionOffices);
         settings.GuidedSetupOffer = GuidedSetupOffer;
         settings.GuidedSetupFinished = GuidedSetupFinished;
         settings.WindowWidth = WindowWidth;
@@ -248,6 +252,9 @@ public partial class ConnectionViewModel : ObservableObject
 
     public void RememberLeadTeamSaved(bool saved) => LeadTeamSaved = saved;
 
+    public void RememberRegionOffices(IEnumerable<string>? offices) =>
+        RegionOffices = CopyRegionOffices(offices);
+
     public void RememberHardwareOffices(IReadOnlyList<string>? offices, bool overridden)
     {
         HardwareOfficeOverride = overridden;
@@ -291,6 +298,7 @@ public partial class ConnectionViewModel : ObservableObject
         LeadsTeamLocked = settings.LeadsEnabled && settings.LeadsTeamLocked;
         HardwareOfficeLocations = CopyHardwareOffices(settings.HardwareOfficeLocations);
         HardwareOfficeOverride = settings.HardwareOfficeOverride;
+        RegionOffices = CopyRegionOffices(settings.RegionOffices);
         GuidedSetupOffer = settings.GuidedSetupOffer;
         GuidedSetupFinished = settings.GuidedSetupFinished;
         WindowWidth = settings.WindowWidth;
@@ -310,6 +318,19 @@ public partial class ConnectionViewModel : ObservableObject
         ShowUserPassword = !UseSampleData && AuthMode is ServiceNowAuthMode.Basic or ServiceNowAuthMode.OAuthPassword;
         ShowBrowserSignIn = !UseSampleData && AuthMode == ServiceNowAuthMode.BrowserSession;
         UpdateBrowserStatus();
+    }
+
+    private static List<string>? CopyRegionOffices(IEnumerable<string>? offices)
+    {
+        if (offices is null)
+            return null;
+
+        var list = offices
+            .Select(name => name?.Trim() ?? "")
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return list.Count == 0 ? null : list;
     }
 
     private static List<string>? CopyHardwareOffices(IReadOnlyList<string>? offices)

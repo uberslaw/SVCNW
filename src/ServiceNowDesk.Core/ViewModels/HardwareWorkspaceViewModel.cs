@@ -39,6 +39,10 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     private int _substateGeneration;
     private HardwareSortColumn? _sortColumn;
     private bool _sortDescending;
+    private readonly HashSet<string> _selectedModels = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _selectedLocations = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _selectedStates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _selectedSubstates = new(StringComparer.OrdinalIgnoreCase);
 
     public HardwareWorkspaceViewModel(
         ISettingsStore? settings = null,
@@ -74,6 +78,10 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     public ObservableCollection<Choice> InstallStatuses { get; } = [];
     public ObservableCollection<Choice> Substatuses { get; } = [];
     public ObservableCollection<HardwareScanRow> Batch { get; } = [];
+    public ObservableCollection<string> ModelChoices { get; } = [];
+    public ObservableCollection<string> LocationChoices { get; } = [];
+    public ObservableCollection<string> StateChoices { get; } = [];
+    public ObservableCollection<string> SubstateChoices { get; } = [];
 
     public bool HasBatch => Batch.Count > 0;
     public bool ShowSubstate => Substatuses.Any(choice => !string.IsNullOrEmpty(choice.Value));
@@ -98,12 +106,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string officeStatus = "";
     [ObservableProperty] private string catalogStatus = "";
     [ObservableProperty] private string serialFilter = "";
-    [ObservableProperty] private string modelFilter = "";
     [ObservableProperty] private string assignedFilter = "";
-    [ObservableProperty] private string locationFilter = "";
-    [ObservableProperty] private string stateFilter = "";
-    [ObservableProperty] private string substatusFilter = "";
     [ObservableProperty] private string commentsFilter = "";
+    [ObservableProperty] private int choiceFilterRevision;
     [ObservableProperty] private bool searchTipsOpen;
     [ObservableProperty] private HardwareAsset? selected;
     [ObservableProperty] private bool hasEditor;
@@ -167,7 +172,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     /// <summary>
     /// Refreshes the saved catalog in the background for the selected offices (merge).
-    /// Full all-locations download stays on Refresh all / All locations.
+    /// Full all-locations download stays on Refresh all. Region filters the loaded list by Settings offices.
     /// The current list stays searchable until the download finishes and is applied.
     /// </summary>
     public Task RefreshCatalogInBackgroundAsync() =>
@@ -222,12 +227,17 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         IsFiltering = false;
         _suppressColumnFilterSchedule = true;
         SerialFilter = "";
-        ModelFilter = "";
         AssignedFilter = "";
-        LocationFilter = "";
-        StateFilter = "";
-        SubstatusFilter = "";
         CommentsFilter = "";
+        _selectedModels.Clear();
+        _selectedLocations.Clear();
+        _selectedStates.Clear();
+        _selectedSubstates.Clear();
+        ModelChoices.Clear();
+        LocationChoices.Clear();
+        StateChoices.Clear();
+        SubstateChoices.Clear();
+        TouchChoiceFilters();
         _suppressColumnFilterSchedule = false;
         _sortColumn = null;
         _sortDescending = false;
@@ -791,17 +801,64 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     partial void OnSerialFilterChanged(string value) => ScheduleColumnFilters();
 
-    partial void OnModelFilterChanged(string value) => ScheduleColumnFilters();
-
     partial void OnAssignedFilterChanged(string value) => ScheduleColumnFilters();
 
-    partial void OnLocationFilterChanged(string value) => ScheduleColumnFilters();
-
-    partial void OnStateFilterChanged(string value) => ScheduleColumnFilters();
-
-    partial void OnSubstatusFilterChanged(string value) => ScheduleColumnFilters();
-
     partial void OnCommentsFilterChanged(string value) => ScheduleColumnFilters();
+
+    public const string RegionOfficesMissingMessage = "Choose region offices in Settings.";
+    public const string RegionNoLocationsMessage = "No loaded locations match the region offices in Settings.";
+    public const string RegionAppliedMessage = "Showing hardware in your region.";
+
+    public string ModelFilterCountText => _selectedModels.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    public string LocationFilterCountText => _selectedLocations.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    public string StateFilterCountText => _selectedStates.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    public string SubstateFilterCountText => _selectedSubstates.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    public IReadOnlyList<string> SelectedModelFilters => Ordered(_selectedModels);
+    public IReadOnlyList<string> SelectedLocationFilters => Ordered(_selectedLocations);
+    public IReadOnlyList<string> SelectedStateFilters => Ordered(_selectedStates);
+    public IReadOnlyList<string> SelectedSubstateFilters => Ordered(_selectedSubstates);
+
+    public void SetModelFilter(IEnumerable<string>? values) => ReplaceSelection(_selectedModels, values);
+
+    public void SetLocationFilter(IEnumerable<string>? values) => ReplaceSelection(_selectedLocations, values);
+
+    public void SetStateFilter(IEnumerable<string>? values) => ReplaceSelection(_selectedStates, values);
+
+    public void SetSubstateFilter(IEnumerable<string>? values) => ReplaceSelection(_selectedSubstates, values);
+
+    [RelayCommand]
+    public void ClearModelFilter() => SetModelFilter(null);
+
+    [RelayCommand]
+    public void ClearLocationFilter() => SetLocationFilter(null);
+
+    [RelayCommand]
+    public void ClearStateFilter() => SetStateFilter(null);
+
+    [RelayCommand]
+    public void ClearSubstateFilter() => SetSubstateFilter(null);
+
+    /// <summary>
+    /// Selects the loaded locations that belong to the offices saved on Settings.
+    /// No saved offices leaves the location filter unchanged and says so.
+    /// </summary>
+    [RelayCommand]
+    private void ApplyRegion()
+    {
+        var saved = _settings is null
+            ? []
+            : RegionOfficeMatch.NormalizeOffices(_settings.Load().RegionOffices);
+        if (saved.Count == 0)
+        {
+            OfficeStatus = RegionOfficesMissingMessage;
+            return;
+        }
+
+        var matches = RegionOfficeMatch.LocationsInRegion(LocationChoices, saved);
+        SetLocationFilter(matches);
+        OfficeStatus = matches.Count == 0 ? RegionNoLocationsMessage : RegionAppliedMessage;
+    }
 
     private void ScheduleColumnFilters()
     {
@@ -1291,6 +1348,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     private void ApplyColumnFiltersCore(string? keepSysId)
     {
+        if (RefreshChoiceLists())
+            TouchChoiceFilters();
+
         _suppressSelection = true;
         Items.Clear();
         var matches = _loadedRows.Where(PassesColumnFilters).ToList();
@@ -1383,12 +1443,87 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     private bool PassesColumnFilters(HardwareAsset asset) =>
         HardwareCatalog.MatchesColumn(asset.SerialNumber, SerialFilter)
-        && HardwareCatalog.MatchesColumn(asset.Model, ModelFilter)
+        && HardwareColumnFilter.Matches(asset.Model, _selectedModels)
         && HardwareCatalog.MatchesColumn(asset.AssignedTo.Display, AssignedFilter)
-        && HardwareCatalog.MatchesColumn(asset.Location.Display, LocationFilter)
-        && HardwareCatalog.MatchesColumn(asset.InstallStatusLabel, StateFilter)
-        && HardwareCatalog.MatchesColumn(asset.SubstatusLabel, SubstatusFilter)
+        && HardwareColumnFilter.Matches(asset.Location.Display, _selectedLocations)
+        && HardwareColumnFilter.Matches(asset.InstallStatusLabel, _selectedStates)
+        && HardwareColumnFilter.Matches(asset.SubstatusLabel, _selectedSubstates)
         && HardwareCatalog.MatchesColumn(asset.Comments, CommentsFilter);
+
+    private void ReplaceSelection(HashSet<string> target, IEnumerable<string>? values)
+    {
+        target.Clear();
+        if (values is not null)
+        {
+            foreach (var value in values)
+            {
+                var text = (value ?? "").Trim();
+                if (text.Length > 0)
+                    target.Add(text);
+            }
+        }
+
+        TouchChoiceFilters();
+        ScheduleColumnFilters();
+    }
+
+    private void TouchChoiceFilters()
+    {
+        OnPropertyChanged(nameof(ModelFilterCountText));
+        OnPropertyChanged(nameof(LocationFilterCountText));
+        OnPropertyChanged(nameof(StateFilterCountText));
+        OnPropertyChanged(nameof(SubstateFilterCountText));
+        OnPropertyChanged(nameof(SelectedModelFilters));
+        OnPropertyChanged(nameof(SelectedLocationFilters));
+        OnPropertyChanged(nameof(SelectedStateFilters));
+        OnPropertyChanged(nameof(SelectedSubstateFilters));
+        ChoiceFilterRevision++;
+    }
+
+    private bool RefreshChoiceLists()
+    {
+        var changed = false;
+        changed |= UpdateChoices(ModelChoices, _selectedModels, _loadedRows.Select(asset => asset.Model), preferred: null);
+        changed |= UpdateChoices(LocationChoices, _selectedLocations, _loadedRows.Select(asset => asset.Location.Display), preferred: null);
+        changed |= UpdateChoices(StateChoices, _selectedStates, _loadedRows.Select(asset => asset.InstallStatusLabel), HardwareColumnFilter.StateOrder);
+        changed |= UpdateChoices(SubstateChoices, _selectedSubstates, _loadedRows.Select(asset => asset.SubstatusLabel), preferred: null);
+        return changed;
+    }
+
+    private static bool UpdateChoices(
+        ObservableCollection<string> target,
+        HashSet<string> selected,
+        IEnumerable<string?> values,
+        IReadOnlyList<string>? preferred)
+    {
+        var next = HardwareColumnFilter.Distinct(values, preferred);
+        var choicesChanged = target.Count != next.Count;
+        if (!choicesChanged)
+        {
+            for (var i = 0; i < next.Count; i++)
+            {
+                if (!string.Equals(target[i], next[i], StringComparison.Ordinal))
+                {
+                    choicesChanged = true;
+                    break;
+                }
+            }
+        }
+
+        if (choicesChanged)
+        {
+            target.Clear();
+            foreach (var item in next)
+                target.Add(item);
+        }
+
+        var allowed = new HashSet<string>(target, StringComparer.OrdinalIgnoreCase);
+        var removed = selected.RemoveWhere(value => !allowed.Contains(value));
+        return choicesChanged || removed > 0;
+    }
+
+    private static string[] Ordered(HashSet<string> values) =>
+        values.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
 
     public string SearchTipsTitle => HardwareTextFilter.SearchTipsTitle;
     public string SearchTipsBody => HardwareTextFilter.SearchTipsBody;
