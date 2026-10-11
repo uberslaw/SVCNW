@@ -211,18 +211,25 @@
                           AutomationProperties.Name="Hardware list">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="1.2*" MinWidth="96"
+                                            SortMemberPath="SerialNumber"
                                             ElementStyle="{StaticResource DeskDataGridAccentText}"/>
                         <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="2.4*" MinWidth="120"
+                                            SortMemberPath="Model"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                         <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo.Display}" Width="1.2*" MinWidth="96"
+                                            SortMemberPath="AssignedTo.Display"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                         <DataGridTextColumn Header="Location" Binding="{Binding Location.Display}" Width="1.2*" MinWidth="96"
+                                            SortMemberPath="Location.Display"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                         <DataGridTextColumn Header="State" Binding="{Binding InstallStatusLabel}" Width="*" MinWidth="80"
+                                            SortMemberPath="InstallStatusLabel"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                         <DataGridTextColumn Header="Substate" Binding="{Binding SubstatusLabel}" Width="1.1*" MinWidth="96"
+                                            SortMemberPath="SubstatusLabel"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                         <DataGridTextColumn Header="Comments" Binding="{Binding Comments}" Width="1.5*" MinWidth="110"
+                                            SortMemberPath="Comments"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                     </DataGrid.Columns>
                 </DataGrid>
