@@ -844,6 +844,9 @@ public partial class MainViewModel : ObservableObject
             or DeskSection.WalkUps
             or DeskSection.Search;
         UpdateBack();
+        if (value == DeskSection.Settings && IsConnected)
+            SyncCacheRowSummaries(_client as ServiceNowClient);
+
         if (!IsConnected || _openingRecord || _preserveNavigation)
             return;
 

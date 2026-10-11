@@ -149,6 +149,73 @@ public class KnowledgeCacheTests
     }
 
     [Fact]
+    public async Task EmptyKnowledgeRefreshKeepsTheSavedArticles()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "snd-kb-" + Guid.NewGuid().ToString("N"));
+        var catalog = new FileFormCatalogStore(folder);
+        var lists = new MemoryDeskListStore();
+        var session = Api.BasicSession();
+        var now = DateTimeOffset.UtcNow;
+        catalog.Save(session.InstanceUri, new FormCatalogSnapshot
+        {
+            CapturedAt = now,
+            DirectoryCapturedAt = now,
+            DirectoryComplete = true,
+            Choices = FormCatalogFields.Independent.Select(field => new CachedChoiceList
+            {
+                Table = field.Table,
+                Element = field.Element,
+                Choices = [new Choice("1", "One")]
+            }).ToList(),
+            Groups = [new CachedAssignmentGroup { SysId = "group-aus", Name = "AUS DT - Client Services" }],
+            Members = [new CachedGroupMember { GroupSysId = "group-aus", UserSysId = "user-jordan", Name = "Jordan Lee" }],
+            ServiceOfferingsCapturedAt = now,
+            ConfigurationItemsCapturedAt = now
+        });
+        lists.Save(DeskListScope.ForInstance(session.InstanceUri), new DeskListSnapshot
+        {
+            Incidents = Fresh("inc-keep", "INC-KEEP", "Kept incident"),
+            Requests = Fresh("req-keep", "REQ-KEEP", "Kept request"),
+            RequestItems = Fresh("ritm-keep", "RITM-KEEP", "Kept item"),
+            WalkUps = Fresh("ims-keep", "IMS-KEEP", "Kept walk-up"),
+            Knowledge = Fresh("kb-keep", "KB-KEEP", "Kept article")
+        });
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (path.Contains("/sys_user", StringComparison.Ordinal)
+                && !path.Contains("sys_user_group", StringComparison.Ordinal)
+                && !path.Contains("sys_user_grmember", StringComparison.Ordinal))
+            {
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            formCatalog: catalog,
+            clientFactory: (_, store) => ServiceNowClient.Create(session, handler, store),
+            lists: lists);
+        main.Connection.InstanceUrl = "https://example.service-now.com";
+        main.Connection.Username = "alex";
+        main.Connection.Password = "secret";
+        main.Connection.DownloadCacheOnLaunch = false;
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.Equal("KB-KEEP", Assert.Single(main.Knowledge.Articles).Number);
+
+        var knowledge = Assert.Single(main.Caches, row => row.Name == "Knowledge");
+        await main.RefreshCacheCommand.ExecuteAsync(knowledge);
+
+        Assert.Equal("KB-KEEP", Assert.Single(main.Knowledge.Articles).Number);
+        var saved = lists.Load(DeskListScope.ForInstance(session.InstanceUri));
+        Assert.NotNull(saved);
+        Assert.Contains(saved.Knowledge!.Items, row => row.Number == "KB-KEEP");
+        Assert.Contains("kept the saved list", knowledge.Status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task PracticeLaunchRefreshesKnowledgeInTheBackgroundWithoutASplashLine()
     {
         var lists = new MemoryDeskListStore();

@@ -634,6 +634,210 @@ public class CacheSettingsTests
     }
 
     [Fact]
+    public async Task RelaunchReloadsDeskListsAndFormCatalogFromDisk()
+    {
+        var folder = NewFolder();
+        var catalog = new FileFormCatalogStore(folder);
+        var lists = new FileDeskListStore(folder);
+        var hardware = new FileHardwareCatalogStore(folder);
+        var session = Api.BasicSession();
+        var scope = DeskListScope.ForInstance(session.InstanceUri);
+        var captured = DateTimeOffset.UtcNow.AddHours(-2);
+        catalog.Save(session.InstanceUri, FreshCatalog());
+        var savedLists = FreshLists("INC-DISK", "From disk");
+        savedLists.Incidents!.CapturedAt = captured;
+        savedLists.Requests!.CapturedAt = captured;
+        lists.Save(scope, savedLists);
+        hardware.Save(scope, new HardwareCatalogSnapshot
+        {
+            CapturedAt = captured,
+            AllLocations = true,
+            Items =
+            [
+                new HardwareAsset
+                {
+                    SysId = "hw-1",
+                    SerialNumber = "DISK-1",
+                    Model = "Laptop",
+                    ModelCategory = HardwareCatalog.Computer,
+                    Location = new ReferenceValue("loc", "Brisbane Office")
+                }
+            ]
+        });
+
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (IsUser(path))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            return Api.Json("""{"result":[{"sys_id":"should-not-replace","number":"INC-NET","short_description":"Network"}]}""");
+        });
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings
+        {
+            InstanceUrl = "https://example.service-now.com",
+            Username = "alex",
+            Password = "secret",
+            DownloadCacheOnLaunch = false
+        });
+        var first = new MainViewModel(
+            settings,
+            new RecordingDesktopServices(),
+            formCatalog: catalog,
+            clientFactory: (_, store) => ServiceNowClient.Create(session, handler, store),
+            lists: lists,
+            hardwareCatalog: hardware);
+        await first.ConnectCommand.ExecuteAsync(null);
+        Assert.Contains(first.Incidents.Items, row => row.Number == "INC-DISK");
+        Assert.Equal(1, first.Hardware.CatalogCount);
+
+        // Simulate relaunch / version upgrade: new process, same AppData folder.
+        var second = new MainViewModel(
+            settings,
+            new RecordingDesktopServices(),
+            formCatalog: catalog,
+            clientFactory: (_, store) => ServiceNowClient.Create(session, handler, store),
+            lists: lists,
+            hardwareCatalog: hardware);
+        await second.ConnectCommand.ExecuteAsync(null);
+
+        Assert.Contains(second.Incidents.Items, row => row.Number == "INC-DISK" && row.Title == "From disk");
+        Assert.Contains(second.Requests.Items, row => row.Number == "REQ-KEEP");
+        Assert.Equal(1, second.Hardware.CatalogCount);
+        Assert.Contains(second.Hardware.Items, asset => asset.SerialNumber == "DISK-1");
+        var stillLists = lists.Load(scope);
+        Assert.NotNull(stillLists);
+        Assert.Contains(stillLists.Incidents!.Items, row => row.Number == "INC-DISK");
+        var stillCatalog = catalog.Load(session.InstanceUri);
+        Assert.NotNull(stillCatalog);
+        Assert.Contains(stillCatalog.Groups, group => group.SysId == "group-aus");
+        Assert.True(hardware.StoredBytes(scope) > 0);
+    }
+
+    [Fact]
+    public void ClearChoiceCacheDoesNotWipeOnDiskCatalog()
+    {
+        var folder = NewFolder();
+        var store = new FileFormCatalogStore(folder);
+        var session = Api.BasicSession();
+        store.Save(session.InstanceUri, FreshCatalog());
+        Assert.True(store.StoredBytes(session.InstanceUri) > 0);
+
+        using var client = ServiceNowClient.Create(session, new StubHandler((_, _) => Api.Json("""{"result":[]}""")), store);
+        Assert.True(client.HasCachedChoices);
+        client.ClearChoiceCache();
+        Assert.False(client.HasCachedChoices);
+
+        var onDisk = store.Load(session.InstanceUri);
+        Assert.NotNull(onDisk);
+        Assert.Contains(onDisk.Choices, list => list.Table == "incident" && list.Element == "state");
+        Assert.Contains(onDisk.Groups, group => group.SysId == "group-aus");
+        Assert.True(store.StoredBytes(session.InstanceUri) > 0);
+    }
+
+    [Fact]
+    public async Task FailedForceChoiceRefreshKeepsOnDiskCatalog()
+    {
+        var folder = NewFolder();
+        var catalog = new FileFormCatalogStore(folder);
+        var lists = new MemoryDeskListStore();
+        var session = Api.BasicSession();
+        catalog.Save(session.InstanceUri, FreshCatalog());
+        lists.Save(DeskListScope.ForInstance(session.InstanceUri), FreshLists("INC-KEEP", "Keep me"));
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (IsUser(path))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            if (path.Contains("sys_choice", StringComparison.Ordinal))
+            {
+                return Api.Json(
+                    """{"error":{"message":"unavailable","detail":"choices unavailable"},"status":"failure"}""",
+                    HttpStatusCode.InternalServerError);
+            }
+
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = Desk(catalog, lists, handler);
+        main.Connection.DownloadCacheOnLaunch = true;
+        await main.ConnectCommand.ExecuteAsync(null);
+
+        var onDisk = catalog.Load(session.InstanceUri);
+        Assert.NotNull(onDisk);
+        Assert.Contains(onDisk.Choices, list => list.Table == "incident" && list.Element == "state");
+        Assert.Contains(onDisk.Groups, group => group.SysId == "group-aus");
+        Assert.True(catalog.StoredBytes(session.InstanceUri) > 0);
+    }
+
+    [Fact]
+    public async Task CacheRowsReportBytesAndLastGoodFromDiskWhenOpeningSettings()
+    {
+        var folder = NewFolder();
+        var catalog = new FileFormCatalogStore(folder);
+        var lists = new FileDeskListStore(folder);
+        var session = Api.BasicSession();
+        catalog.Save(session.InstanceUri, FreshCatalog());
+        lists.Save(DeskListScope.ForInstance(session.InstanceUri), FreshLists("INC-DISK", "Cached"));
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (IsUser(path))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = Desk(catalog, lists, handler);
+        main.Connection.DownloadCacheOnLaunch = false;
+        await main.ConnectCommand.ExecuteAsync(null);
+
+        main.SelectedSection = DeskSection.Settings;
+
+        var incidents = Assert.Single(main.Caches, row => row.Name == "Incidents");
+        Assert.True(incidents.StoredCount > 0, incidents.CountText);
+        Assert.True(incidents.StoredBytes > 0, incidents.SizeText);
+        Assert.DoesNotContain("0 B", incidents.SizeText, StringComparison.Ordinal);
+        Assert.DoesNotContain("never", incidents.LastGoodText, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith("Last good download:", incidents.LastGoodText, StringComparison.Ordinal);
+
+        var choices = Assert.Single(main.Caches, row => row.Name == "Form choices");
+        Assert.True(choices.StoredCount > 0, choices.CountText);
+        Assert.True(choices.StoredBytes > 0, choices.SizeText);
+        Assert.DoesNotContain("never", choices.LastGoodText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task EmptyIncidentRefreshKeepsTheSavedList()
+    {
+        var folder = NewFolder();
+        var catalog = new FileFormCatalogStore(folder);
+        var lists = new MemoryDeskListStore();
+        var session = Api.BasicSession();
+        catalog.Save(session.InstanceUri, FreshCatalog());
+        lists.Save(DeskListScope.ForInstance(session.InstanceUri), FreshLists("INC-KEEP", "Keep me"));
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.AbsolutePath ?? "";
+            if (IsUser(path))
+                return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
+            return Api.Json("""{"result":[]}""");
+        });
+        var main = Desk(catalog, lists, handler);
+        main.Connection.DownloadCacheOnLaunch = false;
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP");
+
+        var incidents = Assert.Single(main.Caches, row => row.Name == "Incidents");
+        await main.RefreshCacheCommand.ExecuteAsync(incidents);
+
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-KEEP");
+        var saved = lists.Load(DeskListScope.ForInstance(session.InstanceUri));
+        Assert.NotNull(saved);
+        Assert.Contains(saved.Incidents!.Items, row => row.Number == "INC-KEEP");
+        Assert.Contains("kept the saved list", incidents.Status, StringComparison.OrdinalIgnoreCase);
+        Assert.True(incidents.StoredBytes > 0, incidents.SizeText);
+        Assert.DoesNotContain("never", incidents.LastGoodText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task FailedRefreshKeepsLastGoodDownloadAndShowsError()
     {
         var folder = NewFolder();
@@ -677,10 +881,11 @@ public class CacheSettingsTests
 
     private static MainViewModel Desk(
         FileFormCatalogStore catalog,
-        MemoryDeskListStore lists,
+        IDeskListStore lists,
         StubHandler handler,
         MemorySettingsStore? settings = null,
-        MemoryIncidentTemplateStore? templates = null)
+        MemoryIncidentTemplateStore? templates = null,
+        IHardwareCatalogStore? hardwareCatalog = null)
     {
         var session = Api.BasicSession();
         var main = new MainViewModel(
@@ -689,7 +894,8 @@ public class CacheSettingsTests
             formCatalog: catalog,
             templates: templates,
             clientFactory: (_, store) => ServiceNowClient.Create(session, handler, store),
-            lists: lists);
+            lists: lists,
+            hardwareCatalog: hardwareCatalog);
         main.Connection.InstanceUrl = "https://example.service-now.com";
         main.Connection.Username = "alex";
         main.Connection.Password = "secret";

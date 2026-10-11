@@ -33,6 +33,7 @@ public partial class MainViewModel
                 await Task.Yield();
             var run = await RunKeyedSectionAsync(live, row.Key, force: true);
             ApplyRowOutcome(row, run);
+            SyncCacheRowSummaries(live);
         }
         finally
         {
@@ -77,6 +78,7 @@ public partial class MainViewModel
                 row.IsBusy = false;
             }
 
+            SyncCacheRowSummaries(live);
             TrySeedMixFromDeskCaches();
         }
         finally
@@ -406,6 +408,17 @@ public partial class MainViewModel
         var fresh = live is not null
             ? live.ExportCatalog().Choices.Sum(list => list.Choices?.Count ?? 0)
             : 1;
+        if (backup is not null && fresh == 0 && stale > 0)
+        {
+            live!.RestoreCatalog(backup);
+            return new SectionOutcome(
+                false,
+                "Download returned no choices; kept the saved catalog.",
+                stale,
+                stale,
+                backup.CapturedAt == default ? null : backup.CapturedAt);
+        }
+
         return new SectionOutcome(false, null, stale, fresh, DateTimeOffset.UtcNow);
     }
 
@@ -448,6 +461,17 @@ public partial class MainViewModel
         if (cached)
             return new SectionOutcome(true, null, CapturedAt: CapturedAtFor("groups", LoadLists(), live?.ExportCatalog()));
         var fresh = live is not null ? live.ExportCatalog().Groups.Count : Incidents.Assignment.Groups.Count;
+        if (backup is not null && fresh == 0 && stale > 0)
+        {
+            live!.RestoreCatalog(backup);
+            return new SectionOutcome(
+                false,
+                "Download returned no groups; kept the saved catalog.",
+                stale,
+                stale,
+                backup.DirectoryCapturedAt == default ? null : backup.DirectoryCapturedAt);
+        }
+
         return new SectionOutcome(false, null, stale, fresh, DateTimeOffset.UtcNow);
     }
 
@@ -478,6 +502,17 @@ public partial class MainViewModel
             {
                 await live.DownloadAssignmentMembersAsync(SplashProgress(), CancellationToken.None);
                 var fresh = live.ExportCatalog().Members.Count;
+                if (backup is not null && fresh == 0 && stale > 0)
+                {
+                    live.RestoreCatalog(backup);
+                    return new SectionOutcome(
+                        false,
+                        "Download returned no members; kept the saved catalog.",
+                        stale,
+                        stale,
+                        backup.DirectoryCapturedAt == default ? null : backup.DirectoryCapturedAt);
+                }
+
                 return new SectionOutcome(false, null, stale, fresh, DateTimeOffset.UtcNow);
             }
             catch (Exception)
@@ -581,6 +616,20 @@ public partial class MainViewModel
 
         if (cached)
             return new SectionOutcome(true, null, CapturedAt: CapturedAtFor(key, LoadLists(), live?.ExportCatalog()));
+        if (backup is not null && fresh == 0 && stale > 0)
+        {
+            live!.RestoreCatalog(backup);
+            var keptAt = key == "service-offerings"
+                ? backup.ServiceOfferingsCapturedAt
+                : backup.ConfigurationItemsCapturedAt;
+            return new SectionOutcome(
+                false,
+                "Download returned no rows; kept the saved catalog.",
+                stale,
+                stale,
+                keptAt == default ? null : keptAt);
+        }
+
         return new SectionOutcome(false, note, stale, fresh, DateTimeOffset.UtcNow);
     }
 
@@ -728,8 +777,12 @@ public partial class MainViewModel
         AssignList(snapshot, KeyFor(section), list);
         _lists.Save(CacheScope(), snapshot);
         var cacheRow = Caches.FirstOrDefault(row => row.Key == KeyFor(section));
-        cacheRow?.SetLastQuery(list.EncodedQuery, list.FilterSummary);
-        cacheRow?.SetStoredCount(list.Items.Count);
+        if (cacheRow is null)
+            return;
+        cacheRow.SetLastQuery(list.EncodedQuery, list.FilterSummary);
+        cacheRow.SetStoredCount(list.Items.Count);
+        cacheRow.SetStoredBytes(CacheFootprint.ListSectionBytes(list));
+        cacheRow.RememberGoodDownload(list.CapturedAt);
     }
 
     private void RememberPracticeStamp(string key)
@@ -1081,8 +1134,21 @@ public partial class MainViewModel
 
         if (reportSplash)
             Startup.Report(0);
+        var previous = ListFor(LoadLists(), "knowledge");
         var downloaded = await _client.DownloadKnowledgeAsync(reportSplash ? SplashProgress() : null, CancellationToken.None);
         var rows = downloaded.Articles.Select(KnowledgeListRow.FromArticle).ToArray();
+        // An empty download must not wipe a good prior knowledge cache.
+        if (rows.Length == 0 && previous is { Items.Count: > 0 })
+        {
+            Knowledge.ShowArticles(previous.Items.Select(KnowledgeListRow.FromCached));
+            return new SectionOutcome(
+                false,
+                "Download returned no articles; kept the saved list.",
+                previous.Items.Count,
+                previous.Items.Count,
+                previous.CapturedAt);
+        }
+
         SaveKnowledge(rows);
         Knowledge.ShowArticles(rows);
         var captured = DateTimeOffset.UtcNow;

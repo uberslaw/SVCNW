@@ -143,7 +143,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             _snapshot.CapturedAt = default;
         }
 
-        PersistCatalog();
+        // Memory only. Persisting here wiped %AppData% on every force/launch refresh
+        // before the download finished (and left an empty file if the process died).
     }
 
     public void ClearAssignmentGroupCache()
@@ -154,8 +155,6 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             _groupIds = null;
             _snapshot.Groups = [];
         }
-
-        PersistCatalog();
     }
 
     /// <summary>
@@ -177,8 +176,6 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             _snapshot.ServiceOfferingsCapturedAt = default;
             _snapshot.ServiceOfferingsTruncated = false;
         }
-
-        PersistCatalog();
     }
 
     public void ClearConfigurationItemCache()
@@ -191,8 +188,6 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             _snapshot.ConfigurationItemsCapturedAt = default;
             _snapshot.ConfigurationItemsTruncated = false;
         }
-
-        PersistCatalog();
     }
 
     public void ClearAssignmentMemberCache()
@@ -209,8 +204,6 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             _snapshot.VerifiedMemberGroups = [];
             _snapshot.DirectoryCapturedAt = default;
         }
-
-        PersistCatalog();
     }
 
     public void RestoreCatalog(FormCatalogSnapshot snapshot)
@@ -1232,36 +1225,30 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     {
         var saved = 0;
         ServiceNowException? last = null;
+        (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken, null).ConfigureAwait(false);
         try
         {
-            (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken, null).ConfigureAwait(false);
-            try
+            if (AssignmentDirectoryIsStale)
             {
-                if (AssignmentDirectoryIsStale)
+                await RefreshAssignmentDirectoryAsync(cancellationToken).ConfigureAwait(false);
+                lock (_cacheGate)
                 {
-                    await RefreshAssignmentDirectoryAsync(cancellationToken).ConfigureAwait(false);
-                    lock (_cacheGate)
-                    {
-                        if (_groups.Count > 0)
-                            saved++;
-                    }
+                    if (_groups.Count > 0)
+                        saved++;
                 }
             }
-            catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
-            {
-                last = ex;
-            }
-
-            if (saved == 0 && last is not null)
-                throw last;
-
-            lock (_cacheGate)
-                _snapshot.CapturedAt = DateTimeOffset.UtcNow;
         }
-        finally
+        catch (ServiceNowException ex) when (ex.StatusCode is not 401 and not 403)
         {
-            PersistCatalog();
+            last = ex;
         }
+
+        if (saved == 0 && last is not null)
+            throw last;
+
+        lock (_cacheGate)
+            _snapshot.CapturedAt = DateTimeOffset.UtcNow;
+        PersistCatalog();
     }
 
     public Task RefreshChoiceCatalogAsync(CancellationToken cancellationToken) =>
@@ -1269,19 +1256,13 @@ public sealed partial class ServiceNowClient : IServiceNowClient
 
     public async Task RefreshChoiceCatalogAsync(IProgress<DownloadTick>? progress, CancellationToken cancellationToken)
     {
-        try
-        {
-            var (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken, progress).ConfigureAwait(false);
-            if (saved == 0 && last is not null)
-                throw last;
+        var (saved, last) = await DownloadChoiceCatalogAsync(cancellationToken, progress).ConfigureAwait(false);
+        if (saved == 0 && last is not null)
+            throw last;
 
-            lock (_cacheGate)
-                _snapshot.CapturedAt = DateTimeOffset.UtcNow;
-        }
-        finally
-        {
-            PersistCatalog();
-        }
+        lock (_cacheGate)
+            _snapshot.CapturedAt = DateTimeOffset.UtcNow;
+        PersistCatalog();
     }
 
     public Task RefreshAssignmentDirectoryAsync(CancellationToken cancellationToken) =>
