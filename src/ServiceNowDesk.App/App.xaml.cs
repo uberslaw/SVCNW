@@ -41,7 +41,8 @@ public partial class App : Application
             personalTasks: FilePersonalTaskStore.InApplicationData(),
             hardwareCatalog: FileHardwareCatalogStore.InApplicationData(),
             queueDismissals: FileQueueDismissalStore.InApplicationData(),
-            ticketPopOut: new WindowsTicketPopOut());
+            ticketPopOut: new WindowsTicketPopOut(),
+            transfer: new TransferMeter(FileTransferStatsStore.InApplicationData()));
         var window = new MainWindow { DataContext = main };
         MainWindow = window;
         window.Show();

@@ -8,6 +8,7 @@ using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Mapping;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
+using ServiceNowDesk.Services;
 
 namespace ServiceNowDesk.Client;
 
@@ -33,6 +34,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private readonly HttpClient _http;
     private readonly ServiceNowAuthMode _authMode;
     private readonly IFormCatalogStore? _catalog;
+    private readonly TransferMeter? _transfer;
     private readonly FormCatalogSnapshot _snapshot = new();
     private readonly List<ApiActivity> _activity = [];
     private readonly object _activityGate = new();
@@ -51,11 +53,12 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private string? _signedInUserSysId;
     private Task? _directoryRefresh;
 
-    private ServiceNowClient(HttpClient http, ServiceNowSession session, IFormCatalogStore? formCatalog)
+    private ServiceNowClient(HttpClient http, ServiceNowSession session, IFormCatalogStore? formCatalog, TransferMeter? transfer)
     {
         _http = http;
         _authMode = session.AuthMode;
         _catalog = formCatalog;
+        _transfer = transfer;
         InstanceUri = session.InstanceUri;
         if (formCatalog is not null)
             ApplyCatalog(formCatalog.Load(session.InstanceUri));
@@ -247,7 +250,11 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         PersistCatalog();
     }
 
-    public static ServiceNowClient Create(ServiceNowSession session, HttpMessageHandler? handler = null, IFormCatalogStore? formCatalog = null)
+    public static ServiceNowClient Create(
+        ServiceNowSession session,
+        HttpMessageHandler? handler = null,
+        IFormCatalogStore? formCatalog = null,
+        TransferMeter? transfer = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         var inner = handler ?? new HttpClientHandler();
@@ -265,10 +272,14 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         };
         http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
         http.DefaultRequestHeaders.UserAgent.ParseAdd("ServiceNowDesk/1.0");
-        return new ServiceNowClient(http, session, formCatalog);
+        return new ServiceNowClient(http, session, formCatalog, transfer);
     }
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        _transfer?.Flush();
+        _http.Dispose();
+    }
 
     public async Task<CurrentUser> GetCurrentUserAsync(CancellationToken cancellationToken)
     {
@@ -2229,8 +2240,12 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private async Task<ApiPayload> SendAsync(HttpMethod method, string relativeUrl, string? json, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(method, relativeUrl);
+        long uploadBytes = 0;
         if (json is not null)
+        {
+            uploadBytes = Encoding.UTF8.GetByteCount(json);
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        }
 
         var watch = Stopwatch.StartNew();
         HttpResponseMessage response;
@@ -2241,11 +2256,13 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             Record(method.Method, relativeUrl, 0, watch.ElapsedMilliseconds);
+            NoteTransfer(uploadBytes, 0);
             throw new ServiceNowException(0, "The ServiceNow instance did not respond in time.", null);
         }
         catch (HttpRequestException exception)
         {
             Record(method.Method, relativeUrl, 0, watch.ElapsedMilliseconds);
+            NoteTransfer(uploadBytes, 0);
             throw new ServiceNowException(0, "Could not reach the ServiceNow instance. Check the URL and your network.", exception.Message);
         }
 
@@ -2253,6 +2270,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         {
             Record(method.Method, relativeUrl, (int)response.StatusCode, watch.ElapsedMilliseconds);
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var downloadBytes = string.IsNullOrEmpty(body) ? 0 : Encoding.UTF8.GetByteCount(body);
+            NoteTransfer(uploadBytes, downloadBytes);
             if (!response.IsSuccessStatusCode)
                 throw DescribeFailure((int)response.StatusCode, body, relativeUrl);
 
@@ -2905,6 +2924,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         {
             Record(HttpMethod.Get.Method, relativeUrl, (int)response.StatusCode, watch.ElapsedMilliseconds);
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            NoteTransfer(0, bytes.LongLength);
             if (!response.IsSuccessStatusCode)
                 throw DescribeFailure((int)response.StatusCode, Encoding.UTF8.GetString(bytes));
 
@@ -2919,6 +2939,9 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             return bytes;
         }
     }
+
+    private void NoteTransfer(long uploadedBytes, long downloadedBytes) =>
+        _transfer?.Add(uploadedBytes, downloadedBytes);
 
     private List<RawMember> ExportMembers()
     {

@@ -108,7 +108,23 @@
 
             <TextBlock Text="Cache" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
-                       Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Rows show how many items are stored now, the last good download, the active list filter (ticket lists), how many stale items were cleared, how many fresh items were downloaded, and any error. Incident templates and the saved sign-in stay where they are."/>
+                       Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Rows show how many items are stored now, the on-disk size, the last good download, the active list filter (ticket lists), how many stale items were cleared, how many fresh items were downloaded, and any error. Incident templates and the saved sign-in stay where they are."/>
+
+            <TextBlock Text="Data transferred" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <DockPanel Margin="0,0,0,8" LastChildFill="False">
+                <TextBlock Text="Period" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ComboBox Width="180" HorizontalAlignment="Left"
+                          ItemsSource="{Binding TransferPeriods}"
+                          SelectedItem="{Binding SelectedTransferPeriod}"
+                          DisplayMemberPath="Label"
+                          AutomationProperties.Name="Transfer period"/>
+            </DockPanel>
+            <TextBlock Text="{Binding TransferUploadedText}" Margin="0,0,0,2"
+                       Foreground="{StaticResource MutedBrush}"
+                       AutomationProperties.Name="Bytes uploaded to server"/>
+            <TextBlock Text="{Binding TransferDownloadedText}" Margin="0,0,0,14"
+                       Foreground="{StaticResource MutedBrush}"
+                       AutomationProperties.Name="Bytes downloaded from server"/>
 
             <CheckBox Content="Download all on launch"
                       IsChecked="{Binding Connection.DownloadCacheOnLaunch}"
@@ -147,6 +163,9 @@
                                     <TextBlock Text="{Binding CountText}" Margin="0,3,0,0" FontSize="12"
                                                Foreground="{StaticResource MutedBrush}"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Stored count for {0}}"/>
+                                    <TextBlock Text="{Binding SizeText}" Margin="0,1,0,0" FontSize="12"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               AutomationProperties.Name="{Binding Name, StringFormat=Stored size for {0}}"/>
                                     <TextBlock Text="{Binding LastGoodText}" Margin="0,1,0,0" FontSize="12"
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Last good download for {0}}"/>

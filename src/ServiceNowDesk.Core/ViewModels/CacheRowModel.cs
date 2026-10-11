@@ -1,5 +1,6 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ServiceNowDesk.Services;
 
 namespace ServiceNowDesk.ViewModels;
 
@@ -17,6 +18,7 @@ public sealed partial class CacheRowModel : ObservableObject
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string lastGoodText = "Last good download: never";
     [ObservableProperty] private string countText = "0 stored";
+    [ObservableProperty] private string sizeText = "0 B on disk";
     [ObservableProperty] private string queryText = "";
     [ObservableProperty] private string lastAttemptText = "";
     [ObservableProperty] private bool isFailed;
@@ -26,6 +28,7 @@ public sealed partial class CacheRowModel : ObservableObject
 
     public DateTimeOffset? LastGoodAt { get; private set; }
     public int StoredCount { get; private set; }
+    public long StoredBytes { get; private set; }
     public string LastEncodedQuery { get; private set; } = "";
 
     public void SetStoredCount(int count)
@@ -33,6 +36,12 @@ public sealed partial class CacheRowModel : ObservableObject
         StoredCount = Math.Max(0, count);
         CountText = StoredCount.ToString(CultureInfo.CurrentCulture)
             + (StoredCount == 1 ? " stored" : " stored");
+    }
+
+    public void SetStoredBytes(long bytes)
+    {
+        StoredBytes = Math.Max(0, bytes);
+        SizeText = ByteSizeFormat.Format(StoredBytes) + " on disk";
     }
 
     /// <summary>

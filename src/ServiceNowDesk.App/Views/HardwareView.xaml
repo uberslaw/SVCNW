@@ -82,7 +82,7 @@
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <TextBlock Text="Offices" Style="{StaticResource FieldLabel}"/>
                     <TextBlock Text="{Binding AccountOfficeText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                    <TextBlock Text="The list starts at the office on the signed-in account and filters the computers saved on this PC. Checkboxes change the filter without downloading again. Refresh this office or Refresh all downloads in the background. Override office remembers the checked offices on this PC. Clear override returns to your office. All locations shows every saved computer." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <TextBlock Text="The list starts at the office on the signed-in account. Launch and Refresh this office download only the checked offices into the saved list on this PC. Checkboxes change the filter without downloading again. Refresh all or All locations downloads every location (opt-in). Override office remembers the checked offices on this PC. Clear override returns to your office." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <TextBox Text="{Binding OfficeSearchText, UpdateSourceTrigger=PropertyChanged}"
                              MinHeight="28" Padding="6,4" Margin="0,0,0,6"
                              AutomationProperties.Name="Find office"/>

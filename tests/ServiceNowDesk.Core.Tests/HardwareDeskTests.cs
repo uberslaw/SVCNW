@@ -359,8 +359,7 @@ public class HardwareDeskTests
         workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
         await workspace.RefreshAsync();
 
-        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
-        Assert.Contains("model_category.name=Computer", client.LastHardwareQuery);
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
         Assert.Equal(2, workspace.Items.Count);
         Assert.All(workspace.Items, asset => Assert.Contains("Sydney", asset.Location.Display, StringComparison.OrdinalIgnoreCase));
         Assert.True(workspace.Offices.Single(office => office.Name == "Sydney Office").IsSelected);
@@ -377,7 +376,7 @@ public class HardwareDeskTests
         await anywhere.RefreshAsync();
 
         Assert.Contains("No location on the signed-in account", anywhere.OfficeStatus);
-        Assert.DoesNotContain("location.name", open.LastHardwareQuery);
+        AssertAllLocationsHardwareQuery(open.LastHardwareQuery);
         Assert.Equal(5, anywhere.Items.Count);
         AssertStoredOffice(anywhere, "Brisbane Office");
         foreach (var city in HardwareCatalog.KnownOfficeNames.Where(city => city != "Brisbane"))
@@ -401,14 +400,14 @@ public class HardwareDeskTests
 
         Assert.Equal("Your office: Hong Kong Office", workspace.AccountOfficeText);
         Assert.Contains("Showing your office: Hong Kong Office.", workspace.OfficeStatus);
-        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
         Assert.Equal("Hong Kong Office", Assert.Single(workspace.Items).Location.Display);
         Assert.True(workspace.Offices.Single(office => office.Name == "Hong Kong Office").IsSelected);
         Assert.False(workspace.Offices.Single(office => office.Name == "Brisbane Office").IsSelected);
     }
 
     [Fact]
-    public async Task FullListSearchDoesNotSendTheOfficeRestriction()
+    public async Task AllLocationsOptInDownloadsWithoutTheOfficeRestriction()
     {
         using var client = new SampleServiceNowClient();
         client.SignedInUser = ViewerAt("Sydney Office");
@@ -416,27 +415,29 @@ public class HardwareDeskTests
         workspace.Attach(client);
         workspace.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
         await workspace.RefreshAsync();
-        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
         var gets = HardwareGets(client);
 
         await workspace.SearchAllLocationsCommand.ExecuteAsync(null);
 
-        Assert.Equal(gets, HardwareGets(client));
+        Assert.True(HardwareGets(client) > gets);
+        AssertAllLocationsHardwareQuery(client.LastHardwareQuery);
         Assert.Equal(5, workspace.Items.Count);
         Assert.Contains("Showing all locations.", workspace.OfficeStatus);
         Assert.Contains(workspace.Items, asset => asset.Location.Display == "Hong Kong Office");
         Assert.DoesNotContain(workspace.Offices, office => office.Name == "Hong Kong Office");
         Assert.Equal("All locations", workspace.OfficeSelectionSummary);
 
+        var afterAll = HardwareGets(client);
         var sydney = workspace.Offices.Single(office => office.Name == "Sydney Office");
         sydney.IsSelected = true;
         await workspace.OfficeLoad;
-        Assert.Equal(gets, HardwareGets(client));
+        Assert.Equal(afterAll, HardwareGets(client));
         Assert.Equal(2, workspace.Items.Count);
 
         sydney.IsSelected = false;
         await workspace.OfficeLoad;
-        Assert.Equal(gets, HardwareGets(client));
+        Assert.Equal(afterAll, HardwareGets(client));
         Assert.Equal(5, workspace.Items.Count);
     }
 
@@ -713,7 +714,7 @@ public class HardwareDeskTests
         again.RememberViewer(await client.GetCurrentUserAsync(CancellationToken.None));
         await again.RefreshAsync();
 
-        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
         Assert.True(again.Offices.Single(office => office.Name == "Brisbane Office").IsSelected);
         Assert.True(again.Offices.Single(office => office.Name == "Cairns").IsSelected);
         Assert.False(again.Offices.Single(office => office.Name == "Gold Coast").IsSelected);
@@ -792,7 +793,7 @@ public class HardwareDeskTests
         Assert.False(workspace.Offices.Single(office => office.Name == "Cairns Depot").IsSelected);
         Assert.False(workspace.Offices.Single(office => office.Name == "Maroochydore").IsSelected);
         Assert.False(workspace.Offices.Single(office => office.Name == "Gold Coast").IsSelected);
-        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
         Assert.Equal(3, workspace.Items.Count);
         Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
         Assert.Contains(workspace.Items, asset => asset.SerialNumber == "TSV0001");
@@ -867,10 +868,11 @@ public class HardwareDeskTests
         Assert.DoesNotContain(workspace.Offices, office => office.Name.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
         Assert.All(workspace.Items, asset => Assert.Equal("Brisbane Office", asset.Location.Display));
-        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
 
         await workspace.SearchAllLocationsCommand.ExecuteAsync(null);
 
+        AssertAllLocationsHardwareQuery(client.LastHardwareQuery);
         Assert.Contains(workspace.Items, asset => asset.SerialNumber == "0000-0000-0353");
         Assert.DoesNotContain(workspace.Offices, office => office.Name == "Hong Kong Office");
         Assert.Equal("All locations", workspace.OfficeSelectionSummary);
@@ -891,7 +893,7 @@ public class HardwareDeskTests
         Assert.Equal("Brisbane", selected.Name);
         Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
         Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
         Assert.Equal("Your office: Brisbane", workspace.AccountOfficeText);
         Assert.Contains("Showing your office: Brisbane.", workspace.OfficeStatus);
         Assert.True(HardwareCatalog.MatchesLocation(new HardwareAsset
@@ -952,6 +954,54 @@ public class HardwareDeskTests
     }
 
     [Fact]
+    public async Task RefreshThisOfficeDownloadsOnlySelectedOfficesAndMerges()
+    {
+        using var client = new SampleServiceNowClient();
+        var catalog = new MemoryHardwareCatalogStore();
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { HardwareOfficeLocations = ["Brisbane"], HardwareOfficeOverride = true });
+        var workspace = new HardwareWorkspaceViewModel(settings, catalog);
+        workspace.Attach(client);
+        await workspace.RefreshAsync();
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
+        var brisbaneCount = workspace.Items.Count;
+        Assert.True(brisbaneCount > 0);
+
+        client.AddComputer(new HardwareAsset
+        {
+            SysId = "hw-cns-merge",
+            SerialNumber = "CNSMERGE1",
+            Model = "HP EliteBook",
+            ModelCategory = HardwareCatalog.Computer,
+            Location = new ReferenceValue("loc-cns", "Cairns"),
+            InstallStatus = HardwareCatalog.InUse,
+            InstallStatusLabel = HardwareCatalog.InUse
+        });
+        client.AddComputer(new HardwareAsset
+        {
+            SysId = "hw-bne-merge",
+            SerialNumber = "BNEMERGE1",
+            Model = "HP EliteBook",
+            ModelCategory = HardwareCatalog.Computer,
+            Location = new ReferenceValue("loc-bne", "Brisbane Office"),
+            InstallStatus = HardwareCatalog.InUse,
+            InstallStatusLabel = HardwareCatalog.InUse
+        });
+
+        await workspace.RefreshOfficeCatalogCommand.ExecuteAsync(null);
+
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == "BNEMERGE1");
+        Assert.DoesNotContain(workspace.Items, asset => asset.SerialNumber == "CNSMERGE1");
+
+        var saved = catalog.Load(DeskListScope.Practice);
+        Assert.NotNull(saved);
+        Assert.False(saved.AllLocations);
+        Assert.Contains(saved.Items, asset => asset.SerialNumber == "BNEMERGE1");
+        Assert.DoesNotContain(saved.Items, asset => asset.SerialNumber == "CNSMERGE1");
+    }
+
+    [Fact]
     public async Task SavedCatalogIsReusedAndRefreshAllReportsNewComputers()
     {
         using var client = new SampleServiceNowClient();
@@ -963,7 +1013,7 @@ public class HardwareDeskTests
         await first.RefreshAsync();
 
         Assert.Contains(first.Items, asset => asset.Location.Display == "Brisbane Office");
-        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
         var gets = HardwareGets(client);
         Assert.True(gets >= 1);
 
@@ -1055,7 +1105,7 @@ public class HardwareDeskTests
 
         Assert.Equal("Your office: Brisbane", workspace.AccountOfficeText);
         Assert.Contains("Showing your office: Brisbane.", workspace.OfficeStatus);
-        Assert.DoesNotContain("location.name", client.LastHardwareQuery);
+        AssertOfficeScopedHardwareQuery(client.LastHardwareQuery);
         Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
         Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
 
@@ -1088,7 +1138,7 @@ public class HardwareDeskTests
 
         Assert.Equal("No location on the signed-in account.", anywhere.AccountOfficeText);
         Assert.Contains("No location on the signed-in account", anywhere.OfficeStatus);
-        Assert.DoesNotContain("location.name", open.LastHardwareQuery);
+        AssertAllLocationsHardwareQuery(open.LastHardwareQuery);
         Assert.Contains(anywhere.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
 
         anywhere.Offices.Single(office => office.Name == "Cairns").IsSelected = true;
@@ -1143,6 +1193,21 @@ public class HardwareDeskTests
 
     private static CurrentUser ViewerAt(string location) =>
         new("sample-user", "Alex Rivera", "alex.rivera", "alex.rivera@example.com") { Location = location };
+
+    private static void AssertOfficeScopedHardwareQuery(string query)
+    {
+        Assert.Contains("model_category.name=Computer", query);
+        Assert.False(IsAllLocationsHardwareQuery(query), "Expected an office-scoped hardware download, got: " + query);
+    }
+
+    private static void AssertAllLocationsHardwareQuery(string query) =>
+        Assert.True(IsAllLocationsHardwareQuery(query), "Expected an all-locations hardware download, got: " + query);
+
+    private static bool IsAllLocationsHardwareQuery(string query)
+    {
+        var trimmed = (query ?? "").Trim();
+        return trimmed == "model_category.name=Computer^ORDERBYserial_number";
+    }
 
     private static int HardwareGets(SampleServiceNowClient client) =>
         client.RecentActivity.Count(activity => activity.Method == "GET" && activity.Path.Contains("alm_hardware", StringComparison.Ordinal));

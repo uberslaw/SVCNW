@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using ServiceNowDesk.Models;
 
@@ -15,6 +16,7 @@ public interface IHardwareCatalogStore
 {
     HardwareCatalogSnapshot? Load(string scope);
     void Save(string scope, HardwareCatalogSnapshot snapshot);
+    long StoredBytes(string scope);
 }
 
 public sealed class MemoryHardwareCatalogStore : IHardwareCatalogStore
@@ -34,6 +36,9 @@ public sealed class MemoryHardwareCatalogStore : IHardwareCatalogStore
         ArgumentNullException.ThrowIfNull(snapshot);
         _json[scope] = JsonSerializer.Serialize(snapshot, JsonOptions);
     }
+
+    public long StoredBytes(string scope) =>
+        _json.TryGetValue(scope, out var json) ? Encoding.UTF8.GetByteCount(json) : 0;
 }
 
 public sealed class FileHardwareCatalogStore : IHardwareCatalogStore
@@ -74,6 +79,19 @@ public sealed class FileHardwareCatalogStore : IHardwareCatalogStore
         var temp = path + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(snapshot, JsonOptions));
         File.Move(temp, path, overwrite: true);
+    }
+
+    public long StoredBytes(string scope)
+    {
+        try
+        {
+            var path = PathFor(scope);
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
     }
 
     private string PathFor(string scope)

@@ -164,11 +164,12 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Replaces the saved catalog in the background. The current list stays searchable
-    /// until the download finishes and is applied.
+    /// Refreshes the saved catalog in the background for the selected offices (merge).
+    /// Full all-locations download stays on Refresh all / All locations.
+    /// The current list stays searchable until the download finishes and is applied.
     /// </summary>
     public Task RefreshCatalogInBackgroundAsync() =>
-        DownloadCatalogAsync(allLocations: true, merge: false);
+        DownloadCatalogAsync(allLocations: false, merge: true);
 
     public void RememberViewer(CurrentUser? user)
     {
@@ -284,11 +285,11 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
             if (!hadCached && _catalog.Count == 0)
             {
-                // First open downloads every computer so office checkboxes can filter locally.
+                // First open downloads the selected offices only (or all when none are checked).
                 _refreshGate.Release();
                 try
                 {
-                    await DownloadCatalogAsync(allLocations: true, merge: false);
+                    await DownloadDefaultCatalogAsync();
                     ApplyCatalogToRows(SelectedOfficeNames());
                     PublishScope(SelectedOfficeNames());
                 }
@@ -299,8 +300,8 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             }
             else if (hadCached && CatalogNeedsRefresh && !IsDownloading)
             {
-                // Keep the saved list searchable; replace it when the refresh finishes.
-                _ = DownloadCatalogAsync(allLocations: true, merge: false);
+                // Keep the saved list searchable; merge office-scoped results when the refresh finishes.
+                _ = DownloadDefaultCatalogAsync();
             }
             else if (offices.Count > 0 && _loadedRows.Count == 0)
             {
@@ -323,6 +324,20 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
 
     [RelayCommand]
     private Task RefreshAllCatalogAsync() => DownloadCatalogAsync(allLocations: true, merge: false);
+
+    /// <summary>
+    /// Launch / stale refresh: selected offices with merge. When no office is checked
+    /// (no account location), fall back to all locations so the tab is still usable.
+    /// </summary>
+    private Task DownloadDefaultCatalogAsync()
+    {
+        if (!_officesReady)
+            PrepareOfficesLocal();
+        var offices = SelectedOfficeNames();
+        if (offices.Count == 0)
+            return DownloadCatalogAsync(allLocations: true, merge: false);
+        return DownloadCatalogAsync(allLocations: false, merge: true);
+    }
 
     private async Task DownloadCatalogAsync(bool allLocations, bool merge)
     {
@@ -836,7 +851,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         }
 
         DefaultSaved?.Invoke(this, EventArgs.Empty);
-        await RefreshCoreAsync();
+        // Pull the override offices into the local catalog (merge) so the grid is not empty
+        // when those cities were never part of a prior office-scoped download.
+        await DownloadDefaultCatalogAsync();
     }
 
     [RelayCommand]
@@ -865,7 +882,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _suppressOffice = false;
         OnPropertyChanged(nameof(OfficeSelectionSummary));
         DefaultSaved?.Invoke(this, EventArgs.Empty);
-        await RefreshCoreAsync();
+        await DownloadDefaultCatalogAsync();
     }
 
     private async Task OpenCoreAsync(string sysId)
@@ -1211,7 +1228,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         ApplyCatalogToRows(offices);
         PublishScope(offices);
         if (_catalog.Count == 0)
-            OfficeLoad = DownloadCatalogAsync(allLocations: true, merge: false);
+            OfficeLoad = DownloadDefaultCatalogAsync();
         else if (offices.Count > 0 && _loadedRows.Count == 0)
             CatalogStatus = "No computers for the selected office in the saved list. Use Refresh this office or Refresh all.";
     }

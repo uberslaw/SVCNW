@@ -229,9 +229,43 @@ public partial class MainViewModel
             if (at != default)
                 row.RememberGoodDownload(at);
             row.SetStoredCount(StoredCountFor(row.Key, lists, catalog, live));
+            row.SetStoredBytes(StoredBytesFor(row.Key, lists, catalog));
             var list = ListFor(lists, row.Key);
             if (list is not null)
                 row.SetLastQuery(list.EncodedQuery, list.FilterSummary);
+        }
+
+        RefreshTransferSummary();
+    }
+
+    private long StoredBytesFor(string key, DeskListSnapshot? lists, FormCatalogSnapshot? catalog) =>
+        key switch
+        {
+            "incidents" => CacheFootprint.ListSectionBytes(lists?.Incidents),
+            "requests" => CacheFootprint.ListSectionBytes(lists?.Requests),
+            "request-items" => CacheFootprint.ListSectionBytes(lists?.RequestItems),
+            "walk-ups" => CacheFootprint.ListSectionBytes(lists?.WalkUps),
+            "knowledge" => CacheFootprint.ListSectionBytes(lists?.Knowledge),
+            "hardware" => HardwareCatalogBytes(),
+            "choices" => CacheFootprint.ChoicesBytes(catalog),
+            "groups" => CacheFootprint.GroupsBytes(catalog),
+            "members" => CacheFootprint.MembersBytes(catalog),
+            "service-offerings" => CacheFootprint.ServiceOfferingsBytes(catalog),
+            "configuration-items" => CacheFootprint.ConfigurationItemsBytes(catalog),
+            _ => 0
+        };
+
+    private long HardwareCatalogBytes()
+    {
+        if (_hardwareCatalog is null)
+            return 0;
+        try
+        {
+            return _hardwareCatalog.StoredBytes(CacheScope());
+        }
+        catch
+        {
+            return 0;
         }
     }
 
