@@ -1248,7 +1248,31 @@ public partial class MainViewModel : ObservableObject
             SaveWorkspaceList(section, workspace);
     }
 
-    public Task OpenSearchResultAsync(SearchHit hit) => OpenHitAsync(hit, fromSearch: true);
+    /// <summary>
+    /// Opens a Search hit in a pop-out window. Does not switch the left-nav section or replace
+    /// that section's ticket list. Falls back to in-place open only when no pop-out host is wired.
+    /// </summary>
+    public Task OpenSearchResultAsync(SearchHit hit)
+    {
+        ArgumentNullException.ThrowIfNull(hit);
+        if (_ticketPopOut is not null && _client is not null)
+        {
+            try
+            {
+                _ticketPopOut.ShowTicket(hit.Section, hit.SysId, hit.Number, hit.Title, _client);
+                if (!string.IsNullOrWhiteSpace(hit.Number))
+                    StatusMessage = "Opened " + hit.Number + ".";
+            }
+            catch (Exception ex)
+            {
+                ErrorMessage = WorkspaceMessages.Describe(ex);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        return OpenHitAsync(hit, fromSearch: true);
+    }
 
     private async Task OpenHitAsync(SearchHit hit, bool fromSearch)
     {

@@ -797,9 +797,10 @@ public class WorkspaceTests
     }
 
     [Fact]
-    public async Task DoubleClickOpensARequestForUpdateAndBackKeepsTheResults()
+    public async Task DoubleClickOpensARequestInPopOutAndKeepsTheSearchResults()
     {
-        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices());
+        var popOut = new RecordingTicketPopOut();
+        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices(), ticketPopOut: popOut);
         main.Connection.UseSampleData = true;
         await main.ConnectCommand.ExecuteAsync(null);
         Assert.False(main.ShowBack);
@@ -816,40 +817,33 @@ public class WorkspaceTests
         main.Search.OpenSelectedCommand.Execute(null);
         await main.SearchOpenTask;
 
-        Assert.Equal(DeskSection.Requests, main.SelectedSection);
-        Assert.True(main.ShowBack);
-        Assert.True(main.Requests.HasEditor);
-        Assert.Equal("REQ0010001", main.Requests.Number);
-        Assert.Same(hit, main.Search.Results.Single());
-
-        main.Requests.SpecialInstructions = "Leave at reception.";
-        Assert.True(main.Requests.IsDirty);
-        await main.Requests.SaveCommand.ExecuteAsync(null);
-        Assert.False(main.Requests.IsDirty);
-        Assert.Contains("Saved", main.Requests.EditorMessage);
-
-        main.SearchText = "printer";
-        await Task.Delay(400);
-        Assert.Same(hit, main.Search.Results.Single());
-        Assert.Equal("REQ0010001", main.Search.Query);
-
-        main.BackCommand.Execute(null);
         Assert.Equal(DeskSection.Search, main.SelectedSection);
         Assert.False(main.ShowBack);
-        Assert.Equal("REQ0010001", main.SearchText);
+        Assert.False(main.Requests.HasEditor);
         Assert.Same(hit, main.Search.Results.Single());
+        Assert.Equal("REQ0010001", main.Search.Query);
         Assert.Equal(hit, main.Search.Selected);
+        var opened = Assert.Single(popOut.OpenedTickets);
+        Assert.Equal(DeskSection.Requests, opened.Section);
+        Assert.Equal(hit.SysId, opened.SysId);
+        Assert.Equal("REQ0010001", opened.Number);
+        Assert.Contains("Opened REQ0010001", main.StatusMessage, StringComparison.Ordinal);
 
-        main.Search.OpenSelectedCommand.Execute(null);
-        await main.SearchOpenTask;
-        Assert.Equal("Leave at reception.", main.Requests.SpecialInstructions);
-        Assert.True(main.Requests.HasEditor);
+        // Switching away and back must not wipe the search hit list.
+        main.SelectedSection = DeskSection.Incidents;
+        await FlushAsync();
+        main.SelectedSection = DeskSection.Search;
+        await FlushAsync();
+        Assert.Same(hit, main.Search.Results.Single());
+        Assert.Equal("REQ0010001", main.Search.Query);
+        Assert.Equal(hit, main.Search.Selected);
     }
 
     [Fact]
-    public async Task DoubleClickOpensAKnowledgeArticleAndBackKeepsTheResults()
+    public async Task DoubleClickOpensAKnowledgeArticleInPopOutAndKeepsTheSearchResults()
     {
-        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices());
+        var popOut = new RecordingTicketPopOut();
+        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices(), ticketPopOut: popOut);
         main.Connection.UseSampleData = true;
         await main.ConnectCommand.ExecuteAsync(null);
         main.SelectedSection = DeskSection.Search;
@@ -862,22 +856,15 @@ public class WorkspaceTests
         main.Search.OpenSelectedCommand.Execute(null);
         await main.SearchOpenTask;
 
-        Assert.Equal(DeskSection.Knowledge, main.SelectedSection);
-        Assert.True(main.ShowBack);
-        Assert.Equal("KB0001001", main.Knowledge.Number);
-        Assert.Contains("zephyrmail", main.Knowledge.Body, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Close Outlook", main.Knowledge.Body);
-        Assert.DoesNotContain("alert", main.Knowledge.Body, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("<", main.Knowledge.Body);
-        Assert.Same(hit, main.Search.Results.Single());
-
-        main.BackCommand.Execute(null);
         Assert.Equal(DeskSection.Search, main.SelectedSection);
         Assert.False(main.ShowBack);
-        Assert.Equal("zephyrmail", main.SearchText);
-        Assert.Equal("zephyrmail", main.Search.Query);
+        Assert.False(main.Knowledge.HasArticle);
         Assert.Same(hit, main.Search.Results.Single());
         Assert.Equal(hit, main.Search.Selected);
+        var opened = Assert.Single(popOut.OpenedTickets);
+        Assert.Equal(DeskSection.Knowledge, opened.Section);
+        Assert.Equal(hit.SysId, opened.SysId);
+        Assert.Equal("KB0001001", opened.Number);
     }
 
     [Fact]
@@ -906,13 +893,15 @@ public class WorkspaceTests
     }
 
     [Fact]
-    public async Task OpeningAClosedSearchHitStaysOnThatIncident()
+    public async Task OpeningAClosedSearchHitOpensPopOutWithoutLeavingSearch()
     {
-        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices());
+        var popOut = new RecordingTicketPopOut();
+        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices(), ticketPopOut: popOut);
         main.Connection.UseSampleData = true;
         await main.ConnectCommand.ExecuteAsync(null);
         main.SelectedSection = DeskSection.Search;
         await FlushAsync();
+        var incidentCount = main.Incidents.Items.Count;
 
         await main.OpenSearchResultAsync(new SearchHit
         {
@@ -928,11 +917,14 @@ public class WorkspaceTests
             SortKey = ""
         });
 
-        Assert.Equal(DeskSection.Incidents, main.SelectedSection);
-        Assert.Equal("INC0010003", main.Incidents.Number);
-        Assert.Equal("6", main.Incidents.State);
+        Assert.Equal(DeskSection.Search, main.SelectedSection);
+        Assert.Equal(incidentCount, main.Incidents.Items.Count);
+        var opened = Assert.Single(popOut.OpenedTickets);
+        Assert.Equal(DeskSection.Incidents, opened.Section);
+        Assert.Equal("inc-password", opened.SysId);
+        Assert.Equal("INC0010003", opened.Number);
         await Task.Delay(100);
-        Assert.Equal("INC0010003", main.Incidents.Number);
+        Assert.Equal(DeskSection.Search, main.SelectedSection);
     }
 
     [Fact]

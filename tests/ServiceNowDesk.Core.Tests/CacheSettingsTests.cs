@@ -525,7 +525,8 @@ public class CacheSettingsTests
             DownloadCacheOnLaunch = true,
             OfficeLocations = ["Brisbane", "Maroochydore", "Gold Coast", "Townsville", "Cairns"]
         });
-        var main = new MainViewModel(settings, new RecordingDesktopServices());
+        var popOut = new RecordingTicketPopOut();
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), ticketPopOut: popOut);
         await main.InitializeAsync();
 
         Assert.Equal("My Tickets", main.Incidents.Preset?.Label);
@@ -534,6 +535,8 @@ public class CacheSettingsTests
         Assert.Contains(main.Mix.Items, row => row.Number == "INC0010024");
         Assert.Contains(main.RequestedItems.Items, row => row.Number == "RITM0010008");
         Assert.Contains(main.WalkUps.Items, row => row.Number == "IMS0010010");
+        var sectionBefore = main.SelectedSection;
+        var incidentCount = main.Incidents.Items.Count;
 
         await main.OpenSearchResultAsync(new SearchHit
         {
@@ -549,9 +552,12 @@ public class CacheSettingsTests
             SortKey = "INC0010024"
         });
 
-        Assert.Equal(DeskSection.Incidents, main.SelectedSection);
-        Assert.Equal("INC0010024", main.Incidents.Selected?.Number);
+        Assert.Equal(sectionBefore, main.SelectedSection);
+        Assert.Equal(incidentCount, main.Incidents.Items.Count);
         Assert.True(main.Incidents.Items.Count > 1, "Opening one ticket must not be the only way the list fills.");
+        var opened = Assert.Single(popOut.OpenedTickets);
+        Assert.Equal("inc-melbourne-mine", opened.SysId);
+        Assert.Equal("INC0010024", opened.Number);
     }
 
     [Fact]
