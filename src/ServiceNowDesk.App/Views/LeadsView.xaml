@@ -24,7 +24,7 @@
                 </RowDefinition.Style>
             </RowDefinition>
         </Grid.RowDefinitions>
-        <StackPanel Grid.Row="0" MaxWidth="980" HorizontalAlignment="Left" Margin="8,8,8,0">
+        <StackPanel Grid.Row="0" Margin="8,8,8,0">
             <TextBlock Text="Leads" Style="{StaticResource SectionTitle}" Margin="0,0,0,10"/>
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                 <RadioButton GroupName="LeadArea" Content="My team" Style="{StaticResource QueueChoice}"
@@ -48,8 +48,7 @@
         </StackPanel>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="8,0,8,8">
-            <StackPanel MaxWidth="980" HorizontalAlignment="Left"
-                        Visibility="{Binding ShowQueues, Converter={StaticResource BoolVis}}">
+            <StackPanel Visibility="{Binding ShowQueues, Converter={StaticResource BoolVis}}">
                 <TextBlock Text="{Binding RosterNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding RosterNote, Converter={StaticResource StringVis}}"/>
                 <TextBlock Text="{Binding LockedTeamNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
@@ -290,16 +289,16 @@
                             <ColumnDefinition Width="0.9*" MinWidth="48"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="Name" Style="{StaticResource FieldLabel}"/>
-                        <TextBlock Grid.Column="1" Text="INC opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="2" Text="INC resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="3" Text="INC updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="4" Text="RITM opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="5" Text="RITM resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="6" Text="RITM updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="7" Text="IMS opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="8" Text="IMS resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="9" Text="IMS updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
-                        <TextBlock Grid.Column="10" Text="Total" Style="{StaticResource FieldLabel}" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="1" Text="INC opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="2" Text="INC resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="3" Text="INC updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="4" Text="RITM opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="5" Text="RITM resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="6" Text="RITM updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="7" Text="IMS opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="8" Text="IMS resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="9" Text="IMS updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="10" Text="Total" Style="{StaticResource FieldLabel}"/>
                     </Grid>
                     <ListBox ItemsSource="{Binding WorkEffort.Rows}"
                              SelectedItem="{Binding WorkEffort.SelectedRow, Mode=TwoWay}"

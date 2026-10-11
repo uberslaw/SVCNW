@@ -18,7 +18,7 @@
         </ContextMenu>
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel MaxWidth="1040" HorizontalAlignment="Left" Margin="8">
+        <StackPanel Margin="8">
             <TextBlock Text="Daily Work" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
                        Text="{x:Static vm:DailyWorkViewModel.IntroText}"/>
