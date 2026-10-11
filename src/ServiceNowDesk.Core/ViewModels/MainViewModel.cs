@@ -835,14 +835,13 @@ public partial class MainViewModel : ObservableObject
             or DeskSection.Leads;
         if (value == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
             ShowRowLegend = false;
-        // Ticket lists + Daily Work share the chrome search. Search keeps it as its
-        // primary query field (SearchView has no duplicate box). Other sections hide it.
+        // Ticket lists and Daily Work share the chrome search. Search hosts that
+        // same query field under its filters, so the chrome box stays hidden there.
         ShowTopSearch = value is DeskSection.DailyWork
             or DeskSection.InTheMix
             or DeskSection.Incidents
             or DeskSection.RequestedItems
-            or DeskSection.WalkUps
-            or DeskSection.Search;
+            or DeskSection.WalkUps;
         UpdateBack();
         if (value == DeskSection.Settings && IsConnected)
             SyncCacheRowSummaries(_client as ServiceNowClient);

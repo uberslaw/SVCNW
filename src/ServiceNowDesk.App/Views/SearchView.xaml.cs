@@ -43,6 +43,21 @@ public partial class SearchView
         }
     }
 
+    public void FocusQuery()
+    {
+        SearchBox.Focus();
+        SearchBox.SelectAll();
+    }
+
+    private void SearchBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || Window.GetWindow(this)?.DataContext is not MainViewModel main)
+            return;
+
+        main.RefreshActiveCommand.Execute(null);
+        e.Handled = true;
+    }
+
     private void FilterChanged(object sender, RoutedEventArgs e) => RefreshSearch();
 
     private void SearchFiltersChanged(object? sender, EventArgs e) => RefreshSearch();

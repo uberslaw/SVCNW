@@ -98,7 +98,9 @@ public partial class MainWindow : Window
 
         if (ctrl && e.Key is Key.K or Key.F)
         {
-            if (main.ShowTopSearch)
+            if (main.SelectedSection == DeskSection.Search)
+                SearchPage.FocusQuery();
+            else if (main.ShowTopSearch)
             {
                 SearchBox.Focus();
                 SearchBox.SelectAll();

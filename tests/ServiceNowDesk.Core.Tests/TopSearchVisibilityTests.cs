@@ -7,7 +7,7 @@ namespace ServiceNowDesk.Tests;
 public class TopSearchVisibilityTests
 {
     [Fact]
-    public void TopSearchShowsOnlyOnTicketListsDailyWorkAndSearch()
+    public void TopSearchShowsOnlyOnTicketListsAndDailyWork()
     {
         var store = new MemorySettingsStore();
         store.Save(new DeskSettings { UseSampleData = true });
@@ -22,16 +22,17 @@ public class TopSearchVisibilityTests
                      DeskSection.InTheMix,
                      DeskSection.Incidents,
                      DeskSection.RequestedItems,
-                     DeskSection.WalkUps,
-                     DeskSection.Search
+                     DeskSection.WalkUps
                  })
         {
             main.SelectedSection = section;
             Assert.True(main.ShowTopSearch, $"{section} should show the top search box");
         }
 
+        // Search keeps the same query field, hosted under its filters instead of in the chrome.
         foreach (var section in new[]
                  {
+                     DeskSection.Search,
                      DeskSection.Hardware,
                      DeskSection.Knowledge,
                      DeskSection.Notifications,
