@@ -27,7 +27,10 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     private string _signature = "";
     private string _resultSummary = "";
     private readonly List<SearchHit> _hits = [];
+    private readonly List<SearchCacheEntry> _local = [];
+    private readonly List<SearchHit> _remoteOnly = [];
     private readonly HashSet<string> _selectedStates = new(StringComparer.OrdinalIgnoreCase);
+    private string _filterText = "";
 
     [ObservableProperty] private SearchHit? selected;
     [ObservableProperty] private bool includeIncidents = true;
@@ -45,6 +48,17 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool sortAscending;
     [ObservableProperty] private string groupColumn = "";
     [ObservableProperty] private string stateFilterSummary = "All states";
+
+    public int CachedCount { get; private set; }
+
+    public int DisplayedCount { get; private set; }
+
+    public string CacheStatus { get; private set; } = "0 cached · 0 shown";
+
+    /// <summary>
+    /// Test hook that runs after cache rows are on screen and before the ServiceNow calls.
+    /// </summary>
+    internal Func<Task>? WebSearchGate { get; set; }
 
     public ObservableCollection<SearchHit> Results { get; } = [];
     public ObservableCollection<string> StateOptions { get; } = [];
@@ -98,6 +112,9 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         OpenedTo = null;
         FilterMessage = "";
         _hits.Clear();
+        _local.Clear();
+        _remoteOnly.Clear();
+        _filterText = "";
         _selectedStates.Clear();
         StateOptions.Clear();
         Results.Clear();
@@ -111,63 +128,120 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
         ErrorMessage = "";
         IsLoading = false;
         _suppressFilter = false;
+        PublishCounts();
         OnPropertyChanged(nameof(HasGrouping));
         OnPropertyChanged(nameof(SelectedStates));
         PresentationChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Replaces the ticket and knowledge population Search filters locally.
+    /// Does not start a ServiceNow query.
+    /// </summary>
+    public void SetLocalCache(IEnumerable<SearchCacheEntry>? entries)
+    {
+        _local.Clear();
+        if (entries is not null)
+        {
+            foreach (var entry in entries)
+            {
+                if (string.IsNullOrWhiteSpace(entry.SysId))
+                    continue;
+                _local.Add(entry);
+            }
+        }
+
+        SeedStateOptionsFromCache();
+        ApplyCachedFilter(_filterText);
+    }
+
+    /// <summary>
+    /// Filters the local cache immediately and drops any in-flight web search.
+    /// </summary>
+    public void ShowCached(string? text)
+    {
+        _runVersion++;
+        _resultsCurrent = false;
+        _remoteOnly.Clear();
+        IsLoading = false;
+        ApplyCachedFilter(text);
     }
 
     public async Task RunAsync(IServiceNowClient? client, string? text)
     {
         var version = ++_runVersion;
         _client = client;
+        var trimmed = (text ?? "").Trim();
+        _remoteOnly.Clear();
         if (client is null)
         {
-            Summary = "Connect to ServiceNow to search.";
+            ApplyCachedFilter(trimmed);
+            if (Results.Count == 0)
+                Summary = "Connect to ServiceNow to search.";
+            IsLoading = false;
             return;
         }
 
-        var trimmed = (text ?? "").Trim();
         if (!TryOpenedRange(out var openedFrom, out var openedTo))
         {
             if (version != _runVersion)
                 return;
-            Query = trimmed;
+            _resultSummary = "";
             ReplaceHits([]);
+            Query = trimmed;
             ErrorMessage = "";
             Summary = FilterMessage;
             Remember(trimmed);
+            IsLoading = false;
             return;
         }
 
         var groupId = AssignmentGroup.SysId;
         var assigneeId = Assignee.SysId;
         var filtersActive = EncodedQuery.HasRecordFilter(groupId, assigneeId, openedFrom, openedTo);
-        if (trimmed.Length < 2 && !EncodedQuery.IsNumberQuery(trimmed) && !filtersActive)
+        var willWeb = WillSearchWeb(trimmed, filtersActive);
+        if (willWeb)
+            IsLoading = true;
+
+        // Cache rows land before any await so the grid is not blank while ServiceNow runs.
+        ApplyCachedFilter(trimmed);
+        if (version != _runVersion)
+            return;
+
+        if (!AnyTypeSelected())
         {
-            if (version != _runVersion)
-                return;
-            Query = trimmed;
-            ReplaceHits([]);
-            Summary = "Type at least 2 characters. Numbers such as INC0010001, IMS0010001, or KB0001001 can be shorter.";
+            _resultSummary = "Choose at least one record type.";
+            Summary = _resultSummary;
             Remember(trimmed);
+            IsLoading = false;
             return;
         }
 
-        if (!IncludeIncidents && !IncludeRequests && !IncludeItems && !IncludeKnowledge && !IncludeWalkUps)
+        if (!willWeb)
         {
-            if (version != _runVersion)
-                return;
-            Query = trimmed;
-            ReplaceHits([]);
-            Summary = "Choose at least one record type.";
+            if (_hits.Count == 0
+                && _local.Count == 0
+                && trimmed.Length < 2
+                && !EncodedQuery.IsNumberQuery(trimmed)
+                && !filtersActive)
+            {
+                _resultSummary = "Type at least 2 characters. Numbers such as INC0010001, IMS0010001, or KB0001001 can be shorter.";
+                Summary = _resultSummary;
+            }
+
             Remember(trimmed);
+            IsLoading = false;
             return;
         }
 
         try
         {
-            IsLoading = true;
             ErrorMessage = "";
+            if (WebSearchGate is not null)
+                await WebSearchGate().ConfigureAwait(true);
+            if (version != _runVersion)
+                return;
+
             var kind = EncodedQuery.SectionForNumber(trimmed);
             var query = new TicketQuery
             {
@@ -283,14 +357,10 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 return;
 
             MergeHitStates(hits);
-            Query = trimmed;
-            _resultSummary = hits.Count == 1 ? "1 match" : hits.Count + " matches";
-            if (hideKnowledge)
-                _resultSummary += ". " + KnowledgeHiddenSummary;
+            AbsorbRemote(hits);
             ErrorMessage = string.Join(Environment.NewLine, errors);
             // Publish hits before clearing IsLoading so a ListBox SelectionChanged from
             // StateOptions rebuild cannot filter an empty _hits list down to 0 rows.
-            ReplaceHits(hits);
             Remember(trimmed);
             if (errors.Count > 0)
                 _resultsCurrent = false;
@@ -308,6 +378,228 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             if (version == _runVersion)
                 IsLoading = false;
         }
+    }
+
+    private bool WillSearchWeb(string trimmed, bool filtersActive) =>
+        AnyTypeSelected()
+        && (trimmed.Length >= 2 || EncodedQuery.IsNumberQuery(trimmed) || filtersActive);
+
+    private bool AnyTypeSelected() =>
+        IncludeIncidents || IncludeRequests || IncludeItems || IncludeKnowledge || IncludeWalkUps;
+
+    private void ApplyCachedFilter(string? text)
+    {
+        _filterText = (text ?? "").Trim();
+        Query = _filterText;
+        if (!TryOpenedRange(out var openedFrom, out var openedTo) || !AnyTypeSelected())
+        {
+            _resultSummary = "";
+            ReplaceHits([]);
+            return;
+        }
+
+        var hits = new List<SearchHit>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in _local)
+        {
+            if (!CacheEntryMatches(entry, _filterText, openedFrom, openedTo))
+                continue;
+            var hit = ToHit(entry);
+            if (!seen.Add(HitKey(hit)))
+                continue;
+            hits.Add(hit);
+        }
+
+        foreach (var remote in _remoteOnly)
+        {
+            if (!RemoteStillVisible(remote, _filterText))
+                continue;
+            if (!seen.Add(HitKey(remote)))
+                continue;
+            hits.Add(remote);
+        }
+
+        _resultSummary = hits.Count == 1 ? "1 match" : hits.Count + " matches";
+        if (KnowledgeHidden(_filterText))
+            _resultSummary += ". " + KnowledgeHiddenSummary;
+        ReplaceHits(hits);
+    }
+
+    private void AbsorbRemote(IReadOnlyList<SearchHit> remote)
+    {
+        if (!TryOpenedRange(out var openedFrom, out var openedTo))
+            return;
+
+        var localKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in _local)
+        {
+            if (CacheEntryMatches(entry, _filterText, openedFrom, openedTo))
+                localKeys.Add(HitKey(entry.Section, entry.SysId, entry.Number));
+        }
+
+        foreach (var hit in remote)
+        {
+            var key = HitKey(hit);
+            if (localKeys.Contains(key))
+                continue;
+            var existing = -1;
+            for (var i = 0; i < _remoteOnly.Count; i++)
+            {
+                if (string.Equals(HitKey(_remoteOnly[i]), key, StringComparison.OrdinalIgnoreCase))
+                {
+                    existing = i;
+                    break;
+                }
+            }
+
+            if (existing >= 0)
+                _remoteOnly[existing] = hit;
+            else
+                _remoteOnly.Add(hit);
+        }
+
+        ApplyCachedFilter(_filterText);
+    }
+
+    private bool CacheEntryMatches(SearchCacheEntry entry, string text, string? openedFrom, string? openedTo)
+    {
+        if (!SectionIncluded(entry.Section, text))
+            return false;
+        if (!EncodedQuery.Matches(text, entry.Number, CacheFields(entry)))
+            return false;
+        if (!PassesGroup(entry))
+            return false;
+        if (!PassesAssignee(entry))
+            return false;
+        return EncodedQuery.OpenedInRange(openedFrom, openedTo, entry.OpenedAtDisplay);
+    }
+
+    private bool RemoteStillVisible(SearchHit hit, string text) =>
+        SectionIncluded(hit.Section, text);
+
+    private bool SectionIncluded(DeskSection section, string text)
+    {
+        var kind = EncodedQuery.SectionForNumber(text);
+        if (kind is not null && section != kind)
+            return false;
+        return section switch
+        {
+            DeskSection.Incidents => IncludeIncidents,
+            DeskSection.Requests => IncludeRequests,
+            DeskSection.RequestedItems => IncludeItems,
+            DeskSection.WalkUps => IncludeWalkUps,
+            DeskSection.Knowledge => IncludeKnowledge && !KnowledgeHidden(text),
+            _ => false
+        };
+    }
+
+    private bool KnowledgeHidden(string text)
+    {
+        if (!IncludeKnowledge || !TryOpenedRange(out var openedFrom, out var openedTo))
+            return false;
+        if (!EncodedQuery.HasRecordFilter(AssignmentGroup.SysId, Assignee.SysId, openedFrom, openedTo))
+            return false;
+        var kind = EncodedQuery.SectionForNumber(text);
+        return kind is null or DeskSection.Knowledge;
+    }
+
+    private bool PassesGroup(SearchCacheEntry entry)
+    {
+        var wanted = AssignmentGroup.SysId;
+        if (string.IsNullOrWhiteSpace(wanted))
+            return true;
+        if (!string.IsNullOrWhiteSpace(entry.AssignmentGroupId))
+            return EncodedQuery.SameReference(wanted, entry.AssignmentGroupId);
+
+        var label = AssignmentGroup.Text.Trim();
+        if (label.Length == 0)
+            return false;
+        if (string.Equals(entry.AssignmentGroupDisplay.Trim(), label, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return MetaHasLabel(entry.Meta, label);
+    }
+
+    private bool PassesAssignee(SearchCacheEntry entry)
+    {
+        var wanted = Assignee.SysId;
+        if (string.IsNullOrWhiteSpace(wanted))
+            return true;
+        if (!string.IsNullOrWhiteSpace(entry.AssigneeId))
+            return EncodedQuery.SameReference(wanted, entry.AssigneeId);
+        if (entry.Unassigned)
+            return false;
+
+        var label = Assignee.Text.Trim();
+        if (label.Length == 0)
+            return false;
+        return string.Equals(entry.AssigneeDisplay.Trim(), label, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MetaHasLabel(string? meta, string label)
+    {
+        if (string.IsNullOrWhiteSpace(meta))
+            return false;
+        foreach (var part in meta.Split('·'))
+        {
+            if (string.Equals(part.Trim(), label, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<string> CacheFields(SearchCacheEntry entry)
+    {
+        yield return entry.Title;
+        yield return entry.Meta;
+        yield return entry.StateLabel;
+        yield return entry.AssignmentGroupDisplay;
+        yield return entry.AssigneeDisplay;
+    }
+
+    private static SearchHit ToHit(SearchCacheEntry entry) => new()
+    {
+        Section = entry.Section,
+        TableLabel = TableLabelFor(entry.Section),
+        SysId = entry.SysId,
+        Number = entry.Number ?? "",
+        Title = entry.Title ?? "",
+        StateLabel = entry.StateLabel ?? "",
+        Tone = string.IsNullOrWhiteSpace(entry.Tone) ? "open" : entry.Tone,
+        Meta = entry.Meta ?? "",
+        When = entry.When ?? "",
+        SortKey = string.IsNullOrWhiteSpace(entry.SortKey) ? entry.When ?? "" : entry.SortKey,
+        Unassigned = entry.Unassigned
+    };
+
+    private static string TableLabelFor(DeskSection section) => section switch
+    {
+        DeskSection.Incidents => "Incident",
+        DeskSection.Requests => "Request",
+        DeskSection.RequestedItems => "Request item",
+        DeskSection.WalkUps => "Walk-up",
+        DeskSection.Knowledge => "Knowledge",
+        _ => "Record"
+    };
+
+    private static string HitKey(SearchHit hit) => HitKey(hit.Section, hit.SysId, hit.Number);
+
+    private static string HitKey(DeskSection section, string? sysId, string? number)
+    {
+        var id = string.IsNullOrWhiteSpace(sysId) ? (number ?? "").Trim() : sysId.Trim();
+        return section.ToString() + ":" + id;
+    }
+
+    private void SeedStateOptionsFromCache()
+    {
+        var labels = new HashSet<string>(StateOptions, StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in _local)
+        {
+            if (!string.IsNullOrWhiteSpace(entry.StateLabel))
+                labels.Add(entry.StateLabel.Trim());
+        }
+
+        ReplaceStateOptions(labels);
     }
 
     public void SetSelectedStates(IEnumerable<string>? labels)
@@ -385,6 +677,23 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
 
     partial void OnOpenedToChanged(DateTime? value) => NotifyFilters();
 
+    partial void OnIncludeIncidentsChanged(bool value) => ShowTypeFilter();
+
+    partial void OnIncludeRequestsChanged(bool value) => ShowTypeFilter();
+
+    partial void OnIncludeItemsChanged(bool value) => ShowTypeFilter();
+
+    partial void OnIncludeKnowledgeChanged(bool value) => ShowTypeFilter();
+
+    partial void OnIncludeWalkUpsChanged(bool value) => ShowTypeFilter();
+
+    private void ShowTypeFilter()
+    {
+        if (_suppressFilter)
+            return;
+        ShowCached(_filterText);
+    }
+
     private void OnReferenceChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(ReferenceFieldModel.SysId))
@@ -395,6 +704,7 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
     {
         if (_suppressFilter)
             return;
+        ShowCached(_filterText);
         SearchFiltersChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -497,9 +807,33 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
             .OrderBy(label => label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        StateOptions.Clear();
-        foreach (var label in ordered)
-            StateOptions.Add(label);
+        if (SameStateOptions(ordered))
+            return;
+
+        for (var i = StateOptions.Count - 1; i >= 0; i--)
+        {
+            if (!ordered.Contains(StateOptions[i], StringComparer.OrdinalIgnoreCase))
+                StateOptions.RemoveAt(i);
+        }
+
+        for (var i = 0; i < ordered.Length; i++)
+        {
+            var label = ordered[i];
+            var existing = -1;
+            for (var j = 0; j < StateOptions.Count; j++)
+            {
+                if (string.Equals(StateOptions[j], label, StringComparison.OrdinalIgnoreCase))
+                {
+                    existing = j;
+                    break;
+                }
+            }
+
+            if (existing < 0)
+                StateOptions.Insert(Math.Min(i, StateOptions.Count), label);
+            else if (existing != i)
+                StateOptions.Move(existing, Math.Min(i, StateOptions.Count - 1));
+        }
 
         PruneSelectedStates();
         UpdateStateFilterSummary();
@@ -524,12 +858,49 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
                 : _selectedStates.Count + " states";
     }
 
+    private bool SameStateOptions(IReadOnlyList<string> ordered)
+    {
+        if (ordered.Count != StateOptions.Count)
+            return false;
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            if (!string.Equals(ordered[i], StateOptions[i], StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return true;
+    }
+
     private void ReplaceHits(IReadOnlyList<SearchHit> hits)
     {
+        var previous = new Dictionary<string, SearchHit>(StringComparer.OrdinalIgnoreCase);
+        foreach (var hit in _hits)
+            previous.TryAdd(HitKey(hit), hit);
+
         _hits.Clear();
-        _hits.AddRange(hits);
+        foreach (var hit in hits)
+        {
+            var key = HitKey(hit);
+            if (previous.TryGetValue(key, out var existing) && SameHit(existing, hit))
+                _hits.Add(existing);
+            else
+                _hits.Add(hit);
+        }
+
         ApplyPresentation();
     }
+
+    private static bool SameHit(SearchHit left, SearchHit right) =>
+        left.Section == right.Section
+        && string.Equals(left.TableLabel, right.TableLabel, StringComparison.Ordinal)
+        && string.Equals(left.Number, right.Number, StringComparison.Ordinal)
+        && string.Equals(left.Title, right.Title, StringComparison.Ordinal)
+        && string.Equals(left.StateLabel, right.StateLabel, StringComparison.Ordinal)
+        && string.Equals(left.Tone, right.Tone, StringComparison.Ordinal)
+        && string.Equals(left.Meta, right.Meta, StringComparison.Ordinal)
+        && string.Equals(left.When, right.When, StringComparison.Ordinal)
+        && string.Equals(left.SortKey, right.SortKey, StringComparison.Ordinal)
+        && left.Unassigned == right.Unassigned;
 
     private void ApplyPresentation()
     {
@@ -553,7 +924,35 @@ public sealed partial class SearchWorkspaceViewModel : ObservableObject
 
         Selected = previous is null ? null : Results.FirstOrDefault(hit => hit.SysId == previous);
         UpdateSummary();
+        PublishCounts();
         PresentationChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void PublishCounts()
+    {
+        var cached = _local.Count;
+        var shown = Results.Count;
+        var status = cached.ToString(CultureInfo.InvariantCulture)
+            + " cached · "
+            + shown.ToString(CultureInfo.InvariantCulture)
+            + " shown";
+        if (CachedCount != cached)
+        {
+            CachedCount = cached;
+            OnPropertyChanged(nameof(CachedCount));
+        }
+
+        if (DisplayedCount != shown)
+        {
+            DisplayedCount = shown;
+            OnPropertyChanged(nameof(DisplayedCount));
+        }
+
+        if (!string.Equals(CacheStatus, status, StringComparison.Ordinal))
+        {
+            CacheStatus = status;
+            OnPropertyChanged(nameof(CacheStatus));
+        }
     }
 
     private IEnumerable<SearchHit> OrderHits(IEnumerable<SearchHit> rows)
@@ -694,4 +1093,45 @@ public sealed class SearchHit : IHighlightRow
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>
+/// One locally cached ticket or knowledge article that Search can filter without a network call.
+/// </summary>
+public sealed class SearchCacheEntry
+{
+    public required DeskSection Section { get; init; }
+    public required string SysId { get; init; }
+    public string Number { get; init; } = "";
+    public string Title { get; init; } = "";
+    public string StateLabel { get; init; } = "";
+    public string Tone { get; init; } = "";
+    public string Meta { get; init; } = "";
+    public string When { get; init; } = "";
+    public string SortKey { get; init; } = "";
+    public bool Unassigned { get; init; }
+    public string AssignmentGroupId { get; init; } = "";
+    public string AssignmentGroupDisplay { get; init; } = "";
+    public string AssigneeId { get; init; } = "";
+    public string AssigneeDisplay { get; init; } = "";
+    public string OpenedAtDisplay { get; init; } = "";
+
+    public static SearchCacheEntry FromCached(CachedTicketRow row, DeskSection section) => new()
+    {
+        Section = section,
+        SysId = row.SysId,
+        Number = row.Number ?? "",
+        Title = row.Title ?? "",
+        StateLabel = row.StateLabel ?? "",
+        Tone = row.Tone ?? "",
+        Meta = row.Meta ?? "",
+        When = row.When ?? "",
+        SortKey = string.IsNullOrWhiteSpace(row.SortKey) ? row.When ?? "" : row.SortKey,
+        Unassigned = row.Unassigned,
+        AssignmentGroupId = row.AssignmentGroupId ?? "",
+        AssignmentGroupDisplay = row.AssignmentGroupDisplay ?? "",
+        AssigneeId = row.AssigneeId ?? "",
+        AssigneeDisplay = row.AssigneeDisplay ?? "",
+        OpenedAtDisplay = row.OpenedAtDisplay ?? ""
+    };
 }

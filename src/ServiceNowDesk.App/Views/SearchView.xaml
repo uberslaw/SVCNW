@@ -10,7 +10,6 @@
             <CheckBox Content="Walk-up" IsChecked="{Binding IncludeWalkUps}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <CheckBox Content="Knowledge" IsChecked="{Binding IncludeKnowledge}" Margin="0,0,16,6" Checked="FilterChanged" Unchecked="FilterChanged"/>
             <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,12,6" TextWrapping="Wrap"/>
-            <TextBlock Text="Loading…" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
         </WrapPanel>
         <!-- Columns 0–9 run through the State list. The query box spans only those columns, so its right edge stays on the State control as the window resizes. -->
         <ScrollViewer DockPanel.Dock="Top" Focusable="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,0,0,8"
@@ -60,17 +59,29 @@
                             Click="ClearStates_Click" ToolTip="Clear state selection (show all)"
                             AutomationProperties.Name="Clear state filter"/>
                 </StackPanel>
-                <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="10" Margin="0,2,0,0"
-                      DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
-                    <TextBox x:Name="SearchBox" MinHeight="36" FontSize="14"
-                             HorizontalAlignment="Stretch"
-                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                             KeyDown="SearchBox_KeyDown"
-                             AutomationProperties.Name="Search"/>
-                    <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="#90A0A6"
-                               Text="{Binding SearchPlaceholder}"
-                               Visibility="{Binding SearchText, Converter={StaticResource EmptyStringVis}}"/>
-                </Grid>
+                <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="10" Margin="0,2,0,0">
+                    <TextBlock Text="{Binding CacheStatus}"
+                               Foreground="{StaticResource MutedBrush}"
+                               Margin="0,0,0,4"
+                               AutomationProperties.Name="Cached and shown counts"/>
+                    <ProgressBar Height="4" MinHeight="0" Margin="0,0,0,4"
+                                 IsIndeterminate="{Binding IsLoading}"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"
+                                 AutomationProperties.Name="Search progress"/>
+                    <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <TextBox x:Name="SearchBox" MinHeight="36" FontSize="14"
+                                 HorizontalAlignment="Stretch"
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 KeyDown="SearchBox_KeyDown"
+                                 AutomationProperties.Name="Search"/>
+                        <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="#90A0A6"
+                                   Text="{Binding SearchPlaceholder}"
+                                   Visibility="{Binding SearchText, Converter={StaticResource EmptyStringVis}}"/>
+                    </Grid>
+                </StackPanel>
             </Grid>
         </ScrollViewer>
         <TextBlock DockPanel.Dock="Top" Text="{Binding FilterMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding FilterMessage, Converter={StaticResource StringVis}}"/>

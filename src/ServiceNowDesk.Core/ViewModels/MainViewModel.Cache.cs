@@ -759,6 +759,7 @@ public partial class MainViewModel
         if (!string.IsNullOrWhiteSpace(list.EncodedQuery))
             workspace.LastEncodedQuery = list.EncodedQuery;
         _loadedFor[SectionFor(key)] = "";
+        RefreshSearchCache();
     }
 
     private void SaveWorkspaceList(DeskSection section, RecordWorkspaceViewModel workspace)
@@ -776,6 +777,7 @@ public partial class MainViewModel
         };
         AssignList(snapshot, KeyFor(section), list);
         _lists.Save(CacheScope(), snapshot);
+        RefreshSearchCache();
         var cacheRow = Caches.FirstOrDefault(row => row.Key == KeyFor(section));
         if (cacheRow is null)
             return;
@@ -975,6 +977,7 @@ public partial class MainViewModel
         if (list is null || ListIsStale(list))
             return false;
         Knowledge.ShowArticles(list.Items.Select(KnowledgeListRow.FromCached));
+        RefreshSearchCache();
         return true;
     }
 
@@ -984,14 +987,15 @@ public partial class MainViewModel
         if (list is null || ListIsStale(list))
             return;
         Knowledge.ShowArticles(list.Items.Select(KnowledgeListRow.FromCached));
+        RefreshSearchCache();
     }
 
     private void ShowSavedKnowledge()
     {
         var list = ListFor(LoadLists(), "knowledge");
-        if (list?.Items is not { Count: > 0 })
-            return;
-        Knowledge.ShowArticles(list.Items.Select(KnowledgeListRow.FromCached));
+        if (list?.Items is { Count: > 0 })
+            Knowledge.ShowArticles(list.Items.Select(KnowledgeListRow.FromCached));
+        RefreshSearchCache();
     }
 
     /// <summary>
@@ -1174,6 +1178,34 @@ public partial class MainViewModel
             Items = rows.Select(row => row.ToCached()).ToList()
         };
         _lists.Save(CacheScope(), snapshot);
+        RefreshSearchCache();
+    }
+
+    /// <summary>
+    /// The Search page filters this snapshot immediately. Tickets and knowledge both count.
+    /// </summary>
+    private void RefreshSearchCache()
+    {
+        var snapshot = LoadLists();
+        var entries = new List<SearchCacheEntry>();
+        CollectSearchCache(entries, snapshot?.Incidents, DeskSection.Incidents);
+        CollectSearchCache(entries, snapshot?.Requests, DeskSection.Requests);
+        CollectSearchCache(entries, snapshot?.RequestItems, DeskSection.RequestedItems);
+        CollectSearchCache(entries, snapshot?.WalkUps, DeskSection.WalkUps);
+        CollectSearchCache(entries, snapshot?.Knowledge, DeskSection.Knowledge);
+        Search.SetLocalCache(entries);
+    }
+
+    private static void CollectSearchCache(List<SearchCacheEntry> entries, CachedTicketList? list, DeskSection section)
+    {
+        if (list?.Items is null)
+            return;
+        foreach (var row in list.Items)
+        {
+            if (string.IsNullOrWhiteSpace(row.SysId))
+                continue;
+            entries.Add(SearchCacheEntry.FromCached(row, section));
+        }
     }
 
     private static CachedTicketRow FromTicket(TicketRow row) => new()
@@ -1186,7 +1218,14 @@ public partial class MainViewModel
         Meta = row.Meta,
         When = row.When,
         Badge = row.Badge,
-        Location = row.Location
+        Location = row.Location,
+        SortKey = row.SortKey,
+        Unassigned = row.Unassigned,
+        AssignmentGroupId = row.AssignmentGroupId,
+        AssignmentGroupDisplay = row.AssignmentGroupDisplay,
+        AssigneeId = row.AssigneeId,
+        AssigneeDisplay = row.AssigneeDisplay,
+        OpenedAtDisplay = row.OpenedAtDisplay
     };
 
     private static TicketRow ToTicket(CachedTicketRow row) => new()
@@ -1199,6 +1238,13 @@ public partial class MainViewModel
         Meta = row.Meta,
         When = row.When,
         Badge = row.Badge,
-        Location = row.Location ?? ""
+        Location = row.Location ?? "",
+        SortKey = row.SortKey ?? "",
+        Unassigned = row.Unassigned,
+        AssignmentGroupId = row.AssignmentGroupId ?? "",
+        AssignmentGroupDisplay = row.AssignmentGroupDisplay ?? "",
+        AssigneeId = row.AssigneeId ?? "",
+        AssigneeDisplay = row.AssigneeDisplay ?? "",
+        OpenedAtDisplay = row.OpenedAtDisplay ?? ""
     };
 }

@@ -99,6 +99,43 @@ public class KnowledgeCacheTests
     }
 
     [Fact]
+    public async Task SearchShowsCachedTicketsAndKnowledgeFromTheLocalLists()
+    {
+        var lists = new MemoryDeskListStore();
+        var now = DateTimeOffset.UtcNow;
+        lists.Save(DeskListScope.Practice, new DeskListSnapshot
+        {
+            ChoicesCapturedAt = now,
+            GroupsCapturedAt = now,
+            MembersCapturedAt = now,
+            ServiceOfferingsCapturedAt = now,
+            ConfigurationItemsCapturedAt = now,
+            Incidents = Fresh("inc-keep", "INC-KEEP", "Kept incident"),
+            Requests = Fresh("req-keep", "REQ-KEEP", "Kept request"),
+            RequestItems = Fresh("ritm-keep", "RITM-KEEP", "Kept item"),
+            WalkUps = Fresh("ims-keep", "IMS-KEEP", "Kept walk-up"),
+            Knowledge = Fresh("kb-keep", "KB-KEEP", "Kept article")
+        });
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = false });
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
+
+        await main.InitializeAsync();
+
+        Assert.Equal(5, main.Search.CachedCount);
+        Assert.Equal("5 cached · 5 shown", main.Search.CacheStatus);
+        Assert.Contains(main.Search.Results, hit => hit.Number == "INC-KEEP" && hit.Section == DeskSection.Incidents);
+        Assert.Contains(main.Search.Results, hit => hit.Number == "KB-KEEP" && hit.Section == DeskSection.Knowledge);
+
+        main.SelectedSection = DeskSection.Search;
+        main.SearchText = "article";
+        Assert.Equal("KB-KEEP", Assert.Single(main.Search.Results).Number);
+        Assert.Equal(5, main.Search.CachedCount);
+        Assert.Equal(1, main.Search.DisplayedCount);
+        Assert.Equal("5 cached · 1 shown", main.Search.CacheStatus);
+    }
+
+    [Fact]
     public async Task KnowledgeSearchRefreshesTheSavedListWithoutADownloadLog()
     {
         var lists = new MemoryDeskListStore();

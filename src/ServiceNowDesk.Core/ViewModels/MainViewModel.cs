@@ -790,6 +790,8 @@ public partial class MainViewModel : ObservableObject
     {
         if (_suppressSearchText)
             return;
+        if (SelectedSection == DeskSection.Search)
+            Search.ShowCached(value);
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
         var token = _searchCts.Token;

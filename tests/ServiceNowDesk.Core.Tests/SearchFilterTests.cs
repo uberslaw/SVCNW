@@ -202,6 +202,154 @@ public class SearchFilterTests
         Assert.Equal("", search.GroupColumn);
     }
 
+    [Fact]
+    public void CacheFilterReturnsTicketsAndKnowledgeImmediately()
+    {
+        var search = new SearchWorkspaceViewModel();
+        search.SetLocalCache(
+        [
+            Entry(DeskSection.Incidents, "inc-aus", "INC1000001", "Printer jam", "In Progress", "group-aus", "Aus DT", "2026-09-30 09:15"),
+            Entry(DeskSection.Incidents, "inc-other", "INC1000002", "Printer queue", "New", "group-other", "Network", "2026-10-02 09:15"),
+            Entry(DeskSection.Knowledge, "kb-print", "KB1000001", "Printer toner", "Published", "", "", ""),
+            Entry(DeskSection.Requests, "req-laptop", "REQ1000001", "Laptop request", "Requested", "", "", "")
+        ]);
+
+        search.ShowCached("printer");
+
+        Assert.False(search.IsLoading);
+        Assert.Equal(4, search.CachedCount);
+        Assert.Contains(search.Results, hit => hit.Number == "INC1000001" && hit.Section == DeskSection.Incidents);
+        Assert.Contains(search.Results, hit => hit.Number == "INC1000002");
+        Assert.Contains(search.Results, hit => hit.Number == "KB1000001" && hit.Section == DeskSection.Knowledge);
+        Assert.DoesNotContain(search.Results, hit => hit.Number == "REQ1000001");
+        Assert.Equal(search.Results.Count, search.DisplayedCount);
+        Assert.Equal("4 cached · 3 shown", search.CacheStatus);
+
+        search.ShowCached("");
+        Assert.Equal(4, search.Results.Count);
+        Assert.Equal("4 cached · 4 shown", search.CacheStatus);
+
+        search.AssignmentGroup.Set("group-aus", "Aus DT");
+        Assert.Equal("INC1000001", Assert.Single(search.Results).Number);
+        Assert.Contains(SearchWorkspaceViewModel.KnowledgeHiddenSummary, search.Summary);
+        Assert.Equal(4, search.CachedCount);
+        Assert.Equal(1, search.DisplayedCount);
+
+        search.AssignmentGroup.Clear();
+        search.OpenedFrom = new DateTime(2026, 9, 30);
+        search.OpenedTo = new DateTime(2026, 9, 30);
+        Assert.Equal("INC1000001", Assert.Single(search.Results).Number);
+        Assert.Equal("4 cached · 1 shown", search.CacheStatus);
+
+        search.OpenedFrom = null;
+        search.OpenedTo = null;
+        search.SetSelectedStates(["In Progress"]);
+        Assert.Equal(1, search.DisplayedCount);
+        Assert.Equal(search.Results.Count, search.DisplayedCount);
+        Assert.Equal("INC1000001", Assert.Single(search.Results).Number);
+        Assert.Equal(4, search.CachedCount);
+        Assert.Equal("4 cached · 1 shown", search.CacheStatus);
+
+        search.ClearStateFilter();
+        search.IncludeKnowledge = false;
+        Assert.Equal(4, search.CachedCount);
+        Assert.Equal(3, search.DisplayedCount);
+        Assert.DoesNotContain(search.Results, hit => hit.Section == DeskSection.Knowledge);
+        Assert.False(search.IsLoading);
+    }
+
+    [Fact]
+    public async Task EmptyQueryShowsTheCacheAndDoesNotCallServiceNow()
+    {
+        using var client = new SampleServiceNowClient();
+        var search = new SearchWorkspaceViewModel();
+        search.SetLocalCache(
+        [
+            Entry(DeskSection.Incidents, "inc-local", "INC1000009", "Cached incident", "New", "", "", ""),
+            Entry(DeskSection.Knowledge, "kb-local", "KB1000009", "Cached article", "Published", "", "", "")
+        ]);
+        var calls = client.RecentActivity.Count;
+
+        await search.RunAsync(client, "");
+
+        Assert.Equal(calls, client.RecentActivity.Count);
+        Assert.False(search.IsLoading);
+        Assert.Equal(2, search.CachedCount);
+        Assert.Equal(2, search.DisplayedCount);
+        Assert.Equal(2, search.Results.Count);
+        Assert.Equal("2 cached · 2 shown", search.CacheStatus);
+    }
+
+    [Fact]
+    public async Task WebSearchKeepsCacheHitsAndDoesNotDuplicateThem()
+    {
+        using var client = new SampleServiceNowClient();
+        var search = new SearchWorkspaceViewModel();
+        search.SetLocalCache(
+        [
+            Entry(DeskSection.Incidents, "inc-printer", "INC0010001", "Printer jam on floor 3", "In Progress", "", "", ""),
+            Entry(DeskSection.Incidents, "inc-local", "INC0099999", "Printer cache only", "New", "", "", ""),
+            Entry(DeskSection.Knowledge, "kb-local", "KB0099999", "Printer cache article", "Published", "", "", ""),
+            Entry(DeskSection.Incidents, "inc-vpn", "INC0099998", "VPN tunnel down", "New", "", "", "")
+        ]);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        search.WebSearchGate = () => release.Task;
+
+        var run = search.RunAsync(client, "printer");
+        try
+        {
+            Assert.True(search.IsLoading);
+            Assert.Equal(4, search.CachedCount);
+            Assert.Equal(3, search.DisplayedCount);
+            Assert.Equal("4 cached · 3 shown", search.CacheStatus);
+            Assert.Contains(search.Results, hit => hit.Number == "INC0099999");
+            Assert.Contains(search.Results, hit => hit.Number == "KB0099999");
+            Assert.Contains(search.Results, hit => hit.SysId == "inc-printer");
+            Assert.DoesNotContain(search.Results, hit => hit.Number == "INC0099998");
+            Assert.DoesNotContain(search.Results, hit => hit.Number == "KB0001002");
+            Assert.Equal(1, search.Results.Count(hit => hit.SysId == "inc-printer"));
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        await run;
+
+        Assert.False(search.IsLoading);
+        Assert.Equal(4, search.CachedCount);
+        Assert.Equal(search.Results.Count, search.DisplayedCount);
+        Assert.True(search.DisplayedCount > 3, search.CacheStatus);
+        Assert.StartsWith("4 cached · ", search.CacheStatus);
+        Assert.Contains(search.Results, hit => hit.Number == "INC0099999");
+        Assert.Contains(search.Results, hit => hit.Number == "KB0099999");
+        Assert.Contains(search.Results, hit => hit.Number == "KB0001002");
+        Assert.DoesNotContain(search.Results, hit => hit.Number == "INC0099998");
+        Assert.Equal(1, search.Results.Count(hit => hit.SysId == "inc-printer"));
+        Assert.Equal(1, search.Results.Count(hit => hit.Number == "KB0001002"));
+    }
+
+    private static SearchCacheEntry Entry(
+        DeskSection section,
+        string sysId,
+        string number,
+        string title,
+        string state,
+        string groupId,
+        string groupName,
+        string opened) => new()
+    {
+        Section = section,
+        SysId = sysId,
+        Number = number,
+        Title = title,
+        StateLabel = state,
+        Tone = "open",
+        AssignmentGroupId = groupId,
+        AssignmentGroupDisplay = groupName,
+        OpenedAtDisplay = opened
+    };
+
     private static int CountGroupRuns(IReadOnlyList<string> labels)
     {
         if (labels.Count == 0)

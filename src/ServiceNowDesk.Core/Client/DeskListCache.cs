@@ -27,6 +27,13 @@ public sealed class CachedTicketRow
     public string When { get; set; } = "";
     public string Badge { get; set; } = "";
     public string Location { get; set; } = "";
+    public string SortKey { get; set; } = "";
+    public bool Unassigned { get; set; }
+    public string AssignmentGroupId { get; set; } = "";
+    public string AssignmentGroupDisplay { get; set; } = "";
+    public string AssigneeId { get; set; } = "";
+    public string AssigneeDisplay { get; set; } = "";
+    public string OpenedAtDisplay { get; set; } = "";
 }
 
 public sealed class CachedTicketList

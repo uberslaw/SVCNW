@@ -203,6 +203,12 @@ public sealed class TicketRow : IHighlightRow
     /// <summary>Record location for office-scoped lists. Empty when the table has none.</summary>
     public string Location { get; init; } = "";
 
+    public string AssignmentGroupId { get; init; } = "";
+    public string AssignmentGroupDisplay { get; init; } = "";
+    public string AssigneeId { get; init; } = "";
+    public string AssigneeDisplay { get; init; } = "";
+    public string OpenedAtDisplay { get; init; } = "";
+
     /// <summary>INC, RITM, or IMS on the combined list. Empty on a single-table list.</summary>
     public string Kind { get; init; } = "";
 
@@ -237,7 +243,12 @@ public sealed class TicketRow : IHighlightRow
         Unassigned = record.AssignedTo.IsEmpty,
         StateValue = record.State,
         SortKey = record.UpdatedAtValue,
-        Location = record.Location
+        Location = record.Location,
+        AssignmentGroupId = record.AssignmentGroup.SysId ?? "",
+        AssignmentGroupDisplay = record.AssignmentGroup.Display ?? "",
+        AssigneeId = record.AssignedTo.SysId ?? "",
+        AssigneeDisplay = record.AssignedTo.Display ?? "",
+        OpenedAtDisplay = record.OpenedAtDisplay ?? ""
     };
 
     public static TicketRow FromRequest(RequestRecord record) => new()
@@ -251,7 +262,12 @@ public sealed class TicketRow : IHighlightRow
         When = record.UpdatedAtDisplay,
         Badge = BadgeFor(record.Priority),
         StateValue = record.RequestState,
-        SortKey = record.UpdatedAtValue
+        SortKey = record.UpdatedAtValue,
+        AssignmentGroupId = record.AssignmentGroup.SysId ?? "",
+        AssignmentGroupDisplay = record.AssignmentGroup.Display ?? "",
+        AssigneeId = record.AssignedTo.SysId ?? "",
+        AssigneeDisplay = record.AssignedTo.Display ?? "",
+        OpenedAtDisplay = record.OpenedAtDisplay ?? ""
     };
 
     public static TicketRow FromInteraction(InteractionRecord record) => new()
@@ -266,7 +282,12 @@ public sealed class TicketRow : IHighlightRow
         Unassigned = record.AssignedTo.IsEmpty,
         StateValue = record.State,
         SortKey = record.UpdatedAtValue,
-        Location = record.Location
+        Location = record.Location,
+        AssignmentGroupId = record.AssignmentGroup.SysId ?? "",
+        AssignmentGroupDisplay = record.AssignmentGroup.Display ?? "",
+        AssigneeId = record.AssignedTo.SysId ?? "",
+        AssigneeDisplay = record.AssignedTo.Display ?? "",
+        OpenedAtDisplay = record.OpenedAtDisplay ?? ""
     };
 
     public static TicketRow FromItem(RequestedItemRecord record) => new()
@@ -282,7 +303,12 @@ public sealed class TicketRow : IHighlightRow
         Unassigned = record.AssignedTo.IsEmpty,
         StateValue = record.State,
         SortKey = record.UpdatedAtValue,
-        Location = record.Location
+        Location = record.Location,
+        AssignmentGroupId = record.AssignmentGroup.SysId ?? "",
+        AssignmentGroupDisplay = record.AssignmentGroup.Display ?? "",
+        AssigneeId = record.AssignedTo.SysId ?? "",
+        AssigneeDisplay = record.AssignedTo.Display ?? "",
+        OpenedAtDisplay = record.OpenedAtDisplay ?? ""
     };
 
     private static string BadgeFor(string priority) =>
