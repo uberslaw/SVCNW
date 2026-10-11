@@ -126,26 +126,31 @@
             <ItemsControl ItemsSource="{Binding Caches}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="0,10">
+                        <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="0,8">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="240"/>
+                                    <ColumnDefinition Width="260"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Name}" FontSize="14"/>
-                                    <CheckBox Content="Download on launch"
-                                              IsChecked="{Binding DownloadOnLaunch, Mode=TwoWay}"
-                                              Margin="0,6,0,0"
-                                              AutomationProperties.Name="{Binding Name, StringFormat=Download {0} on launch}"/>
-                                    <TextBlock Text="{Binding CountText}" Margin="0,4,0,0" FontSize="12"
+                                    <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <TextBlock Text="Download on launch"
+                                                   FontSize="13"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"/>
+                                        <CheckBox IsChecked="{Binding DownloadOnLaunch, Mode=TwoWay}"
+                                                  VerticalAlignment="Center"
+                                                  AutomationProperties.Name="{Binding Name, StringFormat=Download {0} on launch}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding CountText}" Margin="0,3,0,0" FontSize="12"
                                                Foreground="{StaticResource MutedBrush}"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Stored count for {0}}"/>
-                                    <TextBlock Text="{Binding LastGoodText}" Margin="0,2,0,0" FontSize="12"
+                                    <TextBlock Text="{Binding LastGoodText}" Margin="0,1,0,0" FontSize="12"
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Last good download for {0}}"/>
-                                    <TextBlock Text="{Binding QueryText}" Margin="0,2,0,0" FontSize="11"
+                                    <TextBlock Text="{Binding QueryText}" Margin="0,1,0,0" FontSize="11"
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                Visibility="{Binding QueryText, Converter={StaticResource StringVis}}"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Last download query for {0}}"/>
