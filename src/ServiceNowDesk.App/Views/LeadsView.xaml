@@ -290,16 +290,16 @@
                             <ColumnDefinition Width="0.9*" MinWidth="48"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="Name" Style="{StaticResource FieldLabel}"/>
-                        <TextBlock Grid.Column="1" Text="INC opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                        <TextBlock Grid.Column="2" Text="INC resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                        <TextBlock Grid.Column="3" Text="INC updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                        <TextBlock Grid.Column="4" Text="RITM opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                        <TextBlock Grid.Column="5" Text="RITM resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                        <TextBlock Grid.Column="6" Text="RITM updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                        <TextBlock Grid.Column="7" Text="IMS opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                        <TextBlock Grid.Column="8" Text="IMS resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                        <TextBlock Grid.Column="9" Text="IMS updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Right"/>
-                        <TextBlock Grid.Column="10" Text="Total" Style="{StaticResource FieldLabel}" TextAlignment="Right"/>
+                        <TextBlock Grid.Column="1" Text="INC opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="2" Text="INC resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="3" Text="INC updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="4" Text="RITM opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="5" Text="RITM resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="6" Text="RITM updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="7" Text="IMS opened" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="8" Text="IMS resolved" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="9" Text="IMS updated" Style="{StaticResource FieldLabel}" TextWrapping="Wrap" TextAlignment="Left"/>
+                        <TextBlock Grid.Column="10" Text="Total" Style="{StaticResource FieldLabel}" TextAlignment="Left"/>
                     </Grid>
                     <ListBox ItemsSource="{Binding WorkEffort.Rows}"
                              SelectedItem="{Binding WorkEffort.SelectedRow, Mode=TwoWay}"
@@ -328,34 +328,34 @@
                                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                Cursor="Hand" MouseLeftButtonDown="EffortName_MouseLeftButtonDown"
                                                ToolTip="Select for every ticket credited to this person"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding IncOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="1" Text="{Binding IncOpened}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="IncOpened" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding IncResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="2" Text="{Binding IncResolved}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="IncResolved" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
-                                    <TextBlock Grid.Column="3" Text="{Binding IncUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="3" Text="{Binding IncUpdated}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="IncUpdated" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
-                                    <TextBlock Grid.Column="4" Text="{Binding RitmOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="4" Text="{Binding RitmOpened}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="RitmOpened" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
-                                    <TextBlock Grid.Column="5" Text="{Binding RitmResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="5" Text="{Binding RitmResolved}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="RitmResolved" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
-                                    <TextBlock Grid.Column="6" Text="{Binding RitmUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="6" Text="{Binding RitmUpdated}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="RitmUpdated" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
-                                    <TextBlock Grid.Column="7" Text="{Binding ImsOpened}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="7" Text="{Binding ImsOpened}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="ImsOpened" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
-                                    <TextBlock Grid.Column="8" Text="{Binding ImsResolved}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="8" Text="{Binding ImsResolved}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="ImsResolved" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
-                                    <TextBlock Grid.Column="9" Text="{Binding ImsUpdated}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="9" Text="{Binding ImsUpdated}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="ImsUpdated" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
-                                    <TextBlock Grid.Column="10" Text="{Binding WeightedText}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="10" Text="{Binding WeightedText}" FontWeight="SemiBold" HorizontalAlignment="Left" VerticalAlignment="Center"/>
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
