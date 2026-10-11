@@ -19,22 +19,34 @@ public interface IDesktopServices
 }
 
 /// <summary>
-/// Opens a Work Effort credited ticket in its own window so several can stay open at once.
+/// Opens a ticket in its own window so several can stay open at once (Work Effort and Search).
 /// </summary>
 public interface ITicketPopOut
 {
     void Show(WorkEffortCredit credit, IServiceNowClient client);
+
+    /// <summary>Opens any desk ticket or knowledge article without changing the main window section.</summary>
+    void ShowTicket(DeskSection section, string sysId, string number, string title, IServiceNowClient client);
 }
 
 public sealed class RecordingTicketPopOut : ITicketPopOut
 {
     public List<WorkEffortCredit> Opened { get; } = [];
 
+    public List<(DeskSection Section, string SysId, string Number, string Title)> OpenedTickets { get; } = [];
+
     public void Show(WorkEffortCredit credit, IServiceNowClient client)
     {
         ArgumentNullException.ThrowIfNull(credit);
         ArgumentNullException.ThrowIfNull(client);
         Opened.Add(credit);
+        OpenedTickets.Add((credit.Section, credit.RecordSysId, credit.DisplayNumber, credit.Title ?? ""));
+    }
+
+    public void ShowTicket(DeskSection section, string sysId, string number, string title, IServiceNowClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        OpenedTickets.Add((section, sysId ?? "", number ?? "", title ?? ""));
     }
 }
 

@@ -24,25 +24,45 @@ public partial class WorkEffortTicketWindow : Window
     public static WorkEffortTicketWindow Open(WorkEffortCredit credit, IServiceNowClient client, Window? owner = null)
     {
         ArgumentNullException.ThrowIfNull(credit);
+        return Open(credit.Section, credit.RecordSysId, credit.DisplayNumber, credit.Title, client, owner);
+    }
+
+    public static WorkEffortTicketWindow Open(
+        DeskSection section,
+        string sysId,
+        string number,
+        string title,
+        IServiceNowClient client,
+        Window? owner = null)
+    {
         ArgumentNullException.ThrowIfNull(client);
         var window = new WorkEffortTicketWindow();
         if (owner is not null)
             window.Owner = owner;
-        window.Load(credit, client);
+        window.Load(section, sysId, number, title, client);
         return window;
     }
 
-    private void Load(WorkEffortCredit credit, IServiceNowClient client)
+    private void Load(DeskSection section, string sysId, string number, string title, IServiceNowClient client)
     {
         var desktop = new WindowsDesktopServices();
-        var title = string.IsNullOrWhiteSpace(credit.DisplayNumber) ? "Ticket" : credit.DisplayNumber.Trim();
-        if (!string.IsNullOrWhiteSpace(credit.Title))
-            title += " — " + credit.Title.Trim();
-        Title = title;
+        var windowTitle = string.IsNullOrWhiteSpace(number) ? "Ticket" : number.Trim();
+        if (!string.IsNullOrWhiteSpace(title))
+            windowTitle += " — " + title.Trim();
+        Title = windowTitle;
+
+        if (section == DeskSection.Knowledge)
+        {
+            var knowledge = new KnowledgeWorkspaceViewModel(desktop);
+            Host.Content = new KnowledgeView { DataContext = knowledge };
+            knowledge.Attach(client);
+            _ = knowledge.OpenAsync(client, sysId);
+            return;
+        }
 
         FrameworkElement view;
         RecordWorkspaceViewModel workspace;
-        switch (credit.Section)
+        switch (section)
         {
             case DeskSection.RequestedItems:
                 workspace = new RequestedItemWorkspaceViewModel(desktop);
@@ -65,6 +85,6 @@ public partial class WorkEffortTicketWindow : Window
         _workspace = workspace;
         Host.Content = view;
         workspace.Attach(client);
-        _ = workspace.OpenFromSearchAsync(credit.RecordSysId);
+        _ = workspace.OpenFromSearchAsync(sysId);
     }
 }
