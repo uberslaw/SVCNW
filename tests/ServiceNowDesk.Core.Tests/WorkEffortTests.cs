@@ -951,6 +951,32 @@ public class WorkEffortTests
     }
 
     [Fact]
+    public async Task SelectingARowOpensPersonDetailAndCloseClearsSelection()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        await OpenWorkEffortAsync(page, client, Now, force: false, []);
+
+        var alex = page.Rows.Single(row => row.Name == "Alex Rivera");
+        page.SelectedRow = alex;
+
+        Assert.Same(alex, page.SelectedRow);
+        Assert.True(page.ShowDetail);
+        Assert.Equal(alex.Name + " — all metrics", page.DetailTitle);
+        Assert.True(page.DetailHasRows);
+        Assert.Contains(page.DetailLines, line => line.DisplayNumber == "INC0010001");
+
+        // Cell double-click path still replaces the panel without clearing the row selection.
+        page.ShowCellDetail(alex, WorkEffortColumn.IncOpened);
+        Assert.Same(alex, page.SelectedRow);
+        Assert.Equal(alex.Name + " — " + WorkEffortDetail.ColumnLabel(WorkEffortColumn.IncOpened), page.DetailTitle);
+
+        page.CloseDetailCommand.Execute(null);
+        Assert.False(page.ShowDetail);
+        Assert.Null(page.SelectedRow);
+    }
+
+    [Fact]
     public async Task DetailColumnHeadersSortAscendingThenDescending()
     {
         using var client = new SampleServiceNowClient();
