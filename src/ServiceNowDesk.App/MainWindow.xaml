@@ -388,7 +388,7 @@
                     <views:InteractionView DataContext="{Binding WalkUps}"/>
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Search}">
-                    <views:SearchView DataContext="{Binding Search}"/>
+                    <views:SearchView x:Name="SearchPage" DataContext="{Binding Search}"/>
                 </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Knowledge}">
                     <views:KnowledgeView DataContext="{Binding Knowledge}"/>

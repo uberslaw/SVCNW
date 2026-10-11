@@ -12,35 +12,67 @@
             <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,12,6" TextWrapping="Wrap"/>
             <TextBlock Text="Loading…" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6" Visibility="{Binding IsLoading, Converter={StaticResource BoolVis}}"/>
         </WrapPanel>
-        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8" ToolTip="Leave a box empty to skip that filter. + requires every term. * is a wildcard. Quotes are optional.">
-            <TextBlock Text="Group" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-            <controls:ReferenceEditor DataContext="{Binding AssignmentGroup}" Width="200" Margin="0,0,14,6" ToolTip="Assignment group. Empty means any group."/>
-            <TextBlock Text="Assignee" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-            <controls:ReferenceEditor DataContext="{Binding Assignee}" Width="200" Margin="0,0,14,6" ToolTip="Assignee. Empty means anyone."/>
-            <TextBlock Text="Opened" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-            <DatePicker SelectedDate="{Binding OpenedFrom}" Width="130" Margin="0,0,6,6" ToolTip="Opened on or after"/>
-            <TextBlock Text="to" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-            <DatePicker SelectedDate="{Binding OpenedTo}" Width="130" Margin="0,0,14,6" ToolTip="Opened on or before"/>
-            <TextBlock Text="State" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-            <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Width="220" Height="88" Margin="0,0,8,6"
-                    ToolTip="Ctrl+click to select multiple states. Empty selection shows all states.">
-                <ListBox x:Name="StateFilter"
-                         ItemsSource="{Binding StateOptions}"
-                         SelectionMode="Extended"
-                         IsSynchronizedWithCurrentItem="False"
-                         BorderThickness="0"
-                         Background="{StaticResource CardBrush}"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         SelectionChanged="StateFilter_SelectionChanged"
-                         AutomationProperties.Name="State filter"/>
-            </Border>
-            <StackPanel Margin="0,0,0,6" VerticalAlignment="Center">
-                <TextBlock Text="{Binding StateFilterSummary}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                <Button Content="Clear states" Style="{StaticResource QuietButton}" Padding="6,2" MinHeight="24"
-                        Click="ClearStates_Click" ToolTip="Clear state selection (show all)"
-                        AutomationProperties.Name="Clear state filter"/>
-            </StackPanel>
-        </WrapPanel>
+        <!-- Columns 0–9 run through the State list. The query box spans only those columns, so its right edge stays on the State control as the window resizes. -->
+        <ScrollViewer DockPanel.Dock="Top" Focusable="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,0,0,8"
+                      ToolTip="Leave a box empty to skip that filter. + requires every term. * is a wildcard. Quotes are optional.">
+            <Grid HorizontalAlignment="Left">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Column="0" Text="Group" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <controls:ReferenceEditor Grid.Column="1" DataContext="{Binding AssignmentGroup}" Width="200" VerticalAlignment="Top" Margin="0,0,14,6" ToolTip="Assignment group. Empty means any group."/>
+                <TextBlock Grid.Column="2" Text="Assignee" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <controls:ReferenceEditor Grid.Column="3" DataContext="{Binding Assignee}" Width="200" VerticalAlignment="Top" Margin="0,0,14,6" ToolTip="Assignee. Empty means anyone."/>
+                <TextBlock Grid.Column="4" Text="Opened" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <DatePicker Grid.Column="5" SelectedDate="{Binding OpenedFrom}" Width="130" VerticalAlignment="Top" Margin="0,0,6,6" ToolTip="Opened on or after"/>
+                <TextBlock Grid.Column="6" Text="to" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <DatePicker Grid.Column="7" SelectedDate="{Binding OpenedTo}" Width="130" VerticalAlignment="Top" Margin="0,0,14,6" ToolTip="Opened on or before"/>
+                <TextBlock Grid.Column="8" Text="State" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <Border Grid.Column="9" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Width="220" Height="88" VerticalAlignment="Top" Margin="0,0,0,6"
+                        ToolTip="Ctrl+click to select multiple states. Empty selection shows all states.">
+                    <ListBox x:Name="StateFilter"
+                             ItemsSource="{Binding StateOptions}"
+                             SelectionMode="Extended"
+                             IsSynchronizedWithCurrentItem="False"
+                             BorderThickness="0"
+                             Background="{StaticResource CardBrush}"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             SelectionChanged="StateFilter_SelectionChanged"
+                             AutomationProperties.Name="State filter"/>
+                </Border>
+                <StackPanel Grid.Column="10" Margin="8,0,0,6" VerticalAlignment="Top">
+                    <TextBlock Text="{Binding StateFilterSummary}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
+                    <Button Content="Clear states" Style="{StaticResource QuietButton}" Padding="6,2" MinHeight="24"
+                            Click="ClearStates_Click" ToolTip="Clear state selection (show all)"
+                            AutomationProperties.Name="Clear state filter"/>
+                </StackPanel>
+                <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="10" Margin="0,2,0,0"
+                      DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <TextBox x:Name="SearchBox" MinHeight="36" FontSize="14"
+                             HorizontalAlignment="Stretch"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             KeyDown="SearchBox_KeyDown"
+                             AutomationProperties.Name="Search"/>
+                    <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="#90A0A6"
+                               Text="{Binding SearchPlaceholder}"
+                               Visibility="{Binding SearchText, Converter={StaticResource EmptyStringVis}}"/>
+                </Grid>
+            </Grid>
+        </ScrollViewer>
         <TextBlock DockPanel.Dock="Top" Text="{Binding FilterMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding FilterMessage, Converter={StaticResource StringVis}}"/>
         <TextBlock DockPanel.Dock="Top" Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}"/>
         <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
