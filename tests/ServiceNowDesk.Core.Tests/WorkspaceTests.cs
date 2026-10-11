@@ -821,14 +821,19 @@ public class WorkspaceTests
         Assert.False(main.ShowBack);
         Assert.False(main.Requests.HasEditor);
         Assert.Same(hit, main.Search.Results.Single());
+        Assert.Equal("REQ0010001", main.Search.Query);
+        Assert.Equal(hit, main.Search.Selected);
         var opened = Assert.Single(popOut.OpenedTickets);
         Assert.Equal(DeskSection.Requests, opened.Section);
         Assert.Equal(hit.SysId, opened.SysId);
         Assert.Equal("REQ0010001", opened.Number);
         Assert.Contains("Opened REQ0010001", main.StatusMessage, StringComparison.Ordinal);
 
-        main.SearchText = "printer";
-        await Task.Delay(400);
+        // Switching away and back must not wipe the search hit list.
+        main.SelectedSection = DeskSection.Incidents;
+        await FlushAsync();
+        main.SelectedSection = DeskSection.Search;
+        await FlushAsync();
         Assert.Same(hit, main.Search.Results.Single());
         Assert.Equal("REQ0010001", main.Search.Query);
         Assert.Equal(hit, main.Search.Selected);
