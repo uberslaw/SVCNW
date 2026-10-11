@@ -98,13 +98,19 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             ReleaseLateQueueIncident();
 
         Record("GET", "api/now/table/incident");
+        Record("GET", "api/now/table/sc_req_item");
         var watched = EncodedQuery.Sanitize(watchedGroupName);
         IncidentRecord[] source;
+        RequestedItemRecord[] items;
         lock (_data)
+        {
             source = _incidents.ToArray();
+            items = _items.ToArray();
+        }
+
         var rows = source
             .Where(record => IsOpenUnassigned(record)
-                && InGroupQueue(record, watched)
+                && InGroupQueue(record.AssignmentGroup, watched)
                 && InOfficeQueue(record.Location, officeLocations))
             .Select(record => Describe(
                 DeskSection.Incidents,
@@ -123,6 +129,27 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             {
                 Opened = record.OpenedAtDisplay
             })
+            .Concat(items
+                .Where(record => IsOpenUnassignedItem(record)
+                    && InGroupQueue(record.AssignmentGroup, watched)
+                    && InOfficeQueue(record.Location, officeLocations))
+                .Select(record => Describe(
+                    DeskSection.RequestedItems,
+                    record.SysId,
+                    record.Number,
+                    record.ShortDescription,
+                    record.State,
+                    record.StateLabel,
+                    record.AssignmentGroup,
+                    record.Location,
+                    record.UpdatedAtDisplay,
+                    ReferenceValue.Empty,
+                    record.AssignedTo,
+                    record.Priority,
+                    record.PriorityLabel) with
+                {
+                    Opened = record.OpenedAtDisplay
+                }))
             .ToArray();
         return Task.FromResult<IReadOnlyList<WatchedRecord>>(rows);
     }
@@ -131,15 +158,15 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     /// Practice stand-in for My Groups: the sample user is in Client Services only.
     /// The watched group is included by the name the caller passes.
     /// </summary>
-    private static bool InGroupQueue(IncidentRecord record, string watchedName)
+    private static bool InGroupQueue(ReferenceValue group, string watchedName)
     {
-        if (record.AssignmentGroup.SysId == ClientServices.SysId
-            || record.AssignmentGroup.Display.Equals(ClientServices.Display, StringComparison.OrdinalIgnoreCase))
+        if (group.SysId == ClientServices.SysId
+            || group.Display.Equals(ClientServices.Display, StringComparison.OrdinalIgnoreCase))
             return true;
         if (watchedName.Length == 0)
             return false;
-        return record.AssignmentGroup.Display.Equals(watchedName, StringComparison.OrdinalIgnoreCase)
-            || record.AssignmentGroup.SysId.Equals(watchedName, StringComparison.OrdinalIgnoreCase);
+        return group.Display.Equals(watchedName, StringComparison.OrdinalIgnoreCase)
+            || group.SysId.Equals(watchedName, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -157,6 +184,11 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         record.Active
         && string.IsNullOrWhiteSpace(record.AssignedTo.SysId)
         && AlertClassifier.IsStillOpen(DeskSection.Incidents, record.State, record.StateLabel);
+
+    private static bool IsOpenUnassignedItem(RequestedItemRecord record) =>
+        record.Active
+        && string.IsNullOrWhiteSpace(record.AssignedTo.SysId)
+        && AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel);
 
     private void ReleaseLateQueueIncident()
     {
@@ -233,7 +265,23 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                 && string.Equals(record.AssignmentGroup.Display, name, StringComparison.OrdinalIgnoreCase)
                 && OfficeQueue.Matches(record.Location, offices))
                 .Select(record => ToAlert(record, AlertKind.WatchedGroup)));
+            group.AddRange(items.Where(record =>
+                record.Active
+                && AlertClassifier.IsStillOpen(DeskSection.RequestedItems, record.State, record.StateLabel)
+                && string.Equals(record.AssignmentGroup.Display, name, StringComparison.OrdinalIgnoreCase)
+                && OfficeQueue.Matches(record.Location, offices))
+                .Select(record => ToAlert(record, AlertKind.WatchedGroup) with { Location = record.Location }));
+            group.AddRange(items.Where(record =>
+                IsOpenUnassignedItem(record)
+                && InGroupQueue(record.AssignmentGroup, name)
+                && OfficeQueue.Matches(record.Location, offices))
+                .Select(record => ToAlert(record, AlertKind.WatchedGroup) with { Location = record.Location }));
+            group = group
+                .GroupBy(row => row.SysId, StringComparer.OrdinalIgnoreCase)
+                .Select(rows => rows.First())
+                .ToList();
             Record("GET", "api/now/table/incident");
+            Record("GET", "api/now/table/sc_req_item");
         }
 
         Record("GET", "api/now/table/incident");
@@ -517,7 +565,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             record.State,
             record.StateLabel,
             record.OpenedAtDisplay,
-            location: record.Location));
+            location: record.Location,
+            groupDisplay: record.AssignmentGroup.Display));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -744,7 +793,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                 record.State,
                 record.StateLabel,
                 record.OpenedAtDisplay,
-                location: record.Location));
+                location: record.Location,
+                groupDisplay: record.AssignmentGroup.Display));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -1236,7 +1286,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                 record.State,
                 record.StateLabel,
                 record.OpenedAtDisplay,
-                location: record.Location));
+                location: record.Location,
+                groupDisplay: record.AssignmentGroup.Display));
         return Task.FromResult(Page(matches, query));
     }
 
@@ -2395,6 +2446,44 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             UpdatedAtValue = "2099-01-01 00:04:00",
             Active = true
         });
+        _items.Add(new RequestedItemRecord
+        {
+            SysId = "ritm-aus-bne",
+            Number = "RITM0010009",
+            ShortDescription = "Unassigned dock on the watched group queue",
+            Description = "Waiting in the group queue for a technician.",
+            State = "2",
+            StateLabel = "Work in Progress",
+            Priority = "5",
+            PriorityLabel = "5 - Planning",
+            Quantity = "1",
+            AssignedTo = ReferenceValue.Empty,
+            AssignmentGroup = AusClientServices,
+            Location = "Brisbane Office",
+            OpenedAtDisplay = "2026-10-06 09:00",
+            UpdatedAtDisplay = "2026-10-06 09:00",
+            UpdatedAtValue = "2026-10-06 09:00:00",
+            Active = true
+        });
+        _items.Add(new RequestedItemRecord
+        {
+            SysId = "ritm-net",
+            Number = "RITM0010010",
+            ShortDescription = "Cable request owned by another group",
+            Description = "This item belongs to a group outside the watched roster.",
+            State = "2",
+            StateLabel = "Work in Progress",
+            Priority = "4",
+            PriorityLabel = "4 - Low",
+            Quantity = "1",
+            AssignedTo = Sam,
+            AssignmentGroup = Network,
+            Location = "Brisbane Office",
+            OpenedAtDisplay = "2026-10-06 09:05",
+            UpdatedAtDisplay = "2026-10-06 09:05",
+            UpdatedAtValue = "2026-10-06 09:05:00",
+            Active = true
+        });
         AddInteraction(new InteractionRecord
         {
             SysId = "ims-mix-bne",
@@ -2712,7 +2801,8 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         string? stateLabel = null,
         string? openedAt = null,
         bool honorRecordFilters = true,
-        string? location = null)
+        string? location = null,
+        string? groupDisplay = null)
     {
         if (query.Activity == ActivityFilter.Open)
         {
@@ -2753,7 +2843,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                     if (!TeamIncludes(query.TeamMemberIds, assignedTo))
                         return false;
                     break;
-                case AssignmentScope.MyGroups when groupId != ClientServices.SysId:
+                case AssignmentScope.MyGroups when !InMyTeamGroup(groupId, groupDisplay, query.WatchedGroupName):
                     return false;
             }
         }
@@ -2769,6 +2859,22 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         }
 
         return EncodedQuery.Matches(query.Text, number, haystack);
+    }
+
+    /// <summary>
+    /// Personal membership is Client Services. The watched group name is the same roster
+    /// walk-up My Team uses, so a ticket in that group is on My Team too.
+    /// </summary>
+    private static bool InMyTeamGroup(string groupId, string? groupDisplay, string? watchedGroupName)
+    {
+        if (groupId == ClientServices.SysId)
+            return true;
+        var watched = EncodedQuery.Sanitize(watchedGroupName);
+        if (watched.Length == 0)
+            return false;
+        if (groupId.Equals(watched, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return (groupDisplay ?? "").Equals(watched, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string IdOf(ReferenceValue value) => value.SysId ?? "";
@@ -2806,6 +2912,29 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     private string PracticeTicketClause(TicketQuery query)
     {
         var userId = SignedInUser.SysId;
+        var open = query.Activity == ActivityFilter.Open && query.ListSection is DeskSection section
+            ? AlertQueryBuilder.StillWorking(section)
+            : EncodedQuery.ActivityClause(query.Activity);
+        if (string.IsNullOrWhiteSpace(query.AssignmentClause)
+            && query.Assignment == AssignmentScope.MyGroups
+            && query.TeamMemberIds is null)
+        {
+            var scopes = AlertQueryBuilder.AssignmentGroupScopes([ClientServices.SysId], query.WatchedGroupName);
+            if (scopes.Count == 0)
+                scopes = ["sys_id=NO_GROUP_MEMBERSHIP"];
+            var pieces = new List<string>();
+            foreach (var scope in scopes)
+            {
+                var scoped = EncodedQuery.Build(EncodedQuery.TextSearch(query.Text), scope, open, "");
+                if (query.OfficeLocations is not null)
+                    pieces.AddRange(OfficeQueue.Queries(scoped, query.OfficeLocations));
+                else
+                    pieces.Add(scoped);
+            }
+
+            return string.Join(" | ", pieces);
+        }
+
         var assignment = query.AssignmentClause;
         if (string.IsNullOrWhiteSpace(assignment))
         {
@@ -2826,9 +2955,6 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             assignment = TicketListFilter.BindCurrentUser(assignment, userId);
         }
 
-        var open = query.Activity == ActivityFilter.Open && query.ListSection is DeskSection section
-            ? AlertQueryBuilder.StillWorking(section)
-            : EncodedQuery.ActivityClause(query.Activity);
         var encoded = EncodedQuery.Build(
             EncodedQuery.TextSearch(query.Text),
             assignment,

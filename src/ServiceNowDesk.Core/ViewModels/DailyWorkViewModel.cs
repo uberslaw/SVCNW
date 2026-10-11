@@ -427,7 +427,7 @@ public partial class DailyWorkViewModel : ObservableObject
         return new DailyWorkRow
         {
             SysId = record.SysId,
-            Section = DeskSection.Incidents,
+            Section = record.Section,
             Number = record.Number,
             Title = record.Title,
             PriorityText = string.IsNullOrWhiteSpace(label) ? "No priority" : label.Trim(),

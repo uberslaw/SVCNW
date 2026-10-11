@@ -411,6 +411,7 @@ public partial class MainViewModel : ObservableObject
 
     public async Task InitializeAsync()
     {
+        ClearSearchForLaunch();
         var settings = _store.Load();
         Connection.Load(settings);
         SyncCacheLaunchTogglesFromConnection();
@@ -1180,12 +1181,36 @@ public partial class MainViewModel : ObservableObject
         RequestedItems.UseOfficeCities(cities);
         WalkUps.UseOfficeCities(cities);
         Mix.UseOfficeCities(cities);
+        var watchedGroup = NotificationSettings.Committed.WatchedGroupName;
+        Incidents.UseWatchedGroup(watchedGroup);
+        RequestedItems.UseWatchedGroup(watchedGroup);
+        Mix.UseWatchedGroup(watchedGroup);
         DailyWork.UseOfficeCities(cities);
         ApplyTeamQueue();
         _loadedFor.Remove(DeskSection.Incidents);
         _loadedFor.Remove(DeskSection.RequestedItems);
         _loadedFor.Remove(DeskSection.WalkUps);
         _loadedFor.Remove(DeskSection.InTheMix);
+    }
+
+    /// <summary>
+    /// A relaunch starts with an empty search box. Saved list queries stay on the cache
+    /// row for logging and are not copied into <see cref="SearchText"/>. Switching sections
+    /// in the same process does not call this.
+    /// </summary>
+    private void ClearSearchForLaunch()
+    {
+        _suppressSearchText = true;
+        SearchText = "";
+        _suppressSearchText = false;
+        Search.Reset();
+        Incidents.SearchText = "";
+        Requests.SearchText = "";
+        RequestedItems.SearchText = "";
+        WalkUps.SearchText = "";
+        Mix.SearchText = "";
+        Hardware.SearchText = "";
+        Knowledge.FilterText = "";
     }
 
     private void ApplyTeamQueue()

@@ -25,6 +25,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     private const string AlertItemFields = "sys_id,number,short_description,state,assigned_to,assignment_group,location,sys_updated_on,active";
     private const string PopulationIncidentFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,caller_id,caller_id.user_name,follow_up";
     private const string UnassignedQueueFields = PopulationIncidentFields + ",opened_at";
+    private const string UnassignedItemFields = PopulationItemFields + ",opened_at";
     private const string PopulationItemFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,requested_for,requested_for.user_name,request.requested_for,request.requested_for.user_name,follow_up";
     private const string PopulationInteractionFields = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name,follow_up";
     private const string PopulationInteractionFieldsWithoutFollowUp = "sys_id,number,short_description,state,priority,assigned_to,assigned_to.user_name,assignment_group,location,sys_updated_on,sys_updated_by,active,opened_for,opened_for.user_name";
@@ -328,7 +329,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         var groupQuery = AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations);
         var group = groupQuery is null
             ? AlertBucket.Empty
-            : await QueryAlertsAsync("incident", AlertIncidentFields, groupQuery, AlertKind.WatchedGroup, DeskSection.Incidents, includeLocation: true, cancellationToken).ConfigureAwait(false);
+            : await LoadWatchedGroupBucketAsync(search, groupQuery, cancellationToken).ConfigureAwait(false);
 
         var assignedRows = incidents.Rows.Concat(requests.Rows).Concat(items.Rows).ToArray();
         var assignedTotal = incidents.TotalCount + requests.TotalCount + items.TotalCount;
@@ -362,13 +363,20 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             groupIds = [];
         }
 
-        var queries = AlertQueryBuilder.UnassignedInGroupsQueries(groupIds, watchedGroupName, officeLocations);
-        if (queries.Count == 0)
+        var incidentQueries = AlertQueryBuilder.UnassignedInGroupsQueries(groupIds, watchedGroupName, officeLocations);
+        var itemQueries = AlertQueryBuilder.UnassignedInGroupsQueries(
+            groupIds,
+            watchedGroupName,
+            officeLocations,
+            DeskSection.RequestedItems);
+        if (incidentQueries.Count == 0 && itemQueries.Count == 0)
             return [];
 
         var rows = new List<WatchedRecord>();
-        foreach (var query in queries)
+        foreach (var query in incidentQueries)
             rows.AddRange(await LoadPopulationAsync("incident", UnassignedQueueFields, query, DeskSection.Incidents, cancellationToken).ConfigureAwait(false));
+        foreach (var query in itemQueries)
+            rows.AddRange(await LoadPopulationAsync("sc_req_item", UnassignedItemFields, query, DeskSection.RequestedItems, cancellationToken).ConfigureAwait(false));
         var open = DistinctWatched(rows.Where(record => string.IsNullOrWhiteSpace(record.AssignedToSysId)));
         if (officeLocations is not null)
             open = open.Where(record => OfficeQueue.Matches(record.Location, officeLocations)).ToArray();
@@ -388,6 +396,74 @@ public sealed partial class ServiceNowClient : IServiceNowClient
 
         var journal = await LoadLatestJournalAuthorsAsync(ids, cancellationToken).ConfigureAwait(false);
         return DistinctWatched(open.Select(record => FoldSignals(record, sla, journal.Authors)));
+    }
+
+    /// <summary>
+    /// Group-queue notifications: open incidents and request items in the watched group at the
+    /// office cities, plus unassigned request items in the signed-in user's groups at those offices.
+    /// The same membership and watched-name scopes as <see cref="ListUnassignedGroupQueueAsync"/>.
+    /// </summary>
+    private async Task<AlertBucket> LoadWatchedGroupBucketAsync(
+        AlertSearch search,
+        string incidentQuery,
+        CancellationToken cancellationToken)
+    {
+        var incidents = await QueryAlertsAsync(
+            "incident",
+            AlertIncidentFields,
+            incidentQuery,
+            AlertKind.WatchedGroup,
+            DeskSection.Incidents,
+            includeLocation: true,
+            cancellationToken).ConfigureAwait(false);
+
+        var itemQuery = AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations, DeskSection.RequestedItems);
+        var namedItems = itemQuery is null
+            ? AlertBucket.Empty
+            : await QueryAlertsAsync(
+                "sc_req_item",
+                AlertItemFields,
+                itemQuery,
+                AlertKind.WatchedGroup,
+                DeskSection.RequestedItems,
+                includeLocation: true,
+                cancellationToken).ConfigureAwait(false);
+
+        IReadOnlyList<string> memberIds;
+        try
+        {
+            memberIds = await MemberGroupIdsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServiceNowException)
+        {
+            memberIds = [];
+        }
+
+        var unassigned = new List<AlertRecord>();
+        foreach (var query in AlertQueryBuilder.UnassignedInGroupsQueries(
+            memberIds,
+            search.GroupName,
+            search.Locations,
+            DeskSection.RequestedItems))
+        {
+            var bucket = await QueryAlertsAsync(
+                "sc_req_item",
+                AlertItemFields,
+                query,
+                AlertKind.WatchedGroup,
+                DeskSection.RequestedItems,
+                includeLocation: true,
+                cancellationToken).ConfigureAwait(false);
+            unassigned.AddRange(bucket.Rows);
+        }
+
+        var rows = incidents.Rows
+            .Concat(namedItems.Rows)
+            .Concat(unassigned)
+            .GroupBy(row => row.SysId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+        return new AlertBucket(rows, rows.Length);
     }
 
     private async Task<AlertBucket> QueryAlertsAsync(
@@ -1835,6 +1911,14 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         SearchFieldSet textFields,
         CancellationToken cancellationToken)
     {
+        var extra = ListExtraClause(query, textFields);
+        // Incident and request-item My Team use the signed-in user's groups OR the watched
+        // group name. Walk-up My Team passes TeamMemberIds and stays on the people clause.
+        if (string.IsNullOrWhiteSpace(query.AssignmentClause)
+            && query.Assignment == AssignmentScope.MyGroups
+            && query.TeamMemberIds is null)
+            return await MyGroupScopeClausesAsync(query, textFields, extra, cancellationToken).ConfigureAwait(false);
+
         var assignment = query.AssignmentClause;
         if (string.IsNullOrWhiteSpace(assignment))
         {
@@ -1858,6 +1942,22 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             assignment = TicketListFilter.BindCurrentUser(assignment, SignedInUserSysId());
         }
 
+        var encoded = EncodedQuery.Build(
+            EncodedQuery.TextSearch(query.Text, textFields),
+            assignment,
+            OpenListClause(query),
+            extra);
+        // Walk-up My Team is people (TeamMemberIds), so office cities do not apply.
+        // My Team and Unassigned stay inside the watched offices. My Tickets is assignee-only.
+        if (query.OfficeLocations is not null
+            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
+            && query.TeamMemberIds is null)
+            return OfficeQueue.Queries(encoded, query.OfficeLocations);
+        return [encoded];
+    }
+
+    private static string ListExtraClause(TicketQuery query, SearchFieldSet textFields)
+    {
         var extra = string.IsNullOrWhiteSpace(query.ParentRequestId)
             ? ""
             : "request=" + EncodedQuery.SafeToken(query.ParentRequestId, "request id");
@@ -1876,18 +1976,41 @@ public sealed partial class ServiceNowClient : IServiceNowClient
                 extra = extra.Length == 0 ? recordFilters : extra + "^" + recordFilters;
         }
 
-        var encoded = EncodedQuery.Build(
-            EncodedQuery.TextSearch(query.Text, textFields),
-            assignment,
-            OpenListClause(query),
-            extra);
-        // Walk-up My Team is people (TeamMemberIds), so office cities do not apply.
-        // My Team and Unassigned stay inside the watched offices. My Tickets is assignee-only.
-        if (query.OfficeLocations is not null
-            && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
-            && query.TeamMemberIds is null)
-            return OfficeQueue.Queries(encoded, query.OfficeLocations);
-        return [encoded];
+        return extra;
+    }
+
+    /// <summary>
+    /// One encoded query per group scope, then one request per office. Scopes are not joined
+    /// with ^NQ before the office split, so location stays on every branch.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> MyGroupScopeClausesAsync(
+        TicketQuery query,
+        SearchFieldSet textFields,
+        string extra,
+        CancellationToken cancellationToken)
+    {
+        await MyGroupsClauseAsync(cancellationToken).ConfigureAwait(false);
+        string[] ids;
+        lock (_cacheGate)
+            ids = _groupIds ?? [];
+
+        var scopes = AlertQueryBuilder.AssignmentGroupScopes(ids, query.WatchedGroupName);
+        if (scopes.Count == 0)
+            scopes = ["sys_id=NO_GROUP_MEMBERSHIP"];
+
+        var text = EncodedQuery.TextSearch(query.Text, textFields);
+        var open = OpenListClause(query);
+        var clauses = new List<string>();
+        foreach (var scope in scopes)
+        {
+            var encoded = EncodedQuery.Build(text, scope, open, extra);
+            if (query.OfficeLocations is not null)
+                clauses.AddRange(OfficeQueue.Queries(encoded, query.OfficeLocations));
+            else
+                clauses.Add(encoded);
+        }
+
+        return clauses;
     }
 
     private static string RecordSysId<T>(T item) => item switch

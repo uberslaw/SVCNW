@@ -256,6 +256,58 @@ public class CacheSettingsTests
     }
 
     [Fact]
+    public async Task RelaunchDoesNotApplyASavedSearchQuery()
+    {
+        var lists = new MemoryDeskListStore();
+        var settings = new MemorySettingsStore();
+        settings.Save(new DeskSettings { UseSampleData = true, DownloadCacheOnLaunch = false });
+        var snapshot = FreshPractice("INC-ONE", "Printer jam");
+        snapshot.Incidents = new CachedTicketList
+        {
+            CapturedAt = DateTimeOffset.UtcNow,
+            TotalCount = 2,
+            EncodedQuery = "123TEXTQUERY321=printer^active=true",
+            FilterSummary = "printer",
+            Items =
+            [
+                new CachedTicketRow
+                {
+                    SysId = "inc-1",
+                    Number = "INC-ONE",
+                    Title = "Printer jam",
+                    StateLabel = "Open",
+                    Tone = "open"
+                },
+                new CachedTicketRow
+                {
+                    SysId = "inc-2",
+                    Number = "INC-TWO",
+                    Title = "Vpn tunnel",
+                    StateLabel = "Open",
+                    Tone = "open"
+                }
+            ]
+        };
+        lists.Save(DeskListScope.Practice, snapshot);
+        var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
+
+        await main.InitializeAsync();
+
+        Assert.Equal("", main.SearchText);
+        Assert.Equal("", main.Search.Query);
+        Assert.Equal("", main.Incidents.SearchText);
+        Assert.Equal("", main.RequestedItems.SearchText);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-ONE");
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC-TWO");
+        Assert.Equal(2, main.Incidents.Items.Count);
+
+        main.SearchText = "vpn";
+        main.SelectedSection = DeskSection.RequestedItems;
+        Assert.Equal("vpn", main.SearchText);
+        Assert.Equal(DeskSection.RequestedItems, main.SelectedSection);
+    }
+
+    [Fact]
     public async Task PracticeLaunchDownloadsWhenTheSettingIsOnAndTheCacheIsFresh()
     {
         var lists = new MemoryDeskListStore();
