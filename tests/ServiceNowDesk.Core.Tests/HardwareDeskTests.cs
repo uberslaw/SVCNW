@@ -328,6 +328,91 @@ public class HardwareDeskTests
     }
 
     [Fact]
+    public async Task HardwareColumnHeadersSortAscendingThenDescending()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenHardwareAsync(client);
+        Assert.Equal(5, workspace.Items.Count);
+        Assert.Equal("Serial", workspace.SerialHeader);
+
+        workspace.SortByCommand.Execute("Serial");
+        Assert.Equal("Serial ▲", workspace.SerialHeader);
+        Assert.Equal(
+            ["5CD6220GYW", "5CG0000DBR", "5CG30710BR", "5CG6245F8S", "ABCDEFG"],
+            workspace.Items.Select(asset => asset.SerialNumber).ToArray());
+
+        workspace.SortByCommand.Execute("Serial");
+        Assert.Equal("Serial ▼", workspace.SerialHeader);
+        Assert.Equal(
+            ["ABCDEFG", "5CG6245F8S", "5CG30710BR", "5CG0000DBR", "5CD6220GYW"],
+            workspace.Items.Select(asset => asset.SerialNumber).ToArray());
+
+        workspace.SortByCommand.Execute("Model");
+        Assert.Equal("Model ▲", workspace.ModelHeader);
+        Assert.Equal("Serial", workspace.SerialHeader);
+        Assert.Equal(
+            ["Dell Latitude", "HP ZBook", "HP ZBook Fury 16 G9", "HP ZBook Ultra 16 inch G1i Mobile Workstation", "HP ZBook Ultra G1a 14 inch Mobile Workstation PC"],
+            workspace.Items.Select(asset => asset.Model).ToArray());
+
+        workspace.SortByCommand.Execute("Assigned");
+        Assert.Equal("Assigned to ▲", workspace.AssignedHeader);
+        Assert.Equal("Jordan Lee", workspace.Items[0].AssignedTo.Display);
+        Assert.All(workspace.Items.Skip(1), asset => Assert.True(string.IsNullOrWhiteSpace(asset.AssignedTo.Display)));
+
+        workspace.SortByCommand.Execute("Location");
+        Assert.Equal("Location ▲", workspace.LocationHeader);
+        Assert.Equal(
+            ["Brisbane Office", "Brisbane Office", "Hong Kong Office", "Sydney Office", "Sydney Office"],
+            workspace.Items.Select(asset => asset.Location.Display).ToArray());
+
+        workspace.SortByCommand.Execute("State");
+        Assert.Equal("State ▲", workspace.StateHeader);
+        Assert.Equal(
+            ["In stock", "In transit", "In transit", "In transit", "In use"],
+            workspace.Items.Select(asset => asset.InstallStatusLabel).ToArray());
+
+        workspace.SortByCommand.Execute("Substate");
+        Assert.Equal("Substate ▲", workspace.SubstateHeader);
+        Assert.Equal("Available", workspace.Items[0].SubstatusLabel);
+        Assert.All(workspace.Items.Skip(1), asset => Assert.True(string.IsNullOrWhiteSpace(asset.SubstatusLabel)));
+
+        workspace.SortByCommand.Execute("Comments");
+        Assert.Equal("Comments ▲", workspace.CommentsHeader);
+        Assert.Equal(
+            ["Assigned laptop", "Dell service tag", "For testing by Mark Lindsay", "HP serial stored in uppercase", "On the shelf"],
+            workspace.Items.Select(asset => asset.Comments).ToArray());
+    }
+
+    [Fact]
+    public async Task HardwareSortKeepsSelectionAndSurvivesColumnFilter()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenHardwareAsync(client);
+        var keep = workspace.Items.Single(asset => asset.SerialNumber == "5CG30710BR");
+        workspace.Selected = keep;
+
+        workspace.SortByCommand.Execute("Serial");
+        workspace.SortByCommand.Execute("Serial");
+        Assert.Equal("Serial ▼", workspace.SerialHeader);
+        Assert.Same(keep, workspace.Selected);
+        Assert.Equal("5CG30710BR", workspace.Selected?.SerialNumber);
+
+        workspace.LocationFilter = "Hong";
+        await workspace.ColumnFiltersReady;
+        Assert.Equal("Serial ▼", workspace.SerialHeader);
+        Assert.Equal("5CG30710BR", Assert.Single(workspace.Items).SerialNumber);
+        Assert.Equal("5CG30710BR", workspace.Selected?.SerialNumber);
+
+        workspace.LocationFilter = "";
+        await workspace.ColumnFiltersReady;
+        Assert.Equal("Serial ▼", workspace.SerialHeader);
+        Assert.Equal(
+            ["ABCDEFG", "5CG6245F8S", "5CG30710BR", "5CG0000DBR", "5CD6220GYW"],
+            workspace.Items.Select(asset => asset.SerialNumber).ToArray());
+        Assert.Equal("5CG30710BR", workspace.Selected?.SerialNumber);
+    }
+
+    [Fact]
     public async Task HardwareSearchMatchesSerialModelOrAssignee()
     {
         using var client = new SampleServiceNowClient();

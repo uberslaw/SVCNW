@@ -37,6 +37,8 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     private DateTimeOffset _catalogCapturedAt;
     private string _signedInLocation = "";
     private int _substateGeneration;
+    private HardwareSortColumn? _sortColumn;
+    private bool _sortDescending;
 
     public HardwareWorkspaceViewModel(
         ISettingsStore? settings = null,
@@ -227,6 +229,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         SubstatusFilter = "";
         CommentsFilter = "";
         _suppressColumnFilterSchedule = false;
+        _sortColumn = null;
+        _sortDescending = false;
+        NotifySortHeaders();
         SearchTipsOpen = false;
         OfficeSearchText = "";
         OfficeStatus = "";
@@ -241,6 +246,14 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     /// Rows currently visible after office and column filters. Notifies when the list rebuilds.
     /// </summary>
     public int ShownCount => Items.Count;
+
+    public string SerialHeader => SortHeader("Serial", HardwareSortColumn.Serial);
+    public string ModelHeader => SortHeader("Model", HardwareSortColumn.Model);
+    public string AssignedHeader => SortHeader("Assigned to", HardwareSortColumn.Assigned);
+    public string LocationHeader => SortHeader("Location", HardwareSortColumn.Location);
+    public string StateHeader => SortHeader("State", HardwareSortColumn.State);
+    public string SubstateHeader => SortHeader("Substate", HardwareSortColumn.Substate);
+    public string CommentsHeader => SortHeader("Comments", HardwareSortColumn.Comments);
 
     public string OfficeSelectionSummary
     {
@@ -1280,17 +1293,92 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     {
         _suppressSelection = true;
         Items.Clear();
-        foreach (var asset in _loadedRows)
+        var matches = _loadedRows.Where(PassesColumnFilters).ToList();
+        if (_sortColumn is HardwareSortColumn column && matches.Count > 1)
         {
-            if (PassesColumnFilters(asset))
-                Items.Add(asset);
+            matches.Sort((left, right) =>
+            {
+                var compared = HardwareAssetSort.Compare(left, right, column, _sortDescending);
+                return compared != 0
+                    ? compared
+                    : string.Compare(left.SerialNumber, right.SerialNumber, StringComparison.OrdinalIgnoreCase);
+            });
         }
+
+        foreach (var asset in matches)
+            Items.Add(asset);
 
         Selected = string.IsNullOrEmpty(keepSysId)
             ? null
             : Items.FirstOrDefault(asset => asset.SysId == keepSysId);
         _suppressSelection = false;
         OnPropertyChanged(nameof(ShownCount));
+    }
+
+    [RelayCommand]
+    private void SortBy(string? column)
+    {
+        if (!Enum.TryParse<HardwareSortColumn>(column, ignoreCase: true, out var parsed))
+            return;
+        if (_sortColumn != parsed)
+        {
+            _sortColumn = parsed;
+            _sortDescending = false;
+        }
+        else
+        {
+            _sortDescending = !_sortDescending;
+        }
+
+        ApplySort();
+    }
+
+    private void ApplySort()
+    {
+        NotifySortHeaders();
+        if (_sortColumn is not HardwareSortColumn column || Items.Count < 2)
+            return;
+
+        var keepSysId = Selected?.SysId;
+        var sorted = Items.Select((asset, index) => (asset, index)).ToList();
+        sorted.Sort((left, right) =>
+        {
+            var compared = HardwareAssetSort.Compare(left.asset, right.asset, column, _sortDescending);
+            if (compared != 0)
+                return compared;
+            var serial = string.Compare(
+                left.asset.SerialNumber,
+                right.asset.SerialNumber,
+                StringComparison.OrdinalIgnoreCase);
+            return serial != 0 ? serial : left.index.CompareTo(right.index);
+        });
+
+        _suppressSelection = true;
+        for (var index = 0; index < sorted.Count; index++)
+        {
+            var current = Items.IndexOf(sorted[index].asset);
+            if (current != index)
+                Items.Move(current, index);
+        }
+
+        Selected = string.IsNullOrEmpty(keepSysId)
+            ? null
+            : Items.FirstOrDefault(asset => asset.SysId == keepSysId);
+        _suppressSelection = false;
+    }
+
+    private string SortHeader(string title, HardwareSortColumn column) =>
+        _sortColumn == column ? title + (_sortDescending ? " ▼" : " ▲") : title;
+
+    private void NotifySortHeaders()
+    {
+        OnPropertyChanged(nameof(SerialHeader));
+        OnPropertyChanged(nameof(ModelHeader));
+        OnPropertyChanged(nameof(AssignedHeader));
+        OnPropertyChanged(nameof(LocationHeader));
+        OnPropertyChanged(nameof(StateHeader));
+        OnPropertyChanged(nameof(SubstateHeader));
+        OnPropertyChanged(nameof(CommentsHeader));
     }
 
     private bool PassesColumnFilters(HardwareAsset asset) =>
