@@ -52,7 +52,7 @@ public static class AlertCatalog
         AlertKind.AssignedToMe =>
             "Open incidents, requests, and request items assigned to you. On hold counts, and resolved, closed, and cancelled do not.",
         AlertKind.WatchedGroup =>
-            "Open incidents in the watched group whose location is one of the office cities under Settings. On hold counts, and resolved, closed, and cancelled do not.",
+            "Open incidents and request items in the watched group whose location is one of the office cities under Settings, plus unassigned request items in your groups at those offices. On hold counts, and resolved, closed, and cancelled do not.",
         AlertKind.SlaBreaching =>
             "An open incident, request item, or walk-up that has breached, or is in progress past its planned end, and is assigned to you or unassigned in one of your groups or the watched group.",
         AlertKind.OnHoldPastFollowUp =>

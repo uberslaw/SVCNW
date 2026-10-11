@@ -22,6 +22,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     private IReadOnlyList<string> _officeCities = [];
     private IReadOnlyList<string> _teamMemberIds = [];
     private bool _useLeadTeam;
+    private string _watchedGroupName = "";
 
     protected RecordWorkspaceViewModel(IDesktopServices desktop, string tableName, string recordLabel, bool allowCreate, IReadOnlyList<PresetOption> presets, DeskSection section, bool attachments = false)
     {
@@ -126,6 +127,13 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
+
+    /// <summary>
+    /// Incident and request-item My Team include this watched group, the same group whose
+    /// members are the walk-up My Team roster.
+    /// </summary>
+    public void UseWatchedGroup(string? name) =>
+        _watchedGroupName = name?.Trim() ?? "";
 
     public void Attach(IServiceNowClient client)
     {
@@ -738,6 +746,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         var assignment = Preset?.Assignment ?? AssignmentScope.Any;
         IReadOnlyList<string>? offices = null;
         IReadOnlyList<string>? team = null;
+        string? watched = null;
         if (_useLeadTeam && assignment == AssignmentScope.MyGroups)
         {
             // Walk-up My Team is the Leads people, including members outside the office.
@@ -748,6 +757,12 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             // My Team / Unassigned: watched notification offices, or the signed-in user's city
             // when that list is empty (see OfficeQueue.Cities). My Tickets stays assignee-only.
             offices = _officeCities;
+            if (assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0)
+                watched = _watchedGroupName;
+        }
+        else if (assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0)
+        {
+            watched = _watchedGroupName;
         }
 
         return new TicketQuery
@@ -758,6 +773,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             AssignmentClause = Preset?.AssignmentClause,
             OfficeLocations = offices,
             TeamMemberIds = team,
+            WatchedGroupName = watched,
             Limit = 50
         };
     }

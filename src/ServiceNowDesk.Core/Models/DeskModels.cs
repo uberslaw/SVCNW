@@ -121,6 +121,14 @@ public sealed record TicketQuery
     /// </summary>
     public IReadOnlyList<string>? TeamMemberIds { get; init; }
 
+    /// <summary>
+    /// Watched assignment group name from notification settings. Incident and request-item
+    /// My Team OR this name with the signed-in user's groups, the same group whose roster
+    /// supplies walk-up My Team. Null or blank leaves My Team on membership alone.
+    /// Walk-up My Team sets <see cref="TeamMemberIds"/> and ignores this name.
+    /// </summary>
+    public string? WatchedGroupName { get; init; }
+
     public int Limit { get; init; } = 50;
     public int Offset { get; init; }
 

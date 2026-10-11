@@ -127,7 +127,7 @@ public static class AlertQueryBuilder
     /// Encoded query for open incidents in the watched group whose location name is one of the cities.
     /// Returns null when the group or the city list is blank, so the caller sends no request.
     /// </summary>
-    public static string? WatchedGroup(string? groupName, IEnumerable<string>? locations)
+    public static string? WatchedGroup(string? groupName, IEnumerable<string>? locations, DeskSection section = DeskSection.Incidents)
     {
         var group = Quote(groupName);
         var cities = OfficeCities(locations);
@@ -135,8 +135,39 @@ public static class AlertQueryBuilder
             return null;
 
         return OfficeQueue.ApplyTo(
-            "assignment_group.name=" + group + "^" + StillWorking(DeskSection.Incidents) + "^ORDERBYDESCsys_updated_on",
+            "assignment_group.name=" + group + "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on",
             cities);
+    }
+
+    /// <summary>
+    /// Membership ids, then the watched group name. Empty when neither is set.
+    /// Shared by My Team, the unassigned group queue, and notification group-queue items.
+    /// </summary>
+    public static IReadOnlyList<string> AssignmentGroupScopes(IReadOnlyList<string>? groupIds, string? watchedGroupName)
+    {
+        var groups = new List<string>();
+        foreach (var id in groupIds ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+            try
+            {
+                groups.Add(EncodedQuery.SafeToken(id, "group id"));
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        var scopes = new List<string>();
+        var distinct = groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (distinct.Length > 0)
+            scopes.Add("assignment_groupIN" + string.Join(",", distinct));
+
+        var watched = Quote(watchedGroupName);
+        if (watched.Length > 0)
+            scopes.Add("assignment_group.name=" + watched);
+        return scopes;
     }
 
     public const int MaxQueryLength = 900;
@@ -178,32 +209,10 @@ public static class AlertQueryBuilder
     public static string? UnassignedInGroups(
         IReadOnlyList<string>? groupIds,
         string? watchedGroupName,
-        IReadOnlyList<string>? officeLocations = null)
+        IReadOnlyList<string>? officeLocations = null,
+        DeskSection section = DeskSection.Incidents)
     {
-        var open = StillWorking(DeskSection.Incidents);
-        var groups = new List<string>();
-        foreach (var id in groupIds ?? [])
-        {
-            if (string.IsNullOrWhiteSpace(id))
-                continue;
-            try
-            {
-                groups.Add(EncodedQuery.SafeToken(id, "group id"));
-            }
-            catch (InvalidOperationException)
-            {
-            }
-        }
-
-        var segments = new List<string>();
-        var distinct = groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (distinct.Length > 0)
-            segments.Add("assigned_toISEMPTY^assignment_groupIN" + string.Join(",", distinct) + "^" + open);
-
-        var watched = Quote(watchedGroupName);
-        if (watched.Length > 0)
-            segments.Add("assigned_toISEMPTY^assignment_group.name=" + watched + "^" + open);
-
+        var segments = UnassignedSegments(groupIds, watchedGroupName, section);
         if (segments.Count == 0)
             return null;
 
@@ -227,32 +236,10 @@ public static class AlertQueryBuilder
     public static IReadOnlyList<string> UnassignedInGroupsQueries(
         IReadOnlyList<string>? groupIds,
         string? watchedGroupName,
-        IReadOnlyList<string>? officeLocations = null)
+        IReadOnlyList<string>? officeLocations = null,
+        DeskSection section = DeskSection.Incidents)
     {
-        var open = StillWorking(DeskSection.Incidents);
-        var groups = new List<string>();
-        foreach (var id in groupIds ?? [])
-        {
-            if (string.IsNullOrWhiteSpace(id))
-                continue;
-            try
-            {
-                groups.Add(EncodedQuery.SafeToken(id, "group id"));
-            }
-            catch (InvalidOperationException)
-            {
-            }
-        }
-
-        var segments = new List<string>();
-        var distinct = groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (distinct.Length > 0)
-            segments.Add("assigned_toISEMPTY^assignment_groupIN" + string.Join(",", distinct) + "^" + open);
-
-        var watched = Quote(watchedGroupName);
-        if (watched.Length > 0)
-            segments.Add("assigned_toISEMPTY^assignment_group.name=" + watched + "^" + open);
-
+        var segments = UnassignedSegments(groupIds, watchedGroupName, section);
         if (segments.Count == 0)
             return [];
 
@@ -390,6 +377,54 @@ public static class AlertQueryBuilder
         if (batch.Count > 0)
             queries.Add(prefix + string.Join(",", batch));
         return queries;
+    }
+
+    /// <summary>
+    /// Unassigned group segments. Membership ids are split so an office <c>^NQ</c> pair stays
+    /// under <see cref="MaxQueryLength"/>. One small group stays a single <c>assignment_groupIN</c>.
+    /// </summary>
+    private static List<string> UnassignedSegments(
+        IReadOnlyList<string>? groupIds,
+        string? watchedGroupName,
+        DeskSection section)
+    {
+        var open = StillWorking(section);
+        var groups = new List<string>();
+        foreach (var id in groupIds ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+            try
+            {
+                groups.Add(EncodedQuery.SafeToken(id, "group id"));
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        var segments = new List<string>();
+        var distinct = groups.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (distinct.Length > 0)
+        {
+            foreach (var clause in InClauses("assignment_group", distinct, UnassignedGroupClauseBudget(open)))
+                segments.Add("assigned_toISEMPTY^" + clause + "^" + open);
+        }
+
+        var watched = Quote(watchedGroupName);
+        if (watched.Length > 0)
+            segments.Add("assigned_toISEMPTY^assignment_group.name=" + watched + "^" + open);
+        return segments;
+    }
+
+    private static int UnassignedGroupClauseBudget(string open)
+    {
+        // ApplyTo repeats the body for the city and the " Office" variant.
+        const string longestLocation = "location.name=\"Maroochydore Office\"";
+        const string order = "^ORDERBYDESCsys_updated_on";
+        var bodyBudget = (MaxQueryLength - order.Length - "^NQ".Length - (longestLocation.Length * 2)) / 2;
+        var reserved = "assigned_toISEMPTY^".Length + "^".Length + open.Length;
+        return Math.Max("assignment_groupIN".Length + 1, bodyBudget - reserved);
     }
 
     private static IReadOnlyList<string> WatchedLocationScopes(

@@ -22,6 +22,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
     private IReadOnlyList<string> _officeCities = [];
     private bool _useLeadTeam;
     private IReadOnlyList<string> _teamMemberIds = [];
+    private string _watchedGroupName = "";
     private int _loadVersion;
     private bool _suppressSelection;
     private TicketRow? _bound;
@@ -99,6 +100,13 @@ public partial class MixWorkspaceViewModel : ObservableObject
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
+
+    /// <summary>
+    /// Incident and request-item rows in the mix use this watched group on My Team.
+    /// Walk-up My Team still uses <see cref="UseTeamMembers"/> and ignores the name.
+    /// </summary>
+    public void UseWatchedGroup(string? name) =>
+        _watchedGroupName = name?.Trim() ?? "";
 
     public void Attach(IServiceNowClient client) => _client = client;
 
@@ -309,6 +317,9 @@ public partial class MixWorkspaceViewModel : ObservableObject
             Assignment = Preset.Assignment,
             Activity = Preset.Activity,
             OfficeLocations = offices,
+            WatchedGroupName = Preset.Assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0
+                ? _watchedGroupName
+                : null,
             Limit = PageLimit
         };
     }
@@ -336,7 +347,8 @@ public partial class MixWorkspaceViewModel : ObservableObject
         return baseQuery with
         {
             TeamMemberIds = _teamMemberIds,
-            OfficeLocations = null
+            OfficeLocations = null,
+            WatchedGroupName = null
         };
     }
 

@@ -118,17 +118,23 @@ public class AlertTests
         Assert.Equal(8, snapshot.Count(AlertKind.AssignedToMe));
 
         var group = snapshot.Bucket(AlertKind.WatchedGroup).Rows;
-        var brisbane = Assert.Single(group);
-        Assert.Equal("INC0010007", brisbane.Number);
+        var brisbane = Assert.Single(group, row => row.Number == "INC0010007");
         Assert.Equal("Brisbane", brisbane.Location);
         Assert.Equal("Aus DT - Client Services", brisbane.Group);
+        Assert.Contains(group, row => row.Number == "RITM0010009" && row.Section == DeskSection.RequestedItems);
+        Assert.Contains(group, row => row.Number == "RITM0010005" && row.Section == DeskSection.RequestedItems);
         Assert.DoesNotContain(group, row => row.Number == "INC0010008");
         Assert.DoesNotContain(group, row => row.Number == "INC0010009");
+        Assert.DoesNotContain(group, row => row.Number == "RITM0010004");
+        Assert.DoesNotContain(group, row => row.Number == "RITM0010010");
+        Assert.DoesNotContain(group, row => row.Number == "INC0010014");
 
         var ignoredCase = await client.GetOpenAlertsAsync(
             new AlertSearch(user.SysId, "aus dt - client services", ["brisbane"]),
             CancellationToken.None);
-        Assert.Equal("INC0010007", Assert.Single(ignoredCase.Bucket(AlertKind.WatchedGroup).Rows).Number);
+        var ignoredRows = ignoredCase.Bucket(AlertKind.WatchedGroup).Rows;
+        Assert.Contains(ignoredRows, row => row.Number == "INC0010007");
+        Assert.Contains(ignoredRows, row => row.Number == "RITM0010009");
 
         var injected = await client.GetOpenAlertsAsync(
             new AlertSearch(user.SysId, "Aus DT - Client Services", ["Brisbane^ORactive=false"]),
@@ -670,7 +676,7 @@ public class AlertTests
             "Open incidents, requests, and request items assigned to you. On hold counts, and resolved, closed, and cancelled do not.",
             AlertCatalog.Description(AlertKind.AssignedToMe));
         Assert.Equal(
-            "Open incidents in the watched group whose location is one of the office cities under Settings. On hold counts, and resolved, closed, and cancelled do not.",
+            "Open incidents and request items in the watched group whose location is one of the office cities under Settings, plus unassigned request items in your groups at those offices. On hold counts, and resolved, closed, and cancelled do not.",
             AlertCatalog.Description(AlertKind.WatchedGroup));
         Assert.Equal(
             "An open incident, request item, or walk-up that has breached, or is in progress past its planned end, and is assigned to you or unassigned in one of your groups or the watched group.",
@@ -917,7 +923,9 @@ public class AlertTests
         var returned = Assert.Single(snapshot.Bucket(AlertKind.ReturnedWithNotes).Rows);
         Assert.Equal("INC0010013", returned.Number);
         Assert.Equal(8, snapshot.Count(AlertKind.AssignedToMe));
-        Assert.Equal("INC0010007", Assert.Single(snapshot.Bucket(AlertKind.WatchedGroup).Rows).Number);
+        var watchedGroup = snapshot.Bucket(AlertKind.WatchedGroup).Rows;
+        Assert.Contains(watchedGroup, row => row.Number == "INC0010007");
+        Assert.Contains(watchedGroup, row => row.Number == "RITM0010009" && row.Section == DeskSection.RequestedItems);
     }
 
     [Fact]
@@ -1202,7 +1210,9 @@ public class AlertTests
             Assert.DoesNotContain("sysparm_suppress_pagination_header", call.PathAndQuery);
         });
 
-        var groupCalls = decoded.Where(call => call.Query.Contains("assignment_groupIN", StringComparison.Ordinal)).ToArray();
+        var groupCalls = decoded.Where(call =>
+            call.Query.Contains("assignment_groupIN", StringComparison.Ordinal)
+            && !call.Query.Contains("assigned_toISEMPTY", StringComparison.Ordinal)).ToArray();
         Assert.True(groupCalls.Length > 1);
         Assert.All(groupCalls, call =>
         {
