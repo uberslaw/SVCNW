@@ -34,7 +34,7 @@
                     DataContext="{Binding NotificationSettings}">
                 <StackPanel>
                     <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                               Text="The desktop strip at the top center of the screen drops the notification bar when the pointer rests on it, and when a jiggle fires. The portion that caused a jiggle is highlighted. The watched group and office locations decide the group queue."/>
+                               Text="The desktop strip at the top center of the screen drops the notification bar when the pointer rests on it, and when a jiggle fires. The portion that caused a jiggle pulses a soft light yellow while the highlight stays on. The watched group and office locations decide the group queue."/>
 
                     <TextBlock Text="When the desktop widget appears" Style="{StaticResource FieldLabel}"/>
                     <RadioButton GroupName="ShowDesktopWidget" Margin="0,0,0,4"
