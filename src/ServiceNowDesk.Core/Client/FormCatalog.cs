@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using ServiceNowDesk.Models;
 
@@ -121,6 +122,7 @@ public interface IFormCatalogStore
 {
     FormCatalogSnapshot? Load(Uri instanceUri);
     void Save(Uri instanceUri, FormCatalogSnapshot snapshot);
+    long StoredBytes(Uri instanceUri);
 }
 
 public sealed class FileFormCatalogStore : IFormCatalogStore
@@ -164,11 +166,72 @@ public sealed class FileFormCatalogStore : IFormCatalogStore
         File.Move(temp, path, overwrite: true);
     }
 
+    public long StoredBytes(Uri instanceUri)
+    {
+        try
+        {
+            var path = PathFor(instanceUri);
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
     private string PathFor(Uri instanceUri)
     {
         var host = instanceUri.Host.ToLowerInvariant();
         foreach (var ch in Path.GetInvalidFileNameChars())
             host = host.Replace(ch, '_');
         return Path.Combine(_folder, "form-catalog." + host + ".json");
+    }
+}
+
+/// <summary>Estimates on-disk footprint for one cache section from a shared snapshot.</summary>
+public static class CacheFootprint
+{
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+
+    public static long ListSectionBytes(CachedTicketList? list)
+    {
+        if (list is null)
+            return 0;
+        return Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(list, JsonOptions));
+    }
+
+    public static long ChoicesBytes(FormCatalogSnapshot? catalog)
+    {
+        if (catalog?.Choices is null || catalog.Choices.Count == 0)
+            return 0;
+        return Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(catalog.Choices, JsonOptions));
+    }
+
+    public static long GroupsBytes(FormCatalogSnapshot? catalog)
+    {
+        if (catalog?.Groups is null || catalog.Groups.Count == 0)
+            return 0;
+        return Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(catalog.Groups, JsonOptions));
+    }
+
+    public static long MembersBytes(FormCatalogSnapshot? catalog)
+    {
+        if (catalog?.Members is null || catalog.Members.Count == 0)
+            return 0;
+        return Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(catalog.Members, JsonOptions));
+    }
+
+    public static long ServiceOfferingsBytes(FormCatalogSnapshot? catalog)
+    {
+        if (catalog?.ServiceOfferings is null || catalog.ServiceOfferings.Count == 0)
+            return 0;
+        return Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(catalog.ServiceOfferings, JsonOptions));
+    }
+
+    public static long ConfigurationItemsBytes(FormCatalogSnapshot? catalog)
+    {
+        if (catalog?.ConfigurationItems is null || catalog.ConfigurationItems.Count == 0)
+            return 0;
+        return Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(catalog.ConfigurationItems, JsonOptions));
     }
 }

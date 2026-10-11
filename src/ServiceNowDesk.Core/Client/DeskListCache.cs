@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace ServiceNowDesk.Client;
@@ -59,6 +60,7 @@ public interface IDeskListStore
 {
     DeskListSnapshot? Load(string scope);
     void Save(string scope, DeskListSnapshot snapshot);
+    long StoredBytes(string scope);
 }
 
 public sealed class MemoryDeskListStore : IDeskListStore
@@ -78,6 +80,9 @@ public sealed class MemoryDeskListStore : IDeskListStore
         ArgumentNullException.ThrowIfNull(snapshot);
         _json[scope] = JsonSerializer.Serialize(snapshot, JsonOptions);
     }
+
+    public long StoredBytes(string scope) =>
+        _json.TryGetValue(scope, out var json) ? Encoding.UTF8.GetByteCount(json) : 0;
 }
 
 public sealed class FileDeskListStore : IDeskListStore
@@ -119,6 +124,19 @@ public sealed class FileDeskListStore : IDeskListStore
         var temp = path + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(snapshot, JsonOptions));
         File.Move(temp, path, overwrite: true);
+    }
+
+    public long StoredBytes(string scope)
+    {
+        try
+        {
+            var path = PathFor(scope);
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
     }
 
     private string PathFor(string scope)

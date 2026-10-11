@@ -209,5 +209,7 @@ public class ReferenceChoiceSearchTests
         public void Save(Uri instanceUri, FormCatalogSnapshot snapshot)
         {
         }
+
+        public long StoredBytes(Uri instanceUri) => 0;
     }
 }

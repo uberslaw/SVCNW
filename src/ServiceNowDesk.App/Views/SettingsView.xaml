@@ -108,7 +108,23 @@
 
             <TextBlock Text="Cache" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
-                       Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Rows show how many items are stored now, the last good download, the active list filter (ticket lists), how many stale items were cleared, how many fresh items were downloaded, and any error. Incident templates and the saved sign-in stay where they are."/>
+                       Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Rows show how many items are stored now, the on-disk size, the last good download, the active list filter (ticket lists), how many stale items were cleared, how many fresh items were downloaded, and any error. Incident templates and the saved sign-in stay where they are."/>
+
+            <TextBlock Text="Data transferred" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <DockPanel Margin="0,0,0,8" LastChildFill="False">
+                <TextBlock Text="Period" Style="{StaticResource FieldLabel}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ComboBox Width="180" HorizontalAlignment="Left"
+                          ItemsSource="{Binding TransferPeriods}"
+                          SelectedItem="{Binding SelectedTransferPeriod}"
+                          DisplayMemberPath="Label"
+                          AutomationProperties.Name="Transfer period"/>
+            </DockPanel>
+            <TextBlock Text="{Binding TransferUploadedText}" Margin="0,0,0,2"
+                       Foreground="{StaticResource MutedBrush}"
+                       AutomationProperties.Name="Bytes uploaded to server"/>
+            <TextBlock Text="{Binding TransferDownloadedText}" Margin="0,0,0,14"
+                       Foreground="{StaticResource MutedBrush}"
+                       AutomationProperties.Name="Bytes downloaded from server"/>
 
             <CheckBox Content="Download all on launch"
                       IsChecked="{Binding Connection.DownloadCacheOnLaunch}"
@@ -126,26 +142,34 @@
             <ItemsControl ItemsSource="{Binding Caches}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="0,10">
+                        <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="0,8">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="240"/>
+                                    <ColumnDefinition Width="260"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Name}" FontSize="14"/>
-                                    <CheckBox Content="Download on launch"
-                                              IsChecked="{Binding DownloadOnLaunch, Mode=TwoWay}"
-                                              Margin="0,6,0,0"
-                                              AutomationProperties.Name="{Binding Name, StringFormat=Download {0} on launch}"/>
-                                    <TextBlock Text="{Binding CountText}" Margin="0,4,0,0" FontSize="12"
+                                    <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <TextBlock Text="Download on launch"
+                                                   FontSize="13"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"/>
+                                        <CheckBox IsChecked="{Binding DownloadOnLaunch, Mode=TwoWay}"
+                                                  VerticalAlignment="Center"
+                                                  AutomationProperties.Name="{Binding Name, StringFormat=Download {0} on launch}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding CountText}" Margin="0,3,0,0" FontSize="12"
                                                Foreground="{StaticResource MutedBrush}"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Stored count for {0}}"/>
-                                    <TextBlock Text="{Binding LastGoodText}" Margin="0,2,0,0" FontSize="12"
+                                    <TextBlock Text="{Binding SizeText}" Margin="0,1,0,0" FontSize="12"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               AutomationProperties.Name="{Binding Name, StringFormat=Stored size for {0}}"/>
+                                    <TextBlock Text="{Binding LastGoodText}" Margin="0,1,0,0" FontSize="12"
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Last good download for {0}}"/>
-                                    <TextBlock Text="{Binding QueryText}" Margin="0,2,0,0" FontSize="11"
+                                    <TextBlock Text="{Binding QueryText}" Margin="0,1,0,0" FontSize="11"
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                Visibility="{Binding QueryText, Converter={StaticResource StringVis}}"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Last download query for {0}}"/>

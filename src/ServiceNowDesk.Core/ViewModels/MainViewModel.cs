@@ -19,6 +19,8 @@ public partial class MainViewModel : ObservableObject
     private readonly IFormCatalogStore? _formCatalog;
     private readonly IDeskListStore? _lists;
     private readonly IDailyWorkStore _dailyWork;
+    private readonly IHardwareCatalogStore? _hardwareCatalog;
+    private readonly TransferMeter _transfer;
     private readonly Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? _clientFactory;
     private readonly Func<IServiceNowClient>? _sampleClientFactory;
     private readonly ITicketPopOut? _ticketPopOut;
@@ -105,7 +107,8 @@ public partial class MainViewModel : ObservableObject
         IHardwareCatalogStore? hardwareCatalog = null,
         Func<IServiceNowClient>? sampleClientFactory = null,
         IQueueDismissalStore? queueDismissals = null,
-        ITicketPopOut? ticketPopOut = null)
+        ITicketPopOut? ticketPopOut = null,
+        TransferMeter? transfer = null)
     {
         _store = store;
         _desktop = desktop;
@@ -115,6 +118,8 @@ public partial class MainViewModel : ObservableObject
         _sampleClientFactory = sampleClientFactory;
         _ticketPopOut = ticketPopOut;
         _lists = lists;
+        _hardwareCatalog = hardwareCatalog;
+        _transfer = transfer ?? new TransferMeter();
         _dailyWork = dailyWork ?? new MemoryDailyWorkStore();
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
@@ -263,7 +268,20 @@ public partial class MainViewModel : ObservableObject
             () => Startup.ShowScreen);
         Guided.StartApplied += OnGuidedStart;
         Startup.PropertyChanged += OnStartupChanged;
+        SelectedTransferPeriod = TransferPeriods[0];
+        RefreshTransferSummary();
         RebuildNavigation();
+    }
+
+    partial void OnSelectedTransferPeriodChanged(TransferPeriodOption? value) => RefreshTransferSummary();
+
+    public void RefreshTransferSummary()
+    {
+        _transfer.Flush();
+        var period = SelectedTransferPeriod?.Period ?? TransferPeriod.Session;
+        var (uploaded, downloaded) = _transfer.Totals(period, DateTimeOffset.Now);
+        TransferUploadedText = "Up to server: " + ByteSizeFormat.Format(uploaded);
+        TransferDownloadedText = "Down from server: " + ByteSizeFormat.Format(downloaded);
     }
 
     public GuidedSetupController Guided { get; }
@@ -322,6 +340,25 @@ public partial class MainViewModel : ObservableObject
     public Task SearchOpenTask { get; private set; } = Task.CompletedTask;
     public Task NoteConvertTask { get; private set; } = Task.CompletedTask;
     public ObservableCollection<ApiActivity> Activity { get; } = [];
+
+    /// <summary>ServiceNow upload/download byte totals shown on Settings → Cache.</summary>
+    public TransferMeter Transfer => _transfer;
+
+    public IReadOnlyList<TransferPeriodOption> TransferPeriods { get; } =
+    [
+        new(TransferPeriod.Session),
+        new(TransferPeriod.Today),
+        new(TransferPeriod.ThisWeek),
+        new(TransferPeriod.Month),
+        new(TransferPeriod.ThreeMonths),
+        new(TransferPeriod.SixMonths),
+        new(TransferPeriod.TwelveMonths),
+        new(TransferPeriod.AllTime)
+    ];
+
+    [ObservableProperty] private TransferPeriodOption? selectedTransferPeriod;
+    [ObservableProperty] private string transferUploadedText = "Up to server: 0 B";
+    [ObservableProperty] private string transferDownloadedText = "Down from server: 0 B";
 
     [ObservableProperty] private DeskSection selectedSection = DeskSection.Connection;
     [ObservableProperty] private string searchText = "";
@@ -402,7 +439,7 @@ public partial class MainViewModel : ObservableObject
             {
                 var session = ServiceNowSession.FromSettings(settings);
                 live = _clientFactory is null
-                    ? ServiceNowClient.Create(session, formCatalog: _formCatalog)
+                    ? ServiceNowClient.Create(session, formCatalog: _formCatalog, transfer: _transfer)
                     : _clientFactory(session, _formCatalog);
                 WatchBrowserSession(live);
                 created = live;

@@ -18,7 +18,12 @@ public partial class SettingsView : UserControl
         DataContextChanged += (_, _) => SyncLeadsPassword();
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e) => SyncLeadsPassword();
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        SyncLeadsPassword();
+        if (DataContext is MainViewModel main)
+            main.RefreshTransferSummary();
+    }
 
     private void LeadsPasswordInput_PasswordChanged(object sender, RoutedEventArgs e)
     {
