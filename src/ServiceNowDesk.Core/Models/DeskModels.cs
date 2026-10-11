@@ -285,6 +285,24 @@ public sealed class DeskSettings
 
     /// <summary>True after Exit or the last Next. Launch does not auto-prompt again.</summary>
     public bool GuidedSetupFinished { get; set; }
+
+    /// <summary>Last main-window width. Null means no size has been saved yet.</summary>
+    public double? WindowWidth { get; set; }
+
+    /// <summary>Last main-window height. Null means no size has been saved yet.</summary>
+    public double? WindowHeight { get; set; }
+
+    /// <summary>Last main-window left edge. Null means centre on the work area.</summary>
+    public double? WindowLeft { get; set; }
+
+    /// <summary>Last main-window top edge. Null means centre on the work area.</summary>
+    public double? WindowTop { get; set; }
+
+    /// <summary>
+    /// Last main-window state: <c>Normal</c> or <c>Maximized</c>.
+    /// Minimized is not stored; restore uses Normal instead.
+    /// </summary>
+    public string? WindowState { get; set; }
 }
 
 public sealed class ServiceNowSession

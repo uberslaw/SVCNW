@@ -68,6 +68,11 @@ public static class DeskSettingsFile
         public bool LeadsTeamLocked { get; set; }
         public GuidedSetupOfferChoice GuidedSetupOffer { get; set; }
         public bool GuidedSetupFinished { get; set; }
+        public double? WindowWidth { get; set; }
+        public double? WindowHeight { get; set; }
+        public double? WindowLeft { get; set; }
+        public double? WindowTop { get; set; }
+        public string? WindowState { get; set; }
 
         public static Stored From(DeskSettings settings, Func<string?, string> protect) => new()
         {
@@ -108,7 +113,12 @@ public static class DeskSettingsFile
             LeadsEnabled = settings.LeadsEnabled,
             LeadsTeamLocked = settings.LeadsTeamLocked,
             GuidedSetupOffer = settings.GuidedSetupOffer,
-            GuidedSetupFinished = settings.GuidedSetupFinished
+            GuidedSetupFinished = settings.GuidedSetupFinished,
+            WindowWidth = settings.WindowWidth,
+            WindowHeight = settings.WindowHeight,
+            WindowLeft = settings.WindowLeft,
+            WindowTop = settings.WindowTop,
+            WindowState = settings.WindowState
         };
 
         public DeskSettings ToSettings(Func<string?, string> unprotect) => new()
@@ -150,7 +160,12 @@ public static class DeskSettingsFile
             LeadsEnabled = LeadsEnabled,
             LeadsTeamLocked = LeadsTeamLocked,
             GuidedSetupOffer = GuidedSetupOffer,
-            GuidedSetupFinished = GuidedSetupFinished
+            GuidedSetupFinished = GuidedSetupFinished,
+            WindowWidth = WindowWidth,
+            WindowHeight = WindowHeight,
+            WindowLeft = WindowLeft,
+            WindowTop = WindowTop,
+            WindowState = WindowState
         };
 
         private static string NormalizeJiggleFrequency(string? frequency)

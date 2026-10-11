@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.GuidedSetup;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.Services;
 
 namespace ServiceNowDesk.ViewModels;
 
@@ -75,6 +76,12 @@ public partial class ConnectionViewModel : ObservableObject
     public GuidedSetupOfferChoice GuidedSetupOffer { get; private set; }
 
     public bool GuidedSetupFinished { get; private set; }
+
+    public double? WindowWidth { get; private set; }
+    public double? WindowHeight { get; private set; }
+    public double? WindowLeft { get; private set; }
+    public double? WindowTop { get; private set; }
+    public string? WindowState { get; private set; }
 
     partial void OnAuthModeChanged(ServiceNowAuthMode value) => SyncFlags();
     partial void OnUseSampleDataChanged(bool value) => SyncFlags();
@@ -165,6 +172,11 @@ public partial class ConnectionViewModel : ObservableObject
         settings.HardwareOfficeOverride = HardwareOfficeOverride;
         settings.GuidedSetupOffer = GuidedSetupOffer;
         settings.GuidedSetupFinished = GuidedSetupFinished;
+        settings.WindowWidth = WindowWidth;
+        settings.WindowHeight = WindowHeight;
+        settings.WindowLeft = WindowLeft;
+        settings.WindowTop = WindowTop;
+        settings.WindowState = WindowState;
         return settings;
     }
 
@@ -172,6 +184,17 @@ public partial class ConnectionViewModel : ObservableObject
     {
         GuidedSetupOffer = choice;
         GuidedSetupFinished = finished;
+    }
+
+    public void RememberWindowPlacement(double left, double top, double width, double height, string? windowState)
+    {
+        var draft = new DeskSettings();
+        MainWindowPlacement.Capture(draft, left, top, width, height, windowState);
+        WindowWidth = draft.WindowWidth;
+        WindowHeight = draft.WindowHeight;
+        WindowLeft = draft.WindowLeft;
+        WindowTop = draft.WindowTop;
+        WindowState = draft.WindowState;
     }
 
     [RelayCommand]
@@ -270,6 +293,11 @@ public partial class ConnectionViewModel : ObservableObject
         HardwareOfficeOverride = settings.HardwareOfficeOverride;
         GuidedSetupOffer = settings.GuidedSetupOffer;
         GuidedSetupFinished = settings.GuidedSetupFinished;
+        WindowWidth = settings.WindowWidth;
+        WindowHeight = settings.WindowHeight;
+        WindowLeft = settings.WindowLeft;
+        WindowTop = settings.WindowTop;
+        WindowState = settings.WindowState;
         LeadsPassword = "";
         LeadsAccessStatus = "";
         SyncFlags();
