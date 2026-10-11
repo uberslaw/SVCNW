@@ -7,6 +7,9 @@ namespace ServiceNowDesk.WorkEffort;
 /// <summary>
 /// One credited event that makes up a Work Effort cell. Open / resolve / close stay one line each.
 /// Daily updates keep one line per local day. Allow multiple updates keeps one line per save.
+/// <see cref="UpdateCount"/> is the raw times this person updated the ticket in the window,
+/// even when Daily mode only awards one credit per day. <see cref="WorkTypeLabel"/> lists every
+/// contribution that ticket made for this person (Opened, Resolved, and/or X Updates).
 /// </summary>
 public sealed record WorkEffortCredit(
     string PersonSysId,
@@ -17,7 +20,10 @@ public sealed record WorkEffortCredit(
     WorkEffortKind Kind,
     WorkEffortMetric Metric,
     DateTime When,
-    string Day = "")
+    string Day = "",
+    int UpdateCount = 0,
+    bool TicketOpened = false,
+    bool TicketResolved = false)
 {
     public string TableLabel => Kind switch
     {
@@ -33,6 +39,30 @@ public sealed record WorkEffortCredit(
         WorkEffortMetric.Closed => "closed",
         _ => "updated"
     };
+
+    /// <summary>
+    /// Opened, Resolved, and/or X Updates for this person on this ticket.
+    /// X is the raw update count, not the Daily-mode credit count.
+    /// </summary>
+    public string WorkTypeLabel
+    {
+        get
+        {
+            var opened = TicketOpened || Metric == WorkEffortMetric.Opened;
+            var resolved = TicketResolved || Metric is WorkEffortMetric.Resolved or WorkEffortMetric.Closed;
+            var updates = UpdateCount > 0
+                ? UpdateCount
+                : Metric == WorkEffortMetric.Updated ? 1 : 0;
+            var parts = new List<string>(3);
+            if (opened)
+                parts.Add("Opened");
+            if (resolved)
+                parts.Add("Resolved");
+            if (updates > 0)
+                parts.Add(FormatUpdates(updates));
+            return parts.Count == 0 ? MetricLabel : string.Join(", ", parts);
+        }
+    }
 
     public string DisplayNumber =>
         string.IsNullOrWhiteSpace(Number) ? RecordSysId : Number.Trim();
@@ -61,6 +91,12 @@ public sealed record WorkEffortCredit(
         (WorkEffortKind.Interaction, WorkEffortMetric.Resolved or WorkEffortMetric.Closed) => WorkEffortColumn.ImsResolved,
         _ => WorkEffortColumn.ImsUpdated
     };
+
+    internal static string FormatUpdates(int count)
+    {
+        var n = count < 1 ? 1 : count;
+        return n == 1 ? "1 Update" : n.ToString(CultureInfo.InvariantCulture) + " Updates";
+    }
 }
 
 public enum WorkEffortMetric
@@ -191,7 +227,7 @@ public static class WorkEffortCsv
     {
         ArgumentNullException.ThrowIfNull(lines);
         var builder = new StringBuilder();
-        builder.Append("Person,Number,Title,Table,Metric,When,Day,Assignee,RecordSysId");
+        builder.Append("Person,Number,Title,Table,Metric,Work Type,When,Day,Assignee,RecordSysId");
         builder.Append('\n');
         foreach (var line in lines)
         {
@@ -204,6 +240,8 @@ public static class WorkEffortCsv
             builder.Append(Escape(line.TableLabel));
             builder.Append(',');
             builder.Append(Escape(line.MetricLabel));
+            builder.Append(',');
+            builder.Append(Escape(line.WorkTypeLabel));
             builder.Append(',');
             builder.Append(Escape(line.WhenText));
             builder.Append(',');

@@ -807,6 +807,9 @@ public class WorkEffortTests
         Assert.Contains(alexAll, line => line.DisplayNumber == "IMS0010003" && line.MetricLabel == "closed");
         Assert.Contains(alexAll, line => line.DisplayNumber == "RITM0010002" && line.MetricLabel == "updated");
         Assert.DoesNotContain(alexAll, line => line.PersonSysId == jordan.PersonSysId);
+        Assert.Contains(alexAll, line => line.DisplayNumber == "INC0010001" && line.WorkTypeLabel == "Opened, Resolved");
+        Assert.Contains(alexAll, line => line.DisplayNumber == "IMS0010003" && line.WorkTypeLabel == "Resolved");
+        Assert.Contains(alexAll, line => line.DisplayNumber == "RITM0010002" && line.WorkTypeLabel == "2 Updates");
     }
 
     [Fact]
@@ -832,6 +835,43 @@ public class WorkEffortTests
     }
 
     [Fact]
+    public void WorkTypeShowsRawUpdateCountInBothUpdateModes()
+    {
+        var window = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var people = SampleWorkEffort.WithLogins(SampleTeam);
+        var touches = SampleWorkEffort.Touches(Now);
+        var daily = WorkEffortDetail.Build(people, touches, window, WorkEffortUpdateMode.Daily);
+        var multiple = WorkEffortDetail.Build(people, touches, window, WorkEffortUpdateMode.Multiple);
+
+        // Jordan saved INC0010006 three times today. Daily awards one credit; Multiple awards three.
+        // Work Type still shows the raw save count either way.
+        var jordanDaily = WorkEffortDetail.ForCell(daily, SampleWorkEffort.Jordan.SysId, WorkEffortColumn.IncUpdated);
+        var jordanMultiple = WorkEffortDetail.ForCell(multiple, SampleWorkEffort.Jordan.SysId, WorkEffortColumn.IncUpdated);
+        Assert.Single(jordanDaily);
+        Assert.Equal(3, jordanMultiple.Count);
+        Assert.All(jordanDaily, line =>
+        {
+            Assert.Equal(3, line.UpdateCount);
+            Assert.Equal("3 Updates", line.WorkTypeLabel);
+        });
+        Assert.All(jordanMultiple, line =>
+        {
+            Assert.Equal(3, line.UpdateCount);
+            Assert.Equal("3 Updates", line.WorkTypeLabel);
+        });
+
+        var alexDaily = Assert.Single(WorkEffortDetail.ForCell(daily, SampleWorkEffort.SignedIn.SysId, WorkEffortColumn.RitmUpdated));
+        var alexMultiple = WorkEffortDetail.ForCell(multiple, SampleWorkEffort.SignedIn.SysId, WorkEffortColumn.RitmUpdated);
+        Assert.Equal(2, alexDaily.UpdateCount);
+        Assert.Equal("2 Updates", alexDaily.WorkTypeLabel);
+        Assert.All(alexMultiple, line => Assert.Equal("2 Updates", line.WorkTypeLabel));
+
+        var csv = WorkEffortCsv.Format(jordanDaily);
+        Assert.Contains("Work Type", csv, StringComparison.Ordinal);
+        Assert.Contains("3 Updates", csv, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task DetailAndExportUseLoadedTouchesForAlexAndJordan()
     {
         using var client = new SampleServiceNowClient();
@@ -853,6 +893,8 @@ public class WorkEffortTests
         var detailCsv = File.ReadAllText(detailPath);
         Assert.Contains("RITM0010002", detailCsv, StringComparison.Ordinal);
         Assert.Contains("updated", detailCsv, StringComparison.Ordinal);
+        Assert.Contains("Work Type", detailCsv, StringComparison.Ordinal);
+        Assert.Contains("2 Updates", detailCsv, StringComparison.Ordinal);
         Assert.Contains("RITM", detailCsv, StringComparison.Ordinal);
 
         var jordan = page.Rows.Single(row => row.Name == "Jordan Lee");

@@ -111,12 +111,62 @@ public sealed class WorkEffortAttempt
     public IReadOnlyList<WorkEffortCredit> Credits()
     {
         Finish();
-        return _credits
+        return EnrichWorkTypes(_credits)
             .OrderBy(line => line.PersonName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(line => line.When)
             .ThenBy(line => line.DisplayNumber, StringComparer.OrdinalIgnoreCase)
             .ThenBy(line => line.MetricLabel, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    /// <summary>
+    /// Stamp every credit line with the full Opened / Resolved / update-count mix for that ticket,
+    /// so Work Type can show combinations like "Opened, 3 Updates".
+    /// </summary>
+    private static IEnumerable<WorkEffortCredit> EnrichWorkTypes(IEnumerable<WorkEffortCredit> lines)
+    {
+        var list = lines as IList<WorkEffortCredit> ?? lines.ToArray();
+        if (list.Count == 0)
+            yield break;
+
+        var mix = new Dictionary<string, TicketMix>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in list)
+        {
+            var key = MixKey(line);
+            if (!mix.TryGetValue(key, out var entry))
+            {
+                entry = new TicketMix();
+                mix[key] = entry;
+            }
+
+            if (line.Metric == WorkEffortMetric.Opened)
+                entry.Opened = true;
+            if (line.Metric is WorkEffortMetric.Resolved or WorkEffortMetric.Closed)
+                entry.Resolved = true;
+            if (line.Metric == WorkEffortMetric.Updated && line.UpdateCount > entry.UpdateCount)
+                entry.UpdateCount = line.UpdateCount;
+        }
+
+        foreach (var line in list)
+        {
+            var entry = mix[MixKey(line)];
+            yield return line with
+            {
+                TicketOpened = entry.Opened,
+                TicketResolved = entry.Resolved,
+                UpdateCount = entry.UpdateCount > 0 ? entry.UpdateCount : line.UpdateCount
+            };
+        }
+    }
+
+    private static string MixKey(WorkEffortCredit line) =>
+        line.PersonSysId + "\n" + (int)line.Kind + "\n" + line.RecordSysId;
+
+    private sealed class TicketMix
+    {
+        public bool Opened;
+        public bool Resolved;
+        public int UpdateCount;
     }
 
     public static IReadOnlyList<WorkEffortRow> ToRows(IReadOnlyList<WorkEffortPerson> people, int[] counts)
@@ -294,11 +344,13 @@ public sealed class WorkEffortAttempt
 
         foreach (var pair in grouped)
         {
+            // Raw update moments for Work Type "X Updates", independent of Daily vs Multiple scoring.
+            var updateCount = pair.Value.Moments.Count;
             if (_mode == WorkEffortUpdateMode.Multiple)
             {
                 foreach (var stamp in pair.Value.Stamps.OrderBy(value => value))
-                    AddUpdateCredit(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, stamp, day: "");
-                AddUpdate(pair.Key.Person, pair.Key.Kind, pair.Value.Moments.Count);
+                    AddUpdateCredit(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, stamp, day: "", updateCount);
+                AddUpdate(pair.Key.Person, pair.Key.Kind, updateCount);
             }
             else
             {
@@ -313,7 +365,7 @@ public sealed class WorkEffortAttempt
                 foreach (var stamp in byDay.Values.OrderBy(value => value))
                 {
                     var day = WorkEffortWindow.LocalDay(stamp).ToString("yyyy-MM-dd");
-                    AddUpdateCredit(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, stamp, day);
+                    AddUpdateCredit(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, stamp, day, updateCount);
                 }
 
                 AddUpdate(pair.Key.Person, pair.Key.Kind, byDay.Count);
@@ -353,7 +405,7 @@ public sealed class WorkEffortAttempt
             WorkEffortWindow.LocalStamp(when)));
     }
 
-    private void AddUpdateCredit(int person, WorkEffortKind kind, string recordId, DateTime when, string day)
+    private void AddUpdateCredit(int person, WorkEffortKind kind, string recordId, DateTime when, string day, int updateCount)
     {
         var label = LabelOf(kind, recordId);
         var who = _people[person];
@@ -366,7 +418,8 @@ public sealed class WorkEffortAttempt
             kind,
             WorkEffortMetric.Updated,
             when,
-            day));
+            day,
+            updateCount));
     }
 
     private void RememberLabel(WorkEffortKind kind, string recordId, string? number, string? title)
