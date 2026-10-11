@@ -130,6 +130,17 @@ public partial class NavigationOrderTests
     }
 
     [Fact]
+    public void CacheSectionLaysOutThreeColumns()
+    {
+        var settings = RepoFile("src/ServiceNowDesk.App/Views/SettingsView.xaml");
+        var caches = settings.IndexOf("ItemsSource=\"{Binding Caches}\"", StringComparison.Ordinal);
+        Assert.True(caches > settings.IndexOf("Text=\"Cache\"", StringComparison.Ordinal));
+        Assert.Contains("<UniformGrid Columns=\"3\"/>", settings[caches..], StringComparison.Ordinal);
+        Assert.Contains("RefreshCacheCommand", settings[caches..], StringComparison.Ordinal);
+        Assert.Contains("DownloadOnLaunch", settings[caches..], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RequestItemCloseNotesReplaceJournalComposeOnlyWhileClosing()
     {
         var view = RepoFile("src/ServiceNowDesk.App/Views/RequestedItemView.xaml");

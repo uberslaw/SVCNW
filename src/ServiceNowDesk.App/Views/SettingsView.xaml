@@ -4,111 +4,113 @@
              xmlns:views="clr-namespace:ServiceNowDesk.Views"
              Loaded="OnLoaded">
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="8">
-            <TextBlock Text="Settings" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
+        <StackPanel Margin="8">
+            <StackPanel MaxWidth="760" HorizontalAlignment="Left">
+                <TextBlock Text="Settings" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
 
-            <TextBlock Text="Leads" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
-            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8">
-                <StackPanel>
-                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                               Text="Enter the leads password to show the Leads menu."/>
-                    <TextBlock Text="Leads password" Style="{StaticResource FieldLabel}"/>
-                    <PasswordBox x:Name="LeadsPasswordInput" Width="280" HorizontalAlignment="Left" Margin="0,0,0,8"
-                                 PasswordChanged="LeadsPasswordInput_PasswordChanged"
-                                 AutomationProperties.Name="Leads password"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
-                        <Button Content="Unlock" Style="{StaticResource PrimaryButton}" Command="{Binding Connection.UnlockLeadsCommand}" Margin="0,0,8,0"
-                                AutomationProperties.Name="Unlock Leads"/>
-                        <Button Content="Hide Leads" Style="{StaticResource SecondaryButton}" Command="{Binding Connection.HideLeadsCommand}"
-                                Visibility="{Binding Connection.LeadsEnabled, Converter={StaticResource BoolVis}}"
-                                AutomationProperties.Name="Hide Leads"/>
+                <TextBlock Text="Leads" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                                   Text="Enter the leads password to show the Leads menu."/>
+                        <TextBlock Text="Leads password" Style="{StaticResource FieldLabel}"/>
+                        <PasswordBox x:Name="LeadsPasswordInput" Width="280" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                     PasswordChanged="LeadsPasswordInput_PasswordChanged"
+                                     AutomationProperties.Name="Leads password"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                            <Button Content="Unlock" Style="{StaticResource PrimaryButton}" Command="{Binding Connection.UnlockLeadsCommand}" Margin="0,0,8,0"
+                                    AutomationProperties.Name="Unlock Leads"/>
+                            <Button Content="Hide Leads" Style="{StaticResource SecondaryButton}" Command="{Binding Connection.HideLeadsCommand}"
+                                    Visibility="{Binding Connection.LeadsEnabled, Converter={StaticResource BoolVis}}"
+                                    AutomationProperties.Name="Hide Leads"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding Connection.LeadsAccessStatus}" TextWrapping="Wrap" Foreground="{StaticResource ErrorBrush}" Margin="0,8,0,0"
+                                   Visibility="{Binding Connection.LeadsAccessStatus, Converter={StaticResource StringVis}}"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding Connection.LeadsAccessStatus}" TextWrapping="Wrap" Foreground="{StaticResource ErrorBrush}" Margin="0,8,0,0"
-                               Visibility="{Binding Connection.LeadsAccessStatus, Converter={StaticResource StringVis}}"/>
-                </StackPanel>
-            </Border>
+                </Border>
 
-            <TextBlock Text="Notifications" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
-            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8"
-                    ClipToBounds="True"
-                    DataContext="{Binding NotificationSettings}">
-                <StackPanel>
-                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                               Text="The desktop strip at the top center of the screen drops the notification bar when the pointer rests on it, and when a jiggle fires. The portion that caused a jiggle pulses a soft light yellow while the highlight stays on. The watched group and office locations decide the group queue."/>
+                <TextBlock Text="Notifications" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
+                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8"
+                        ClipToBounds="True"
+                        DataContext="{Binding NotificationSettings}">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                                   Text="The desktop strip at the top center of the screen drops the notification bar when the pointer rests on it, and when a jiggle fires. The portion that caused a jiggle pulses a soft light yellow while the highlight stays on. The watched group and office locations decide the group queue."/>
 
-                    <TextBlock Text="When the desktop widget appears" Style="{StaticResource FieldLabel}"/>
-                    <RadioButton GroupName="ShowDesktopWidget" Margin="0,0,0,4"
-                                 Content="While the desk is open, including maximized"
-                                 IsChecked="{Binding ShowDesktopWidget, Converter={StaticResource EnumEq}, ConverterParameter=WhileOpen}"/>
-                    <RadioButton GroupName="ShowDesktopWidget" Margin="0,0,0,12"
-                                 Content="Only while the desk is minimized"
-                                 IsChecked="{Binding ShowDesktopWidget, Converter={StaticResource EnumEq}, ConverterParameter=OnlyMinimized}"/>
+                        <TextBlock Text="When the desktop widget appears" Style="{StaticResource FieldLabel}"/>
+                        <RadioButton GroupName="ShowDesktopWidget" Margin="0,0,0,4"
+                                     Content="While the desk is open, including maximized"
+                                     IsChecked="{Binding ShowDesktopWidget, Converter={StaticResource EnumEq}, ConverterParameter=WhileOpen}"/>
+                        <RadioButton GroupName="ShowDesktopWidget" Margin="0,0,0,12"
+                                     Content="Only while the desk is minimized"
+                                     IsChecked="{Binding ShowDesktopWidget, Converter={StaticResource EnumEq}, ConverterParameter=OnlyMinimized}"/>
 
-                    <TextBlock Text="When a jiggle fires" Style="{StaticResource FieldLabel}"/>
-                    <RadioButton GroupName="JiggleWhen" Margin="0,0,0,4"
-                                 Content="Persistent, every HH:MM:SS"
-                                 IsChecked="{Binding JiggleWhen, Converter={StaticResource EnumEq}, ConverterParameter=Persistent}"/>
-                    <RadioButton GroupName="JiggleWhen" Margin="0,0,0,12"
-                                 IsChecked="{Binding JiggleWhen, Converter={StaticResource EnumEq}, ConverterParameter=NewUntilAcknowledged}">
-                        <TextBlock Text="Only when there is a new alert, until that alert is acknowledged" TextWrapping="Wrap"/>
-                    </RadioButton>
+                        <TextBlock Text="When a jiggle fires" Style="{StaticResource FieldLabel}"/>
+                        <RadioButton GroupName="JiggleWhen" Margin="0,0,0,4"
+                                     Content="Persistent, every HH:MM:SS"
+                                     IsChecked="{Binding JiggleWhen, Converter={StaticResource EnumEq}, ConverterParameter=Persistent}"/>
+                        <RadioButton GroupName="JiggleWhen" Margin="0,0,0,12"
+                                     IsChecked="{Binding JiggleWhen, Converter={StaticResource EnumEq}, ConverterParameter=NewUntilAcknowledged}">
+                            <TextBlock Text="Only when there is a new alert, until that alert is acknowledged" TextWrapping="Wrap"/>
+                        </RadioButton>
 
-                    <TextBlock Text="Jiggle frequency (HH:MM:SS)" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Text="{Binding FrequencyText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,4"/>
-                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"
-                               Text="Persistent mode drops the bar on this frequency while something is still unacknowledged. A new alert ignores this interval and does not repeat until that alert is acknowledged."/>
+                        <TextBlock Text="Jiggle frequency (HH:MM:SS)" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding FrequencyText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,4"/>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"
+                                   Text="Persistent mode drops the bar on this frequency while something is still unacknowledged. A new alert ignores this interval and does not repeat until that alert is acknowledged."/>
 
-                    <TextBlock Text="Jiggle duration (seconds)" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Text="{Binding DurationText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                        <TextBlock Text="Jiggle duration (seconds)" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding DurationText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"/>
 
-                    <TextBlock Text="Jiggle speed (moves per second)" Style="{StaticResource FieldLabel}"/>
-                    <DockPanel Margin="0,0,0,4" LastChildFill="True">
-                        <TextBlock DockPanel.Dock="Right" Width="36" Margin="8,0,0,0" VerticalAlignment="Center"
-                                   FontWeight="SemiBold" TextAlignment="Right"
-                                   Text="{Binding JiggleSpeed, StringFormat={}{0:0.#}}"
-                                   AutomationProperties.Name="Jiggle speed value"/>
-                        <Slider Minimum="1" Maximum="10" TickFrequency="0.5" IsSnapToTickEnabled="True"
-                                IsMoveToPointEnabled="True"
-                                SmallChange="0.5" LargeChange="1" VerticalAlignment="Center"
-                                Value="{Binding JiggleSpeed, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                AutomationProperties.Name="Jiggle speed"/>
-                    </DockPanel>
-                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"
-                               Text="How fast the strip moves while it is jiggling. 1 is one move per second. 10 is ten moves per second. 4.5 is 4.5 moves per second. One move is one full shake. The next jiggle uses this speed."/>
+                        <TextBlock Text="Jiggle speed (moves per second)" Style="{StaticResource FieldLabel}"/>
+                        <DockPanel Margin="0,0,0,4" LastChildFill="True">
+                            <TextBlock DockPanel.Dock="Right" Width="36" Margin="8,0,0,0" VerticalAlignment="Center"
+                                       FontWeight="SemiBold" TextAlignment="Right"
+                                       Text="{Binding JiggleSpeed, StringFormat={}{0:0.#}}"
+                                       AutomationProperties.Name="Jiggle speed value"/>
+                            <Slider Minimum="1" Maximum="10" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                                    IsMoveToPointEnabled="True"
+                                    SmallChange="0.5" LargeChange="1" VerticalAlignment="Center"
+                                    Value="{Binding JiggleSpeed, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    AutomationProperties.Name="Jiggle speed"/>
+                        </DockPanel>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10"
+                                   Text="How fast the strip moves while it is jiggling. 1 is one move per second. 10 is ten moves per second. 4.5 is 4.5 moves per second. One move is one full shake. The next jiggle uses this speed."/>
 
-                    <CheckBox Content="Maximize when jiggling" IsChecked="{Binding MaximizeWhenJiggling}" Margin="0,0,0,8"/>
-                    <CheckBox Content="Play sound when jiggling" IsChecked="{Binding PlaySoundWhenJiggling}" Margin="0,0,0,8"/>
-                    <CheckBox Content="Play sound on alert metric" IsChecked="{Binding PlaySoundOnAlertMetric}" Margin="0,0,0,10"/>
+                        <CheckBox Content="Maximize when jiggling" IsChecked="{Binding MaximizeWhenJiggling}" Margin="0,0,0,8"/>
+                        <CheckBox Content="Play sound when jiggling" IsChecked="{Binding PlaySoundWhenJiggling}" Margin="0,0,0,8"/>
+                        <CheckBox Content="Play sound on alert metric" IsChecked="{Binding PlaySoundOnAlertMetric}" Margin="0,0,0,10"/>
 
-                    <TextBlock Text="Sound (.wav)" Style="{StaticResource FieldLabel}"/>
-                    <DockPanel Margin="0,0,0,10" LastChildFill="True">
-                        <Button DockPanel.Dock="Right" Content="Browse…" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="BrowseSound_Click"/>
-                        <TextBox Text="{Binding SoundPath, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="True" ToolTip="Leave this empty to use the Windows exclamation sound."/>
-                    </DockPanel>
-                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                               Text="Play sound when jiggling plays when the bar drops for a jiggle. Play sound on alert metric plays as soon as a number increases, even when the jiggle sound is off. Both use this file, or the Windows exclamation sound when no file is chosen."/>
+                        <TextBlock Text="Sound (.wav)" Style="{StaticResource FieldLabel}"/>
+                        <DockPanel Margin="0,0,0,10" LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Content="Browse…" Style="{StaticResource SecondaryButton}" Margin="8,0,0,0" Click="BrowseSound_Click"/>
+                            <TextBox Text="{Binding SoundPath, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="True" ToolTip="Leave this empty to use the Windows exclamation sound."/>
+                        </DockPanel>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                                   Text="Play sound when jiggling plays when the bar drops for a jiggle. Play sound on alert metric plays as soon as a number increases, even when the jiggle sound is off. Both use this file, or the Windows exclamation sound when no file is chosen."/>
 
-                    <TextBlock Text="Watched group name" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Text="{Binding GroupNameText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Watched group name" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding GroupNameText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"/>
 
-                    <TextBlock Text="Office locations (one city per line)" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Text="{Binding LocationsText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="110" TextWrapping="Wrap" VerticalContentAlignment="Top" Margin="0,0,0,10"/>
+                        <TextBlock Text="Office locations (one city per line)" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding LocationsText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="110" TextWrapping="Wrap" VerticalContentAlignment="Top" Margin="0,0,0,10"/>
 
-                    <TextBlock Text="Check ServiceNow every (seconds)" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Text="{Binding PollSecondsText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+                        <TextBlock Text="Check ServiceNow every (seconds)" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding PollSecondsText, UpdateSourceTrigger=PropertyChanged}" Width="160" HorizontalAlignment="Left" Margin="0,0,0,12"/>
 
-                    <Button Content="Save notification settings" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Command="{Binding SaveSettingsCommand}"/>
-                    <TextBlock Text="{Binding SettingsMessage}" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="{StaticResource MutedBrush}"
-                               Visibility="{Binding SettingsMessage, Converter={StaticResource StringVis}}"/>
-                </StackPanel>
-            </Border>
+                        <Button Content="Save notification settings" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Command="{Binding SaveSettingsCommand}"/>
+                        <TextBlock Text="{Binding SettingsMessage}" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="{StaticResource MutedBrush}"
+                                   Visibility="{Binding SettingsMessage, Converter={StaticResource StringVis}}"/>
+                    </StackPanel>
+                </Border>
 
-            <TextBlock Text="Legend" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
-            <views:LegendView DataContext="{Binding}"/>
+                <TextBlock Text="Legend" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
+                <views:LegendView DataContext="{Binding}"/>
+            </StackPanel>
 
             <TextBlock Text="Cache" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,6"/>
-            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
-                       Text="Each row is a copy saved on this PC. Refresh clears that copy and downloads it again. Rows show how many items are stored now, the on-disk size, the last good download, the active list filter (ticket lists), how many stale items were cleared, how many fresh items were downloaded, and any error. Incident templates and the saved sign-in stay where they are."/>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14" MaxWidth="760" HorizontalAlignment="Left"
+                       Text="Each cache is a copy saved on this PC. Refresh clears that copy and downloads it again. Each one shows how many items are stored now, the on-disk size, the last good download, the active list filter (ticket lists), how many stale items were cleared, how many fresh items were downloaded, and any error. Incident templates and the saved sign-in stay where they are."/>
 
             <TextBlock Text="Data transferred" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6"/>
             <DockPanel Margin="0,0,0,8" LastChildFill="False">
@@ -140,17 +142,39 @@
                     IsEnabled="{Binding Startup.IsRunning, Converter={StaticResource InverseBool}}"/>
 
             <ItemsControl ItemsSource="{Binding Caches}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="3"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemContainerStyle>
+                    <Style TargetType="ContentPresenter">
+                        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                        <Setter Property="VerticalAlignment" Value="Stretch"/>
+                    </Style>
+                </ItemsControl.ItemContainerStyle>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="0,8">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="260"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold"/>
+                        <Border Background="{StaticResource CardBrush}"
+                                BorderBrush="{StaticResource LineBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,12,12">
+                            <DockPanel LastChildFill="True">
+                                <Button DockPanel.Dock="Right" Width="36" Height="32" Padding="0" Cursor="Hand"
+                                        Style="{StaticResource SecondaryButton}"
+                                        VerticalAlignment="Top"
+                                        Margin="8,0,0,0"
+                                        Command="{Binding DataContext.RefreshCacheCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
+                                        ToolTip="Refresh"
+                                        AutomationProperties.Name="{Binding Name, StringFormat=Refresh {0}}">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE72C;" FontSize="14" HorizontalAlignment="Center"/>
+                                </Button>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                                         <TextBlock Text="Download on launch"
                                                    FontSize="13"
@@ -173,19 +197,8 @@
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                Visibility="{Binding QueryText, Converter={StaticResource StringVis}}"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Last download query for {0}}"/>
-                                </StackPanel>
-                                <Button Grid.Column="1" Width="36" Height="32" Padding="0" Cursor="Hand"
-                                        Style="{StaticResource SecondaryButton}"
-                                        VerticalAlignment="Top"
-                                        Command="{Binding DataContext.RefreshCacheCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}"
-                                        IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
-                                        ToolTip="Refresh"
-                                        AutomationProperties.Name="{Binding Name, StringFormat=Refresh {0}}">
-                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE72C;" FontSize="14" HorizontalAlignment="Center"/>
-                                </Button>
-                                <StackPanel Grid.Column="2" Margin="14,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Status}" TextWrapping="Wrap">
+                                    <TextBlock Text="{Binding Status}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                               Visibility="{Binding Status, Converter={StaticResource StringVis}}">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
@@ -201,7 +214,7 @@
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                Visibility="{Binding LastAttemptText, Converter={StaticResource StringVis}}"/>
                                 </StackPanel>
-                            </Grid>
+                            </DockPanel>
                         </Border>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
