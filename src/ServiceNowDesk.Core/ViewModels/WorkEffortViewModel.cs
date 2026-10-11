@@ -45,6 +45,7 @@ public partial class WorkEffortViewModel : ObservableObject
     [ObservableProperty] private bool isLoading;
     [ObservableProperty] private int progressValue;
     [ObservableProperty] private int progressMaximum = WorkEffortEstimate.BarMaximum;
+    [ObservableProperty] private WorkEffortRow? selectedRow;
     [ObservableProperty] private bool showDetail;
     [ObservableProperty] private string detailTitle = "";
     [ObservableProperty] private string detailEmptyMessage = "";
@@ -430,6 +431,10 @@ public partial class WorkEffortViewModel : ObservableObject
         Status = report.Status;
         IsLoading = false;
         _loadingScale = null;
+        // Row instances are rebuilt; drop selection so it cannot point at a removed object.
+        // Do not re-select here — that would re-open person detail over an open cell detail.
+        if (SelectedRow is not null)
+            SelectedRow = null;
     }
 
     private void RebuildBoardCredits(WorkEffortReport report)
@@ -528,6 +533,15 @@ public partial class WorkEffortViewModel : ObservableObject
         _detailSortColumn = null;
         _detailSortDescending = false;
         NotifyDetailSortHeaders();
+        // Clearing selection lets the user click the same row again to reopen detail.
+        if (SelectedRow is not null)
+            SelectedRow = null;
+    }
+
+    partial void OnSelectedRowChanged(WorkEffortRow? value)
+    {
+        if (value is not null)
+            ShowPersonDetail(value);
     }
 
     private void ApplyDetailSort()
