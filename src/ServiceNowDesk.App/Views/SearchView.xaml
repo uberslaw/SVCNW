@@ -33,15 +33,15 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Column="0" Text="Group" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-                <controls:ReferenceEditor Grid.Column="1" DataContext="{Binding AssignmentGroup}" Width="200" VerticalAlignment="Center" Margin="0,0,14,6" ToolTip="Assignment group. Empty means any group."/>
-                <TextBlock Grid.Column="2" Text="Assignee" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-                <controls:ReferenceEditor Grid.Column="3" DataContext="{Binding Assignee}" Width="200" VerticalAlignment="Center" Margin="0,0,14,6" ToolTip="Assignee. Empty means anyone."/>
-                <TextBlock Grid.Column="4" Text="Opened" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-                <DatePicker Grid.Column="5" SelectedDate="{Binding OpenedFrom}" Width="130" VerticalAlignment="Center" Margin="0,0,6,6" ToolTip="Opened on or after"/>
-                <TextBlock Grid.Column="6" Text="to" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
-                <DatePicker Grid.Column="7" SelectedDate="{Binding OpenedTo}" Width="130" VerticalAlignment="Center" Margin="0,0,14,6" ToolTip="Opened on or before"/>
-                <TextBlock Grid.Column="8" Text="State" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <TextBlock Grid.Column="0" Text="Group" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <controls:ReferenceEditor Grid.Column="1" DataContext="{Binding AssignmentGroup}" Width="200" VerticalAlignment="Top" Margin="0,0,14,6" ToolTip="Assignment group. Empty means any group."/>
+                <TextBlock Grid.Column="2" Text="Assignee" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <controls:ReferenceEditor Grid.Column="3" DataContext="{Binding Assignee}" Width="200" VerticalAlignment="Top" Margin="0,0,14,6" ToolTip="Assignee. Empty means anyone."/>
+                <TextBlock Grid.Column="4" Text="Opened" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <DatePicker Grid.Column="5" SelectedDate="{Binding OpenedFrom}" Width="130" VerticalAlignment="Top" Margin="0,0,6,6" ToolTip="Opened on or after"/>
+                <TextBlock Grid.Column="6" Text="to" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
+                <DatePicker Grid.Column="7" SelectedDate="{Binding OpenedTo}" Width="130" VerticalAlignment="Top" Margin="0,0,14,6" ToolTip="Opened on or before"/>
+                <TextBlock Grid.Column="8" Text="State" VerticalAlignment="Top" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,6"/>
                 <Border Grid.Column="9" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Width="220" Height="88" VerticalAlignment="Top" Margin="0,0,0,6"
                         ToolTip="Ctrl+click to select multiple states. Empty selection shows all states.">
                     <ListBox x:Name="StateFilter"
@@ -54,7 +54,7 @@
                              SelectionChanged="StateFilter_SelectionChanged"
                              AutomationProperties.Name="State filter"/>
                 </Border>
-                <StackPanel Grid.Column="10" Margin="8,0,0,6" VerticalAlignment="Center">
+                <StackPanel Grid.Column="10" Margin="8,0,0,6" VerticalAlignment="Top">
                     <TextBlock Text="{Binding StateFilterSummary}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
                     <Button Content="Clear states" Style="{StaticResource QuietButton}" Padding="6,2" MinHeight="24"
                             Click="ClearStates_Click" ToolTip="Clear state selection (show all)"
