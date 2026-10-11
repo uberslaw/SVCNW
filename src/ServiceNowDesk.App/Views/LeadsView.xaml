@@ -382,16 +382,17 @@
                         </Grid>
                         <TextBlock Text="{Binding WorkEffort.DetailEmptyMessage}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
                                    Visibility="{Binding WorkEffort.DetailEmptyMessage, Converter={StaticResource StringVis}}"/>
-                        <Grid Margin="0,0,0,4" Visibility="{Binding WorkEffort.DetailHasRows, Converter={StaticResource BoolVis}}">
+                        <!-- Margin matches DeskListItem padding (10). Right 28 reserves the always-visible scrollbar so headers line up with cells. -->
+                        <Grid Margin="10,0,28,4" Visibility="{Binding WorkEffort.DetailHasRows, Converter={StaticResource BoolVis}}">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.1*" MinWidth="80"/>
-                                <ColumnDefinition Width="2*" MinWidth="100"/>
-                                <ColumnDefinition Width="0.6*" MinWidth="44"/>
-                                <ColumnDefinition Width="0.8*" MinWidth="52"/>
-                                <ColumnDefinition Width="1.3*" MinWidth="88"/>
-                                <ColumnDefinition Width="1.3*" MinWidth="96"/>
-                                <ColumnDefinition Width="1.1*" MinWidth="72"/>
-                                <ColumnDefinition Width="*" MinWidth="64"/>
+                                <ColumnDefinition Width="100" MinWidth="88"/>
+                                <ColumnDefinition Width="2*" MinWidth="120"/>
+                                <ColumnDefinition Width="48" MinWidth="44"/>
+                                <ColumnDefinition Width="64" MinWidth="56"/>
+                                <ColumnDefinition Width="1.2*" MinWidth="88"/>
+                                <ColumnDefinition Width="132" MinWidth="120"/>
+                                <ColumnDefinition Width="1*" MinWidth="80"/>
+                                <ColumnDefinition Width="88" MinWidth="72"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Number" Style="{StaticResource FieldLabel}"/>
                             <TextBlock Grid.Column="1" Text="Short description" Style="{StaticResource FieldLabel}"/>
@@ -404,35 +405,41 @@
                         </Grid>
                         <ListBox ItemsSource="{Binding WorkEffort.DetailLines}"
                                  Style="{StaticResource DeskList}"
+                                 ItemContainerStyle="{StaticResource EffortRow}"
                                  MaxHeight="280"
                                  Visibility="{Binding WorkEffort.DetailHasRows, Converter={StaticResource BoolVis}}"
                                  AutomationProperties.Name="Work Effort detail lines"
                                  BorderThickness="0"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Visible"
                                  MouseDoubleClick="EffortCredit_MouseDoubleClick">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Margin="0,2">
+                                    <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1.1*" MinWidth="80"/>
-                                            <ColumnDefinition Width="2*" MinWidth="100"/>
-                                            <ColumnDefinition Width="0.6*" MinWidth="44"/>
-                                            <ColumnDefinition Width="0.8*" MinWidth="52"/>
-                                            <ColumnDefinition Width="1.3*" MinWidth="88"/>
-                                            <ColumnDefinition Width="1.3*" MinWidth="96"/>
-                                            <ColumnDefinition Width="1.1*" MinWidth="72"/>
-                                            <ColumnDefinition Width="*" MinWidth="64"/>
+                                            <ColumnDefinition Width="100" MinWidth="88"/>
+                                            <ColumnDefinition Width="2*" MinWidth="120"/>
+                                            <ColumnDefinition Width="48" MinWidth="44"/>
+                                            <ColumnDefinition Width="64" MinWidth="56"/>
+                                            <ColumnDefinition Width="1.2*" MinWidth="88"/>
+                                            <ColumnDefinition Width="132" MinWidth="120"/>
+                                            <ColumnDefinition Width="1*" MinWidth="80"/>
+                                            <ColumnDefinition Width="88" MinWidth="72"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding DisplayNumber}" Foreground="{StaticResource AccentBrush}" Cursor="Hand"
-                                                   MouseLeftButtonDown="EffortCreditNumber_MouseLeftButtonDown" TextTrimming="CharacterEllipsis" TextWrapping="Wrap"
+                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                   MouseLeftButtonDown="EffortCreditNumber_MouseLeftButtonDown"
                                                    ToolTip="Double-click to open in a pop-out window"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"/>
                                         <TextBlock Grid.Column="2" Text="{Binding TableLabel}" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="3" Text="{Binding MetricLabel}" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="4" Text="{Binding WorkTypeLabel}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="5" Text="{Binding WhenText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="6" Text="{Binding PersonName}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="7" Text="{Binding Day}" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding WorkTypeLabel}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"/>
+                                        <TextBlock Grid.Column="5" Text="{Binding WhenText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="6" Text="{Binding PersonName}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"/>
+                                        <TextBlock Grid.Column="7" Text="{Binding Day}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
