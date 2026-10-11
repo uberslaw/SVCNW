@@ -310,11 +310,14 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// Moves to a section. Leads is refused while it is locked, so a shortcut for that page does nothing.
+    /// Legend opens Settings, where the Legend section lives.
     /// </summary>
     public bool TrySelect(DeskSection section)
     {
         if (section == DeskSection.Leads && !Connection.LeadsEnabled)
             return false;
+        if (section == DeskSection.Legend)
+            section = DeskSection.Settings;
 
         SelectedSection = section;
         return true;
@@ -771,6 +774,12 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnSelectedSectionChanged(DeskSection value)
     {
+        if (value == DeskSection.Legend)
+        {
+            SelectedSection = DeskSection.Settings;
+            return;
+        }
+
         SyncNavigationSelection();
         if (!_preserveNavigation)
             _returnStack.Clear();
@@ -789,7 +798,6 @@ public partial class MainViewModel : ObservableObject
             DeskSection.Notifications => "Notifications",
             DeskSection.Leads => "Leads",
             DeskSection.DailyWork => "Daily work",
-            DeskSection.Legend => "Legend",
             DeskSection.Settings => "Settings",
             _ => "Search"
         };

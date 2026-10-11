@@ -28,7 +28,8 @@ public static class DeskNavigation
         new(DeskSection.Settings, "Settings", "\uE713"),
         new(DeskSection.Connection, "Connection", "\uE774"),
         new(DeskSection.Leads, "Leads", "\uE902", RequiresLeads: true),
-        new(DeskSection.Legend, "Legend", "\uE790")
+        // Legend lives under Settings (same controls). Kept here so a later unhide keeps its place.
+        new(DeskSection.Legend, "Legend", "\uE790", ShownInNav: false)
     ];
 
     public static IReadOnlyList<DeskNavItem> Visible(bool leadsEnabled) =>

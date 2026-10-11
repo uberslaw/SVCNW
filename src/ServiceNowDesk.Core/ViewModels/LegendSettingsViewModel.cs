@@ -230,7 +230,7 @@ public sealed partial class LegendSettingsViewModel : ObservableObject
         AnyShown = Shown.Count > 0;
         EmptyNote = AnyShown
             ? ""
-            : "Row colors are off. Open Legend in the left navigation to turn them on.";
+            : "Row colors are off. Open Settings → Legend to turn them on.";
     }
 
     private void RefreshSelection()
