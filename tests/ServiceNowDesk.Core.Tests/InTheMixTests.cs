@@ -256,7 +256,7 @@ public class InTheMixTests
         var incidents = Array.IndexOf(labels, "Incidents");
         Assert.Equal("In The Mix", labels[incidents - 1]);
         Assert.DoesNotContain(labels, label => label == "Order catalog");
-        Assert.Equal(DeskSection.Leads, DeskNavigation.Visible(true).Reverse().Skip(1).First().Section);
+        Assert.Equal(DeskSection.Leads, DeskNavigation.Visible(true).First().Section);
     }
 
     [Fact]

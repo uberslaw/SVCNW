@@ -15,6 +15,7 @@ public static class DeskNavigation
 
     public static IReadOnlyList<DeskNavItem> Items { get; } =
     [
+        new(DeskSection.Leads, "Leads", "\uE902", RequiresLeads: true),
         new(DeskSection.DailyWork, "Daily Work", "\uE787"),
         new(DeskSection.InTheMix, "In The Mix", "\uE71D"),
         new(DeskSection.Incidents, "Incidents", "\uE7BA"),
@@ -27,7 +28,6 @@ public static class DeskNavigation
         new(DeskSection.Notifications, "Notifications", "\uEA8F"),
         new(DeskSection.Settings, "Settings", "\uE713"),
         new(DeskSection.Connection, "Connection", "\uE774"),
-        new(DeskSection.Leads, "Leads", "\uE902", RequiresLeads: true),
         new(DeskSection.Legend, "Legend", "\uE790")
     ];
 
