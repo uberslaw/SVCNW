@@ -274,6 +274,7 @@ public class HighlightTests
         main.SelectedSection = DeskSection.DailyWork;
         Assert.False(main.ShowRowLegend);
         main.SelectedSection = DeskSection.Legend;
+        Assert.Equal(DeskSection.Settings, main.SelectedSection);
         Assert.False(main.ShowRowLegend);
         main.SelectedSection = DeskSection.Settings;
         Assert.False(main.ShowRowLegend);
@@ -281,6 +282,7 @@ public class HighlightTests
         main.Legend.Load(HighlightPreferences.FromKeys([]));
         Assert.Empty(main.Legend.Shown);
         Assert.False(main.Legend.AnyShown);
+        Assert.Contains("Settings", main.Legend.EmptyNote, StringComparison.Ordinal);
         Assert.Contains("Legend", main.Legend.EmptyNote, StringComparison.Ordinal);
     }
 

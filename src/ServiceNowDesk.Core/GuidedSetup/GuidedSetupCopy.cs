@@ -100,9 +100,8 @@ public static class GuidedSetupScript
         new(DeskSection.Search, "Search — Find a ticket or a knowledge article."),
         new(DeskSection.Knowledge, "Knowledge — Read a knowledge article."),
         new(DeskSection.Notifications, "Notifications — Choose what makes the top bar jiggle."),
-        new(DeskSection.Settings, "Settings — Notification offices, jiggle speed, and the Leads password."),
-        new(DeskSection.Connection, "Connection — Sign in and see the session."),
-        new(DeskSection.Legend, "Legend — What the colours on the lists mean.")
+        new(DeskSection.Settings, "Settings — Notification offices, jiggle speed, the Leads password, and list colours on Legend."),
+        new(DeskSection.Connection, "Connection — Sign in and see the session.")
     ];
 
     /// <summary>

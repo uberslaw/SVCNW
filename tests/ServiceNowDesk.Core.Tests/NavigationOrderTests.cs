@@ -27,7 +27,7 @@ public partial class NavigationOrderTests
     public void VisibleNavFollowsTheDeskOrderAndSkipsOrderCatalog()
     {
         var labels = DeskNavigation.Visible(leadsEnabled: false).Select(item => item.Label).ToArray();
-        Assert.Equal([.. MainOrder, "Legend"], labels);
+        Assert.Equal(MainOrder, labels);
         var incidents = Array.IndexOf(labels, "Incidents");
         Assert.True(incidents > 0);
         Assert.Equal("In The Mix", labels[incidents - 1]);
@@ -42,6 +42,8 @@ public partial class NavigationOrderTests
         Assert.False(items[requestItems + 1].ShownInNav);
         Assert.DoesNotContain(labels, label => label == "Requests");
         Assert.DoesNotContain(labels, label => label == "Order catalog");
+        Assert.DoesNotContain(labels, label => label == "Legend");
+        Assert.False(DeskNavigation.Items.Single(item => item.Section == DeskSection.Legend).ShownInNav);
     }
 
     [Fact]
@@ -49,16 +51,16 @@ public partial class NavigationOrderTests
     {
         var locked = DeskNavigation.Visible(false).Select(item => item.Section).ToArray();
         Assert.DoesNotContain(DeskSection.Leads, locked);
-        Assert.Equal(DeskSection.Legend, locked[^1]);
-        Assert.Equal(DeskSection.Connection, locked[^2]);
+        Assert.DoesNotContain(DeskSection.Legend, locked);
+        Assert.Equal(DeskSection.Connection, locked[^1]);
         Assert.Equal(DeskSection.DailyWork, locked[0]);
 
         var unlocked = DeskNavigation.Visible(true).Select(item => item.Section).ToArray();
         Assert.Equal(DeskSection.Leads, unlocked[0]);
         Assert.Equal(DeskSection.DailyWork, unlocked[1]);
-        Assert.Equal(DeskSection.Legend, unlocked[^1]);
-        Assert.Equal(DeskSection.Connection, unlocked[^2]);
-        Assert.Equal(MainOrder, unlocked.Where(section => section is not (DeskSection.Leads or DeskSection.Legend)).Select(LabelOf).ToArray());
+        Assert.DoesNotContain(DeskSection.Legend, unlocked);
+        Assert.Equal(DeskSection.Connection, unlocked[^1]);
+        Assert.Equal(MainOrder, unlocked.Where(section => section != DeskSection.Leads).Select(LabelOf).ToArray());
     }
 
     [Fact]
@@ -78,8 +80,9 @@ public partial class NavigationOrderTests
     public void LeadsToggleOnTheShellStillSitsFirstWhenUnlocked()
     {
         var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices());
-        Assert.Equal(MainOrder, main.Navigation.Where(item => item.Section != DeskSection.Legend).Select(item => item.Label).ToArray());
+        Assert.Equal(MainOrder, main.Navigation.Select(item => item.Label).ToArray());
         Assert.DoesNotContain(main.Navigation, item => item.Section == DeskSection.Leads);
+        Assert.DoesNotContain(main.Navigation, item => item.Section == DeskSection.Legend);
         Assert.False(main.TrySelect(DeskSection.Leads));
 
         main.Connection.LeadsPassword = "iddqd";
@@ -106,6 +109,24 @@ public partial class NavigationOrderTests
         Assert.True(main.TrySelect(DeskSection.Requests));
         Assert.Equal(DeskSection.Requests, main.SelectedSection);
         Assert.DoesNotContain(main.Navigation, item => item.Section == DeskSection.Requests);
+    }
+
+    [Fact]
+    public void LegendOpensSettingsAndStaysOutOfTheNav()
+    {
+        var main = new MainViewModel(new MemorySettingsStore(), new RecordingDesktopServices());
+        Assert.DoesNotContain(main.Navigation, item => item.Section == DeskSection.Legend);
+        Assert.True(main.TrySelect(DeskSection.Legend));
+        Assert.Equal(DeskSection.Settings, main.SelectedSection);
+        Assert.True(main.Navigation.Single(item => item.Section == DeskSection.Settings).IsSelected);
+
+        main.SelectedSection = DeskSection.Legend;
+        Assert.Equal(DeskSection.Settings, main.SelectedSection);
+
+        var settings = RepoFile("src/ServiceNowDesk.App/Views/SettingsView.xaml");
+        Assert.Contains("<views:LegendView", settings, StringComparison.Ordinal);
+        var window = RepoFile("src/ServiceNowDesk.App/MainWindow.xaml");
+        Assert.DoesNotContain("ConverterParameter=Legend", window, StringComparison.Ordinal);
     }
 
     [Fact]

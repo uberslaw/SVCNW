@@ -257,8 +257,10 @@ public class GuidedSetupTests
             "Daily Work — Today's list, including your own notes and the group queue.",
             GuidedSetupScript.All[0].Line);
         Assert.Equal(
-            "Legend — What the colours on the lists mean.",
+            "Connection — Sign in and see the session.",
             GuidedSetupScript.All[^1].Line);
+        Assert.Contains("Legend", GuidedSetupScript.All.Single(stop => stop.Section == DeskSection.Settings).Line, StringComparison.Ordinal);
+        Assert.DoesNotContain(GuidedSetupScript.All, stop => stop.Section == DeskSection.Legend);
     }
 
     [Fact]
@@ -284,8 +286,9 @@ public class GuidedSetupTests
     {
         var tour = GuidedSetupScript.ForTour(DeskNavigation.Visible(leadsEnabled: true).ToList(), leadsLocked: false);
         Assert.DoesNotContain(tour, stop => stop.Section == DeskSection.Leads);
-        Assert.Equal(DeskSection.Connection, tour[^2].Section);
-        Assert.Equal(DeskSection.Legend, tour[^1].Section);
+        Assert.DoesNotContain(tour, stop => stop.Section == DeskSection.Legend);
+        Assert.Equal(DeskSection.Settings, tour[^2].Section);
+        Assert.Equal(DeskSection.Connection, tour[^1].Section);
     }
 
     [Fact]

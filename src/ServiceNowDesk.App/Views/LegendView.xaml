@@ -1,79 +1,74 @@
 <UserControl x:Class="ServiceNowDesk.Views.LegendView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="8">
-            <TextBlock Text="Legend" Style="{StaticResource SectionTitle}" Margin="0,0,0,6"/>
-            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8">
-                <StackPanel DataContext="{Binding Legend}">
-                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
-                               Text="The light red row is Unassigned: nobody is assigned. The other colors are light tints of the notification circles, and they follow the tickets in those queues. Turn any highlight on or off. The choice is saved on this PC. When a ticket matches more than one highlight that is on, the entry higher in this list is the color on the row. Hover and the selected row keep the usual teal. In the SLA breaching notification list, Assigned to names the person, and SLA assigned to you paints that row light green. The same colors sit above Incidents, Request items, Walk-up, Search, Notifications, and Leads."/>
-                    <DockPanel Margin="0,0,0,4" LastChildFill="True">
-                        <CheckBox DockPanel.Dock="Right" Content="Adjust individually" VerticalAlignment="Center" Margin="12,0,0,0"
-                                  IsChecked="{Binding AdjustIndividually}"
-                                  AutomationProperties.Name="Adjust legend colours individually"/>
-                        <TextBlock Text="{Binding IntensityCaption}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    </DockPanel>
-                    <DockPanel Margin="0,0,0,6" LastChildFill="True">
-                        <Button DockPanel.Dock="Right" Content="Set" Style="{StaticResource ChipButton}" Margin="8,0,0,0"
-                                VerticalAlignment="Center" Padding="12,4"
-                                Command="{Binding SetIntensityCommand}"
-                                Visibility="{Binding AdjustIndividually, Converter={StaticResource BoolVis}}"
-                                AutomationProperties.Name="Set colour intensity"/>
-                        <TextBlock DockPanel.Dock="Right" Text="{Binding SliderValue}" Width="28" Margin="8,0,0,0"
-                                   VerticalAlignment="Center" FontWeight="SemiBold" TextAlignment="Right"/>
-                        <Slider Style="{StaticResource LegendSlider}"
-                                SmallChange="1" LargeChange="10" VerticalAlignment="Center"
-                                Value="{Binding SliderValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                AutomationProperties.Name="Legend colour intensity"/>
-                    </DockPanel>
-                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,14"
-                               Text="The track starts at the wash that used to sit a quarter of the way along, then pastel, fuller colour, and a step darker than the old strongest tint. The thumb starts at the closest match to today's colours. Moving it sets every colour and keeps each hue. The notification circles stay the same dark dots. Tick Adjust individually, click a colour, move the slider, then press Set. Only that colour changes, and only when Set is pressed."/>
-                    <ItemsControl ItemsSource="{Binding Entries}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <DockPanel Margin="0,0,0,14" LastChildFill="True">
-                                    <CheckBox DockPanel.Dock="Right" Content="Show on rows" VerticalAlignment="Center" Margin="12,0,0,0"
-                                              IsChecked="{Binding IsEnabled}"
-                                              AutomationProperties.Name="{Binding Title, StringFormat=Show {0} highlight}"/>
-                                    <Button DockPanel.Dock="Left" Command="{Binding SelectCommand}" Cursor="Hand"
-                                            Margin="0,0,12,0" VerticalAlignment="Top" HorizontalAlignment="Left"
-                                            Padding="2" Focusable="True"
-                                            AutomationProperties.Name="{Binding Title, StringFormat=Select {0} colour}">
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border Background="Transparent" BorderThickness="2" CornerRadius="6" Padding="2">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="BorderBrush" Value="Transparent"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Border Width="14" Height="14" CornerRadius="7" Margin="0,2,8,0" VerticalAlignment="Center"
-                                                                Background="{Binding SwatchHex, Converter={StaticResource HexBrush}}"/>
-                                                        <Border Width="44" Height="18" CornerRadius="4" VerticalAlignment="Center"
-                                                                BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                                                                Background="{Binding RowHex, Converter={StaticResource HexBrush}}"/>
-                                                    </StackPanel>
-                                                </Border>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                    </Button>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </DockPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
+    <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8">
+        <StackPanel DataContext="{Binding Legend}">
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,14"
+                       Text="The light red row is Unassigned: nobody is assigned. The other colors are light tints of the notification circles, and they follow the tickets in those queues. Turn any highlight on or off. The choice is saved on this PC. When a ticket matches more than one highlight that is on, the entry higher in this list is the color on the row. Hover and the selected row keep the usual teal. In the SLA breaching notification list, Assigned to names the person, and SLA assigned to you paints that row light green. The same colors sit above Incidents, Request items, Walk-up, Search, Notifications, and Leads."/>
+            <DockPanel Margin="0,0,0,4" LastChildFill="True">
+                <CheckBox DockPanel.Dock="Right" Content="Adjust individually" VerticalAlignment="Center" Margin="12,0,0,0"
+                          IsChecked="{Binding AdjustIndividually}"
+                          AutomationProperties.Name="Adjust legend colours individually"/>
+                <TextBlock Text="{Binding IntensityCaption}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </DockPanel>
+            <DockPanel Margin="0,0,0,6" LastChildFill="True">
+                <Button DockPanel.Dock="Right" Content="Set" Style="{StaticResource ChipButton}" Margin="8,0,0,0"
+                        VerticalAlignment="Center" Padding="12,4"
+                        Command="{Binding SetIntensityCommand}"
+                        Visibility="{Binding AdjustIndividually, Converter={StaticResource BoolVis}}"
+                        AutomationProperties.Name="Set colour intensity"/>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding SliderValue}" Width="28" Margin="8,0,0,0"
+                           VerticalAlignment="Center" FontWeight="SemiBold" TextAlignment="Right"/>
+                <Slider Style="{StaticResource LegendSlider}"
+                        SmallChange="1" LargeChange="10" VerticalAlignment="Center"
+                        Value="{Binding SliderValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.Name="Legend colour intensity"/>
+            </DockPanel>
+            <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,0,0,14"
+                       Text="The track starts at the wash that used to sit a quarter of the way along, then pastel, fuller colour, and a step darker than the old strongest tint. The thumb starts at the closest match to today's colours. Moving it sets every colour and keeps each hue. The notification circles stay the same dark dots. Tick Adjust individually, click a colour, move the slider, then press Set. Only that colour changes, and only when Set is pressed."/>
+            <ItemsControl ItemsSource="{Binding Entries}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <DockPanel Margin="0,0,0,14" LastChildFill="True">
+                            <CheckBox DockPanel.Dock="Right" Content="Show on rows" VerticalAlignment="Center" Margin="12,0,0,0"
+                                      IsChecked="{Binding IsEnabled}"
+                                      AutomationProperties.Name="{Binding Title, StringFormat=Show {0} highlight}"/>
+                            <Button DockPanel.Dock="Left" Command="{Binding SelectCommand}" Cursor="Hand"
+                                    Margin="0,0,12,0" VerticalAlignment="Top" HorizontalAlignment="Left"
+                                    Padding="2" Focusable="True"
+                                    AutomationProperties.Name="{Binding Title, StringFormat=Select {0} colour}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="Transparent" BorderThickness="2" CornerRadius="6" Padding="2">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="Transparent"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Width="14" Height="14" CornerRadius="7" Margin="0,2,8,0" VerticalAlignment="Center"
+                                                        Background="{Binding SwatchHex, Converter={StaticResource HexBrush}}"/>
+                                                <Border Width="44" Height="18" CornerRadius="4" VerticalAlignment="Center"
+                                                        BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                                        Background="{Binding RowHex, Converter={StaticResource HexBrush}}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
         </StackPanel>
-    </ScrollViewer>
+    </Border>
 </UserControl>

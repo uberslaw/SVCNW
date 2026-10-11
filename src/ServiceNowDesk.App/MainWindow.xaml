@@ -408,9 +408,6 @@
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Connection}">
                     <views:ConnectionView x:Name="ConnectionPage" DataContext="{Binding}"/>
                 </Grid>
-                <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Legend}">
-                    <views:LegendView DataContext="{Binding}"/>
-                </Grid>
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=Settings}">
                     <views:SettingsView DataContext="{Binding}"/>
                 </Grid>
