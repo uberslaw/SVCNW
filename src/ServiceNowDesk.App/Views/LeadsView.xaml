@@ -302,6 +302,7 @@
                         <TextBlock Grid.Column="10" Text="Total" Style="{StaticResource FieldLabel}" TextAlignment="Left"/>
                     </Grid>
                     <ListBox ItemsSource="{Binding WorkEffort.Rows}"
+                             SelectedItem="{Binding WorkEffort.SelectedRow, Mode=TwoWay}"
                              Style="{StaticResource DeskList}"
                              ItemContainerStyle="{StaticResource EffortRow}"
                              AutomationProperties.Name="Work Effort"
@@ -326,7 +327,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                Cursor="Hand" MouseLeftButtonDown="EffortName_MouseLeftButtonDown"
-                                               ToolTip="Double-click for every ticket credited to this person"/>
+                                               ToolTip="Select for every ticket credited to this person"/>
                                     <TextBlock Grid.Column="1" Text="{Binding IncOpened}" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                Cursor="Hand" Tag="IncOpened" MouseLeftButtonDown="EffortCell_MouseLeftButtonDown"
                                                ToolTip="Double-click for tickets in this cell"/>
