@@ -385,6 +385,30 @@ public partial class MainViewModel : ObservableObject
         || (SelectedSection == DeskSection.WalkUps && WalkUps.ShowResolvePanel)
         || (SelectedSection == DeskSection.InTheMix && Mix.Editor?.ShowResolvePanel == true);
 
+    /// <summary>
+    /// Resolves the main window size and position for the given work area from saved settings.
+    /// </summary>
+    public MainWindowPlacement.Placement ResolveWindowPlacement(MainWindowPlacement.Rect workArea) =>
+        MainWindowPlacement.Resolve(_store.Load(), workArea);
+
+    /// <summary>
+    /// Persists the main window size and position for the next launch without rewriting other settings.
+    /// </summary>
+    public void RememberWindowPlacement(double left, double top, double width, double height, string? windowState)
+    {
+        Connection.RememberWindowPlacement(left, top, width, height, windowState);
+        try
+        {
+            var settings = _store.Load();
+            MainWindowPlacement.Capture(settings, left, top, width, height, windowState);
+            _store.Save(settings);
+        }
+        catch
+        {
+            // Placement stays on the connection model for this session.
+        }
+    }
+
     public async Task InitializeAsync()
     {
         var settings = _store.Load();

@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.Services;
 using ServiceNowDesk.ViewModels;
 using ServiceNowDesk.Views;
 
@@ -11,6 +12,7 @@ namespace ServiceNowDesk;
 public partial class MainWindow : Window
 {
     private readonly AlertWidgetWindow _alerts = new();
+    private bool _placementApplied;
 
     public MainWindow()
     {
@@ -22,18 +24,22 @@ public partial class MainWindow : Window
                 _alerts.Attach(main.Notifications, main.NotificationSettings);
         };
         StateChanged += (_, _) => _alerts.SetMainMinimized(WindowState == WindowState.Minimized);
+        Closing += (_, _) => PersistPlacement();
         Closed += (_, _) => _alerts.Shutdown();
-        SourceInitialized += (_, _) => FitToWorkArea();
+        SourceInitialized += (_, _) => ApplyPlacement();
         Loaded += async (_, _) =>
         {
-            FitToWorkArea();
+            ApplyPlacement();
             if (DataContext is MainViewModel main)
                 await main.InitializeAsync();
         };
     }
 
-    private void FitToWorkArea()
+    private void ApplyPlacement()
     {
+        if (_placementApplied)
+            return;
+
         var area = SystemParameters.WorkArea;
         const double margin = 16;
         var maxWidth = Math.Max(640, area.Width - margin);
@@ -42,12 +48,33 @@ public partial class MainWindow : Window
             MinWidth = maxWidth;
         if (MinHeight > maxHeight)
             MinHeight = maxHeight;
-        if (Width > maxWidth)
-            Width = maxWidth;
-        if (Height > maxHeight)
-            Height = maxHeight;
-        Left = area.Left + Math.Max(0, (area.Width - Width) / 2);
-        Top = area.Top + Math.Max(0, (area.Height - Height) / 2);
+
+        var work = new MainWindowPlacement.Rect(area.Left, area.Top, maxWidth, maxHeight);
+        var placement = DataContext is MainViewModel main
+            ? main.ResolveWindowPlacement(work)
+            : MainWindowPlacement.Resolve(null, work);
+
+        Width = placement.Width;
+        Height = placement.Height;
+        Left = placement.Left;
+        Top = placement.Top;
+        if (placement.Maximized)
+            WindowState = WindowState.Maximized;
+        _placementApplied = true;
+    }
+
+    private void PersistPlacement()
+    {
+        if (DataContext is not MainViewModel main)
+            return;
+
+        var bounds = WindowState == WindowState.Normal
+            ? new Rect(Left, Top, Width, Height)
+            : RestoreBounds;
+        var state = WindowState == WindowState.Maximized
+            ? MainWindowPlacement.StateMaximized
+            : MainWindowPlacement.StateNormal;
+        main.RememberWindowPlacement(bounds.Left, bounds.Top, bounds.Width, bounds.Height, state);
     }
 
     private MainViewModel? Model => DataContext as MainViewModel;
