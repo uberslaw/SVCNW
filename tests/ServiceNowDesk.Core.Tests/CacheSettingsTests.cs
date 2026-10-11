@@ -672,38 +672,23 @@ public class CacheSettingsTests
                 return Api.Json("""{"result":[{"sys_id":"sample-user","name":"Alex Rivera","user_name":"alex.rivera","email":"alex@example.com"}]}""");
             return Api.Json("""{"result":[{"sys_id":"should-not-replace","number":"INC-NET","short_description":"Network"}]}""");
         });
-        var settings = new MemorySettingsStore();
-        settings.Save(new DeskSettings
-        {
-            InstanceUrl = "https://example.service-now.com",
-            Username = "alex",
-            Password = "secret",
-            DownloadCacheOnLaunch = false
-        });
-        var first = new MainViewModel(
-            settings,
-            new RecordingDesktopServices(),
-            formCatalog: catalog,
-            clientFactory: (_, store) => ServiceNowClient.Create(session, handler, store),
-            lists: lists,
-            hardwareCatalog: hardware);
+        var first = Desk(catalog, lists, handler, hardwareCatalog: hardware);
+        first.Connection.DownloadCacheOnLaunch = false;
         await first.ConnectCommand.ExecuteAsync(null);
+        Assert.Equal("", first.ErrorMessage);
         Assert.Contains(first.Incidents.Items, row => row.Number == "INC-DISK");
         Assert.Equal(1, first.Hardware.CatalogCount);
 
         // Simulate relaunch / version upgrade: new process, same AppData folder.
-        var second = new MainViewModel(
-            settings,
-            new RecordingDesktopServices(),
-            formCatalog: catalog,
-            clientFactory: (_, store) => ServiceNowClient.Create(session, handler, store),
-            lists: lists,
-            hardwareCatalog: hardware);
+        var second = Desk(catalog, lists, handler, hardwareCatalog: hardware);
+        second.Connection.DownloadCacheOnLaunch = false;
         await second.ConnectCommand.ExecuteAsync(null);
 
+        Assert.Equal("", second.ErrorMessage);
         Assert.Contains(second.Incidents.Items, row => row.Number == "INC-DISK" && row.Title == "From disk");
         Assert.Contains(second.Requests.Items, row => row.Number == "REQ-KEEP");
         Assert.Equal(1, second.Hardware.CatalogCount);
+        second.Hardware.ShowSavedCatalog();
         Assert.Contains(second.Hardware.Items, asset => asset.SerialNumber == "DISK-1");
         var stillLists = lists.Load(scope);
         Assert.NotNull(stillLists);
