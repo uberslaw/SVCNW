@@ -18,5 +18,5 @@ public partial class InteractionView
         set => SetValue(EditorOnlyProperty, value);
     }
 
-    private void ApplyEditorOnly() => EditorPane.Apply(EditorOnly, Layout, ListPane, emptyState: EmptyState);
+    private void ApplyEditorOnly() => EditorPane.Apply(EditorOnly, Layout, ListPane);
 }

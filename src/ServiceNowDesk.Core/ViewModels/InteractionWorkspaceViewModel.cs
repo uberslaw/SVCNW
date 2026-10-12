@@ -25,7 +25,10 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
                 ConvertToIncidentCommand.NotifyCanExecuteChanged();
         };
         ResolveChoiceLabel = "Outcome";
+        ShowBlankTicket();
     }
+
+    public override bool OpensOnBlankForm => true;
 
     public ReferenceFieldModel Caller { get; }
     public AssignmentFields Assignment { get; }
