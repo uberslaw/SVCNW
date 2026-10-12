@@ -1947,9 +1947,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             assignment,
             OpenListClause(query),
             extra);
-        // Walk-up My Team is people and leaves LimitTeamToOffices false, so office cities
-        // do not apply even when they were copied onto the query. Incident and request-item
-        // My Team set the flag and stay inside the region. Unassigned keeps the queue offices.
+        // People My Team leaves LimitTeamToOffices false, so a teammate outside the
+        // Settings region still matches. Unassigned keeps the queue offices.
         // My Tickets and All Open are not office-scoped.
         if (query.OfficeLocations is not null
             && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned

@@ -235,6 +235,7 @@ public partial class MainViewModel
             var list = ListFor(lists, row.Key);
             if (list is not null)
                 row.SetLastQuery(list.EncodedQuery, list.FilterSummary);
+            ApplyTeamCard(row, lists);
         }
 
         RefreshTransferSummary();
@@ -243,10 +244,10 @@ public partial class MainViewModel
     private long StoredBytesFor(string key, DeskListSnapshot? lists, FormCatalogSnapshot? catalog) =>
         key switch
         {
-            "incidents" => CacheFootprint.ListSectionBytes(lists?.Incidents),
+            "incidents" => CacheFootprint.ListSectionBytes(lists?.Incidents) + CacheFootprint.ListSectionBytes(lists?.IncidentTeam),
             "requests" => CacheFootprint.ListSectionBytes(lists?.Requests),
-            "request-items" => CacheFootprint.ListSectionBytes(lists?.RequestItems),
-            "walk-ups" => CacheFootprint.ListSectionBytes(lists?.WalkUps),
+            "request-items" => CacheFootprint.ListSectionBytes(lists?.RequestItems) + CacheFootprint.ListSectionBytes(lists?.RequestItemTeam),
+            "walk-ups" => CacheFootprint.ListSectionBytes(lists?.WalkUps) + CacheFootprint.ListSectionBytes(lists?.WalkUpTeam),
             "knowledge" => CacheFootprint.ListSectionBytes(lists?.Knowledge),
             "hardware" => HardwareCatalogBytes(),
             "choices" => CacheFootprint.ChoicesBytes(catalog),
@@ -348,8 +349,26 @@ public partial class MainViewModel
             "configuration-items" => live is not null
                 ? live.ConfigurationItemsAreStale
                 : FormCatalogPolicy.IsStale(snapshot?.ConfigurationItemsCapturedAt ?? default, DateTimeOffset.UtcNow),
+            "incidents" or "request-items" or "walk-ups" => TeamAwareListNeedsDownload(key, snapshot),
             _ => ListIsStale(ListFor(snapshot, key))
         };
+    }
+
+    /// <summary>
+    /// My Tickets is stale, or a selected team has no matching My Team download.
+    /// No selected people does not force a download.
+    /// </summary>
+    private bool TeamAwareListNeedsDownload(string key, DeskListSnapshot? snapshot)
+    {
+        if (ListIsStale(ListFor(snapshot, key)))
+            return true;
+        var workspace = WorkspaceFor(key);
+        if (workspace.TeamMemberIds.Count == 0)
+            return false;
+        var team = TeamFor(snapshot, key);
+        if (ListIsStale(team))
+            return true;
+        return !SameTeam(team!.TeamMemberIds, workspace.TeamMemberIds);
     }
 
     private async Task<SectionOutcome> DownloadChoicesAsync(ServiceNowClient? live, bool force)
@@ -654,7 +673,14 @@ public partial class MainViewModel
 
         var section = SectionFor(key);
         var workspace = WorkspaceFor(key);
-        if (!force && TryApplyFreshList(key))
+        if (!force && key is "incidents" or "request-items" or "walk-ups" && !TeamAwareListNeedsDownload(key, LoadLists()))
+        {
+            PaintCachedPopulation(workspace);
+            var cached = ListFor(LoadLists(), key);
+            return new SectionOutcome(true, null, CapturedAt: cached?.CapturedAt);
+        }
+
+        if (!force && key is not ("incidents" or "request-items" or "walk-ups") && TryApplyFreshList(key))
         {
             var cached = ListFor(LoadLists(), key);
             return new SectionOutcome(true, null, CapturedAt: cached?.CapturedAt);
@@ -662,51 +688,131 @@ public partial class MainViewModel
 
         // Keep the prior list on disk and on screen while the refresh runs. Clearing the
         // file at the start made mid-download navigation look empty even when a good
-        // cache existed; restore-on-failure is unnecessary when we never wipe first.
-        var previous = ListFor(LoadLists(), key);
+        // cache existed.
+        var snapshot = LoadLists();
+        var previous = ListFor(snapshot, key);
+        var previousTeam = TeamFor(snapshot, key);
         var stale = previous?.Items.Count ?? 0;
-        if (previous is { Items.Count: > 0 })
+        if (key is "incidents" or "request-items" or "walk-ups")
+            PaintCachedPopulation(workspace);
+        else if (previous is { Items.Count: > 0 })
             ApplyList(key, previous);
 
         try
         {
             Startup.Report(0);
             workspace.SearchText = force ? "" : SearchText;
-            if (!await workspace.ReloadAsync())
-                throw new InvalidOperationException(string.IsNullOrWhiteSpace(workspace.ErrorMessage)
+            if (key is "requests" or "knowledge")
+                return await DownloadVisibleListAsync(key, workspace, previous, stale);
+
+            var minePreset = MinePreset(workspace);
+            var teamPreset = TeamPreset(workspace);
+            var mine = await workspace.FetchPopulationAsync(minePreset);
+            if (mine.Failed)
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(mine.SkipOrError)
                     ? "The list could not be downloaded."
-                    : workspace.ErrorMessage);
+                    : mine.SkipOrError);
 
-            _loadedFor[section] = workspace.SearchText;
-            var encoded = _client?.LastTicketEncodedQuery ?? workspace.LastEncodedQuery;
-            workspace.RememberDownloadQuery(encoded);
-            if (string.IsNullOrWhiteSpace(workspace.SearchText))
+            var keptMine = mine.Rows.Length == 0 && previous is { Items.Count: > 0 };
+            var mineList = keptMine ? previous : ToCachedList(workspace, mine, team: false);
+
+            CachedTicketList? teamList = previousTeam;
+            string? teamNote = null;
+            var clearTeam = false;
+            if (teamPreset is not null)
             {
-                // An empty download must not wipe a good prior cache.
-                if (workspace.Items.Count == 0 && previous is { Items.Count: > 0 })
+                if (workspace.TeamMemberIds.Count == 0)
                 {
-                    ApplyList(key, previous);
-                    return new SectionOutcome(
-                        false,
-                        "Download returned no rows; kept the saved list.",
-                        stale,
-                        previous.Items.Count,
-                        previous.CapturedAt);
+                    // Do not write an empty file that looks like a successful download of zero tickets.
+                    teamList = null;
+                    clearTeam = previousTeam is not null;
                 }
-
-                SaveWorkspaceList(section, workspace);
+                else
+                {
+                    var team = await workspace.FetchPopulationAsync(teamPreset);
+                    if (team.Failed)
+                        teamNote = string.IsNullOrWhiteSpace(team.SkipOrError)
+                            ? "My Team could not be downloaded."
+                            : team.SkipOrError;
+                    else if (team.Skipped)
+                    {
+                        teamList = null;
+                        clearTeam = true;
+                    }
+                    else if (team.Rows.Length == 0 && previousTeam is { Items.Count: > 0 } && SameTeam(previousTeam.TeamMemberIds, workspace.TeamMemberIds))
+                        teamList = previousTeam;
+                    else
+                        teamList = ToCachedList(workspace, team, team: true);
+                }
             }
 
-            var captured = DateTimeOffset.UtcNow;
-            return new SectionOutcome(false, null, stale, workspace.Items.Count, captured);
+            if (string.IsNullOrWhiteSpace(workspace.SearchText))
+                SavePopulations(section, mineList, teamList, clearTeam || teamList is not null);
+
+            if (PopulationOf(workspace) == MyTeamPopulation && teamList is not null)
+                ApplyPopulation(workspace, teamList, MyTeamPopulation);
+            else if (PopulationOf(workspace) == MyTicketsPopulation && mineList is not null)
+                ApplyPopulation(workspace, mineList, MyTicketsPopulation);
+            else if (force && PopulationOf(workspace) is null)
+                await workspace.RefreshAsync();
+
+            _loadedFor[section] = workspace.SearchText;
+            if (keptMine)
+            {
+                return new SectionOutcome(
+                    false,
+                    "Download returned no rows; kept the saved list.",
+                    stale,
+                    previous!.Items.Count,
+                    previous.CapturedAt);
+            }
+
+            var captured = mineList?.CapturedAt ?? DateTimeOffset.UtcNow;
+            return new SectionOutcome(false, teamNote, stale, mineList?.Items.Count ?? 0, captured);
         }
         catch
         {
-            if (previous is not null)
-                ApplyList(key, previous);
+            if (PopulationOf(workspace) == MyTeamPopulation && previousTeam is not null)
+                ApplyPopulation(workspace, previousTeam, MyTeamPopulation);
+            else if (previous is not null)
+                ApplyPopulation(workspace, previous, MyTicketsPopulation);
 
             throw;
         }
+    }
+
+    private async Task<SectionOutcome> DownloadVisibleListAsync(
+        string key,
+        RecordWorkspaceViewModel workspace,
+        CachedTicketList? previous,
+        int stale)
+    {
+        var section = SectionFor(key);
+        if (!await workspace.ReloadAsync())
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(workspace.ErrorMessage)
+                ? "The list could not be downloaded."
+                : workspace.ErrorMessage);
+
+        _loadedFor[section] = workspace.SearchText;
+        var encoded = _client?.LastTicketEncodedQuery ?? workspace.LastEncodedQuery;
+        workspace.RememberDownloadQuery(encoded);
+        if (string.IsNullOrWhiteSpace(workspace.SearchText))
+        {
+            if (workspace.Items.Count == 0 && previous is { Items.Count: > 0 })
+            {
+                ApplyList(key, previous);
+                return new SectionOutcome(
+                    false,
+                    "Download returned no rows; kept the saved list.",
+                    stale,
+                    previous.Items.Count,
+                    previous.CapturedAt);
+            }
+
+            SaveWorkspaceList(section, workspace);
+        }
+
+        return new SectionOutcome(false, null, stale, workspace.Items.Count, DateTimeOffset.UtcNow);
     }
 
     private async Task LoadChoiceListsAsync()
@@ -751,41 +857,93 @@ public partial class MainViewModel
 
     private void ApplyList(string key, CachedTicketList list)
     {
+        var population = key is "incidents" or "request-items" or "walk-ups" ? MyTicketsPopulation : "none";
+        ApplyPopulation(WorkspaceFor(key), list, population);
+    }
+
+    private void ApplyPopulation(RecordWorkspaceViewModel workspace, CachedTicketList list, string population)
+    {
         var rows = list.Items.Select(ToTicket).ToArray();
-        var workspace = WorkspaceFor(key);
-        workspace.ShowCachedRows(rows, list.TotalCount > 0 ? list.TotalCount : rows.Length, list.CapturedAt);
-        if (!string.IsNullOrWhiteSpace(list.FilterSummary))
-            workspace.FilterSummary = list.FilterSummary;
-        if (!string.IsNullOrWhiteSpace(list.EncodedQuery))
-            workspace.LastEncodedQuery = list.EncodedQuery;
-        _loadedFor[SectionFor(key)] = "";
+        workspace.ShowCachedRows(
+            rows,
+            list.TotalCount > 0 ? list.TotalCount : rows.Length,
+            list.CapturedAt,
+            list.EncodedQuery,
+            list.FilterSummary,
+            population,
+            list.Items.Count,
+            list.FilteredByRegion);
+        _loadedFor[workspace.Section] = "";
         RefreshSearchCache();
     }
 
     private void SaveWorkspaceList(DeskSection section, RecordWorkspaceViewModel workspace)
     {
-        if (_lists is null)
+        if (_lists is null || !string.IsNullOrWhiteSpace(workspace.SearchText))
             return;
+        var population = PopulationOf(workspace);
+        if (population == MyTeamPopulation && workspace.TeamMemberIds.Count == 0)
+            return;
+        // Unassigned and All open stay on screen. They must not replace My Tickets or My Team.
+        if (population is null && section != DeskSection.Requests)
+            return;
+
         var snapshot = LoadLists() ?? new DeskListSnapshot();
-        var list = new CachedTicketList
-        {
-            CapturedAt = DateTimeOffset.UtcNow,
-            TotalCount = workspace.TotalCount,
-            Items = workspace.Items.Select(FromTicket).ToList(),
-            EncodedQuery = workspace.LastEncodedQuery,
-            FilterSummary = workspace.FilterSummary
-        };
-        AssignList(snapshot, KeyFor(section), list);
+        var list = CaptureList(workspace, population == MyTeamPopulation);
+        if (population == MyTeamPopulation)
+            AssignTeam(snapshot, section, list);
+        else
+            AssignList(snapshot, KeyFor(section), list);
         _lists.Save(CacheScope(), snapshot);
         RefreshSearchCache();
+        workspace.NoteCacheRead(population, list.Items.Count);
         var cacheRow = Caches.FirstOrDefault(row => row.Key == KeyFor(section));
         if (cacheRow is null)
             return;
-        cacheRow.SetLastQuery(list.EncodedQuery, list.FilterSummary);
-        cacheRow.SetStoredCount(list.Items.Count);
-        cacheRow.SetStoredBytes(CacheFootprint.ListSectionBytes(list));
-        cacheRow.RememberGoodDownload(list.CapturedAt);
+        if (population != MyTeamPopulation)
+        {
+            cacheRow.SetLastQuery(list.EncodedQuery, list.FilterSummary);
+            cacheRow.SetStoredCount(list.Items.Count);
+            cacheRow.RememberGoodDownload(list.CapturedAt);
+        }
+
+        cacheRow.SetStoredBytes(StoredBytesFor(cacheRow.Key, snapshot, null));
+        ApplyTeamCard(cacheRow, snapshot);
     }
+
+    private void SavePopulations(DeskSection section, CachedTicketList? mine, CachedTicketList? team, bool writeTeam)
+    {
+        if (_lists is null)
+            return;
+        var snapshot = LoadLists() ?? new DeskListSnapshot();
+        AssignList(snapshot, KeyFor(section), mine);
+        if (writeTeam)
+            AssignTeam(snapshot, section, team);
+        _lists.Save(CacheScope(), snapshot);
+        RefreshSearchCache();
+    }
+
+    private static CachedTicketList CaptureList(RecordWorkspaceViewModel workspace, bool team) => new()
+    {
+        CapturedAt = DateTimeOffset.UtcNow,
+        TotalCount = workspace.TotalCount,
+        Items = workspace.Items.Select(FromTicket).ToList(),
+        EncodedQuery = workspace.LastEncodedQuery,
+        FilterSummary = workspace.FilterSummary,
+        FilteredByRegion = workspace.QueryFilteredByRegion,
+        TeamMemberIds = team ? workspace.TeamMemberIds.ToList() : []
+    };
+
+    private static CachedTicketList ToCachedList(RecordWorkspaceViewModel workspace, PopulationFetch fetch, bool team) => new()
+    {
+        CapturedAt = DateTimeOffset.UtcNow,
+        TotalCount = fetch.Total,
+        Items = fetch.Rows.Select(FromTicket).ToList(),
+        EncodedQuery = fetch.EncodedQuery,
+        FilterSummary = fetch.FilterSummary,
+        FilteredByRegion = fetch.FilteredByRegion,
+        TeamMemberIds = team ? workspace.TeamMemberIds.ToList() : []
+    };
 
     private void RememberPracticeStamp(string key)
     {
@@ -950,6 +1108,146 @@ public partial class MainViewModel
             case "knowledge":
                 snapshot.Knowledge = list;
                 break;
+        }
+    }
+
+    private const string MyTicketsPopulation = "My Tickets";
+    private const string MyTeamPopulation = "My Team";
+
+    private bool PaintCachedPreset(RecordWorkspaceViewModel workspace, PresetOption preset)
+    {
+        if (!string.IsNullOrWhiteSpace(workspace.SearchText))
+            return false;
+        if (PopulationOf(preset, workspace) is not string population)
+            return false;
+        if (population == MyTeamPopulation && workspace.TeamMemberIds.Count == 0)
+            return false;
+
+        var key = KeyFor(workspace.Section);
+        var list = population == MyTeamPopulation ? TeamFor(LoadLists(), key) : ListFor(LoadLists(), key);
+        if (list is not { Items.Count: > 0 })
+            return false;
+        if (population == MyTeamPopulation && !SameTeam(list.TeamMemberIds, workspace.TeamMemberIds))
+            return false;
+
+        ApplyPopulation(workspace, list, population);
+        if (!ListIsStale(list))
+            return true;
+
+        _ = workspace.RefreshKeepingCachedRowsAsync();
+        return true;
+    }
+
+    private void PaintCachedPopulation(RecordWorkspaceViewModel workspace)
+    {
+        if (PopulationOf(workspace) is not string population)
+            return;
+        var key = KeyFor(workspace.Section);
+        var list = population == MyTeamPopulation ? TeamFor(LoadLists(), key) : ListFor(LoadLists(), key);
+        if (list is not { Items.Count: > 0 })
+            return;
+        if (population == MyTeamPopulation && !SameTeam(list.TeamMemberIds, workspace.TeamMemberIds))
+            return;
+        ApplyPopulation(workspace, list, population);
+    }
+
+    private void ApplyTeamCard(CacheRowModel row, DeskListSnapshot? lists)
+    {
+        if (row.Key is not ("incidents" or "request-items" or "walk-ups"))
+        {
+            row.ClearTeamPopulation();
+            return;
+        }
+
+        var workspace = WorkspaceFor(row.Key);
+        if (workspace.TeamMemberIds.Count == 0)
+        {
+            row.ShowTeamNotSelected();
+            return;
+        }
+
+        var team = TeamFor(lists, row.Key);
+        if (team is null || team.CapturedAt == default || !SameTeam(team.TeamMemberIds, workspace.TeamMemberIds))
+        {
+            row.ShowTeamNotDownloaded();
+            return;
+        }
+
+        row.ShowTeamStored(team.Items.Count);
+    }
+
+    private string? PopulationOf(RecordWorkspaceViewModel workspace) => PopulationOf(workspace.Preset, workspace);
+
+    private static string? PopulationOf(PresetOption? preset, RecordWorkspaceViewModel workspace)
+    {
+        if (workspace.Section is not (DeskSection.Incidents or DeskSection.RequestedItems or DeskSection.WalkUps))
+            return null;
+        if (preset is null)
+            return null;
+        if (preset.Assignment == AssignmentScope.Mine
+            && preset.Activity == ActivityFilter.Open
+            && string.IsNullOrWhiteSpace(preset.AssignmentClause))
+            return MyTicketsPopulation;
+        if (preset.Assignment == AssignmentScope.MyGroups
+            && preset.Activity == ActivityFilter.Open
+            && string.IsNullOrWhiteSpace(preset.AssignmentClause)
+            && workspace.UsesLeadTeam)
+            return MyTeamPopulation;
+        return null;
+    }
+
+    private static PresetOption MinePreset(RecordWorkspaceViewModel workspace) =>
+        workspace.Presets.First(preset =>
+            preset.Assignment == AssignmentScope.Mine
+            && preset.Activity == ActivityFilter.Open
+            && string.IsNullOrWhiteSpace(preset.AssignmentClause));
+
+    private static PresetOption? TeamPreset(RecordWorkspaceViewModel workspace) =>
+        workspace.Presets.FirstOrDefault(preset =>
+            preset.Assignment == AssignmentScope.MyGroups
+            && preset.Activity == ActivityFilter.Open
+            && string.IsNullOrWhiteSpace(preset.AssignmentClause));
+
+    private static CachedTicketList? TeamFor(DeskListSnapshot? snapshot, string key) => key switch
+    {
+        "incidents" => snapshot?.IncidentTeam,
+        "request-items" => snapshot?.RequestItemTeam,
+        "walk-ups" => snapshot?.WalkUpTeam,
+        _ => null
+    };
+
+    private static void AssignTeam(DeskListSnapshot snapshot, DeskSection section, CachedTicketList? list)
+    {
+        switch (section)
+        {
+            case DeskSection.Incidents:
+                snapshot.IncidentTeam = list;
+                break;
+            case DeskSection.RequestedItems:
+                snapshot.RequestItemTeam = list;
+                break;
+            case DeskSection.WalkUps:
+                snapshot.WalkUpTeam = list;
+                break;
+        }
+    }
+
+    private static bool SameTeam(IReadOnlyList<string>? saved, IReadOnlyList<string> current)
+    {
+        var left = new HashSet<string>(NormalizeIds(saved), StringComparer.OrdinalIgnoreCase);
+        var right = new HashSet<string>(NormalizeIds(current), StringComparer.OrdinalIgnoreCase);
+        return left.SetEquals(right);
+    }
+
+    private static IEnumerable<string> NormalizeIds(IReadOnlyList<string>? ids)
+    {
+        if (ids is null)
+            yield break;
+        foreach (var id in ids)
+        {
+            var trimmed = id?.Trim() ?? "";
+            if (trimmed.Length > 0)
+                yield return trimmed;
         }
     }
 

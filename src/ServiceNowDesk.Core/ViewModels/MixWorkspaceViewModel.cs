@@ -83,6 +83,9 @@ public partial class MixWorkspaceViewModel : ObservableObject
 
     public string EmptyPrompt => ShowEmptyPrompt ? "Select a ticket." : "";
 
+    /// <summary>Copy details lives on the incident, request-item, and walk-up lists.</summary>
+    public bool ShowCopyDetails => false;
+
     public event EventHandler<TicketRow>? OpenRequested;
 
     public void UseOfficeCities(IReadOnlyList<string>? cities)
@@ -92,15 +95,15 @@ public partial class MixWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Settings region offices. Incident and request-item rows on My Team use these
-    /// when any are saved. Walk-up rows ignore them.
+    /// Settings region offices. People My Team does not filter by them.
+    /// Unassigned still uses the queue office cities.
     /// </summary>
     public void UseRegionOffices(IEnumerable<string>? offices) =>
         _regionOffices = RegionOfficeMatch.NormalizeOffices(offices);
 
     /// <summary>
-    /// Leads people for My Team. Walk-up rows use the people with no office limit.
-    /// Incident and request-item rows use the same people inside the region.
+    /// Leads people for My Team. Incidents, request items, and walk-ups use the same
+    /// people, with no region or office clause.
     /// </summary>
     public void UseTeamMembers(IReadOnlyList<string>? memberIds)
     {
@@ -327,15 +330,11 @@ public partial class MixWorkspaceViewModel : ObservableObject
 
         IReadOnlyList<string>? offices = null;
         IReadOnlyList<string>? team = null;
-        var limitTeamToOffices = false;
         if (_useLeadTeam && Preset.Assignment == AssignmentScope.MyGroups)
         {
+            // Match All Open's lack of a location clause, then keep selected people.
+            // Walk-ups, incidents, and request items share this roster.
             team = _teamMemberIds;
-            if (_regionOffices.Count > 0 || _limitOffices)
-            {
-                offices = TeamListScope.Offices(_regionOffices, _officeCities);
-                limitTeamToOffices = true;
-            }
         }
         else if (_limitOffices && Preset.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
         {
@@ -350,7 +349,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
             Activity = Preset.Activity,
             OfficeLocations = offices,
             TeamMemberIds = team,
-            LimitTeamToOffices = limitTeamToOffices,
+            LimitTeamToOffices = false,
             WatchedGroupName = team is null && Preset.Assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0
                 ? _watchedGroupName
                 : null,

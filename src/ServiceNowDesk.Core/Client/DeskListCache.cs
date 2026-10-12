@@ -47,6 +47,15 @@ public sealed class CachedTicketList
 
     /// <summary>Human-readable active filters at download time.</summary>
     public string? FilterSummary { get; set; }
+
+    /// <summary>
+    /// Leads people this download was for. Empty on My Tickets.
+    /// A My Team file with a different set is not the current team.
+    /// </summary>
+    public List<string>? TeamMemberIds { get; set; }
+
+    /// <summary>True when the encoded query included a Settings region location clause.</summary>
+    public bool FilteredByRegion { get; set; }
 }
 
 public sealed class DeskListSnapshot
@@ -61,6 +70,15 @@ public sealed class DeskListSnapshot
     public CachedTicketList? RequestItems { get; set; }
     public CachedTicketList? WalkUps { get; set; }
     public CachedTicketList? Knowledge { get; set; }
+
+    /// <summary>Open incidents assigned to the selected Leads people. Null when that population was not downloaded.</summary>
+    public CachedTicketList? IncidentTeam { get; set; }
+
+    /// <summary>Open request items assigned to the selected Leads people. Null when that population was not downloaded.</summary>
+    public CachedTicketList? RequestItemTeam { get; set; }
+
+    /// <summary>Open walk-ups assigned to the selected Leads people. Null when that population was not downloaded.</summary>
+    public CachedTicketList? WalkUpTeam { get; set; }
 }
 
 public interface IDeskListStore

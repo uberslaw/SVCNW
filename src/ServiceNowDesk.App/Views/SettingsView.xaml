@@ -200,6 +200,10 @@
                                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
                                                Visibility="{Binding QueryText, Converter={StaticResource StringVis}}"
                                                AutomationProperties.Name="{Binding Name, StringFormat=Last download query for {0}}"/>
+                                    <TextBlock Text="{Binding TeamText}" Margin="0,1,0,0" FontSize="11"
+                                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                               Visibility="{Binding TeamText, Converter={StaticResource StringVis}}"
+                                               AutomationProperties.Name="{Binding Name, StringFormat=My Team cache for {0}}"/>
                                     <TextBlock Text="{Binding Status}" Margin="0,6,0,0" TextWrapping="Wrap"
                                                Visibility="{Binding Status, Converter={StaticResource StringVis}}">
                                         <TextBlock.Style>
