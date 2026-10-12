@@ -1,72 +1,92 @@
 <UserControl x:Class="ServiceNowDesk.Views.RegionSettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="RegionHeaderToggle" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="4,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Header" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <DockPanel LastChildFill="True">
+                                <TextBlock x:Name="Chevron" DockPanel.Dock="Left"
+                                           FontFamily="Segoe MDL2 Assets" Text="&#xE76C;" FontSize="12"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock DockPanel.Dock="Right"
+                                           Text="{Binding SelectionSummary}"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0"
+                                           Visibility="{Binding SelectionSummary, Converter={StaticResource StringVis}}"/>
+                                <TextBlock Text="{Binding Label}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Header" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Header" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chevron" Property="Text" Value="&#xE70D;"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="RegionSectionTemplate">
+            <StackPanel Margin="0,1">
+                <ToggleButton Style="{StaticResource RegionHeaderToggle}"
+                              IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                              AutomationProperties.Name="{Binding Label, StringFormat=Expand {0}}"/>
+                <StackPanel Margin="26,2,0,6" Visibility="{Binding IsExpanded, Converter={StaticResource BoolVis}}">
+                    <CheckBox Content="All offices"
+                              FontWeight="SemiBold"
+                              IsThreeState="True"
+                              IsChecked="{Binding IsChecked, Mode=OneWay}"
+                              PreviewMouseLeftButtonDown="AllOffices_PreviewMouseLeftButtonDown"
+                              PreviewKeyDown="AllOffices_PreviewKeyDown"
+                              Margin="0,2,0,4"
+                              AutomationProperties.Name="{Binding Label, StringFormat=All offices in {0}}"/>
+                    <ItemsControl ItemsSource="{Binding OfficeChildren}"
+                                  Visibility="{Binding HasOfficeChildren, Converter={StaticResource BoolVis}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Label}"
+                                          IsChecked="{Binding IsChecked}"
+                                          Margin="0,2,16,2"
+                                          AutomationProperties.Name="{Binding Label, StringFormat=Office {0}}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ItemsControl ItemsSource="{Binding PortionChildren}"
+                                  ItemTemplate="{DynamicResource RegionSectionTemplate}"
+                                  Visibility="{Binding HasPortions, Converter={StaticResource BoolVis}}"/>
+                </StackPanel>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
     <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8">
         <StackPanel DataContext="{Binding Region}">
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                       Text="Offices in your region. Hardware → Region shows computers whose location matches the offices you tick. A region or group tick selects every office under it. The choice is saved on this PC."/>
-            <ItemsControl ItemsSource="{Binding Groups}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Margin="0,8,0,4">
-                            <CheckBox Content="{Binding Label}"
-                                      FontWeight="SemiBold"
-                                      IsThreeState="True"
-                                      IsChecked="{Binding IsChecked, Mode=OneWay}"
-                                      PreviewMouseLeftButtonDown="GroupCheck_PreviewMouseLeftButtonDown"
-                                      PreviewKeyDown="GroupCheck_PreviewKeyDown"
-                                      AutomationProperties.Name="{Binding Label, StringFormat=Region {0}}"/>
-                            <ItemsControl ItemsSource="{Binding Children}" Margin="18,4,0,0"
-                                          Visibility="{Binding ChildrenAreOffices, Converter={StaticResource BoolVis}}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <CheckBox Content="{Binding Label}"
-                                                  IsChecked="{Binding IsChecked}"
-                                                  Margin="0,2,16,2"
-                                                  AutomationProperties.Name="{Binding Label, StringFormat=Office {0}}"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <ItemsControl ItemsSource="{Binding Children}" Margin="18,2,0,0"
-                                          Visibility="{Binding ChildrenAreOffices, Converter={StaticResource InverseBoolVis}}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Margin="0,6,0,2">
-                                            <CheckBox Content="{Binding Label}"
-                                                      FontWeight="SemiBold"
-                                                      IsThreeState="True"
-                                                      IsChecked="{Binding IsChecked, Mode=OneWay}"
-                                                      PreviewMouseLeftButtonDown="GroupCheck_PreviewMouseLeftButtonDown"
-                                                      PreviewKeyDown="GroupCheck_PreviewKeyDown"
-                                                      AutomationProperties.Name="{Binding Label, StringFormat=Region {0}}"/>
-                                            <ItemsControl ItemsSource="{Binding Children}" Margin="18,4,0,0">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate>
-                                                        <WrapPanel/>
-                                                    </ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <CheckBox Content="{Binding Label}"
-                                                                  IsChecked="{Binding IsChecked}"
-                                                                  Margin="0,2,16,2"
-                                                                  AutomationProperties.Name="{Binding Label, StringFormat=Office {0}}"/>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                       Text="Offices in your region. Hardware → Region shows computers whose location matches the offices you tick. Open a region, then tick All offices or a mix. Open a portion to tick that whole portion or a mix of its offices. Several regions and portions can be selected together. The choice is saved on this PC."/>
+            <ItemsControl ItemsSource="{Binding Groups}" ItemTemplate="{StaticResource RegionSectionTemplate}"/>
         </StackPanel>
     </Border>
 </UserControl>

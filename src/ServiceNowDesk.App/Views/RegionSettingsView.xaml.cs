@@ -11,14 +11,14 @@ public partial class RegionSettingsView : UserControl
         InitializeComponent();
     }
 
-    private void GroupCheck_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void AllOffices_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (!ToggleGroup(sender))
             return;
         e.Handled = true;
     }
 
-    private void GroupCheck_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void AllOffices_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key is not (Key.Space or Key.Enter))
             return;

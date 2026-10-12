@@ -5,8 +5,8 @@ using ServiceNowDesk.Client;
 namespace ServiceNowDesk.ViewModels;
 
 /// <summary>
-/// Settings tree for "my region". Checking a region or sub-region checks every office under it.
-/// Only office labels are stored.
+/// Settings tree for "my region". The All offices tick on a region or portion checks every office under it.
+/// Open and closed sections stay on this screen for the session. Only office labels are stored.
 /// </summary>
 public sealed partial class RegionSettingsViewModel : ObservableObject
 {
@@ -131,15 +131,14 @@ public sealed partial class RegionSettingsViewModel : ObservableObject
         foreach (var group in EnumerateAll().Where(node => !node.IsOffice))
         {
             var offices = group.Offices().ToArray();
+            var on = offices.Count(office => office.IsChecked == true);
             bool? state = false;
-            if (offices.Length > 0)
-            {
-                var on = offices.Count(office => office.IsChecked == true);
-                state = on == 0 ? false : on == offices.Length ? true : null;
-            }
+            if (offices.Length > 0 && on > 0)
+                state = on == offices.Length ? true : null;
 
             if (group.IsChecked != state)
                 group.IsChecked = state;
+            group.SetSelectedOfficeCount(on);
         }
     }
 
@@ -180,7 +179,32 @@ public partial class RegionOfficeNode : ObservableObject
 
     public bool ChildrenAreOffices => Children.Count > 0 && Children.All(child => child.IsOffice);
 
+    public IEnumerable<RegionOfficeNode> OfficeChildren => Children.Where(child => child.IsOffice);
+
+    public IEnumerable<RegionOfficeNode> PortionChildren => Children.Where(child => !child.IsOffice);
+
+    public bool HasOfficeChildren => OfficeChildren.Any();
+
+    public bool HasPortions => PortionChildren.Any();
+
+    /// <summary>Session-only. Settings reload does not open or close a section.</summary>
+    [ObservableProperty] private bool isExpanded;
+
+    public int SelectedOfficeCount { get; private set; }
+
+    public string SelectionSummary =>
+        SelectedOfficeCount == 0 ? "" : $"{SelectedOfficeCount} selected";
+
     [ObservableProperty] private bool? isChecked;
+
+    internal void SetSelectedOfficeCount(int count)
+    {
+        if (SelectedOfficeCount == count)
+            return;
+        SelectedOfficeCount = count;
+        OnPropertyChanged(nameof(SelectedOfficeCount));
+        OnPropertyChanged(nameof(SelectionSummary));
+    }
 
     public IEnumerable<RegionOfficeNode> Offices()
     {
