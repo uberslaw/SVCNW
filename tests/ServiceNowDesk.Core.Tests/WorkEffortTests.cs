@@ -300,7 +300,7 @@ public class WorkEffortTests
         {
             var incident = Uri.UnescapeDataString(incidentCall.PathAndQuery);
             Assert.Contains("sysparm_display_value=all", incident);
-            Assert.Contains("sysparm_limit=" + WorkEffortQuery.PageSize, incident);
+            Assert.Contains("sysparm_limit=" + WorkEffortQuery.SafetyCap, incident);
             Assert.Contains("sysparm_exclude_reference_link=true", incident);
             Assert.Contains("sys_id,number,short_description,opened_by,opened_at,resolved_by,resolved_at,closed_by,closed_at,sys_updated_by,sys_updated_on", incident);
             Assert.Contains("short_description", incident);
@@ -584,10 +584,16 @@ public class WorkEffortTests
         Assert.All(ticks.Ticks, tick =>
         {
             Assert.Equal(WorkEffortEstimate.BarMaximum, tick.Total);
-            Assert.StartsWith("Generating report. check back in: ", tick.Status, StringComparison.Ordinal);
-            Assert.EndsWith(" minutes", tick.Status, StringComparison.Ordinal);
+            Assert.True(
+                tick.Status.StartsWith("Generating report. check back in: ", StringComparison.Ordinal)
+                || tick.Status.StartsWith("Reading ", StringComparison.Ordinal),
+                tick.Status);
+            Assert.Contains(" minutes", tick.Status, StringComparison.Ordinal);
         });
         Assert.Contains(ticks.Ticks, tick => tick.Status == WorkEffortEstimate.Text(1));
+        Assert.Contains(ticks.Ticks, tick => tick.Status.Contains("Alex Rivera", StringComparison.Ordinal)
+            && tick.Status.Contains("2026-10-07", StringComparison.Ordinal)
+            && tick.Status.Contains("page ", StringComparison.Ordinal));
         Assert.True(ticks.Ticks[^1].Completed >= ticks.Ticks[0].Completed);
         Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("table/incident", StringComparison.Ordinal));
         Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("table/sc_req_item", StringComparison.Ordinal));
@@ -715,6 +721,29 @@ public class WorkEffortTests
         var week = WorkEffortWindow.For(WorkEffortScale.ThisWeek, Now);
         Assert.True(WorkEffortSlices.UseDaySlices(8, WorkEffortSlices.Days(week)));
         Assert.Equal(WorkEffortSlices.Days(week), WorkEffortSlices.Plan(week, 8).Count);
+
+        var day = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var halves = WorkEffortSlices.Subdivide(day);
+        Assert.Equal(2, halves.Count);
+        Assert.Equal(day.Start, halves[0].Start);
+        Assert.Equal(day.End, halves[1].End);
+        Assert.Equal(halves[0].End, halves[1].Start);
+        var hours = WorkEffortSlices.Subdivide(halves[0]);
+        Assert.InRange(hours.Count, 11, 13);
+        Assert.Equal(halves[0].Start, hours[0].Start);
+        Assert.Equal(halves[0].End, hours[^1].End);
+        Assert.Empty(WorkEffortSlices.Subdivide(hours[0]));
+    }
+
+    [Fact]
+    public void AKeysetPageKeepsTheCursorOnEveryLocationBranch()
+    {
+        var today = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var office = Assert.Single(WorkEffortQuery.OpenedInOffice(WorkEffortTablePlan.Incident, Alex, today, "Sydney"));
+        var next = WorkEffortQuery.AfterSysId(office, "inc-9");
+        Assert.EndsWith("^ORDERBYsys_id", next);
+        Assert.Equal(1, next.Split("ORDERBYsys_id").Length - 1);
+        Assert.All(next.Split("^NQ"), branch => Assert.Contains("sys_id>inc-9", branch, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -855,21 +884,237 @@ public class WorkEffortTests
             rangeEnd: new DateTime(2026, 10, 6));
 
         var incidents = IncidentQueries(handler);
-        Assert.Equal(4, incidents.Length);
-        Assert.Contains("sample-user", incidents[0], StringComparison.Ordinal);
-        Assert.Contains("opened_at>=2026-10-05@", incidents[0], StringComparison.Ordinal);
-        Assert.Contains("sample-user", incidents[1], StringComparison.Ordinal);
-        Assert.Contains("opened_at>=2026-10-06@", incidents[1], StringComparison.Ordinal);
-        Assert.Contains("user-jordan", incidents[2], StringComparison.Ordinal);
-        Assert.Contains("opened_at>=2026-10-05@", incidents[2], StringComparison.Ordinal);
-        Assert.Contains("user-jordan", incidents[3], StringComparison.Ordinal);
-        Assert.Contains("opened_at>=2026-10-06@", incidents[3], StringComparison.Ordinal);
+        Assert.Contains(incidents, query => query.Contains("sample-user", StringComparison.Ordinal)
+            && query.Contains("opened_at>=2026-10-05@00:00:00", StringComparison.Ordinal)
+            && query.Contains("opened_at<=2026-10-05@23:59:59", StringComparison.Ordinal));
+        Assert.Contains(incidents, query => query.Contains("sample-user", StringComparison.Ordinal)
+            && query.Contains("opened_at>=2026-10-06@", StringComparison.Ordinal));
+        Assert.Contains(incidents, query => query.Contains("user-jordan", StringComparison.Ordinal)
+            && query.Contains("opened_at>=2026-10-05@", StringComparison.Ordinal));
+        Assert.Contains(incidents, query => query.Contains("user-jordan", StringComparison.Ordinal)
+            && query.Contains("opened_at>=2026-10-06@", StringComparison.Ordinal));
+        Assert.Contains(incidents, query => query.Contains("sample-user", StringComparison.Ordinal)
+            && query.Contains("opened_at>=2026-10-05@", StringComparison.Ordinal)
+            && query.Contains("sysparm_offset=1", StringComparison.Ordinal));
 
         var alex = Assert.Single(report.Rows, row => row.Name == "Alex Rivera");
         var jordan = Assert.Single(report.Rows, row => row.Name == "Jordan Lee");
         Assert.Equal(2, alex.IncOpened);
         Assert.Equal(2, jordan.IncOpened);
         Assert.Contains(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ThisMonthIsOneLocalDayPerPersonAndAFinishedLoadIsNotPartial()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""{"result":[]}"""));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var ticks = new ProgressList();
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.ThisMonth,
+            Now,
+            [Alex],
+            Sydney,
+            ticks,
+            CancellationToken.None);
+
+        var incidents = IncidentQueries(handler);
+        Assert.Equal(7, incidents.Length);
+        for (var day = 1; day <= 7; day++)
+        {
+            var stamp = "2026-10-" + day.ToString("00");
+            Assert.Contains(incidents, query => query.Contains("opened_at>=" + stamp + "@00:00:00", StringComparison.Ordinal)
+                && query.Contains("opened_at<=" + stamp + "@23:59:59", StringComparison.Ordinal)
+                && query.Contains("sample-user", StringComparison.Ordinal));
+        }
+
+        Assert.DoesNotContain(incidents, query => query.Contains("opened_at>=2026-10-01@", StringComparison.Ordinal)
+            && query.Contains("opened_at<=2026-10-07@", StringComparison.Ordinal));
+        Assert.Contains("Counts for this month so far.", report.Status, StringComparison.Ordinal);
+        Assert.DoesNotContain(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+        Assert.Contains(ticks.Ticks, tick => tick.Status.Contains("Alex Rivera", StringComparison.Ordinal)
+            && tick.Status.Contains("2026-10-01", StringComparison.Ordinal)
+            && tick.Status.Contains("page ", StringComparison.Ordinal));
+        Assert.Equal(0, Assert.Single(report.Rows).IncOpened);
+    }
+
+    [Fact]
+    public async Task AFullPageOf8000StillCountsTheLaterMatchingRow()
+    {
+        var first = RepeatedIncidents(WorkEffortQuery.SafetyCap, "ny", "New York", "2026-10-07 09:00:00");
+        var later = OpenedIncident("york-1", "sample-user", "Alex Rivera", "2026-10-07 11:00:00", "York");
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            if (!path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            var offset = OffsetOf(path);
+            if (offset == 0)
+                return Api.Json(first);
+            if (offset == WorkEffortQuery.SafetyCap)
+                return Api.Json(later);
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.Today,
+            Now,
+            [Alex],
+            ["York"],
+            progress: null,
+            CancellationToken.None);
+
+        var incidents = IncidentQueries(handler);
+        Assert.Contains(incidents, query => query.Contains("sysparm_limit=" + WorkEffortQuery.SafetyCap, StringComparison.Ordinal)
+            && query.Contains("sysparm_offset=0", StringComparison.Ordinal));
+        Assert.Contains(incidents, query => query.Contains("sysparm_offset=" + WorkEffortQuery.SafetyCap, StringComparison.Ordinal));
+        Assert.Equal(1, Assert.Single(report.Rows).IncOpened);
+        Assert.Equal("york-1", Assert.Single(report.Ledger!.Touches).SysId);
+        Assert.DoesNotContain(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+        Assert.Contains("Counts for today.", report.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OverlappingPagesDoNotDoubleCountTheSameTicket()
+    {
+        var first = IncidentResult(
+            ("inc-a", "AU Sydney Office", "2026-10-07 09:00:00"),
+            ("inc-b", "AU Sydney Office", "2026-10-07 10:00:00"));
+        var second = IncidentResult(
+            ("inc-b", "AU Sydney Office", "2026-10-07 10:00:00"),
+            ("inc-c", "AU Sydney Office", "2026-10-07 11:00:00"));
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            if (!path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            var offset = OffsetOf(path);
+            if (offset == 0)
+                return Api.Json(first, total: 3);
+            if (offset == 2)
+                return Api.Json(second, total: 3);
+            return Api.Json("""{"result":[]}""", total: 3);
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.Today,
+            Now,
+            safetyCap: 2,
+            CancellationToken.None,
+            team: [Alex],
+            regionOffices: Sydney);
+
+        Assert.Contains(IncidentQueries(handler), query => query.Contains("sysparm_offset=2", StringComparison.Ordinal));
+        var row = Assert.Single(report.Rows);
+        Assert.Equal(3, row.IncOpened);
+        Assert.Equal(3.0m, row.Weighted);
+        Assert.Equal(3, report.Ledger!.Touches.Select(touch => touch.SysId).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.DoesNotContain(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AFullPageThatDoesNotAdvanceIsReadInSmallerPieces()
+    {
+        var morning = IncidentResult(
+            ("inc-a", "AU Sydney Office", "2026-10-07 09:00:00"),
+            ("inc-b", "AU Sydney Office", "2026-10-07 10:00:00"));
+        var afternoon = OpenedIncident("inc-c", "sample-user", "Alex Rivera", "2026-10-07 15:00:00");
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            if (!path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            var query = SysParmQuery(path);
+            var fullDay = query.Contains("opened_at>=2026-10-07@00:00:00", StringComparison.Ordinal)
+                && query.Contains("opened_at<=2026-10-07@23:59:59", StringComparison.Ordinal);
+            if (fullDay)
+            {
+                if (OffsetOf(path) == 0 && !query.Contains("sys_id>", StringComparison.Ordinal))
+                    return Api.Json(morning, total: 4);
+                return Api.Json("""{"result":[]}""", total: 4);
+            }
+
+            if (query.Contains("opened_at>=2026-10-07@00:00:00", StringComparison.Ordinal)
+                && query.Contains("opened_at<=2026-10-07@11:59:59", StringComparison.Ordinal))
+                return Api.Json(morning, total: 2);
+            return Api.Json(afternoon, total: 1);
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.Today,
+            Now,
+            safetyCap: 2,
+            CancellationToken.None,
+            team: [Alex],
+            regionOffices: Sydney);
+
+        var incidents = IncidentQueries(handler);
+        Assert.Contains(incidents, query => query.Contains("opened_at<=2026-10-07@11:59:59", StringComparison.Ordinal));
+        Assert.Contains(incidents, query => query.Contains("opened_at>=2026-10-07@11:59:59", StringComparison.Ordinal));
+        var row = Assert.Single(report.Rows);
+        Assert.Equal(3, row.IncOpened);
+        Assert.Equal(3.0m, row.Weighted);
+        Assert.Equal(["inc-a", "inc-b", "inc-c"], report.Ledger!.Touches.Select(touch => touch.SysId).OrderBy(id => id, StringComparer.Ordinal).ToArray());
+        Assert.DoesNotContain(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+    }
+
+    private static int OffsetOf(string path)
+    {
+        const string marker = "sysparm_offset=";
+        var index = path.IndexOf(marker, StringComparison.Ordinal);
+        if (index < 0)
+            return 0;
+        var start = index + marker.Length;
+        var end = start;
+        while (end < path.Length && char.IsDigit(path[end]))
+            end++;
+        return end > start ? int.Parse(path[start..end], System.Globalization.CultureInfo.InvariantCulture) : 0;
+    }
+
+    private static string RepeatedIncidents(int count, string idPrefix, string location, string opened)
+    {
+        var builder = new System.Text.StringBuilder(count * 420);
+        builder.Append("{\"result\":[");
+        for (var index = 0; index < count; index++)
+        {
+            if (index > 0)
+                builder.Append(',');
+            AppendIncidentRow(builder, idPrefix + index.ToString(System.Globalization.CultureInfo.InvariantCulture), location, opened);
+        }
+
+        builder.Append("]}");
+        return builder.ToString();
+    }
+
+    private static string IncidentResult(params (string Id, string Location, string Opened)[] rows)
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.Append("{\"result\":[");
+        for (var index = 0; index < rows.Length; index++)
+        {
+            if (index > 0)
+                builder.Append(',');
+            AppendIncidentRow(builder, rows[index].Id, rows[index].Location, rows[index].Opened);
+        }
+
+        builder.Append("]}");
+        return builder.ToString();
+    }
+
+    private static void AppendIncidentRow(System.Text.StringBuilder builder, string id, string location, string opened)
+    {
+        builder.Append("{\"sys_id\":{\"value\":\"").Append(id).Append("\",\"display_value\":\"").Append(id).Append("\"},");
+        builder.Append("\"number\":{\"value\":\"").Append(id).Append("\",\"display_value\":\"").Append(id).Append("\"},");
+        builder.Append("\"short_description\":{\"value\":\"Ticket\",\"display_value\":\"Ticket\"},");
+        builder.Append("\"opened_by\":{\"value\":\"sample-user\",\"display_value\":\"Alex Rivera\"},");
+        builder.Append("\"opened_at\":{\"value\":\"").Append(opened).Append("\",\"display_value\":\"").Append(opened).Append("\"},");
+        builder.Append("\"resolved_by\":{\"value\":\"\",\"display_value\":\"\"},");
+        builder.Append("\"resolved_at\":{\"value\":\"\",\"display_value\":\"\"},");
+        builder.Append("\"closed_by\":{\"value\":\"\",\"display_value\":\"\"},");
+        builder.Append("\"closed_at\":{\"value\":\"\",\"display_value\":\"\"},");
+        builder.Append("\"sys_updated_by\":{\"value\":\"alex.rivera\",\"display_value\":\"alex.rivera\"},");
+        builder.Append("\"sys_updated_on\":{\"value\":\"").Append(opened).Append("\",\"display_value\":\"").Append(opened).Append("\"},");
+        builder.Append("\"location\":{\"value\":\"loc\",\"display_value\":\"").Append(location).Append("\"}}");
     }
 
     private static string[] IncidentQueries(StubHandler handler) =>
@@ -879,7 +1124,7 @@ public class WorkEffortTests
             .Where(query => query.Contains("opened_at>=", StringComparison.Ordinal))
             .ToArray();
 
-    private static string OpenedIncident(string id, string userId, string name, string opened) =>
+    private static string OpenedIncident(string id, string userId, string name, string opened, string location = "AU Sydney Office") =>
         "{\"result\":[{"
         + "\"sys_id\":{\"value\":\"" + id + "\",\"display_value\":\"" + id + "\"},"
         + "\"number\":{\"value\":\"" + id + "\",\"display_value\":\"" + id + "\"},"
@@ -892,7 +1137,7 @@ public class WorkEffortTests
         + "\"closed_at\":{\"value\":\"\",\"display_value\":\"\"},"
         + "\"sys_updated_by\":{\"value\":\"alex.rivera\",\"display_value\":\"alex.rivera\"},"
         + "\"sys_updated_on\":{\"value\":\"" + opened + "\",\"display_value\":\"" + opened + "\"},"
-        + "\"location\":{\"value\":\"loc-syd\",\"display_value\":\"AU Sydney Office\"}"
+        + "\"location\":{\"value\":\"loc-syd\",\"display_value\":\"" + location + "\"}"
         + "}]}";
 
     [Fact]

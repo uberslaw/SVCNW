@@ -76,10 +76,10 @@ public sealed partial class ServiceNowClient
         if (!WorkEffortQuery.HasScope(people))
             return WorkEffortReport.NoTeam();
 
-        // One person at a time. Short windows stay one query for the whole window.
-        // Longer ones walk that person day by day, then the next person.
-        // Each slice has its own safety cap. A full slice does not skip the next day or person.
-        // The shared batch merges a record that shows up more than once.
+        // One person at a time. A window longer than one local day is one local day at a time.
+        // Each request asks for one page. A full page is continued until ServiceNow runs out of rows.
+        // When that page cannot be continued, the same slice is read again in smaller pieces.
+        // The shared batch merges a record that shows up on more than one page.
         var pace = new WorkEffortPace();
         var batch = new WorkEffortBatch();
         var truncated = false;
@@ -263,33 +263,26 @@ public sealed partial class ServiceNowClient
             {
                 foreach (var place in places)
                 {
-                    foreach (var clause in WorkEffortQuery.OpenedInOffice(plan, person, slice, place))
-                    {
-                        if (WorkEffortQuery.IsUnscoped(clause))
-                            continue;
-
-                        // The cap belongs to this slice. The next day and the next person still run.
-                        var budget = new WorkEffortBudget(safetyCap);
-                        var hit = await PageWorkEffortAsync(
-                            plan.Table,
-                            plan.Fields,
-                            clause,
-                            budget,
-                            row =>
-                            {
-                                var touch = ReadTouch(row, plan.Kind);
-                                if (touch is null)
-                                    return;
-                                // LIKE also returns a longer city (York finds New York). Keep the place rule.
-                                if (!RegionOfficeMatch.LocationMatchesOffice(touch.Location, place))
-                                    return;
-                                batch.Add(touch);
-                            },
-                            pace,
-                            progress,
-                            cancellationToken).ConfigureAwait(false);
-                        truncated |= hit || budget.Truncated;
-                    }
+                    truncated |= await ReadScopedAsync(
+                        plan.Table,
+                        plan.Fields,
+                        slice,
+                        safetyCap,
+                        part => WorkEffortQuery.OpenedInOffice(plan, person, part, place),
+                        row =>
+                        {
+                            var touch = ReadTouch(row, plan.Kind);
+                            if (touch is null)
+                                return;
+                            // LIKE also returns a longer city (York finds New York). Keep the place rule.
+                            if (!RegionOfficeMatch.LocationMatchesOffice(touch.Location, place))
+                                return;
+                            batch.Add(touch);
+                        },
+                        person.DisplayName,
+                        pace,
+                        progress,
+                        cancellationToken).ConfigureAwait(false);
                 }
 
                 progress?.Report(pace.Snapshot());
@@ -300,94 +293,241 @@ public sealed partial class ServiceNowClient
     }
 
     /// <summary>
-    /// One page at a time, one request at a time. Counts are folded into the attempt
-    /// and the JSON document is dropped before the next page is asked for.
-    /// display_value=all stays on because opened_by has to be the sys_id and the
-    /// date has to be the local display time. The field list is only those columns.
+    /// Reads every query for <paramref name="window"/>. A full page is continued. When the
+    /// next page does not move forward, the window is read again in smaller pieces.
+    /// Returns true only when the smallest piece still cannot be continued.
     /// </summary>
-    private async Task<bool> PageWorkEffortAsync(
+    private async Task<bool> ReadScopedAsync(
         string table,
         string fields,
-        string query,
-        WorkEffortBudget budget,
+        WorkEffortWindow window,
+        int pageSize,
+        Func<WorkEffortWindow, IReadOnlyList<string>> queries,
         Action<JsonElement> accept,
+        string subject,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {
+        var stuck = false;
+        foreach (var clause in queries(window))
+        {
+            if (WorkEffortQuery.IsUnscoped(clause))
+                continue;
+            var outcome = await PageWorkEffortAsync(
+                table,
+                fields,
+                clause,
+                pageSize,
+                accept,
+                subject,
+                window,
+                pace,
+                progress,
+                cancellationToken).ConfigureAwait(false);
+            if (outcome == PageOutcome.Stuck)
+                stuck = true;
+        }
+
+        if (!stuck)
+            return false;
+
+        var parts = WorkEffortSlices.Subdivide(window);
+        if (parts.Count == 0)
+            return true;
+
+        var truncated = false;
+        foreach (var part in parts)
+        {
+            truncated |= await ReadScopedAsync(
+                table,
+                fields,
+                part,
+                pageSize,
+                queries,
+                accept,
+                subject,
+                pace,
+                progress,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return truncated;
+    }
+
+    /// <summary>
+    /// One page at a time, one request at a time. The JSON document is dropped before the next
+    /// page is asked for. display_value=all stays on because opened_by has to be the sys_id and
+    /// the date has to be the local display time. A full page is not the end of the slice:
+    /// the next page uses the offset link, then <c>sys_id</c> greater than the last id.
+    /// Rows already seen on this query are not handed to <paramref name="accept"/> again.
+    /// A non-matching LIKE row still counts as a row on the page, so later matches are requested.
+    /// </summary>
+    private async Task<PageOutcome> PageWorkEffortAsync(
+        string table,
+        string fields,
+        string query,
+        int pageSize,
+        Action<JsonElement> accept,
+        string subject,
+        WorkEffortWindow window,
+        WorkEffortPace pace,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var limit = pageSize < 1 ? 1 : pageSize;
         var offset = 0;
         var received = 0;
         int? total = null;
-        var truncated = false;
-        while (budget.WantsMore)
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var active = query;
+        var keyset = false;
+        string? cursor = null;
+        var page = 1;
+
+        for (var guard = 0; guard < 10000; guard++)
         {
-            var limit = Math.Min(WorkEffortQuery.PageSize, Math.Max(1, budget.Room));
-            var result = await GetListAsync(table, fields, query, limit, offset, cancellationToken).ConfigureAwait(false);
-            var stop = false;
+            cancellationToken.ThrowIfCancellationRequested();
+            pace.Reading(WorkEffortProgress.Reading(subject, window, page));
+            progress?.Report(pace.Snapshot());
+            var result = await GetListAsync(table, fields, active, limit, keyset ? 0 : offset, cancellationToken).ConfigureAwait(false);
+            var outcome = PageOutcome.Continue;
+            var nextOffset = offset;
             using (result)
             using (new WorkEffortQuietScope())
             {
                 var rows = RequireArray(result.Document);
                 var count = rows.GetArrayLength();
-                var kept = 0;
-                foreach (var row in rows.EnumerateArray())
-                {
-                    if (!budget.Take())
-                    {
-                        truncated = true;
-                        stop = true;
-                        break;
-                    }
-
-                    accept(row);
-                    kept++;
-                }
-
-                received += count;
                 if (result.TotalCount is int reported)
                     total = reported;
-                pace.AddPage(kept, total);
+
+                var identifiable = 0;
+                var fresh = 0;
+                string? pageLast = null;
+                foreach (var row in rows.EnumerateArray())
+                {
+                    var id = SysIdOf(row);
+                    if (id.Length == 0)
+                    {
+                        accept(row);
+                        continue;
+                    }
+
+                    identifiable++;
+                    if (pageLast is null || string.Compare(id, pageLast, StringComparison.Ordinal) > 0)
+                        pageLast = id;
+                    if (!seen.Add(id))
+                        continue;
+                    fresh++;
+                    accept(row);
+                }
+
+                if (pageLast is not null)
+                    cursor = pageLast;
+
+                received += count;
+                pace.AddPage(count, total);
                 progress?.Report(pace.Snapshot());
 
                 var hasNext = !string.IsNullOrWhiteSpace(result.NextLink);
-                var linkOffset = TryReadOffset(result.NextLink);
                 var more = total is int expected && received < expected;
-                if (stop || count == 0)
+                var doneByTotal = total is int finished && received >= finished;
+                var full = count >= limit;
+
+                if (count == 0 || (identifiable > 0 && fresh == 0) || (identifiable == 0 && count > 0 && (full || more || hasNext)))
                 {
-                    truncated |= more || hasNext;
-                    break;
+                    if (count == 0 && !more && !hasNext)
+                        outcome = PageOutcome.Done;
+                    else if (fresh == 0 && doneByTotal && !hasNext)
+                        outcome = PageOutcome.Done;
+                    else if (!keyset && cursor is not null && TryKeyset(query, cursor, out var keyed))
+                    {
+                        keyset = true;
+                        active = keyed;
+                        nextOffset = 0;
+                    }
+                    else if (count == 0 && !more)
+                        outcome = PageOutcome.Done;
+                    else
+                        outcome = PageOutcome.Stuck;
                 }
-
-                if (total is int done && received >= done)
-                    break;
-
-                if (!more && !hasNext && count < limit)
-                    break;
-
-                var step = offset + count;
-                var nextOffset = step;
-                if (linkOffset > offset && (count >= limit || linkOffset <= step))
-                    nextOffset = linkOffset;
-
-                if (!budget.WantsMore)
+                else if (!full && !more && !hasNext)
                 {
-                    truncated |= more || hasNext;
-                    break;
+                    outcome = PageOutcome.Done;
                 }
-
-                if (nextOffset <= offset)
+                else if (!full && doneByTotal && !hasNext)
                 {
-                    truncated |= more || hasNext || count >= limit;
-                    break;
+                    outcome = PageOutcome.Done;
                 }
-
-                offset = nextOffset;
+                else if (keyset)
+                {
+                    if (cursor is null || !TryKeyset(query, cursor, out var keyed))
+                        outcome = PageOutcome.Stuck;
+                    else
+                    {
+                        active = keyed;
+                        nextOffset = 0;
+                    }
+                }
+                else
+                {
+                    var step = offset + count;
+                    var linkOffset = TryReadOffset(result.NextLink);
+                    nextOffset = step;
+                    if (linkOffset > offset && (full || linkOffset <= step))
+                        nextOffset = linkOffset;
+                    if (nextOffset <= offset)
+                    {
+                        if (cursor is not null && TryKeyset(query, cursor, out var keyed))
+                        {
+                            keyset = true;
+                            active = keyed;
+                            nextOffset = 0;
+                        }
+                        else
+                            outcome = PageOutcome.Stuck;
+                    }
+                }
             }
+
+            if (outcome == PageOutcome.Done)
+                return PageOutcome.Done;
+            if (outcome == PageOutcome.Stuck)
+                return PageOutcome.Stuck;
+            offset = nextOffset;
+            page++;
         }
 
-        if (!budget.WantsMore && total is int expectedTotal && received < expectedTotal)
-            truncated = true;
-        return truncated;
+        return PageOutcome.Stuck;
+    }
+
+    private enum PageOutcome
+    {
+        Continue,
+        Done,
+        Stuck
+    }
+
+    private static bool TryKeyset(string query, string cursor, out string keyed)
+    {
+        keyed = query;
+        try
+        {
+            keyed = WorkEffortQuery.AfterSysId(query, cursor);
+            return !string.Equals(keyed, query, StringComparison.Ordinal);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private static string SysIdOf(JsonElement row)
+    {
+        var id = SnowField.Read(row, "sys_id").Value.Trim();
+        if (id.Length == 0)
+            id = SnowField.Read(row, "sys_id").Display.Trim();
+        return id;
     }
 
     /// <summary>
@@ -451,16 +591,13 @@ public sealed partial class ServiceNowClient
         var truncated = false;
         for (var index = 0; index < recordIds.Count; index += WorkEffortQuery.ChunkSize)
         {
-            var budget = new WorkEffortBudget(safetyCap);
-            var clause = WorkEffortQuery.JournalForRecords(recordIds.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray(), window);
-            if (WorkEffortQuery.IsUnscoped(clause))
-                continue;
-
-            truncated |= await PageWorkEffortAsync(
+            var chunk = recordIds.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray();
+            truncated |= await ReadScopedAsync(
                 WorkEffortQuery.JournalTable,
                 WorkEffortQuery.JournalFields,
-                clause,
-                budget,
+                window,
+                safetyCap,
+                part => [WorkEffortQuery.JournalForRecords(chunk, part)],
                 row =>
                 {
                     if (!TryReadJournal(row, window, out var hit))
@@ -470,10 +607,10 @@ public sealed partial class ServiceNowClient
                     else
                         pending.Add(hit);
                 },
+                "update notes",
                 pace,
                 progress,
                 cancellationToken).ConfigureAwait(false);
-            truncated |= budget.Truncated;
         }
 
         if (pending.Count > 0)
@@ -583,26 +720,23 @@ public sealed partial class ServiceNowClient
         var truncated = false;
         for (var index = 0; index < recordIds.Count; index += WorkEffortQuery.ChunkSize)
         {
-            var budget = new WorkEffortBudget(safetyCap);
-            var clause = WorkEffortQuery.AuditForRecords(recordIds.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray(), window);
-            if (WorkEffortQuery.IsUnscoped(clause))
-                continue;
-
-            truncated |= await PageWorkEffortAsync(
+            var chunk = recordIds.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray();
+            truncated |= await ReadScopedAsync(
                 WorkEffortQuery.AuditTable,
                 WorkEffortQuery.AuditFields,
-                clause,
-                budget,
+                window,
+                safetyCap,
+                part => [WorkEffortQuery.AuditForRecords(chunk, part)],
                 row =>
                 {
                     if (!TryReadAudit(row, window, out var kind, out var id, out var by, out var at))
                         return;
                     batch.AddUpdate(kind, id, by, at);
                 },
+                "field history",
                 pace,
                 progress,
                 cancellationToken).ConfigureAwait(false);
-            truncated |= budget.Truncated;
         }
 
         return truncated;
@@ -686,33 +820,6 @@ public sealed partial class ServiceNowClient
     }
 
     private readonly record struct JournalHit(string RecordId, string By, DateTime At, WorkEffortKind? Kind);
-
-    private sealed class WorkEffortBudget
-    {
-        public WorkEffortBudget(int cap) => Cap = cap < 1 ? 1 : cap;
-
-        public int Cap { get; }
-
-        public int Received { get; private set; }
-
-        public bool Truncated { get; private set; }
-
-        public bool WantsMore => Received < Cap && !Truncated;
-
-        public int Room => Math.Max(0, Cap - Received);
-
-        public bool Take()
-        {
-            if (Received >= Cap)
-            {
-                Truncated = true;
-                return false;
-            }
-
-            Received++;
-            return true;
-        }
-    }
 
     private static WorkEffortTouch? ReadTouch(JsonElement row, WorkEffortKind kind)
     {

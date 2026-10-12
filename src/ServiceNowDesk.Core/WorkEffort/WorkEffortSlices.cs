@@ -60,4 +60,49 @@ public static class WorkEffortSlices
 
         return slices.Count == 0 ? [window] : slices;
     }
+
+    /// <summary>
+    /// Smaller windows when a full page cannot be continued. A span longer than half a day
+    /// is cut in half. A shorter span is cut into hours. One hour is the smallest piece.
+    /// The two halves share the midpoint so a row on that second is not dropped; the batch merges it.
+    /// </summary>
+    public static IReadOnlyList<WorkEffortWindow> Subdivide(WorkEffortWindow window)
+    {
+        if (window.End <= window.Start)
+            return [];
+        var seconds = (window.End - window.Start).TotalSeconds;
+        if (double.IsNaN(seconds) || seconds <= 3600)
+            return [];
+
+        if (seconds > 12 * 3600)
+        {
+            var mid = window.Start.AddSeconds(Math.Floor(seconds / 2));
+            if (mid <= window.Start || mid >= window.End)
+                return [];
+            return
+            [
+                new WorkEffortWindow(window.Start, mid, window.Scale),
+                new WorkEffortWindow(mid, window.End, window.Scale)
+            ];
+        }
+
+        var parts = new List<WorkEffortWindow>();
+        var cursor = window.Start;
+        var guard = 0;
+        while (cursor < window.End && guard++ < 48)
+        {
+            var hourEnd = cursor.AddHours(1).AddSeconds(-1);
+            if (hourEnd > window.End)
+                hourEnd = window.End;
+            if (hourEnd < cursor)
+                break;
+            parts.Add(new WorkEffortWindow(cursor, hourEnd, window.Scale));
+            var next = hourEnd.AddSeconds(1);
+            if (next <= cursor)
+                break;
+            cursor = next;
+        }
+
+        return parts;
+    }
 }

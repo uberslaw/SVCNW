@@ -71,8 +71,9 @@ public sealed record WorkEffortTablePlan(
 public static class WorkEffortQuery
 {
     /// <summary>
-    /// List rows read for one person, in one office, in one download step.
-    /// The team is fetched one person at a time and combined.
+    /// Rows asked for in one Table API page. A response this full is the next page,
+    /// not the end of that person and day. The download keeps going until a short page
+    /// comes back, or the smallest time piece cannot be continued.
     /// </summary>
     public const int SafetyCap = 8000;
     public const int ChunkSize = 40;
@@ -211,6 +212,24 @@ public static class WorkEffortQuery
         if (safe.Count == 0)
             return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
         return In("sys_id", safe) + "^ORDERBYsys_id";
+    }
+
+    /// <summary>
+    /// The same query, starting after <paramref name="sysId"/>. Applied on every <c>^NQ</c>
+    /// branch so a location <c>OR</c> does not drop the first office when the page advances.
+    /// </summary>
+    public static string AfterSysId(string query, string sysId)
+    {
+        var token = EncodedQuery.SafeToken(sysId, "record id");
+        var marker = "^sys_id>" + token;
+        var encoded = query ?? "";
+        var orderAt = encoded.LastIndexOf("^ORDERBY", StringComparison.Ordinal);
+        var body = orderAt >= 0 ? encoded[..orderAt] : encoded;
+        var order = orderAt >= 0 ? encoded[orderAt..] : "^ORDERBYsys_id";
+        var branches = body.Split("^NQ", StringSplitOptions.None);
+        for (var index = 0; index < branches.Length; index++)
+            branches[index] += marker;
+        return string.Join("^NQ", branches) + order;
     }
 
     private static IReadOnlyList<string> SafeIds(IReadOnlyList<string>? ids)

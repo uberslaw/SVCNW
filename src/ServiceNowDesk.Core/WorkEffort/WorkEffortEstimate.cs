@@ -91,6 +91,9 @@ public sealed class WorkEffortPace
     private int? _tableTotal;
     private int _tablesDone;
     private bool _tableOpen;
+    private string _reading = "";
+
+    public void Reading(string text) => _reading = text ?? "";
 
     public void BeginTable()
     {
@@ -131,7 +134,9 @@ public sealed class WorkEffortPace
         var remaining = WorkEffortEstimate.RowsRemaining(_tableOpen, _tableTotal, _tableRows, after, average);
         var minutes = WorkEffortEstimate.Minutes(_watch.Elapsed.TotalSeconds, seen, remaining);
         var bar = WorkEffortEstimate.Bar(_tablesDone, WorkEffortEstimate.TableCount, _tableOpen, _tableRows, _tableTotal);
-        return new WorkEffortProgress(bar, WorkEffortEstimate.BarMaximum, WorkEffortEstimate.Text(minutes));
+        var estimate = WorkEffortEstimate.Text(minutes);
+        var status = _reading.Length == 0 ? estimate : _reading + " " + estimate;
+        return new WorkEffortProgress(bar, WorkEffortEstimate.BarMaximum, status);
     }
 }
 
