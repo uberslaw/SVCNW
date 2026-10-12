@@ -247,7 +247,8 @@ public partial class LeadsViewModel : ObservableObject
 
     partial void OnAreaChanged(LeadArea value)
     {
-        _ = value;
+        if (value == LeadArea.WorkEffort)
+            CloseTicket();
         RaiseTeamChrome();
         if (Area == LeadArea.WorkEffort)
             WorkEffortRequested?.Invoke(this, EventArgs.Empty);
@@ -349,13 +350,28 @@ public partial class LeadsViewModel : ObservableObject
     public string UnknownTable { get; private set; } = "";
     public string UnknownSysId { get; private set; } = "";
 
-    public bool ShowTicketPane =>
-        ShowQueues
-        || ShowIncidentEditor
-        || ShowRequestEditor
-        || ShowRequestedItemEditor
-        || ShowWalkUpEditor
-        || ShowUnknownEditor;
+    /// <summary>
+    /// The lower editor is for My team and Regional. Work Effort uses the detail list
+    /// in the page above, so an open ticket must not keep that pane on screen.
+    /// </summary>
+    public bool ShowTicketPane => ShowQueues;
+
+    public void CloseTicket()
+    {
+        _openSysId = "";
+        ShowIncidentEditor = false;
+        ShowRequestEditor = false;
+        ShowRequestedItemEditor = false;
+        ShowWalkUpEditor = false;
+        ShowUnknownEditor = false;
+        ActiveEditor = null;
+        EditorIdentity = "";
+        EditorPrompt = "Click a ticket.";
+        UnknownNumber = "";
+        UnknownTitle = "";
+        OnPropertyChanged(nameof(ActiveEditor));
+        OnPropertyChanged(nameof(ShowTicketPane));
+    }
 
     public void UseEditors(
         RecordWorkspaceViewModel incidents,

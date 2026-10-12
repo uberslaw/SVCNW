@@ -136,6 +136,33 @@ public class LeadsDeskTests
         Assert.True(leads.ShowIncidentEditor);
     }
 
+    [Fact]
+    public async Task SwitchingToWorkEffortClosesTheTicketPane()
+    {
+        var desktop = new RecordingDesktopServices();
+        var leads = new LeadsViewModel();
+        leads.UseEditors(
+            new IncidentWorkspaceViewModel(desktop),
+            new RequestWorkspaceViewModel(desktop),
+            new RequestedItemWorkspaceViewModel(desktop),
+            new InteractionWorkspaceViewModel(desktop));
+        await leads.OpenTicketAsync(Row(DeskSection.Incidents, "inc-1", "INC0002", "Printer"));
+        Assert.True(leads.ShowTicketPane);
+        Assert.True(leads.ShowIncidentEditor);
+
+        leads.Area = LeadArea.WorkEffort;
+
+        Assert.True(leads.ShowWorkEffort);
+        Assert.False(leads.ShowTicketPane);
+        Assert.False(leads.ShowIncidentEditor);
+        Assert.Null(leads.ActiveEditor);
+        Assert.Equal("Click a ticket.", leads.EditorPrompt);
+
+        leads.Area = LeadArea.Regional;
+        Assert.True(leads.ShowTicketPane);
+        Assert.False(leads.ShowIncidentEditor);
+    }
+
     private static AlertRow Row(DeskSection section, string sysId, string number, string title) => new()
     {
         Kind = AlertKind.Unattended,
