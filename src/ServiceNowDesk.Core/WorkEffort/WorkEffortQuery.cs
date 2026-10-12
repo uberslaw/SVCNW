@@ -68,6 +68,10 @@ public sealed record WorkEffortTablePlan(
 
 public static class WorkEffortQuery
 {
+    /// <summary>
+    /// List rows read for one person in one download step (incidents, request items,
+    /// walk-ups, journal, or audit). The team is fetched one person at a time and combined.
+    /// </summary>
     public const int SafetyCap = 8000;
     public const int ChunkSize = 40;
     /// <summary>Small pages keep each JSON body off the large-object heap.</summary>

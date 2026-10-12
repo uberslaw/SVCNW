@@ -54,6 +54,8 @@ public sealed partial class ServiceNowClient
         if (!WorkEffortQuery.HasScope(people))
             return WorkEffortReport.NoTeam();
 
+        // One person at a time, each with their own safety cap. The shared batch
+        // merges a record that shows up for more than one person.
         var pace = new WorkEffortPace();
         var batch = new WorkEffortBatch();
         var truncated = false;
@@ -188,14 +190,13 @@ public sealed partial class ServiceNowClient
         ServiceNowException? rejected = null;
         for (var index = 0; index < plans.Count; index++)
         {
-            var budget = new WorkEffortBudget(safetyCap);
             pace.BeginTable();
             try
             {
-                var truncated = await LoadWorkEffortPlanAsync(plans[index], people, window, batch, budget, pace, progress, cancellationToken).ConfigureAwait(false);
+                var truncated = await LoadWorkEffortPlanAsync(plans[index], people, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
                 pace.CompleteTable();
                 progress?.Report(pace.Snapshot());
-                return (truncated || budget.Truncated, null);
+                return (truncated, null);
             }
             catch (ServiceNowException ex) when (ex.StatusCode == 400 && index < plans.Count - 1)
             {
@@ -221,22 +222,17 @@ public sealed partial class ServiceNowClient
         WorkEffortTablePlan plan,
         IReadOnlyList<WorkEffortPerson> people,
         WorkEffortWindow window,
+        int safetyCap,
         WorkEffortBatch batch,
-        WorkEffortBudget budget,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {
         var truncated = false;
-        foreach (var chunk in WorkEffortQuery.Chunks(people))
+        foreach (var person in people)
         {
-            if (!budget.WantsMore)
-            {
-                truncated = true;
-                break;
-            }
-
-            var clause = WorkEffortQuery.Clause(plan, chunk, window);
+            var budget = new WorkEffortBudget(safetyCap);
+            var clause = WorkEffortQuery.Clause(plan, [person], window);
             if (WorkEffortQuery.IsUnscoped(clause))
                 continue;
 
@@ -254,9 +250,7 @@ public sealed partial class ServiceNowClient
                 pace,
                 progress,
                 cancellationToken).ConfigureAwait(false);
-            truncated |= hit;
-            if (budget.Truncated)
-                truncated = true;
+            truncated |= hit || budget.Truncated;
         }
 
         return truncated;
@@ -410,18 +404,12 @@ public sealed partial class ServiceNowClient
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var budget = new WorkEffortBudget(safetyCap);
         var pending = new List<JournalHit>();
         var truncated = false;
-        foreach (var chunk in WorkEffortQuery.Chunks(people))
+        foreach (var person in people)
         {
-            if (!budget.WantsMore)
-            {
-                truncated = true;
-                break;
-            }
-
-            var clause = WorkEffortQuery.JournalClause(chunk, window);
+            var budget = new WorkEffortBudget(safetyCap);
+            var clause = WorkEffortQuery.JournalClause([person], window);
             if (WorkEffortQuery.IsUnscoped(clause))
                 continue;
 
@@ -442,13 +430,12 @@ public sealed partial class ServiceNowClient
                 pace,
                 progress,
                 cancellationToken).ConfigureAwait(false);
-            if (budget.Truncated)
-                truncated = true;
+            truncated |= budget.Truncated;
         }
 
         if (pending.Count > 0)
             await PlaceJournalAsync(pending, batch, cancellationToken).ConfigureAwait(false);
-        return truncated || budget.Truncated;
+        return truncated;
     }
 
     private async Task PlaceJournalAsync(
@@ -550,17 +537,11 @@ public sealed partial class ServiceNowClient
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var budget = new WorkEffortBudget(safetyCap);
         var truncated = false;
-        foreach (var chunk in WorkEffortQuery.Chunks(people))
+        foreach (var person in people)
         {
-            if (!budget.WantsMore)
-            {
-                truncated = true;
-                break;
-            }
-
-            var clause = WorkEffortQuery.AuditClause(chunk, window);
+            var budget = new WorkEffortBudget(safetyCap);
+            var clause = WorkEffortQuery.AuditClause([person], window);
             if (WorkEffortQuery.IsUnscoped(clause))
                 continue;
 
@@ -578,11 +559,10 @@ public sealed partial class ServiceNowClient
                 pace,
                 progress,
                 cancellationToken).ConfigureAwait(false);
-            if (budget.Truncated)
-                truncated = true;
+            truncated |= budget.Truncated;
         }
 
-        return truncated || budget.Truncated;
+        return truncated;
     }
 
     private static bool TryReadJournal(JsonElement row, WorkEffortWindow window, out JournalHit hit)

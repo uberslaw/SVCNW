@@ -273,29 +273,39 @@ public class WorkEffortTests
         Assert.Equal(2.0m, report.Rows[0].Weighted);
         Assert.Equal(0, report.Rows[1].IncUpdated);
 
-        var incidentCall = liveHandler.Calls.Single(call => call.PathAndQuery.Contains("table/incident", StringComparison.Ordinal));
-        var incident = Uri.UnescapeDataString(incidentCall.PathAndQuery);
-        Assert.Contains("sysparm_display_value=all", incident);
-        Assert.Contains("sysparm_limit=" + WorkEffortQuery.PageSize, incident);
-        Assert.Contains("sysparm_exclude_reference_link=true", incident);
+        var incidentCalls = liveHandler.Calls.Where(call => call.PathAndQuery.Contains("table/incident", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(2, incidentCalls.Length);
+        Assert.Contains(incidentCalls, call => call.PathAndQuery.Contains("sample-user", StringComparison.Ordinal));
+        Assert.Contains(incidentCalls, call => call.PathAndQuery.Contains("user-jordan", StringComparison.Ordinal));
+        foreach (var incidentCall in incidentCalls)
+        {
+            var incident = Uri.UnescapeDataString(incidentCall.PathAndQuery);
+            Assert.Contains("sysparm_display_value=all", incident);
+            Assert.Contains("sysparm_limit=" + WorkEffortQuery.PageSize, incident);
+            Assert.Contains("sysparm_exclude_reference_link=true", incident);
+            Assert.Contains("sys_id,number,short_description,opened_by,opened_at,resolved_by,resolved_at,closed_by,closed_at,sys_updated_by,sys_updated_on", incident);
+            Assert.Contains("short_description", incident);
+            Assert.DoesNotContain("user-sam", incident);
+            Assert.Contains("opened_at>=2026-10-07@00:00:00", incident);
+            Assert.Contains("opened_at<=2026-10-07@23:59:59", incident);
+            Assert.DoesNotContain("<", incidentCall.PathAndQuery);
+        }
+
         Assert.DoesNotContain(liveHandler.Calls, call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal));
-        Assert.Contains("sys_id,number,short_description,opened_by,opened_at,resolved_by,resolved_at,closed_by,closed_at,sys_updated_by,sys_updated_on", incident);
         Assert.Contains(liveHandler.Calls, call => call.PathAndQuery.Contains("table/sys_journal_field", StringComparison.Ordinal));
         Assert.Contains(liveHandler.Calls, call => call.PathAndQuery.Contains("table/sys_audit", StringComparison.Ordinal));
-        Assert.Contains("short_description", incident);
-        Assert.DoesNotContain("user-sam", incident);
-        Assert.Contains("opened_at>=2026-10-07@00:00:00", incident);
-        Assert.Contains("opened_at<=2026-10-07@23:59:59", incident);
-        Assert.DoesNotContain("<", incidentCall.PathAndQuery);
 
         var interactions = liveHandler.Calls.Where(call => call.PathAndQuery.Contains("table/interaction", StringComparison.Ordinal)).ToArray();
-        Assert.Equal(2, interactions.Length);
-        Assert.Contains("resolved_by", Uri.UnescapeDataString(interactions[0].PathAndQuery));
-        var fallback = Uri.UnescapeDataString(interactions[1].PathAndQuery);
-        Assert.DoesNotContain("resolved_by", fallback);
-        Assert.Contains("opened_for", fallback);
-        Assert.Contains("opened_by", fallback);
-        Assert.Contains("closed_by", fallback);
+        Assert.Contains(interactions, call => Uri.UnescapeDataString(call.PathAndQuery).Contains("resolved_by", StringComparison.Ordinal));
+        var fallbacks = interactions.Where(call => !Uri.UnescapeDataString(call.PathAndQuery).Contains("resolved_by", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(2, fallbacks.Length);
+        foreach (var fallbackCall in fallbacks)
+        {
+            var fallback = Uri.UnescapeDataString(fallbackCall.PathAndQuery);
+            Assert.Contains("opened_for", fallback);
+            Assert.Contains("opened_by", fallback);
+            Assert.Contains("closed_by", fallback);
+        }
     }
 
     [Fact]
@@ -573,6 +583,79 @@ public class WorkEffortTests
         Assert.Contains("safety cap", report.Status, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task EachPersonIsDownloadedSeparatelyAndCombined()
+    {
+        var handler = new StubHandler(PersonResponder(alexTotal: 1, jordanTotal: 1));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None, team: LiveTeam);
+
+        var alex = Assert.Single(report.Rows, row => row.Name == "Alex Rivera");
+        var jordan = Assert.Single(report.Rows, row => row.Name == "Jordan Lee");
+        Assert.Equal(1, alex.IncOpened);
+        Assert.Equal(1, jordan.IncOpened);
+        Assert.DoesNotContain(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+        Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("sample-user", StringComparison.Ordinal));
+        Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("user-jordan", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task OnePersonHittingTheCapDoesNotDropTheNextPerson()
+    {
+        var handler = new StubHandler(PersonResponder(alexTotal: 9, jordanTotal: 1));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None, team: LiveTeam);
+
+        var jordan = Assert.Single(report.Rows, row => row.Name == "Jordan Lee");
+        Assert.Equal(1, jordan.IncOpened);
+        Assert.Contains(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+    }
+
+    private static Func<HttpRequestMessage, string, HttpResponseMessage> PersonResponder(int alexTotal, int jordanTotal) =>
+        (request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            if (!path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (path.Contains("user-jordan", StringComparison.Ordinal))
+                return Api.Json(JordanIncidentJson, total: jordanTotal);
+            if (path.Contains("sample-user", StringComparison.Ordinal))
+                return Api.Json(AlexIncidentJson, total: alexTotal);
+            return Api.Json("""{"result":[]}""");
+        };
+
+    private const string AlexIncidentJson = """
+        {"result":[{
+          "sys_id":{"value":"inc-alex","display_value":"inc-alex"},
+          "number":{"value":"INC0001","display_value":"INC0001"},
+          "short_description":{"value":"Alex ticket","display_value":"Alex ticket"},
+          "opened_by":{"value":"sample-user","display_value":"Alex Rivera"},
+          "opened_at":{"value":"2026-10-07 01:00:00","display_value":"2026-10-07 15:00:00"},
+          "resolved_by":{"value":"","display_value":""},
+          "resolved_at":{"value":"","display_value":""},
+          "closed_by":{"value":"","display_value":""},
+          "closed_at":{"value":"","display_value":""},
+          "sys_updated_by":{"value":"alex.rivera","display_value":"alex.rivera"},
+          "sys_updated_on":{"value":"2026-10-07 01:00:00","display_value":"2026-10-07 15:00:00"}
+        }]}
+        """;
+
+    private const string JordanIncidentJson = """
+        {"result":[{
+          "sys_id":{"value":"inc-jordan","display_value":"inc-jordan"},
+          "number":{"value":"INC0002","display_value":"INC0002"},
+          "short_description":{"value":"Jordan ticket","display_value":"Jordan ticket"},
+          "opened_by":{"value":"user-jordan","display_value":"Jordan Lee"},
+          "opened_at":{"value":"2026-10-07 02:00:00","display_value":"2026-10-07 15:00:00"},
+          "resolved_by":{"value":"","display_value":""},
+          "resolved_at":{"value":"","display_value":""},
+          "closed_by":{"value":"","display_value":""},
+          "closed_at":{"value":"","display_value":""},
+          "sys_updated_by":{"value":"jordan.lee","display_value":"jordan.lee"},
+          "sys_updated_on":{"value":"2026-10-07 02:00:00","display_value":"2026-10-07 15:00:00"}
+        }]}
+        """;
 
     [Fact]
     public void AnUpdateOnALaterDayStillCountsAfterAnOpenInTheSameWindow()
