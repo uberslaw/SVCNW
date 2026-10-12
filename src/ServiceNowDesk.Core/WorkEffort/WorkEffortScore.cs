@@ -59,7 +59,8 @@ public sealed record WorkEffortTouch(
     DateTime? UpdatedAt,
     IReadOnlyList<WorkEffortUpdate>? Updates = null,
     string? Number = null,
-    string? Title = null)
+    string? Title = null,
+    string? Location = null)
 {
     public WorkEffortTouch Combine(WorkEffortTouch other)
     {
@@ -89,7 +90,8 @@ public sealed record WorkEffortTouch(
             UpdatedAt = UpdatedAt ?? other.UpdatedAt,
             Updates = updates,
             Number = First(Number, other.Number),
-            Title = First(Title, other.Title)
+            Title = First(Title, other.Title),
+            Location = First(Location, other.Location)
         };
     }
 
