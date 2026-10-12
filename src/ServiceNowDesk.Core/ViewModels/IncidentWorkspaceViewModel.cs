@@ -25,7 +25,11 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         Caller.Changed += (_, _) => Touch();
         Assignment.Changed += (_, _) => Touch();
         ServiceOffering.Changed += (_, _) => Touch();
-        ConfigurationItem.Changed += (_, _) => Touch();
+        ConfigurationItem.Changed += (_, _) =>
+        {
+            Touch();
+            OnPropertyChanged(nameof(Hostname));
+        };
         Templates.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTemplates));
         ReloadTemplates();
         ResolveChoiceLabel = "Close code";
@@ -38,6 +42,9 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         (Assignment.SelectedMemberLabel, Assignment.MemberId);
     public ReferenceChoiceField ServiceOffering { get; }
     public ReferenceChoiceField ConfigurationItem { get; }
+
+    /// <summary>The configuration item's name. On a computer that name is the hostname.</summary>
+    public string Hostname => ConfigurationItem.SelectedLabel;
     public ObservableCollection<IncidentTemplate> Templates { get; } = [];
     public bool HasTemplates => Templates.Count > 0;
 
@@ -341,6 +348,9 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         EnsureChoice(StateChoices, record.State, record.StateLabel);
         EnsureChoice(CategoryChoices, record.Category, record.CategoryLabel);
         EnsureChoice(SubcategoryChoices, record.Subcategory, record.SubcategoryLabel);
+        EnsureChoice(ImpactChoices, record.Impact, record.ImpactLabel);
+        EnsureChoice(UrgencyChoices, record.Urgency, record.UrgencyLabel);
+        EnsureChoice(ContactChoices, record.ContactType, record.ContactTypeLabel);
         Number = record.Number;
         StateLabel = record.StateLabel;
         PriorityLabel = record.PriorityLabel;
@@ -356,6 +366,10 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         Subcategory = record.Subcategory;
         LocationText = record.Location;
         ContactType = record.ContactType;
+        OnPropertyChanged(nameof(Impact));
+        OnPropertyChanged(nameof(Urgency));
+        OnPropertyChanged(nameof(ContactType));
+        OnPropertyChanged(nameof(Hostname));
         HoldReason = record.HoldReason;
         FollowUp = record.FollowUp;
         Caller.Set(record.Caller.SysId, record.Caller.Display);

@@ -123,6 +123,28 @@ public class WorkspaceTests
     }
 
     [Fact]
+    public async Task OpeningFromSearchFillsChannelImpactUrgencyAndGroupMembers()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
+        workspace.Attach(client);
+
+        await workspace.OpenFromSearchAsync("inc-printer");
+
+        Assert.Equal("phone", workspace.ContactType);
+        Assert.Contains(workspace.ContactChoices, choice => choice.Value == "phone" && choice.Label == "Phone");
+        Assert.Equal("3", workspace.Impact);
+        Assert.Contains(workspace.ImpactChoices, choice => choice.Value == "3" && choice.Label.Contains("Low", StringComparison.Ordinal));
+        Assert.Equal("2", workspace.Urgency);
+        Assert.Contains(workspace.UrgencyChoices, choice => choice.Value == "2");
+        Assert.Equal("group-cs", workspace.Assignment.GroupId);
+        Assert.Contains(workspace.Assignment.Members, choice => choice.Label == "Unassigned" && choice.Value == "");
+        Assert.Contains(workspace.Assignment.Members, choice => choice.Value == "sample-user" && choice.Label == "Alex Rivera");
+        Assert.Contains(workspace.Assignment.Members, choice => choice.Value == "user-jordan" && choice.Label == "Jordan Lee");
+        Assert.Equal("HQ-PRINTER-01", workspace.Hostname);
+    }
+
+    [Fact]
     public async Task OpeningAnIncidentShowsWorkNotesAndCustomerComments()
     {
         using var client = new SampleServiceNowClient();
@@ -259,7 +281,7 @@ public class WorkspaceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task CreateNewOpensWhenAnIncidentIsOpenAndChoiceListsMayBeEmpty(bool listsLoaded)
+    public async Task CreateNewOpensAfterAnIncidentWhetherChoicesWereLoadedFirst(bool listsLoaded)
     {
         using var client = new SampleServiceNowClient();
         var workspace = new IncidentWorkspaceViewModel(new RecordingDesktopServices());
@@ -269,13 +291,10 @@ public class WorkspaceTests
         await workspace.OpenFromSearchAsync("inc-printer");
         Assert.Equal("INC0010001", workspace.Number);
         Assert.False(workspace.IsNew);
-        if (!listsLoaded)
-        {
-            Assert.Empty(workspace.ImpactChoices);
-            Assert.Empty(workspace.PriorityChoices);
-            Assert.Empty(workspace.ContactChoices);
-            Assert.DoesNotContain(workspace.Assignment.Groups, group => string.IsNullOrEmpty(group.Value));
-        }
+        Assert.NotEmpty(workspace.ImpactChoices);
+        Assert.NotEmpty(workspace.PriorityChoices);
+        Assert.NotEmpty(workspace.ContactChoices);
+        Assert.Contains(workspace.Assignment.Groups, group => string.IsNullOrEmpty(group.Value));
 
         // WPF combos write null when SelectedValue is not in ItemsSource. Clearing the
         // member list, or pointing at a group list that has not loaded the blank row, does that.

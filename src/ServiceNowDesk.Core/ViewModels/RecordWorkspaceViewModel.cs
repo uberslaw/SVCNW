@@ -1064,6 +1064,12 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             IsEditorBusy = true;
             ErrorMessage = "";
             Applying = true;
+            // A search pop-out is a fresh editor. Choice lists and the assignment-group
+            // member roster have to load before the record, or Channel, Impact, Urgency,
+            // and Assigned to stay empty except for the person already on the ticket.
+            await EnsureChoicesAsync();
+            if (version != _openVersion)
+                return;
             await LoadRecordAsync(sysId, cancellationToken);
             if (version != _openVersion)
                 return;

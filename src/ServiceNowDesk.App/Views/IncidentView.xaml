@@ -191,6 +191,10 @@
                                 <controls:CachedChoiceBox DataContext="{Binding ServiceOffering}"/>
                                 <TextBlock Text="Required once this incident has been created." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,10" TextWrapping="Wrap"/>
 
+                                <TextBlock Text="Hostname" Style="{StaticResource IncidentLabel}"/>
+                                <TextBox Text="{Binding Hostname, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" HorizontalAlignment="Stretch" Margin="0,0,0,10"
+                                         AutomationProperties.Name="Hostname"/>
+
                                 <TextBlock Text="Configuration item" Style="{StaticResource IncidentLabel}"/>
                                 <controls:CachedChoiceBox DataContext="{Binding ConfigurationItem}" Margin="0,0,0,10"/>
                             </StackPanel>
