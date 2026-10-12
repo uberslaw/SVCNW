@@ -239,6 +239,8 @@ public class WorkEffortTests
         Assert.Contains("opened_byINuser-jordan", office);
         Assert.Contains("location.name=\"Sydney\"", office);
         Assert.Contains("location.name=\"Sydney Office\"", office);
+        Assert.Contains("location.nameLIKESydney", office);
+        Assert.Contains("opened_byINuser-jordan^opened_at>=2026-10-07@00:00:00^opened_at<=2026-10-07@23:59:59^location.nameLIKESydney", office);
         Assert.DoesNotContain("jordan^lee", office);
         Assert.DoesNotContain("sys_updated_by", office);
         Assert.DoesNotContain("resolved_by", office);
@@ -246,6 +248,8 @@ public class WorkEffortTests
 
         var york = Assert.Single(WorkEffortQuery.OpenedInOffice(WorkEffortTablePlan.Incident, Alex, today, "York"));
         Assert.Contains("location.name=\"York\"", york);
+        Assert.Contains("location.nameLIKEYork", york);
+        Assert.Contains("opened_byINsample-user", york);
         Assert.DoesNotContain("New York", york);
 
         var rolling = Assert.Single(WorkEffortQuery.OpenedBranches(
@@ -705,6 +709,52 @@ public class WorkEffortTests
         Assert.DoesNotContain("userIN", audit);
     }
 
+    [Fact]
+    public async Task AuOfficeNameCountsAndYorkDoesNotKeepNewYork()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            var query = SysParmQuery(path);
+            if (!path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (query.Contains("location.nameLIKESydney", StringComparison.Ordinal))
+                return Api.Json(AlexIncidentJson);
+            if (query.Contains("location.nameLIKEYork", StringComparison.Ordinal))
+                return Api.Json(NewYorkOpenedJson);
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.Today,
+            Now,
+            [Alex],
+            ["Sydney", "York"],
+            progress: null,
+            CancellationToken.None);
+
+        var row = Assert.Single(report.Rows);
+        Assert.Equal(1, row.IncOpened);
+        Assert.Equal(0, row.IncResolved);
+    }
+
+    private const string NewYorkOpenedJson = """
+        {"result":[{
+          "sys_id":{"value":"inc-ny","display_value":"inc-ny"},
+          "number":{"value":"INC0099","display_value":"INC0099"},
+          "short_description":{"value":"New York ticket","display_value":"New York ticket"},
+          "opened_by":{"value":"sample-user","display_value":"Alex Rivera"},
+          "opened_at":{"value":"2026-10-07 03:00:00","display_value":"2026-10-07 15:00:00"},
+          "resolved_by":{"value":"","display_value":""},
+          "resolved_at":{"value":"","display_value":""},
+          "closed_by":{"value":"","display_value":""},
+          "closed_at":{"value":"","display_value":""},
+          "sys_updated_by":{"value":"alex.rivera","display_value":"alex.rivera"},
+          "sys_updated_on":{"value":"2026-10-07 03:00:00","display_value":"2026-10-07 15:00:00"},
+          "location":{"value":"loc-ny","display_value":"New York"}
+        }]}
+        """;
+
     private static string SysParmQuery(string pathAndQuery)
     {
         const string key = "sysparm_query=";
@@ -741,7 +791,8 @@ public class WorkEffortTests
           "closed_by":{"value":"","display_value":""},
           "closed_at":{"value":"","display_value":""},
           "sys_updated_by":{"value":"alex.rivera","display_value":"alex.rivera"},
-          "sys_updated_on":{"value":"2026-10-07 01:00:00","display_value":"2026-10-07 15:00:00"}
+          "sys_updated_on":{"value":"2026-10-07 01:00:00","display_value":"2026-10-07 15:00:00"},
+          "location":{"value":"loc-syd","display_value":"AU Sydney Office"}
         }]}
         """;
 
@@ -756,6 +807,7 @@ public class WorkEffortTests
           "resolved_at":{"value":"","display_value":""},
           "closed_by":{"value":"","display_value":""},
           "closed_at":{"value":"","display_value":""},
+          "location":{"value":"loc-syd","display_value":"Sydney Office"},
           "sys_updated_by":{"value":"jordan.lee","display_value":"jordan.lee"},
           "sys_updated_on":{"value":"2026-10-07 02:00:00","display_value":"2026-10-07 15:00:00"}
         }]}
@@ -1286,7 +1338,8 @@ public class WorkEffortTests
           "closed_by":{"value":"","display_value":""},
           "closed_at":{"value":"","display_value":""},
           "sys_updated_by":{"value":"alex.rivera","display_value":"alex.rivera"},
-          "sys_updated_on":{"value":"2026-10-07 15:00:00","display_value":"2026-10-07 15:00:00"}
+          "sys_updated_on":{"value":"2026-10-07 15:00:00","display_value":"2026-10-07 15:00:00"},
+          "location":{"value":"loc-syd","display_value":"Sydney Office"}
         }]}
         """;
 
@@ -1400,7 +1453,8 @@ public class WorkEffortTests
           "closed_by":{"value":"","display_value":""},
           "closed_at":{"value":"","display_value":""},
           "sys_updated_by":{"value":"alex.rivera","display_value":"alex.rivera"},
-          "sys_updated_on":{"value":"2026-10-06 23:00:00","display_value":"2026-10-07 15:00:00"}
+          "sys_updated_on":{"value":"2026-10-06 23:00:00","display_value":"2026-10-07 15:00:00"},
+          "location":{"value":"loc-syd","display_value":"Sydney Office"}
         }]}
         """;
 }
