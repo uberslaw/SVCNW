@@ -130,6 +130,18 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         Section is DeskSection.Incidents or DeskSection.RequestedItems or DeskSection.WalkUps;
 
     /// <summary>
+    /// Incidents and walk-ups open on the new-ticket form. Request items are created from the
+    /// catalog, so they keep the select prompt instead of an empty form that cannot be saved.
+    /// </summary>
+    public virtual bool OpensOnBlankForm => false;
+
+    /// <summary>Right pane is the new-ticket form with empty fields and no list row selected.</summary>
+    public bool ShowsBlankTicketForm => OpensOnBlankForm && IsNew && HasEditor && Selected is null;
+
+    /// <summary>Right pane is the "Select a …" blurb. Blank-form lists never use it.</summary>
+    public bool ShowsSelectPrompt => !OpensOnBlankForm && !HasEditor;
+
+    /// <summary>
     /// Paints a saved My Tickets or My Team population before any network call.
     /// Returns true when that fully handled the preset change.
     /// </summary>
@@ -216,6 +228,9 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     {
         Client = client;
         IsReady = true;
+        // A blank form prepared before connect stays. This only fills the gap if nothing is open yet.
+        if (OpensOnBlankForm && !HasEditor && Selected is null && !IsDirty)
+            ShowBlankTicket();
     }
 
     public void Detach()
@@ -253,6 +268,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         OnDetached();
         _suppressSelection = false;
         Applying = false;
+        if (OpensOnBlankForm)
+            ShowBlankTicket();
     }
 
     public async Task OpenFromSearchAsync(string sysId)
@@ -709,6 +726,33 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     private void DismissError() => ErrorMessage = "";
 
     protected void Touch() => RecalculateDirty();
+
+    /// <summary>
+    /// Puts the right pane on the existing new-ticket form. A loaded row replaces it;
+    /// clearing that row comes back here. Dirty edits stay put until Save or Discard.
+    /// </summary>
+    protected void ShowBlankTicket()
+    {
+        if (!OpensOnBlankForm)
+            return;
+        if (IsNew && HasEditor && Selected is null)
+            return;
+        if (IsDirty)
+        {
+            ShowUnsavedBanner = true;
+            EditorMessage = "Save or discard unsaved changes first.";
+            if (_boundRow is not null && Selected != _boundRow)
+            {
+                _suppressSelection = true;
+                Selected = _boundRow;
+                _suppressSelection = false;
+            }
+
+            return;
+        }
+
+        BeginNew();
+    }
 
     protected void BeginNew()
     {
@@ -1189,8 +1233,15 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     partial void OnSelectedChanged(TicketRow? value)
     {
-        if (_suppressSelection || value is null)
+        OnPropertyChanged(nameof(ShowsBlankTicketForm));
+        if (_suppressSelection)
             return;
+        if (value is null)
+        {
+            if (OpensOnBlankForm)
+                ShowBlankTicket();
+            return;
+        }
         if (!IsNew && value.SysId == EditorSysId)
             return;
         if (IsDirty)
@@ -1232,10 +1283,19 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     partial void OnIsDirtyChanged(bool value) => NotifyCommands();
     partial void OnIsEditorBusyChanged(bool value) => NotifyCommands();
     partial void OnIsReadyChanged(bool value) => NotifyCommands();
-    partial void OnIsNewChanged(bool value) => NotifyCommands();
+    partial void OnIsNewChanged(bool value)
+    {
+        NotifyCommands();
+        OnPropertyChanged(nameof(ShowsBlankTicketForm));
+    }
     partial void OnResolveCodeChanged(string value) => ConfirmResolveCommand.NotifyCanExecuteChanged();
     partial void OnResolveNotesChanged(string value) => ConfirmResolveCommand.NotifyCanExecuteChanged();
-    partial void OnHasEditorChanged(bool value) => NotifyCommands();
+    partial void OnHasEditorChanged(bool value)
+    {
+        NotifyCommands();
+        OnPropertyChanged(nameof(ShowsBlankTicketForm));
+        OnPropertyChanged(nameof(ShowsSelectPrompt));
+    }
 }
 
 public sealed record SavedTicketFields(string SysId, string ShortDescription, string StateLabel, string? AssigneeName, string? AssigneeId);

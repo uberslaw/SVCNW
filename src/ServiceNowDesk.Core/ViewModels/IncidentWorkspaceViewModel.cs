@@ -29,7 +29,10 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         Templates.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTemplates));
         ReloadTemplates();
         ResolveChoiceLabel = "Close code";
+        ShowBlankTicket();
     }
+
+    public override bool OpensOnBlankForm => true;
 
     public ReferenceFieldModel Caller { get; }
     public AssignmentFields Assignment { get; }

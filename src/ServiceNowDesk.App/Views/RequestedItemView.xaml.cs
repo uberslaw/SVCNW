@@ -21,7 +21,7 @@ public partial class RequestedItemView
         set => SetValue(EditorOnlyProperty, value);
     }
 
-    private void ApplyEditorOnly() => EditorPane.Apply(EditorOnly, Layout, ListPane, CreateNewButton, EmptyState);
+    private void ApplyEditorOnly() => EditorPane.Apply(EditorOnly, Layout, ListPane, emptyState: EmptyState);
 
     private void OpenAttachment_Click(object sender, RoutedEventArgs e)
     {

@@ -157,8 +157,8 @@ public partial class NavigationOrderTests
     public void CreateNewButtonAndNavBindToThatCatalogSection()
     {
         var view = RepoFile("src/ServiceNowDesk.App/Views/RequestedItemView.xaml");
-        Assert.Contains("Content=\"Create New\"", view, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding CreateNewCommand}\"", view, StringComparison.Ordinal);
+        Assert.Contains("CreateText=\"Create New\"", view, StringComparison.Ordinal);
+        Assert.Contains("CreateCommand=\"{Binding CreateNewCommand}\"", view, StringComparison.Ordinal);
 
         var window = RepoFile("src/ServiceNowDesk.App/MainWindow.xaml");
         Assert.Contains("ItemsSource=\"{Binding Navigation}\"", window, StringComparison.Ordinal);
