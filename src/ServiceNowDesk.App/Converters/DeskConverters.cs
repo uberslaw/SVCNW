@@ -145,7 +145,7 @@ public sealed class LegendTrackBrushConverter : IMultiValueConverter
 {
     private static readonly LinearGradientBrush Neutral = Build(
         LegendColorIntensity.NeutralTrackStart,
-        null,
+        LegendColorIntensity.NeutralTrackFull,
         LegendColorIntensity.NeutralTrackEnd);
 
     private static readonly Dictionary<string, LinearGradientBrush> Hues = new(StringComparer.OrdinalIgnoreCase);
@@ -164,7 +164,7 @@ public sealed class LegendTrackBrushConverter : IMultiValueConverter
         {
             var brush = Build(
                 LegendColorIntensity.Curve(hex, LegendColorIntensity.Minimum),
-                LegendColorIntensity.Curve(hex, LegendColorIntensity.Vivid),
+                LegendColorIntensity.Curve(hex, LegendColorIntensity.FullColour),
                 LegendColorIntensity.Curve(hex, LegendColorIntensity.Maximum));
             Hues[hex] = brush;
             return brush;
@@ -187,7 +187,7 @@ public sealed class LegendTrackBrushConverter : IMultiValueConverter
         };
         brush.GradientStops.Add(new GradientStop(Stop(start), 0));
         if (vivid is not null)
-            brush.GradientStops.Add(new GradientStop(Stop(vivid), LegendColorIntensity.Vivid / 100d));
+            brush.GradientStops.Add(new GradientStop(Stop(vivid), LegendColorIntensity.FullColour / (double)LegendColorIntensity.Maximum));
         brush.GradientStops.Add(new GradientStop(Stop(end), 1));
         brush.Freeze();
         return brush;

@@ -1,10 +1,11 @@
 namespace ServiceNowDesk.Alerts;
 
 /// <summary>
-/// Legend slider curve. Position 0 is the wash the previous curve painted at 25.
-/// Position 100 keeps full saturation and continues that first quarter past the old maximum, a step darker.
+/// Legend slider curve, positions <see cref="Minimum"/>–<see cref="Maximum"/>.
+/// 0 is a light pastel. Saturation keeps rising through <see cref="FullColour"/>,
+/// where the colour is fully saturated and brighter than the old plateau near 61.
+/// The last tenth of the bar only darkens that full colour slightly.
 /// Hue stays with the original swatch. Saved positions use <see cref="Version"/>; older lightness numbers are ignored.
-/// A saved 100 is this stronger end. The slider stays 0–100, so that saved value is stronger than the old maximum.
 /// </summary>
 public static class LegendColorIntensity
 {
@@ -12,17 +13,20 @@ public static class LegendColorIntensity
     public const int Minimum = 0;
     public const int Maximum = 100;
 
-    /// <summary>Previous curve position shown at slider 0. Slider P paints that curve at <c>P + WindowStart</c>, through 125.</summary>
-    public const int WindowStart = 25;
+    /// <summary>
+    /// Full colour, nine tenths of the way along. Positions after this are the last tenth and only darken slightly.
+    /// </summary>
+    public const int FullColour = 90;
 
-    private const int LegacyVivid = 70;
-    private const int LegacyEnd = 100;
-
-    /// <summary>Slider position of full saturation. The previous curve reached it at 70, and this window starts at 25.</summary>
-    public const int Vivid = LegacyVivid - WindowStart;
+    private const double PastelSaturation = 0.28;
+    private const double PastelLightness = 0.90;
+    private const double FullSaturation = 1.00;
+    private const double FullLightness = 0.50;
+    private const double EndLightness = 0.46;
 
     public const string NeutralTrackStart = "#E6E6E6";
-    public const string NeutralTrackEnd = "#1A1A1A";
+    public const string NeutralTrackFull = "#808080";
+    public const string NeutralTrackEnd = "#757575";
 
     /// <summary>Normal list text, the same value as TextColor in the desk theme.</summary>
     private const double MinimumRowContrast = 4.5;
@@ -52,21 +56,24 @@ public static class LegendColorIntensity
 
     /// <summary>
     /// Saturation and lightness at <paramref name="position"/>, before the swatch hue is applied.
-    /// 0 matches the previous curve at 25. 100 matches that curve extended to 125.
-    /// Past full saturation the colour stays on the same hue and darkens. It does not fade toward grey.
+    /// 0 is pastel. Through <see cref="FullColour"/> the colour grows stronger and stays at least as light as full colour.
+    /// The last tenth keeps full saturation and darkens that colour slightly. It does not fade toward grey.
     /// </summary>
     public static Hsl Sample(int position)
     {
         position = Clamp(position);
-        var legacy = position + WindowStart;
-        if (legacy <= LegacyVivid)
+        if (position >= FullColour)
         {
-            var span = legacy / (double)LegacyVivid;
-            return new Hsl(0d, Lerp(0.20d, 1.00d, span), Lerp(0.90d, 0.46d, span));
+            var tail = (position - FullColour) / (double)(Maximum - FullColour);
+            return new Hsl(0d, FullSaturation, Lerp(FullLightness, EndLightness, tail));
         }
 
-        var tail = (legacy - LegacyVivid) / (double)(LegacyEnd - LegacyVivid);
-        return new Hsl(0d, 1.00d, Lerp(0.46d, 0.32d, tail));
+        var rise = position / (double)FullColour;
+        var saturationSpan = 1d - (1d - rise) * (1d - rise);
+        return new Hsl(
+            0d,
+            Lerp(PastelSaturation, FullSaturation, saturationSpan),
+            Lerp(PastelLightness, FullLightness, rise));
     }
 
     public static Hsl Describe(string hex)

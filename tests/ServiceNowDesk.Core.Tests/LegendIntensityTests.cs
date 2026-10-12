@@ -7,74 +7,113 @@ namespace ServiceNowDesk.Tests;
 
 public class LegendIntensityTests
 {
+    private const int DefaultSlider = 94;
+
     private static readonly Dictionary<string, int> ClosestPosition =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            [HighlightCatalog.SlaBreaching] = 96,
+            [HighlightCatalog.SlaBreaching] = 100,
             [HighlightCatalog.SlaAssignedToYou] = 100,
-            [HighlightCatalog.OnHoldPastFollowUp] = 96,
-            [HighlightCatalog.UpdatedByCaller] = 64,
-            [HighlightCatalog.ReturnedWithNotes] = 62,
+            [HighlightCatalog.OnHoldPastFollowUp] = 100,
+            [HighlightCatalog.UpdatedByCaller] = 100,
+            [HighlightCatalog.ReturnedWithNotes] = 100,
             [HighlightCatalog.Unattended] = 100,
-            [HighlightCatalog.Unassigned] = 17,
+            [HighlightCatalog.Unassigned] = 50,
             [HighlightCatalog.AssignedToMe] = 100,
-            [HighlightCatalog.WatchedGroup] = 78
+            [HighlightCatalog.WatchedGroup] = 100
         };
 
     [Fact]
-    public void TheCurveWashesThenSaturatesAndStopsShortOfBlack()
+    public void PastelRisesToFullColourAndDarkensOnlyInTheLastTenth()
     {
-        var washed = LegendColorIntensity.Sample(0);
-        var vivid = LegendColorIntensity.Sample(LegendColorIntensity.Vivid);
-        var oldMaximum = LegendColorIntensity.Sample(75);
-        var dark = LegendColorIntensity.Sample(100);
-        Assert.Equal(0.20 + (1.00 - 0.20) * (LegendColorIntensity.WindowStart / 70d), washed.Saturation);
-        Assert.Equal(0.90 + (0.46 - 0.90) * (LegendColorIntensity.WindowStart / 70d), washed.Lightness);
-        Assert.NotEqual(0.20, washed.Saturation);
-        Assert.NotEqual(0.90, washed.Lightness);
-        Assert.Equal(1.00, vivid.Saturation);
-        Assert.Equal(0.46, vivid.Lightness);
-        Assert.Equal(1.00, oldMaximum.Saturation);
-        Assert.Equal(0.32, oldMaximum.Lightness);
-        Assert.Equal(1.00, dark.Saturation);
-        Assert.Equal(0.46 + (0.32 - 0.46) * (55d / 30d), dark.Lightness);
-        Assert.True(dark.Lightness > 0.15);
-        Assert.True(dark.Lightness < oldMaximum.Lightness);
-        Assert.True(dark.Lightness < vivid.Lightness);
+        const int oldPlateau = 61;
+        var pastel = LegendColorIntensity.Sample(0);
+        var low = LegendColorIntensity.Sample(8);
+        var mid = LegendColorIntensity.Sample(45);
+        var plateau = LegendColorIntensity.Sample(oldPlateau);
+        var later = LegendColorIntensity.Sample(85);
+        var full = LegendColorIntensity.Sample(LegendColorIntensity.FullColour);
+        var end = LegendColorIntensity.Sample(LegendColorIntensity.Maximum);
+
+        Assert.Equal(90, LegendColorIntensity.FullColour);
+        Assert.Equal(100, LegendColorIntensity.Maximum);
+        Assert.Equal(0.28, pastel.Saturation);
+        Assert.Equal(0.90, pastel.Lightness);
+        Assert.Equal(1.00, full.Saturation);
+        Assert.Equal(0.50, full.Lightness);
+        Assert.Equal(1.00, end.Saturation);
+        Assert.Equal(0.46, end.Lightness);
+
+        Assert.True(low.Lightness > mid.Lightness);
+        Assert.True(low.Saturation < mid.Saturation);
+        Assert.True(plateau.Saturation < 0.98);
+        Assert.True(later.Saturation > plateau.Saturation);
+        Assert.True(later.Lightness >= full.Lightness);
+        Assert.True(full.Lightness > 0.45);
+
+        for (var position = LegendColorIntensity.Minimum; position < LegendColorIntensity.FullColour; position++)
+        {
+            var sample = LegendColorIntensity.Sample(position);
+            Assert.True(sample.Lightness + 1e-9 >= full.Lightness, $"position {position} is darker than full colour");
+            Assert.True(sample.Saturation <= full.Saturation + 1e-9);
+        }
+
+        Assert.True(end.Lightness < full.Lightness);
+        Assert.InRange(full.Lightness - end.Lightness, 0.02, 0.08);
+        Assert.Equal(full.Hue, end.Hue);
+        Assert.Equal(full.Saturation, end.Saturation);
 
         var swatch = HighlightCatalog.UnassignedSwatchHex;
         var atZero = LegendColorIntensity.Curve(swatch, 0);
-        var atVivid = LegendColorIntensity.Curve(swatch, LegendColorIntensity.Vivid);
-        var atEnd = LegendColorIntensity.Curve(swatch, 100);
+        var atLow = LegendColorIntensity.Curve(swatch, 8);
+        var atMid = LegendColorIntensity.Curve(swatch, 45);
+        var atPlateau = LegendColorIntensity.Curve(swatch, oldPlateau);
+        var atLater = LegendColorIntensity.Curve(swatch, 85);
+        var atFull = LegendColorIntensity.Curve(swatch, LegendColorIntensity.FullColour);
+        var atEnd = LegendColorIntensity.Curve(swatch, LegendColorIntensity.Maximum);
         Assert.NotEqual("#FFFFFF", atZero);
         Assert.NotEqual("#000000", atEnd);
-        Assert.InRange(LegendColorIntensity.Describe(atZero).Lightness, 0.70, 0.80);
-        Assert.InRange(LegendColorIntensity.Describe(atZero).Saturation, 0.40, 0.60);
-        Assert.True(LegendColorIntensity.Describe(atVivid).Saturation > 0.98);
-        Assert.True(LegendColorIntensity.Describe(atEnd).Lightness > 0.15);
-        Assert.True(LegendColorIntensity.Describe(atEnd).Lightness < 0.32);
-        Assert.True(LegendColorIntensity.Describe(atEnd).Lightness < LegendColorIntensity.Describe(atVivid).Lightness);
+        Assert.True(LegendColorIntensity.Describe(atLow).Lightness > LegendColorIntensity.Describe(atMid).Lightness);
+        Assert.True(LegendColorIntensity.Describe(atLow).Saturation < LegendColorIntensity.Describe(atMid).Saturation);
+        Assert.True(LegendColorIntensity.Describe(atLater).Saturation > LegendColorIntensity.Describe(atPlateau).Saturation);
+        Assert.True(LegendColorIntensity.Describe(atLater).Lightness >= LegendColorIntensity.Describe(atFull).Lightness - 0.01);
+        Assert.True(LegendColorIntensity.Describe(atEnd).Lightness < LegendColorIntensity.Describe(atFull).Lightness);
+        Assert.InRange(
+            LegendColorIntensity.Describe(atFull).Lightness - LegendColorIntensity.Describe(atEnd).Lightness,
+            0.01,
+            0.08);
 
         var breaching = HighlightCatalog.Find(HighlightCatalog.SlaBreaching)!;
-        Assert.Equal("#F8ECEC", LegendColorIntensity.Row(breaching.SwatchHex, breaching.RowHex, 0, applied: true));
-        Assert.Equal("#EDCDCC", LegendColorIntensity.Row(breaching.SwatchHex, breaching.RowHex, 75, applied: true));
-        Assert.Equal("#E1CDCC", LegendColorIntensity.Row(breaching.SwatchHex, breaching.RowHex, 100, applied: true));
         Assert.NotEqual(
-            LegendColorIntensity.Row(breaching.SwatchHex, breaching.RowHex, 75, applied: true),
-            LegendColorIntensity.Row(breaching.SwatchHex, breaching.RowHex, 100, applied: true));
+            LegendColorIntensity.Row(breaching.SwatchHex, breaching.RowHex, LegendColorIntensity.FullColour, applied: true),
+            LegendColorIntensity.Row(breaching.SwatchHex, breaching.RowHex, LegendColorIntensity.Maximum, applied: true));
         Assert.Equal("#E6E6E6", LegendColorIntensity.NeutralTrackStart);
-        Assert.Equal("#1A1A1A", LegendColorIntensity.NeutralTrackEnd);
+        Assert.Equal("#808080", LegendColorIntensity.NeutralTrackFull);
+        Assert.Equal("#757575", LegendColorIntensity.NeutralTrackEnd);
 
         var origin = LegendColorIntensity.Describe(swatch).Hue;
-        Assert.True(HueDistance(origin, LegendColorIntensity.Describe(atZero).Hue) < 0.02);
-        Assert.True(HueDistance(origin, LegendColorIntensity.Describe(atVivid).Hue) < 0.02);
-        Assert.True(HueDistance(origin, LegendColorIntensity.Describe(atEnd).Hue) < 0.02);
+        foreach (var painted in new[] { atZero, atLow, atMid, atPlateau, atLater, atFull, atEnd })
+            Assert.True(HueDistance(origin, LegendColorIntensity.Describe(painted).Hue) < 0.02);
 
         var breachingHue = LegendColorIntensity.Describe(breaching.SwatchHex).Hue;
-        Assert.True(HueDistance(breachingHue, LegendColorIntensity.Describe(LegendColorIntensity.Curve(breaching.SwatchHex, 0)).Hue) < 0.02);
-        Assert.True(HueDistance(breachingHue, LegendColorIntensity.Describe(LegendColorIntensity.Curve(breaching.SwatchHex, 100)).Hue) < 0.02);
+        foreach (var position in new[] { 0, oldPlateau, 85, LegendColorIntensity.FullColour, LegendColorIntensity.Maximum })
+        {
+            var painted = LegendColorIntensity.Curve(breaching.SwatchHex, position);
+            Assert.True(HueDistance(breachingHue, LegendColorIntensity.Describe(painted).Hue) < 0.02);
+        }
+
         Assert.All(HighlightCatalog.Entries, entry =>
-            Assert.True(RowContrast(LegendColorIntensity.Row(entry.SwatchHex, entry.RowHex, 100, applied: true)) >= 4.5));
+        {
+            var hue = LegendColorIntensity.Describe(entry.SwatchHex).Hue;
+            var start = LegendColorIntensity.Curve(entry.SwatchHex, 0);
+            var finish = LegendColorIntensity.Curve(entry.SwatchHex, LegendColorIntensity.Maximum);
+            Assert.True(HueDistance(hue, LegendColorIntensity.Describe(start).Hue) < 0.02);
+            Assert.True(HueDistance(hue, LegendColorIntensity.Describe(finish).Hue) < 0.02);
+            Assert.True(HueDistance(
+                LegendColorIntensity.Describe(LegendColorIntensity.Curve(entry.SwatchHex, LegendColorIntensity.FullColour)).Hue,
+                LegendColorIntensity.Describe(finish).Hue) < 0.02);
+            Assert.True(RowContrast(LegendColorIntensity.Row(entry.SwatchHex, entry.RowHex, LegendColorIntensity.Maximum, applied: true)) >= 4.5);
+        });
     }
 
     [Fact]
@@ -82,7 +121,7 @@ public class LegendIntensityTests
     {
         var legend = new LegendSettingsViewModel();
         Assert.False(legend.AdjustIndividually);
-        Assert.Equal(79, legend.SliderValue);
+        Assert.Equal(DefaultSlider, legend.SliderValue);
         Assert.NotEqual(0, legend.SliderValue);
         Assert.NotEqual(100, legend.SliderValue);
         AssertMatchesCatalog(legend);
@@ -102,19 +141,19 @@ public class LegendIntensityTests
 
         legend.AdjustIndividually = false;
         Assert.Equal("", legend.SelectedOriginalHex);
-        Assert.Equal(79, legend.SliderValue);
+        Assert.Equal(DefaultSlider, legend.SliderValue);
         AssertMatchesCatalog(legend);
 
         var preferences = HighlightPreferences.From(new DeskSettings());
         Assert.Null(preferences.SharedIntensity);
-        Assert.Equal(17, preferences.IntensityOf(HighlightCatalog.Unassigned));
+        Assert.Equal(ClosestPosition[HighlightCatalog.Unassigned], preferences.IntensityOf(HighlightCatalog.Unassigned));
         Assert.Equal(HighlightCatalog.UnassignedRowHex, preferences.ChooseRowHex(true, []));
 
         var changes = 0;
         legend.Changed += (_, _) => changes++;
         legend.Load(preferences);
         Assert.Equal(0, changes);
-        Assert.Equal(79, legend.SliderValue);
+        Assert.Equal(DefaultSlider, legend.SliderValue);
         AssertMatchesCatalog(legend);
         var saved = Saved(legend);
         Assert.Equal(LegendColorIntensity.Version, saved.LegendIntensityVersion);
@@ -130,7 +169,7 @@ public class LegendIntensityTests
         var main = new MainViewModel(store, new RecordingDesktopServices());
         main.Connection.Load(store.Load());
         main.Legend.Load(main.Connection.Highlights);
-        Assert.Equal(79, main.Legend.SliderValue);
+        Assert.Equal(DefaultSlider, main.Legend.SliderValue);
         AssertMatchesCatalog(main.Legend);
 
         var row = Row("inc9", unassigned: true);
@@ -171,7 +210,7 @@ public class LegendIntensityTests
     public void IndividualSetChangesOnlyTheSelectedColour()
     {
         var legend = new LegendSettingsViewModel();
-        Assert.Equal(79, legend.SliderValue);
+        Assert.Equal(DefaultSlider, legend.SliderValue);
         legend.AdjustIndividually = true;
         Assert.False(legend.SetIntensityCommand.CanExecute(null));
         AssertMatchesCatalog(legend);
@@ -179,7 +218,7 @@ public class LegendIntensityTests
         var unassigned = legend.Entries.Single(entry => entry.Key == HighlightCatalog.Unassigned);
         var sla = legend.Entries.Single(entry => entry.Key == HighlightCatalog.SlaBreaching);
         legend.Select(HighlightCatalog.Unassigned);
-        Assert.Equal(17, legend.SliderValue);
+        Assert.Equal(ClosestPosition[HighlightCatalog.Unassigned], legend.SliderValue);
         Assert.Equal(HighlightCatalog.UnassignedSwatchHex, unassigned.SwatchHex);
 
         var changes = 0;
@@ -189,11 +228,11 @@ public class LegendIntensityTests
         AssertMatchesCatalog(legend);
 
         legend.Select(HighlightCatalog.SlaBreaching);
-        Assert.Equal(96, legend.SliderValue);
+        Assert.Equal(ClosestPosition[HighlightCatalog.SlaBreaching], legend.SliderValue);
         Assert.Equal(HighlightCatalog.Find(HighlightCatalog.SlaBreaching)!.SwatchHex, sla.SwatchHex);
 
         legend.Select(HighlightCatalog.Unassigned);
-        Assert.Equal(17, legend.SliderValue);
+        Assert.Equal(ClosestPosition[HighlightCatalog.Unassigned], legend.SliderValue);
         legend.SliderValue = 15;
         legend.SetIntensityCommand.Execute(null);
 
@@ -215,7 +254,7 @@ public class LegendIntensityTests
             legend.Current().ChooseRowHex(false, [AlertKind.SlaBreaching]));
         Assert.Null(legend.Current().SharedIntensity);
         Assert.Equal(15, legend.Current().IntensityOf(HighlightCatalog.Unassigned));
-        Assert.Equal(96, legend.Current().IntensityOf(HighlightCatalog.SlaBreaching));
+        Assert.Equal(ClosestPosition[HighlightCatalog.SlaBreaching], legend.Current().IntensityOf(HighlightCatalog.SlaBreaching));
 
         var saved = Saved(legend);
         Assert.Equal(LegendColorIntensity.Version, saved.LegendIntensityVersion);
@@ -224,7 +263,10 @@ public class LegendIntensityTests
         Assert.Single(saved.LegendColorIntensities);
 
         legend.AdjustIndividually = false;
-        Assert.Equal(79, legend.SliderValue);
+        Assert.Equal(
+            LegendColorIntensity.Average(legend.Entries.Select(entry =>
+                entry.Key == HighlightCatalog.Unassigned ? 15 : ClosestPosition[entry.Key])),
+            legend.SliderValue);
         AssertOnCurve(unassigned, 15);
         Assert.Equal(HighlightCatalog.Find(HighlightCatalog.SlaBreaching)!.SwatchHex, sla.SwatchHex);
     }
@@ -243,12 +285,12 @@ public class LegendIntensityTests
         Assert.Equal(0, old.LegendIntensityVersion);
         var ignored = HighlightPreferences.From(old);
         Assert.Null(ignored.SharedIntensity);
-        Assert.Equal(17, ignored.IntensityOf(HighlightCatalog.Unassigned));
-        Assert.Equal(96, ignored.IntensityOf(HighlightCatalog.SlaBreaching));
+        Assert.Equal(ClosestPosition[HighlightCatalog.Unassigned], ignored.IntensityOf(HighlightCatalog.Unassigned));
+        Assert.Equal(ClosestPosition[HighlightCatalog.SlaBreaching], ignored.IntensityOf(HighlightCatalog.SlaBreaching));
 
         var legend = new LegendSettingsViewModel();
         legend.Load(ignored);
-        Assert.Equal(79, legend.SliderValue);
+        Assert.Equal(DefaultSlider, legend.SliderValue);
         Assert.NotEqual(68, legend.SliderValue);
         AssertMatchesCatalog(legend);
 
@@ -259,7 +301,7 @@ public class LegendIntensityTests
         var fromFile = new LegendSettingsViewModel();
         fromFile.Load(HighlightPreferences.From(roundTrip));
         AssertMatchesCatalog(fromFile);
-        Assert.Equal(79, fromFile.SliderValue);
+        Assert.Equal(DefaultSlider, fromFile.SliderValue);
 
         var legacy = DeskSettingsFile.Deserialize("{\"LegendIntensity\":68}", text => text ?? "");
         var fresh = new LegendSettingsViewModel();
