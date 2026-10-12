@@ -346,7 +346,7 @@
                 <Grid Background="{StaticResource AppBrush}" Visibility="{Binding SelectedSection, Converter={StaticResource SectionVis}, ConverterParameter=InTheMix}">
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="420"/>
+                            <ColumnDefinition Width="525"/>
                             <ColumnDefinition Width="16"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>

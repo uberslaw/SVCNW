@@ -31,6 +31,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     private bool _officesReady;
     private bool _locationLookupDone;
     private bool _suppressOffice;
+    private bool _suppressRegion;
     private bool _missingLocationNotice;
     private bool _overrideActive;
     private bool _catalogIsAllLocations;
@@ -66,7 +67,19 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         };
         Batch.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasBatch));
         Offices.CollectionChanged += (_, _) => RefreshVisibleOffices();
+        RegionPicker = new RegionSettingsViewModel();
+        RegionPicker.Changed += (_, _) =>
+        {
+            if (_suppressRegion || _client is null)
+                return;
+            OfficeLoad = ApplyHardwareRegionAsync();
+        };
     }
+
+    /// <summary>
+    /// Region tree for this hardware window. It does not write the Settings region.
+    /// </summary>
+    public RegionSettingsViewModel RegionPicker { get; }
 
     public ReferenceFieldModel AssignedTo { get; }
     public ReferenceFieldModel Location { get; }
@@ -197,6 +210,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         _client = null;
         _choicesReady = false;
         _officesReady = false;
+        _suppressRegion = true;
+        RegionPicker.Load(null);
+        _suppressRegion = false;
         _locationLookupDone = false;
         _missingLocationNotice = false;
         _overrideActive = false;
@@ -950,6 +966,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             _missingLocationNotice = true;
 
         _suppressOffice = false;
+        SyncRegionPicker();
         OnPropertyChanged(nameof(OfficeSelectionSummary));
         DefaultSaved?.Invoke(this, EventArgs.Empty);
         await DownloadDefaultCatalogAsync();
@@ -1168,7 +1185,69 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         {
             _suppressOffice = false;
             _officesReady = true;
+            SyncRegionPicker();
         }
+    }
+
+    private void SyncRegionPicker()
+    {
+        _suppressRegion = true;
+        try
+        {
+            if (_overrideActive)
+                RegionPicker.LoadMatched(SelectedOfficeNames());
+            else
+                RegionPicker.Load(null);
+        }
+        finally
+        {
+            _suppressRegion = false;
+        }
+    }
+
+    /// <summary>
+    /// The hardware-window region. Saved offices stay on the hardware override and do not change Settings.
+    /// An empty selection clears that override and returns to the signed-in office.
+    /// </summary>
+    private async Task ApplyHardwareRegionAsync()
+    {
+        var offices = RegionPicker.SelectedOffices;
+        if (offices.Count == 0)
+        {
+            await ClearOverrideAsync();
+            return;
+        }
+
+        _suppressOffice = true;
+        try
+        {
+            foreach (var office in Offices.ToArray())
+                office.IsSelected = false;
+            foreach (var name in offices)
+                EnsureOffice(name, true, HardwareOfficeLabelKind.Seed);
+        }
+        finally
+        {
+            _suppressOffice = false;
+        }
+
+        _overrideActive = true;
+        _missingLocationNotice = false;
+        if (_settings is not null)
+        {
+            var settings = _settings.Load();
+            settings.HardwareOfficeLocations = SelectedOfficeNames();
+            settings.HardwareOfficeOverride = true;
+            _settings.Save(settings);
+        }
+
+        DefaultSaved?.Invoke(this, EventArgs.Empty);
+        var selected = SelectedOfficeNames();
+        if (_catalog.Count == 0)
+            LoadCatalogFromStore();
+        ApplyCatalogToRows(selected);
+        PublishScope(selected);
+        await DownloadDefaultCatalogAsync();
     }
 
     private async Task EnsureReferenceLocationsAsync()

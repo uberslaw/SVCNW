@@ -87,14 +87,14 @@
                       VerticalAlignment="Center"
                       HorizontalAlignment="Right"
                       IsHitTestVisible="False"/>
-                <TextBlock Text="{Binding CountText, ElementName=Root}"
+                <TextBlock Text="{Binding ClosedLabel, ElementName=Root}"
                            VerticalAlignment="Center"
                            HorizontalAlignment="Left"
                            TextTrimming="CharacterEllipsis"/>
             </DockPanel>
         </Button>
         <Popup x:Name="ChoicePopup"
-               Placement="Bottom"
+               Placement="Custom"
                PlacementTarget="{Binding ElementName=OpenButton}"
                StaysOpen="False"
                AllowsTransparency="True"
@@ -105,7 +105,6 @@
                     BorderBrush="{StaticResource LineBrush}"
                     BorderThickness="1"
                     MaxHeight="420"
-                    MaxWidth="520"
                     SnapsToDevicePixels="True">
                 <Grid>
                     <TextBlock x:Name="EmptyHint"
@@ -118,14 +117,14 @@
                              BorderThickness="0"
                              Background="{StaticResource CardBrush}"
                              ItemContainerStyle="{StaticResource ChoiceFilterItem}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              ScrollViewer.CanContentScroll="False"
                              MaxHeight="420"
                              SelectionChanged="ChoiceList_SelectionChanged">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding}" ToolTip="{Binding}"/>
+                                <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" ToolTip="{Binding}"/>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>

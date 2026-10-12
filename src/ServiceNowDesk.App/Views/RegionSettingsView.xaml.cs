@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using ServiceNowDesk.ViewModels;
@@ -6,9 +7,21 @@ namespace ServiceNowDesk.Views;
 
 public partial class RegionSettingsView : UserControl
 {
+    public static readonly DependencyProperty ShowIntroProperty = DependencyProperty.Register(
+        nameof(ShowIntro),
+        typeof(bool),
+        typeof(RegionSettingsView),
+        new PropertyMetadata(true));
+
     public RegionSettingsView()
     {
         InitializeComponent();
+    }
+
+    public bool ShowIntro
+    {
+        get => (bool)GetValue(ShowIntroProperty);
+        set => SetValue(ShowIntroProperty, value);
     }
 
     private void AllOffices_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

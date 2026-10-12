@@ -8,7 +8,7 @@ namespace ServiceNowDesk.Views;
 
 public partial class IncidentView
 {
-    const double PreferredListWidth = 400;
+    const double PreferredListWidth = 500;
     const double ColumnGutter = 16;
     const double MinimumEditorWidth = 240;
 
@@ -31,7 +31,7 @@ public partial class IncidentView
 
     private void ApplyEditorOnly()
     {
-        EditorPane.Apply(EditorOnly, Layout, ListPane);
+        EditorPane.Apply(EditorOnly, Layout, ListPane, listWidth: PreferredListWidth);
         if (!EditorOnly)
             FitListColumn();
     }

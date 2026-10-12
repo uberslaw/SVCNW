@@ -1,7 +1,8 @@
 <UserControl x:Class="ServiceNowDesk.Views.HardwareView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:controls="clr-namespace:ServiceNowDesk.Controls">
+             xmlns:controls="clr-namespace:ServiceNowDesk.Controls"
+             xmlns:views="clr-namespace:ServiceNowDesk.Views">
     <Grid Margin="16,12,16,12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -80,30 +81,18 @@
 
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <TextBlock Text="Offices" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Text="Region" Style="{StaticResource FieldLabel}"/>
                     <TextBlock Text="{Binding AccountOfficeText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                    <TextBlock Text="The list starts at the office on the signed-in account. Launch and Refresh this office download only the checked offices into the saved list on this PC. Checkboxes change the filter without downloading again. Refresh all downloads every location (opt-in). Region limits the list to the offices chosen in Settings. Override office remembers the checked offices on this PC. Clear override returns to your office." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                    <TextBox Text="{Binding OfficeSearchText, UpdateSourceTrigger=PropertyChanged}"
-                             MinHeight="28" Padding="6,4" Margin="0,0,0,6"
-                             AutomationProperties.Name="Find office"/>
-                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" MaxHeight="168" Margin="0,0,0,6">
+                    <TextBlock Text="Choose a region to show that hardware on this window only. It does not change the region in Settings. Clear override returns to your office. Refresh this office downloads the selected offices. Refresh all downloads every location." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" MaxHeight="220" Margin="0,0,0,6">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <ItemsControl ItemsSource="{Binding VisibleOffices}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="8,3"
-                                                  AutomationProperties.Name="{Binding Name, StringFormat=Office {0}}"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <views:RegionSettingsView DataContext="{Binding RegionPicker}"
+                                                      ShowIntro="False"
+                                                      AutomationProperties.Name="Hardware region"/>
                         </ScrollViewer>
                     </Border>
                     <TextBlock Text="{Binding OfficeSelectionSummary}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <Button Content="Region" Style="{StaticResource SecondaryButton}" Command="{Binding ApplyRegionCommand}" Margin="0,0,8,0"
-                                ToolTip="Show hardware at the offices saved in Settings"
-                                AutomationProperties.Name="Region"/>
-                        <Button Content="Override office" Style="{StaticResource SecondaryButton}" Command="{Binding OverrideOfficeCommand}" Margin="0,0,8,0"/>
                         <Button Content="Clear override" Style="{StaticResource SecondaryButton}" Command="{Binding ClearOverrideCommand}" Margin="0,0,8,0"/>
                         <Button Content="Refresh this office" Style="{StaticResource SecondaryButton}" Command="{Binding RefreshOfficeCatalogCommand}" Margin="0,0,8,0"
                                 IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBool}}"/>
@@ -172,15 +161,15 @@
                               VerticalScrollBarVisibility="Disabled"
                               HorizontalAlignment="Stretch"
                               Focusable="False">
-                <DockPanel x:Name="HardwareTableContent" HorizontalAlignment="Left">
+                <DockPanel x:Name="HardwareTableContent" HorizontalAlignment="Stretch">
                 <Grid x:Name="HardwareFilters" DockPanel.Dock="Top" Margin="1,0,1,4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="1.2*" MinWidth="96"/>
                         <ColumnDefinition Width="2.4*" MinWidth="148"/>
                         <ColumnDefinition Width="1.2*" MinWidth="96"/>
-                        <ColumnDefinition Width="1.2*" MinWidth="124"/>
-                        <ColumnDefinition Width="*" MinWidth="108"/>
-                        <ColumnDefinition Width="1.1*" MinWidth="124"/>
+                        <ColumnDefinition Width="1.2*" MinWidth="200"/>
+                        <ColumnDefinition Width="*" MinWidth="200"/>
+                        <ColumnDefinition Width="1.1*" MinWidth="200"/>
                         <ColumnDefinition Width="1.5*" MinWidth="110"/>
                     </Grid.ColumnDefinitions>
                     <TextBox Style="{StaticResource DeskColumnFilter}" Margin="6,0,4,0"
@@ -194,14 +183,17 @@
                              Text="{Binding AssignedFilter, UpdateSourceTrigger=PropertyChanged}"
                              AutomationProperties.Name="Filter assigned to"/>
                     <controls:ChoiceFilterBox x:Name="LocationFilterBox" Grid.Column="3" Margin="2,0,4,0"
+                                              ClosedCharacters="18"
                                               CountText="{Binding LocationFilterCountText}"
                                               FilterName="Filter location"
                                               ClearName="Clear location filter"/>
                     <controls:ChoiceFilterBox x:Name="StateFilterBox" Grid.Column="4" Margin="2,0,4,0"
+                                              ClosedCharacters="18"
                                               CountText="{Binding StateFilterCountText}"
                                               FilterName="Filter state"
                                               ClearName="Clear state filter"/>
                     <controls:ChoiceFilterBox x:Name="SubstateFilterBox" Grid.Column="5" Margin="2,0,4,0"
+                                              ClosedCharacters="18"
                                               CountText="{Binding SubstateFilterCountText}"
                                               FilterName="Filter substate"
                                               ClearName="Clear substate filter"/>
@@ -230,13 +222,13 @@
                         <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo.Display}" Width="1.2*" MinWidth="96"
                                             SortMemberPath="AssignedTo.Display"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="Location" Binding="{Binding Location.Display}" Width="1.2*" MinWidth="124"
+                        <DataGridTextColumn Header="Location" Binding="{Binding Location.Display}" Width="1.2*" MinWidth="200"
                                             SortMemberPath="Location.Display"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="State" Binding="{Binding InstallStatusLabel}" Width="*" MinWidth="108"
+                        <DataGridTextColumn Header="State" Binding="{Binding InstallStatusLabel}" Width="*" MinWidth="200"
                                             SortMemberPath="InstallStatusLabel"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="Substate" Binding="{Binding SubstatusLabel}" Width="1.1*" MinWidth="124"
+                        <DataGridTextColumn Header="Substate" Binding="{Binding SubstatusLabel}" Width="1.1*" MinWidth="200"
                                             SortMemberPath="SubstatusLabel"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                         <DataGridTextColumn Header="Comments" Binding="{Binding Comments}" Width="1.5*" MinWidth="110"

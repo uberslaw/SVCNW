@@ -1,4 +1,5 @@
 <UserControl x:Class="ServiceNowDesk.Views.RegionSettingsView"
+             x:Name="Root"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
@@ -83,9 +84,10 @@
     </UserControl.Resources>
 
     <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,8">
-        <StackPanel DataContext="{Binding Region}">
+        <StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                       Text="Offices in your region. Hardware → Region shows computers whose location matches the offices you tick. Open a region, then tick All offices or a mix. Open a portion to tick that whole portion or a mix of its offices. Several regions and portions can be selected together. The choice is saved on this PC."/>
+                       Visibility="{Binding ShowIntro, ElementName=Root, Converter={StaticResource BoolVis}}"
+                       Text="Offices in your region. Work Effort counts tickets opened in these offices. Open a region, then tick All offices or a mix. Open a portion to tick that whole portion or a mix of its offices. Several regions and portions can be selected together. The choice is saved on this PC. Hardware has its own region picker and does not change this list."/>
             <ItemsControl ItemsSource="{Binding Groups}" ItemTemplate="{StaticResource RegionSectionTemplate}"/>
         </StackPanel>
     </Border>

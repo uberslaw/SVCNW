@@ -1,5 +1,8 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 
 namespace ServiceNowDesk.Controls;
 
@@ -23,12 +26,42 @@ public partial class ChoiceFilterBox
         typeof(ChoiceFilterBox),
         new PropertyMetadata("Clear filters"));
 
+    public static readonly DependencyProperty ClosedCharactersProperty = DependencyProperty.Register(
+        nameof(ClosedCharacters),
+        typeof(int),
+        typeof(ChoiceFilterBox),
+        new PropertyMetadata(0, (d, _) => ((ChoiceFilterBox)d).ApplyClosedWidth()));
+
+    public static readonly DependencyProperty ClosedLabelProperty = DependencyProperty.Register(
+        nameof(ClosedLabel),
+        typeof(string),
+        typeof(ChoiceFilterBox),
+        new PropertyMetadata("0"));
+
     private bool _applying;
     private bool _closedByThisClick;
 
     public ChoiceFilterBox()
     {
         InitializeComponent();
+        ChoicePopup.CustomPopupPlacementCallback = PlaceUnderButton;
+        Loaded += (_, _) => ApplyClosedWidth();
+    }
+
+    /// <summary>
+    /// Closed width in characters. Zero stretches with the column.
+    /// One selected value is trimmed to this width.
+    /// </summary>
+    public int ClosedCharacters
+    {
+        get => (int)GetValue(ClosedCharactersProperty);
+        set => SetValue(ClosedCharactersProperty, value);
+    }
+
+    public string ClosedLabel
+    {
+        get => (string)GetValue(ClosedLabelProperty);
+        private set => SetValue(ClosedLabelProperty, value);
     }
 
     public string CountText
@@ -106,7 +139,52 @@ public partial class ChoiceFilterBox
         }
 
         SelectedValues = ChoiceList.SelectedItems.Cast<string>().ToArray();
+        RefreshClosedLabel();
     }
+
+    private void RefreshClosedLabel()
+    {
+        ClosedLabel = SelectedValues.Count == 1
+            ? SelectedValues[0]
+            : SelectedValues.Count.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private void ApplyClosedWidth()
+    {
+        if (ClosedCharacters <= 0)
+        {
+            ClearValue(WidthProperty);
+            HorizontalAlignment = HorizontalAlignment.Stretch;
+            OpenButton.ClearValue(WidthProperty);
+            return;
+        }
+
+        var buttonWidth = MeasureClosedText() + 32;
+        OpenButton.Width = buttonWidth;
+        Width = buttonWidth + 28;
+        HorizontalAlignment = HorizontalAlignment.Left;
+    }
+
+    private double MeasureClosedText()
+    {
+        var count = Math.Max(1, ClosedCharacters);
+        var size = OpenButton.FontSize > 0 ? OpenButton.FontSize : 12;
+        var dpi = 1.0;
+        if (IsLoaded)
+            dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var text = new FormattedText(
+            new string('0', count),
+            CultureInfo.CurrentUICulture,
+            FlowDirection.LeftToRight,
+            new Typeface(FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
+            size,
+            Brushes.Black,
+            dpi);
+        return Math.Ceiling(text.Width);
+    }
+
+    private static CustomPopupPlacement[] PlaceUnderButton(Size popupSize, Size targetSize, Point offset) =>
+        [new CustomPopupPlacement(new Point(0, targetSize.Height), PopupPrimaryAxis.None)];
 
     private bool SameItems(IReadOnlyList<string> items)
     {
@@ -141,7 +219,11 @@ public partial class ChoiceFilterBox
         var width = OpenButton.ActualWidth;
         if (width < 1)
             width = ActualWidth;
-        DropBorder.MinWidth = Math.Max(width, 220);
+        if (width < 1)
+            width = 120;
+        DropBorder.Width = width;
+        DropBorder.MinWidth = width;
+        DropBorder.MaxWidth = width;
         ChoicePopup.IsOpen = true;
         ChoiceList.Focus();
         if (ChoiceList.SelectedItems.Count > 0)
@@ -161,6 +243,7 @@ public partial class ChoiceFilterBox
             if (SelectedValues.Count == 0)
                 return;
             SelectedValues = [];
+            RefreshClosedLabel();
             SelectionChanged?.Invoke(this, EventArgs.Empty);
             return;
         }
@@ -173,6 +256,7 @@ public partial class ChoiceFilterBox
         if (_applying)
             return;
         SelectedValues = ChoiceList.SelectedItems.Cast<string>().ToArray();
+        RefreshClosedLabel();
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 }

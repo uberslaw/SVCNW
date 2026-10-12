@@ -4,7 +4,7 @@
              xmlns:controls="clr-namespace:ServiceNowDesk.Controls">
     <Grid x:Name="Layout" Margin="16,12,16,12">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="400"/>
+            <ColumnDefinition Width="500"/>
             <ColumnDefinition Width="16"/>
             <ColumnDefinition Width="*" MinWidth="0"/>
         </Grid.ColumnDefinitions>

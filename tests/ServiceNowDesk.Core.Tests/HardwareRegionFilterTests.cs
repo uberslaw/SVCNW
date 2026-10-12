@@ -286,6 +286,58 @@ public class HardwareRegionFilterTests
         Assert.Null(missing.RegionOffices);
     }
 
+    [Fact]
+    public void LoadMatchedChecksTheOfficeAndNotALongerCity()
+    {
+        var picker = new RegionSettingsViewModel();
+        picker.LoadMatched(["York", "Brisbane Office"]);
+        Assert.True(picker.Find("York")!.IsChecked);
+        Assert.NotEqual(true, picker.Find("New York")!.IsChecked);
+        Assert.True(picker.Find("Brisbane")!.IsChecked);
+        Assert.NotEqual(true, picker.Find("Sydney")!.IsChecked);
+    }
+
+    [Fact]
+    public async Task HardwareRegionOverridesThisWindowOnly()
+    {
+        using var client = new SampleServiceNowClient();
+        client.AddComputer(Computer("hw-cph", "CPH0001", "HP ZBook", "Copenhagen", "In use", ""));
+        var store = new MemorySettingsStore();
+        store.Save(new DeskSettings { RegionOffices = ["York"] });
+        var workspace = new HardwareWorkspaceViewModel(store);
+        workspace.Attach(client);
+        workspace.RememberViewer(new CurrentUser("sample-user", "Alex Rivera", "alex.rivera", "alex.rivera@example.com")
+        {
+            Location = "Brisbane"
+        });
+        await workspace.RefreshAsync();
+
+        Assert.Equal(["York"], store.Load().RegionOffices);
+        Assert.False(store.Load().HardwareOfficeOverride);
+        Assert.Contains("Showing your office: Brisbane.", workspace.OfficeStatus);
+
+        workspace.RegionPicker.SetChecked("Denmark", true);
+        await workspace.OfficeLoad;
+
+        Assert.Equal(["York"], store.Load().RegionOffices);
+        Assert.True(store.Load().HardwareOfficeOverride);
+        Assert.Equal(["Copenhagen"], store.Load().HardwareOfficeLocations);
+        Assert.Contains("Showing override: Copenhagen.", workspace.OfficeStatus);
+        Assert.Equal("CPH0001", Assert.Single(workspace.Items).SerialNumber);
+        Assert.DoesNotContain(workspace.Items, asset => asset.Location.Display.Contains("Hong Kong", StringComparison.OrdinalIgnoreCase));
+        Assert.True(workspace.RegionPicker.Find("Copenhagen")!.IsChecked);
+        Assert.NotEqual(true, workspace.RegionPicker.Find("New York")!.IsChecked);
+
+        workspace.RegionPicker.SetChecked("Denmark", false);
+        await workspace.OfficeLoad;
+
+        Assert.Equal(["York"], store.Load().RegionOffices);
+        Assert.False(store.Load().HardwareOfficeOverride);
+        Assert.Null(store.Load().HardwareOfficeLocations);
+        Assert.Contains("Showing your office: Brisbane.", workspace.OfficeStatus);
+        Assert.NotEqual(true, workspace.RegionPicker.Find("Copenhagen")!.IsChecked);
+    }
+
     private static HardwareAsset Computer(
         string sysId,
         string serial,

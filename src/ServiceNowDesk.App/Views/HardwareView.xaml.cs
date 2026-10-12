@@ -179,6 +179,8 @@ public partial class HardwareView
         var contentWidth = Math.Max(host, minSum);
         if (double.IsNaN(HardwareTableContent.Width) || Math.Abs(HardwareTableContent.Width - contentWidth) > 0.5)
             HardwareTableContent.Width = contentWidth;
+        if (double.IsNaN(HardwareList.Width) || Math.Abs(HardwareList.Width - contentWidth) > 0.5)
+            HardwareList.Width = contentWidth;
 
         for (var i = 0; i < columns.Count; i++)
         {

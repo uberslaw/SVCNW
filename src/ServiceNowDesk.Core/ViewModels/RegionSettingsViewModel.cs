@@ -54,6 +54,32 @@ public sealed partial class RegionSettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Checks catalog offices that belong to <paramref name="saved"/>, including a trailing "Office".
+    /// York does not check New York.
+    /// </summary>
+    public void LoadMatched(IEnumerable<string>? saved)
+    {
+        var names = RegionOfficeMatch.NormalizeOffices(saved);
+        _updating = true;
+        try
+        {
+            foreach (var office in EnumerateOffices())
+            {
+                office.IsChecked = names.Any(name =>
+                    string.Equals(office.Label, name, StringComparison.OrdinalIgnoreCase)
+                    || RegionOfficeMatch.LocationMatchesOffice(office.Label, name)
+                    || RegionOfficeMatch.LocationMatchesOffice(name, office.Label));
+            }
+
+            RefreshGroups();
+        }
+        finally
+        {
+            _updating = false;
+        }
+    }
+
     public RegionOfficeNode? Find(string label)
     {
         foreach (var node in EnumerateAll())

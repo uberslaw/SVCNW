@@ -10,7 +10,8 @@ public static class EditorPane
         Grid layout,
         FrameworkElement list,
         FrameworkElement? extra = null,
-        FrameworkElement? emptyState = null)
+        FrameworkElement? emptyState = null,
+        double listWidth = 400)
     {
         var hidden = editorOnly ? Visibility.Collapsed : Visibility.Visible;
         list.Visibility = hidden;
@@ -26,7 +27,7 @@ public static class EditorPane
 
         if (layout.ColumnDefinitions.Count < 2)
             return;
-        layout.ColumnDefinitions[0].Width = editorOnly ? new GridLength(0) : new GridLength(400);
+        layout.ColumnDefinitions[0].Width = editorOnly ? new GridLength(0) : new GridLength(listWidth);
         layout.ColumnDefinitions[1].Width = editorOnly ? new GridLength(0) : new GridLength(16);
     }
 }
