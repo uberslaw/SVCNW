@@ -111,6 +111,9 @@ public sealed record TicketQuery
     /// An empty list matches no location, so the queue stays inside an office that was not named.
     /// When Settings has no watched offices, callers pass the signed-in user's city via
     /// <c>OfficeQueue.Cities</c>. My Tickets ignores this (assignee-only).
+    /// All Open does not set this. Incident and request-item My Team set it to the Settings
+    /// region when any offices are saved, otherwise to these queue cities, and also set
+    /// <see cref="LimitTeamToOffices"/>. Walk-up My Team leaves it unset.
     /// </summary>
     public IReadOnlyList<string>? OfficeLocations { get; init; }
 
@@ -118,14 +121,22 @@ public sealed record TicketQuery
     /// When set with <see cref="AssignmentScope.MyGroups"/>, the list is people assigned to these
     /// users instead of the signed-in user's assignment groups. Null keeps the group clause.
     /// An empty list matches nobody (<c>sys_id=NO_TEAM</c>).
+    /// The same Leads selection feeds walk-ups, incidents, and request items.
     /// </summary>
     public IReadOnlyList<string>? TeamMemberIds { get; init; }
 
     /// <summary>
-    /// Watched assignment group name from notification settings. Incident and request-item
-    /// My Team OR this name with the signed-in user's groups, the same group whose roster
-    /// supplies walk-up My Team. Null or blank leaves My Team on membership alone.
-    /// Walk-up My Team sets <see cref="TeamMemberIds"/> and ignores this name.
+    /// When true, <see cref="OfficeLocations"/> still applies to a people My Team query.
+    /// Walk-up My Team leaves this false, so a member outside the office still matches
+    /// even if office names were copied onto the query. Incident and request-item My Team set it.
+    /// </summary>
+    public bool LimitTeamToOffices { get; init; }
+
+    /// <summary>
+    /// Watched assignment group name from notification settings. Used when My Team is still
+    /// the signed-in user's groups (no <see cref="TeamMemberIds"/>). Null or blank leaves
+    /// that path on membership alone. People My Team ignores this name, so an unassigned
+    /// group-queue ticket is not included unless a selected person is the assignee.
     /// </summary>
     public string? WatchedGroupName { get; init; }
 

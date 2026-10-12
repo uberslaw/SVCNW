@@ -44,7 +44,6 @@ public static class TicketListFilter
         }
 
         if (assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
-            && teamMemberIds is null
             && officeCities is not null)
         {
             if (officeCities.Count == 0)
