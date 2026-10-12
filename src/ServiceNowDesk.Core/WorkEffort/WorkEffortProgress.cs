@@ -26,6 +26,7 @@ public readonly record struct WorkEffortProgress(int Completed, int Total, strin
         WorkEffortScale.Last4Weeks => "the last 4 weeks",
         WorkEffortScale.SixMonths => "the last 6 months",
         WorkEffortScale.TwelveMonths => "the last 12 months",
+        WorkEffortScale.DateRange => "the selected dates",
         _ => "today"
     };
 }

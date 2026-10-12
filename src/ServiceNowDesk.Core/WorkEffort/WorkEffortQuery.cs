@@ -212,9 +212,15 @@ public static class WorkEffortQuery
         return false;
     }
 
-    public static string Status(WorkEffortScale scale, bool truncated, IEnumerable<string>? problems)
+    public static string Status(WorkEffortScale scale, bool truncated, IEnumerable<string>? problems) =>
+        Status(WorkEffortWindow.CountsLabel(scale), truncated, problems);
+
+    public static string Status(WorkEffortWindow window, bool truncated, IEnumerable<string>? problems) =>
+        Status(WorkEffortWindow.CountsLabel(window), truncated, problems);
+
+    private static string Status(string label, bool truncated, IEnumerable<string>? problems)
     {
-        var parts = new List<string> { WorkEffortWindow.CountsLabel(scale) };
+        var parts = new List<string> { label };
         if (truncated)
             parts.Add(CapNotice);
         foreach (var problem in problems ?? [])

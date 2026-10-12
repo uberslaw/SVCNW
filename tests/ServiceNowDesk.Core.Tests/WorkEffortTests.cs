@@ -645,7 +645,250 @@ public class WorkEffortTests
         Assert.Equal(WorkEffortReport.ChooseRegionMessage, blank.EmptyMessage);
         Assert.Empty(blank.Rows);
         Assert.Empty(handler.Calls);
+
+        var ranged = await client.GetWorkEffortAsync(
+            WorkEffortScale.DateRange,
+            Now,
+            LiveTeam,
+            [],
+            progress: null,
+            CancellationToken.None,
+            rangeStart: new DateTime(2026, 10, 5),
+            rangeEnd: new DateTime(2026, 10, 6));
+        Assert.Equal(WorkEffortReport.ChooseRegionMessage, ranged.EmptyMessage);
+        Assert.Empty(handler.Calls);
     }
+
+    [Fact]
+    public void ACustomRangeIncludesTheStartDateThroughTheEndOfTheEndDate()
+    {
+        var window = WorkEffortWindow.ForRange(new DateTime(2026, 10, 1, 18, 45, 0), new DateTime(2026, 10, 3, 8, 15, 0));
+        Assert.Equal(WorkEffortScale.DateRange, window.Scale);
+        Assert.Equal(new DateTime(2026, 10, 1), window.Start);
+        Assert.Equal(new DateTime(2026, 10, 3, 23, 59, 59), window.End);
+        Assert.Equal(3, WorkEffortSlices.Days(window));
+        Assert.Contains("2026-10-01", WorkEffortWindow.CountsLabel(window));
+        Assert.Contains("2026-10-03", WorkEffortWindow.CountsLabel(window));
+
+        var swapped = WorkEffortWindow.ForRange(new DateTime(2026, 10, 3), new DateTime(2026, 10, 1));
+        Assert.Equal(window.Start, swapped.Start);
+        Assert.Equal(window.End, swapped.End);
+
+        var preset = WorkEffortWindow.Resolve(WorkEffortScale.Today, Now, new DateTime(2026, 10, 1), new DateTime(2026, 10, 3));
+        Assert.Equal(WorkEffortWindow.For(WorkEffortScale.Today, Now), preset);
+    }
+
+    [Fact]
+    public void ChunkPlanKeepsOneDayWholeAndSplitsLongerRanges()
+    {
+        var today = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        Assert.False(WorkEffortSlices.UseDaySlices(1, WorkEffortSlices.Days(today)));
+        Assert.False(WorkEffortSlices.UseDaySlices(40, 1));
+        var onePerson = WorkEffortSlices.Plan(today, 1);
+        var manyPeople = WorkEffortSlices.Plan(today, 40);
+        Assert.Equal(today, Assert.Single(onePerson));
+        Assert.Equal(today, Assert.Single(manyPeople));
+
+        var twoDays = WorkEffortWindow.ForRange(new DateTime(2026, 10, 5), new DateTime(2026, 10, 6));
+        Assert.Equal(2, WorkEffortSlices.Days(twoDays));
+        Assert.True(WorkEffortSlices.UseDaySlices(1, 2));
+        Assert.True(1 * 2 > WorkEffortSlices.PersonDayBudget);
+        var days = WorkEffortSlices.Plan(twoDays, 1);
+        Assert.Equal(2, days.Count);
+        Assert.Equal(new DateTime(2026, 10, 5), days[0].Start);
+        Assert.Equal(new DateTime(2026, 10, 5, 23, 59, 59), days[0].End);
+        Assert.Equal(new DateTime(2026, 10, 6), days[1].Start);
+        Assert.Equal(new DateTime(2026, 10, 6, 23, 59, 59), days[1].End);
+
+        var six = WorkEffortWindow.For(WorkEffortScale.SixMonths, Now);
+        Assert.True(WorkEffortSlices.Days(six) > 1);
+        Assert.True(WorkEffortSlices.UseDaySlices(1, WorkEffortSlices.Days(six)));
+        var longSlices = WorkEffortSlices.Plan(six, 1);
+        Assert.Equal(WorkEffortSlices.Days(six), longSlices.Count);
+        Assert.Equal(six.Start, longSlices[0].Start);
+        Assert.Equal(six.End, longSlices[^1].End);
+
+        var week = WorkEffortWindow.For(WorkEffortScale.ThisWeek, Now);
+        Assert.True(WorkEffortSlices.UseDaySlices(8, WorkEffortSlices.Days(week)));
+        Assert.Equal(WorkEffortSlices.Days(week), WorkEffortSlices.Plan(week, 8).Count);
+    }
+
+    [Fact]
+    public async Task PracticeModeReturnsADateRangeWithoutARegion()
+    {
+        using var client = new SampleServiceNowClient();
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.DateRange,
+            Now,
+            SampleTeam,
+            regionOffices: null,
+            progress: null,
+            CancellationToken.None,
+            rangeStart: new DateTime(2026, 9, 1),
+            rangeEnd: new DateTime(2026, 10, 7));
+        Assert.NotEmpty(report.Rows);
+        Assert.Contains("2026-09-01", report.Status, StringComparison.Ordinal);
+        Assert.Contains("2026-10-07", report.Status, StringComparison.Ordinal);
+        Assert.Equal(new DateTime(2026, 9, 1), report.Ledger!.Window.Start);
+        Assert.Equal(new DateTime(2026, 10, 7, 23, 59, 59), report.Ledger.Window.End);
+    }
+
+    [Fact]
+    public async Task ADifferentDateRangeDoesNotReuseThePreviousCache()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        page.Scale = WorkEffortScale.DateRange;
+        page.RangeStart = new DateTime(2026, 10, 1);
+        page.RangeEnd = new DateTime(2026, 10, 2);
+        Assert.True(page.IsDateRange);
+        Assert.True(page.BeginLoad(Now, force: false, "team"));
+        var first = await client.GetWorkEffortAsync(
+            WorkEffortScale.DateRange,
+            Now,
+            SampleTeam,
+            regionOffices: null,
+            progress: null,
+            CancellationToken.None,
+            rangeStart: page.RangeStart,
+            rangeEnd: page.RangeEnd);
+        page.Remember(WorkEffortScale.DateRange, Now, first, "team");
+        Assert.False(page.BeginLoad(Now, force: false, "team"));
+        Assert.Contains("2026-10-01", page.Status, StringComparison.Ordinal);
+
+        page.RangeEnd = new DateTime(2026, 10, 6);
+        Assert.True(page.BeginLoad(Now, force: false, "team"));
+    }
+
+    [Fact]
+    public async Task AOneDayCustomRangeStaysOneQueryPerPerson()
+    {
+        var handler = new StubHandler((_, _) => Api.Json(OpenedIncident("inc-one", "sample-user", "Alex Rivera", "2026-10-07 09:00:00")));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.DateRange,
+            Now,
+            [Alex],
+            Sydney,
+            progress: null,
+            CancellationToken.None,
+            rangeStart: new DateTime(2026, 10, 7, 11, 0, 0),
+            rangeEnd: new DateTime(2026, 10, 7, 12, 0, 0));
+
+        var incidents = IncidentQueries(handler);
+        var query = Assert.Single(incidents);
+        Assert.Contains("opened_at>=2026-10-07@00:00:00", query);
+        Assert.Contains("opened_at<=2026-10-07@23:59:59", query);
+        Assert.Contains("location.name=\"Sydney\"", query);
+        Assert.Equal(1, Assert.Single(report.Rows).IncOpened);
+        Assert.Contains("2026-10-07 to 2026-10-07", report.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TwoDaysForOnePersonAreBothRequestedAndTheTicketIsCountedOnce()
+    {
+        var handler = new StubHandler((_, _) => Api.Json(OpenedIncident("inc-same", "sample-user", "Alex Rivera", "2026-10-05 09:00:00")));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var ticks = new ProgressList();
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.DateRange,
+            Now,
+            [Alex],
+            Sydney,
+            ticks,
+            CancellationToken.None,
+            rangeStart: new DateTime(2026, 10, 5),
+            rangeEnd: new DateTime(2026, 10, 6));
+
+        var incidents = IncidentQueries(handler);
+        Assert.Equal(2, incidents.Length);
+        Assert.Contains(incidents, query => query.Contains("opened_at>=2026-10-05@00:00:00", StringComparison.Ordinal)
+            && query.Contains("opened_at<=2026-10-05@23:59:59", StringComparison.Ordinal)
+            && query.Contains("location.name=\"Sydney\"", StringComparison.Ordinal));
+        Assert.Contains(incidents, query => query.Contains("opened_at>=2026-10-06@00:00:00", StringComparison.Ordinal)
+            && query.Contains("opened_at<=2026-10-06@23:59:59", StringComparison.Ordinal)
+            && query.Contains("location.name=\"Sydney\"", StringComparison.Ordinal));
+        Assert.Equal(1, Assert.Single(report.Rows).IncOpened);
+        Assert.DoesNotContain(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+
+        var journal = SysParmQuery(Uri.UnescapeDataString(
+            Assert.Single(handler.Calls, call => call.PathAndQuery.Contains("table/sys_journal_field", StringComparison.Ordinal)).PathAndQuery));
+        Assert.Contains("element_idINinc-same", journal);
+        Assert.Contains("sys_created_on>=2026-10-05@00:00:00", journal);
+        Assert.Contains("sys_created_on<=2026-10-06@23:59:59", journal);
+        Assert.True(ticks.Ticks.Count >= 2);
+        Assert.True(ticks.Ticks[^1].Completed >= ticks.Ticks[0].Completed);
+    }
+
+    [Fact]
+    public async Task ACappedDayDoesNotDropTheNextDayOrTheNextPerson()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            if (!path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            var query = SysParmQuery(path);
+            if (query.Contains("sample-user", StringComparison.Ordinal) && query.Contains("opened_at>=2026-10-05@", StringComparison.Ordinal))
+                return Api.Json(OpenedIncident("inc-alex-d1", "sample-user", "Alex Rivera", "2026-10-05 09:00:00"), total: 9);
+            if (query.Contains("sample-user", StringComparison.Ordinal) && query.Contains("opened_at>=2026-10-06@", StringComparison.Ordinal))
+                return Api.Json(OpenedIncident("inc-alex-d2", "sample-user", "Alex Rivera", "2026-10-06 09:00:00"), total: 1);
+            if (query.Contains("user-jordan", StringComparison.Ordinal) && query.Contains("opened_at>=2026-10-05@", StringComparison.Ordinal))
+                return Api.Json(OpenedIncident("inc-jordan-d1", "user-jordan", "Jordan Lee", "2026-10-05 10:00:00"), total: 1);
+            if (query.Contains("user-jordan", StringComparison.Ordinal) && query.Contains("opened_at>=2026-10-06@", StringComparison.Ordinal))
+                return Api.Json(OpenedIncident("inc-jordan-d2", "user-jordan", "Jordan Lee", "2026-10-06 10:00:00"), total: 1);
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.DateRange,
+            Now,
+            safetyCap: 1,
+            CancellationToken.None,
+            team: LiveTeam,
+            regionOffices: Sydney,
+            rangeStart: new DateTime(2026, 10, 5),
+            rangeEnd: new DateTime(2026, 10, 6));
+
+        var incidents = IncidentQueries(handler);
+        Assert.Equal(4, incidents.Length);
+        Assert.Contains("sample-user", incidents[0], StringComparison.Ordinal);
+        Assert.Contains("opened_at>=2026-10-05@", incidents[0], StringComparison.Ordinal);
+        Assert.Contains("sample-user", incidents[1], StringComparison.Ordinal);
+        Assert.Contains("opened_at>=2026-10-06@", incidents[1], StringComparison.Ordinal);
+        Assert.Contains("user-jordan", incidents[2], StringComparison.Ordinal);
+        Assert.Contains("opened_at>=2026-10-05@", incidents[2], StringComparison.Ordinal);
+        Assert.Contains("user-jordan", incidents[3], StringComparison.Ordinal);
+        Assert.Contains("opened_at>=2026-10-06@", incidents[3], StringComparison.Ordinal);
+
+        var alex = Assert.Single(report.Rows, row => row.Name == "Alex Rivera");
+        var jordan = Assert.Single(report.Rows, row => row.Name == "Jordan Lee");
+        Assert.Equal(2, alex.IncOpened);
+        Assert.Equal(2, jordan.IncOpened);
+        Assert.Contains(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+    }
+
+    private static string[] IncidentQueries(StubHandler handler) =>
+        handler.Calls
+            .Where(call => call.PathAndQuery.Contains("table/incident", StringComparison.Ordinal))
+            .Select(call => Uri.UnescapeDataString(call.PathAndQuery))
+            .Where(query => query.Contains("opened_at>=", StringComparison.Ordinal))
+            .ToArray();
+
+    private static string OpenedIncident(string id, string userId, string name, string opened) =>
+        "{\"result\":[{"
+        + "\"sys_id\":{\"value\":\"" + id + "\",\"display_value\":\"" + id + "\"},"
+        + "\"number\":{\"value\":\"" + id + "\",\"display_value\":\"" + id + "\"},"
+        + "\"short_description\":{\"value\":\"Ticket\",\"display_value\":\"Ticket\"},"
+        + "\"opened_by\":{\"value\":\"" + userId + "\",\"display_value\":\"" + name + "\"},"
+        + "\"opened_at\":{\"value\":\"" + opened + "\",\"display_value\":\"" + opened + "\"},"
+        + "\"resolved_by\":{\"value\":\"\",\"display_value\":\"\"},"
+        + "\"resolved_at\":{\"value\":\"\",\"display_value\":\"\"},"
+        + "\"closed_by\":{\"value\":\"\",\"display_value\":\"\"},"
+        + "\"closed_at\":{\"value\":\"\",\"display_value\":\"\"},"
+        + "\"sys_updated_by\":{\"value\":\"alex.rivera\",\"display_value\":\"alex.rivera\"},"
+        + "\"sys_updated_on\":{\"value\":\"" + opened + "\",\"display_value\":\"" + opened + "\"}"
+        + "}]}";
 
     [Fact]
     public async Task OnlyTicketsOpenedInTheRegionAreRequested()
@@ -1435,17 +1678,33 @@ public class WorkEffortHold : DispatchProxy
 
     private async Task<WorkEffortReport> HoldAsync(object?[] args)
     {
-        var scale = (WorkEffortScale)args[0]!;
-        var localNow = (DateTime)args[1]!;
+        var scale = WorkEffortScale.Today;
+        DateTime? localNow = null;
+        DateTime? rangeStart = null;
+        DateTime? rangeEnd = null;
         IProgress<WorkEffortProgress>? progress = null;
         var token = CancellationToken.None;
         foreach (var arg in args)
         {
-            if (arg is IProgress<WorkEffortProgress> reported)
+            if (arg is WorkEffortScale parsed)
+                scale = parsed;
+            else if (arg is DateTime moment)
+            {
+                // Call order is local clock, then the optional range start, then the range end.
+                if (localNow is null)
+                    localNow = moment;
+                else if (rangeStart is null)
+                    rangeStart = moment;
+                else
+                    rangeEnd = moment;
+            }
+            else if (arg is IProgress<WorkEffortProgress> reported)
                 progress = reported;
             else if (arg is CancellationToken cancellation)
                 token = cancellation;
         }
+
+        var clock = localNow ?? DateTime.Now;
         Interlocked.Increment(ref Queries);
         Tokens.Add(token);
         progress?.Report(WorkEffortProgress.Loading(scale, 0));
@@ -1455,6 +1714,6 @@ public class WorkEffortHold : DispatchProxy
             await Ready.Task.WaitAsync(token).ConfigureAwait(false);
         progress?.Report(WorkEffortProgress.Loading(scale, 1));
         progress?.Report(WorkEffortProgress.Loading(scale, 2));
-        return SampleWorkEffort.Report(scale, localNow);
+        return SampleWorkEffort.Report(scale, clock, rangeStart, rangeEnd);
     }
 }

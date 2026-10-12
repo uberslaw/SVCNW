@@ -9,7 +9,8 @@ public enum WorkEffortScale
     ThisMonth,
     Last4Weeks,
     SixMonths,
-    TwelveMonths
+    TwelveMonths,
+    DateRange
 }
 
 /// <summary>
@@ -35,8 +36,36 @@ public readonly record struct WorkEffortWindow(DateTime Start, DateTime End, Wor
             WorkEffortScale.Last4Weeks => new(now.AddDays(-28), now, scale),
             WorkEffortScale.SixMonths => new(now.AddMonths(-6), now, scale),
             WorkEffortScale.TwelveMonths => new(now.AddMonths(-12), now, scale),
+            WorkEffortScale.DateRange => new(now.Date, endOfToday, scale),
             _ => new(now.Date, endOfToday, WorkEffortScale.Today)
         };
+    }
+
+    /// <summary>
+    /// Inclusive local dates. The window starts at midnight on the first day and
+    /// ends at 23:59:59 on the last day. A reversed pair is swapped.
+    /// </summary>
+    public static WorkEffortWindow ForRange(DateTime start, DateTime end)
+    {
+        var first = LocalDate(start);
+        var last = LocalDate(end);
+        if (last < first)
+            (first, last) = (last, first);
+        var startAt = first.ToDateTime(TimeOnly.MinValue);
+        var endAt = last.ToDateTime(new TimeOnly(23, 59, 59));
+        return new(startAt, endAt, WorkEffortScale.DateRange);
+    }
+
+    /// <summary>
+    /// Presets use <see cref="For"/>. Date range uses the picked local days, or the clock's day when a side is blank.
+    /// </summary>
+    public static WorkEffortWindow Resolve(WorkEffortScale scale, DateTime localNow, DateTime? rangeStart, DateTime? rangeEnd)
+    {
+        if (scale != WorkEffortScale.DateRange)
+            return For(scale, localNow);
+        var start = rangeStart ?? rangeEnd ?? localNow;
+        var end = rangeEnd ?? rangeStart ?? localNow;
+        return ForRange(start, end);
     }
 
     public bool Contains(DateTime moment)
@@ -70,8 +99,26 @@ public readonly record struct WorkEffortWindow(DateTime Start, DateTime End, Wor
         WorkEffortScale.Last4Weeks => "Counts for the last 4 weeks.",
         WorkEffortScale.SixMonths => "Counts for the last 6 months.",
         WorkEffortScale.TwelveMonths => "Counts for the last 12 months.",
+        WorkEffortScale.DateRange => "Counts for the selected dates.",
         _ => "Counts for today."
     };
+
+    public static string CountsLabel(WorkEffortWindow window)
+    {
+        if (window.Scale != WorkEffortScale.DateRange)
+            return CountsLabel(window.Scale);
+        return "Counts for "
+            + window.Start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            + " to "
+            + window.End.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            + ".";
+    }
+
+    private static DateOnly LocalDate(DateTime moment)
+    {
+        var value = moment.Kind == DateTimeKind.Utc ? moment.ToLocalTime() : moment;
+        return DateOnly.FromDateTime(value);
+    }
 
     private static DateTime Monday(DateTime now)
     {
