@@ -198,9 +198,14 @@ public sealed record WorkEffortReport(
     public const string DefineTeamMessage =
         "Define your team on My team. Tick the people to include. Work Effort does not run until you do.";
 
+    public const string ChooseRegionMessage =
+        "Choose region offices in Settings. Work Effort counts tickets opened in those offices.";
+
     public static WorkEffortReport NoGroups() => new([], "", EmptyGroupsMessage);
 
     public static WorkEffortReport NoTeam() => new([], "", DefineTeamMessage);
+
+    public static WorkEffortReport NoRegion() => new([], "", ChooseRegionMessage);
 }
 
 public static class WorkEffortRoster

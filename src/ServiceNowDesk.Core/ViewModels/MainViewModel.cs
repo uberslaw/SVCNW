@@ -2131,7 +2131,13 @@ public partial class MainViewModel : ObservableObject
         {
             // Await the query directly. Task.Run queued behind other tests' pool work and
             // left Work Effort stuck on "loading" until the waiters timed out.
-            var report = await client.GetWorkEffortAsync(scale, localNow, team, sink, cts.Token)
+            var report = await client.GetWorkEffortAsync(
+                    scale,
+                    localNow,
+                    team,
+                    Connection.RegionOffices,
+                    sink,
+                    cts.Token)
                 .ConfigureAwait(false);
             PostToUi(() =>
             {

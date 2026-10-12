@@ -15,6 +15,15 @@ public sealed partial class SampleServiceNowClient
         WorkEffortScale scale,
         DateTime localNow,
         IReadOnlyList<WorkEffortPerson> team,
+        IReadOnlyList<string>? regionOffices,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken) =>
+        GetWorkEffortAsync(scale, localNow, team, progress, cancellationToken);
+
+    public Task<WorkEffortReport> GetWorkEffortAsync(
+        WorkEffortScale scale,
+        DateTime localNow,
+        IReadOnlyList<WorkEffortPerson> team,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {

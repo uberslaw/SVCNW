@@ -125,6 +125,18 @@ public interface IServiceNowClient : IDisposable
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Counts tickets opened in <paramref name="regionOffices"/> during the period.
+    /// No saved offices returns the Settings prompt and does not call ServiceNow.
+    /// </summary>
+    Task<WorkEffortReport> GetWorkEffortAsync(
+        WorkEffortScale scale,
+        DateTime localNow,
+        IReadOnlyList<WorkEffortPerson> team,
+        IReadOnlyList<string>? regionOffices,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Members of the watched group in <paramref name="city"/>.
     /// A blank city returns an empty list and does not query the instance.
     /// Uses the exact watched group name so APAC is not pulled in via LIKE Client Services.

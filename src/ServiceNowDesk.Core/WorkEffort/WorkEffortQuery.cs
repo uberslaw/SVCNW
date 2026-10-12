@@ -1,4 +1,5 @@
 using System.Globalization;
+using ServiceNowDesk.Client;
 using ServiceNowDesk.Query;
 
 namespace ServiceNowDesk.WorkEffort;
@@ -68,6 +69,10 @@ public sealed record WorkEffortTablePlan(
 
 public static class WorkEffortQuery
 {
+    /// <summary>
+    /// List rows read for one person, in one office, in one download step.
+    /// The team is fetched one person at a time and combined.
+    /// </summary>
     public const int SafetyCap = 8000;
     public const int ChunkSize = 40;
     /// <summary>Small pages keep each JSON body off the large-object heap.</summary>
@@ -89,87 +94,99 @@ public static class WorkEffortQuery
             yield return people.Skip(index).Take(ChunkSize).ToArray();
     }
 
-    public static string Clause(WorkEffortTablePlan plan, IReadOnlyList<WorkEffortPerson> people, WorkEffortWindow window)
+    /// <summary>
+    /// One opener search for this person. Resolve, close, and update fields still come back
+    /// on the row. Tickets the person only saved are not searched.
+    /// </summary>
+    public static IReadOnlyList<string> OpenedBranches(WorkEffortTablePlan plan, WorkEffortPerson person, WorkEffortWindow window)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        ArgumentNullException.ThrowIfNull(people);
-        var ids = people
-            .Select(person => SafeId(person.SysId))
-            .Where(id => id.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var names = people
-            .Select(person => SafeName(person.UserName))
-            .Where(name => name.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var start = Stamp(window.Start);
-        var end = Stamp(window.End);
-        var parts = new List<string>();
-        if (ids.Length > 0 && plan.OpenedBy)
-            parts.Add(In("opened_by", ids) + "^" + Between("opened_at", start, end));
-        if (ids.Length > 0 && plan.OpenedFor)
+        ArgumentNullException.ThrowIfNull(person);
+        var id = SafeId(person.SysId);
+        if (id.Length == 0)
+            return [];
+
+        var openedAt = Between("opened_at", Stamp(window.Start), Stamp(window.End));
+        var branches = new List<string>();
+        if (plan.OpenedBy)
+            branches.Add(In("opened_by", [id]) + "^" + openedAt + "^ORDERBYsys_id");
+        if (plan.OpenedFor)
         {
-            var openedFor = In("opened_for", ids) + "^" + Between("opened_at", start, end);
+            var openedFor = In("opened_for", [id]) + "^" + openedAt;
             if (plan.OpenedBy)
                 openedFor = "opened_byISEMPTY^" + openedFor;
-            parts.Add(openedFor);
+            branches.Add(openedFor + "^ORDERBYsys_id");
         }
 
-        if (ids.Length > 0 && plan.Resolved)
-            parts.Add(In("resolved_by", ids) + "^" + Between("resolved_at", start, end));
-        if (ids.Length > 0 && plan.Closed)
-            parts.Add(In("closed_by", ids) + "^" + Between("closed_at", start, end));
-        if (names.Length > 0)
-            parts.Add(In("sys_updated_by", names) + "^" + Between("sys_updated_on", start, end));
-        if (parts.Count == 0)
-            return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
-        return string.Join("^NQ", parts) + "^ORDERBYsys_id";
+        return branches;
     }
 
     /// <summary>
-    /// Work notes and comments in the window, by the team's user_name or sys_id.
-    /// The journal name is often task, so the caller still has to place each element_id.
+    /// The opener search limited to one region office. Stem and "Office" share one request.
+    /// One office per call: a long chain of offices comes back empty from the Table API.
     /// </summary>
-    public static string JournalClause(IReadOnlyList<WorkEffortPerson> people, WorkEffortWindow window)
+    public static IReadOnlyList<string> OpenedInOffice(
+        WorkEffortTablePlan plan,
+        WorkEffortPerson person,
+        WorkEffortWindow window,
+        string office)
     {
-        ArgumentNullException.ThrowIfNull(people);
-        var authors = Authors(people);
-        if (authors.Length == 0)
+        var queries = new List<string>();
+        foreach (var branch in OpenedBranches(plan, person, window))
+        {
+            foreach (var query in OfficeQueue.Queries(branch, [office]))
+            {
+                if (!IsUnscoped(query) && !query.Contains("NO_OFFICE", StringComparison.Ordinal))
+                    queries.Add(query);
+            }
+        }
+
+        return queries;
+    }
+
+    /// <summary>
+    /// Notes on the tickets opened in the region. Not every note this person wrote.
+    /// </summary>
+    public static string JournalForRecords(IReadOnlyList<string> recordIds, WorkEffortWindow window)
+    {
+        var ids = SafeIds(recordIds);
+        if (ids.Count == 0)
             return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
-        var start = Stamp(window.Start);
-        var end = Stamp(window.End);
         return "elementINcomments,additional_comments,work_notes^"
-            + In("sys_created_by", authors)
+            + In("element_id", ids)
             + "^"
-            + Between("sys_created_on", start, end)
+            + Between("sys_created_on", Stamp(window.Start), Stamp(window.End))
             + "^ORDERBYsys_id";
     }
 
     /// <summary>
-    /// Field history for incidents, request items, and walk-ups. Rows that share a second are one moment.
+    /// Field history for the tickets opened in the region. Rows that share a second are one moment.
     /// </summary>
-    public static string AuditClause(IReadOnlyList<WorkEffortPerson> people, WorkEffortWindow window)
+    public static string AuditForRecords(IReadOnlyList<string> recordIds, WorkEffortWindow window)
     {
-        ArgumentNullException.ThrowIfNull(people);
-        var authors = Authors(people);
-        if (authors.Length == 0)
+        var ids = SafeIds(recordIds);
+        if (ids.Count == 0)
             return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
-        var start = Stamp(window.Start);
-        var end = Stamp(window.End);
         return "tablenameINincident,sc_req_item,interaction^"
-            + In("user", authors)
+            + In("documentkey", ids)
             + "^"
-            + Between("sys_created_on", start, end)
+            + Between("sys_created_on", Stamp(window.Start), Stamp(window.End))
             + "^ORDERBYsys_id";
     }
 
     public static string IdClause(IReadOnlyList<string> ids)
     {
-        ArgumentNullException.ThrowIfNull(ids);
+        var safe = SafeIds(ids);
+        if (safe.Count == 0)
+            return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
+        return In("sys_id", safe) + "^ORDERBYsys_id";
+    }
+
+    private static IReadOnlyList<string> SafeIds(IReadOnlyList<string>? ids)
+    {
         var safe = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var id in ids)
+        foreach (var id in ids ?? [])
         {
             var token = SafeId(id);
             if (token.Length == 0 || !seen.Add(token))
@@ -177,9 +194,7 @@ public static class WorkEffortQuery
             safe.Add(token);
         }
 
-        if (safe.Count == 0)
-            return "sys_id=NO_WORK_EFFORT^ORDERBYsys_id";
-        return In("sys_id", safe) + "^ORDERBYsys_id";
+        return safe;
     }
 
     public static bool IsUnscoped(string? clause) =>
@@ -190,7 +205,7 @@ public static class WorkEffortQuery
         ArgumentNullException.ThrowIfNull(people);
         foreach (var person in people)
         {
-            if (SafeId(person.SysId).Length > 0 || SafeName(person.UserName).Length > 0)
+            if (SafeId(person.SysId).Length > 0)
                 return true;
         }
 
@@ -237,28 +252,4 @@ public static class WorkEffortQuery
         }
     }
 
-    private static string[] Authors(IReadOnlyList<WorkEffortPerson> people)
-    {
-        var values = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var person in people)
-        {
-            var name = SafeName(person.UserName);
-            if (name.Length > 0 && seen.Add(name))
-                values.Add(name);
-            var id = SafeId(person.SysId);
-            if (id.Length > 0 && seen.Add(id))
-                values.Add(id);
-        }
-
-        return values.ToArray();
-    }
-
-    private static string SafeName(string? value)
-    {
-        var cleaned = EncodedQuery.Sanitize(value);
-        if (cleaned.Length == 0 || cleaned.IndexOf(',') >= 0)
-            return "";
-        return cleaned;
-    }
 }
