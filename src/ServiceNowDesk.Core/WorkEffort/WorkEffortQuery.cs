@@ -63,6 +63,7 @@ public sealed record WorkEffortTablePlan(
 
         fields.Add("sys_updated_by");
         fields.Add("sys_updated_on");
+        fields.Add("location");
         return new WorkEffortTablePlan(table, kind, string.Join(",", fields), openedBy, openedFor, resolved, closed);
     }
 }
@@ -122,8 +123,10 @@ public static class WorkEffortQuery
     }
 
     /// <summary>
-    /// The opener search limited to one region office. Stem and "Office" share one request.
+    /// The opener search limited to one region office. Stem and "Office" share one request,
+    /// plus a <c>LIKE</c> on the city so "Sydney" also finds "AU Sydney Office".
     /// One office per call: a long chain of offices comes back empty from the Table API.
+    /// Rows are still checked against the place rule, so York does not keep New York.
     /// </summary>
     public static IReadOnlyList<string> OpenedInOffice(
         WorkEffortTablePlan plan,
@@ -134,14 +137,42 @@ public static class WorkEffortQuery
         var queries = new List<string>();
         foreach (var branch in OpenedBranches(plan, person, window))
         {
+            var like = LikeBranch(branch, office);
             foreach (var query in OfficeQueue.Queries(branch, [office]))
             {
-                if (!IsUnscoped(query) && !query.Contains("NO_OFFICE", StringComparison.Ordinal))
-                    queries.Add(query);
+                if (IsUnscoped(query) || query.Contains("NO_OFFICE", StringComparison.Ordinal))
+                    continue;
+                queries.Add(like.Length == 0 ? query : JoinBranch(query, like));
             }
         }
 
         return queries;
+    }
+
+    /// <summary>
+    /// The same opener and date window, plus <c>location.nameLIKE</c> the city.
+    /// Empty when the stem is too short. The opener stays on this branch so a <c>^NQ</c>
+    /// does not return every ticket in the city.
+    /// </summary>
+    private static string LikeBranch(string openedBranch, string office)
+    {
+        var stem = HardwareOfficeNames.CityStem(office);
+        if (stem.Length < 3)
+            return "";
+        var token = EncodedQuery.Sanitize(stem);
+        if (token.Length < 3)
+            return "";
+        var orderAt = openedBranch.LastIndexOf("^ORDERBY", StringComparison.Ordinal);
+        var body = orderAt >= 0 ? openedBranch[..orderAt] : openedBranch;
+        return body + "^location.nameLIKE" + token;
+    }
+
+    private static string JoinBranch(string query, string extraBody)
+    {
+        var orderAt = query.LastIndexOf("^ORDERBY", StringComparison.Ordinal);
+        if (orderAt < 0)
+            return query + "^NQ" + extraBody;
+        return query[..orderAt] + "^NQ" + extraBody + query[orderAt..];
     }
 
     /// <summary>

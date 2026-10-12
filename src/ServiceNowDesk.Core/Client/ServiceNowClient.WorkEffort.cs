@@ -278,8 +278,12 @@ public sealed partial class ServiceNowClient
                             row =>
                             {
                                 var touch = ReadTouch(row, plan.Kind);
-                                if (touch is not null)
-                                    batch.Add(touch);
+                                if (touch is null)
+                                    return;
+                                // LIKE also returns a longer city (York finds New York). Keep the place rule.
+                                if (!RegionOfficeMatch.LocationMatchesOffice(touch.Location, place))
+                                    return;
+                                batch.Add(touch);
                             },
                             pace,
                             progress,
@@ -726,6 +730,10 @@ public sealed partial class ServiceNowClient
             updatedBy = updated.Display.Trim();
         var number = SnowField.Read(row, "number");
         var title = SnowField.Read(row, "short_description");
+        var location = SnowField.Read(row, "location");
+        var locationName = location.Display.Trim();
+        if (locationName.Length == 0)
+            locationName = location.Value.Trim();
         return new WorkEffortTouch(
             sysId,
             kind,
@@ -738,7 +746,8 @@ public sealed partial class ServiceNowClient
             NullIfEmpty(updatedBy),
             ReadMoment(row, "sys_updated_on"),
             Number: NullIfEmpty(number.Display.Length > 0 ? number.Display : number.Value),
-            Title: NullIfEmpty(title.Display.Length > 0 ? title.Display : title.Value));
+            Title: NullIfEmpty(title.Display.Length > 0 ? title.Display : title.Value),
+            Location: NullIfEmpty(locationName));
     }
 
     private static DateTime? ReadMoment(JsonElement row, string name)
