@@ -107,13 +107,13 @@ public sealed record TicketQuery
     public IReadOnlyList<string>? LocationSysIds { get; init; }
 
     /// <summary>
-    /// Cities for My Team and Unassigned. Null leaves those queues unlimited.
+    /// Cities for Unassigned, and for My Team only when it is still the signed-in user's
+    /// groups (no <see cref="TeamMemberIds"/>). Null leaves those queues unlimited.
     /// An empty list matches no location, so the queue stays inside an office that was not named.
     /// When Settings has no watched offices, callers pass the signed-in user's city via
     /// <c>OfficeQueue.Cities</c>. My Tickets ignores this (assignee-only).
-    /// All Open does not set this. Incident and request-item My Team set it to the Settings
-    /// region when any offices are saved, otherwise to these queue cities, and also set
-    /// <see cref="LimitTeamToOffices"/>. Walk-up My Team leaves it unset.
+    /// All Open does not set this. People My Team does not set it either: the scope matches
+    /// All Open, then rows are kept only when a selected person is the assignee.
     /// </summary>
     public IReadOnlyList<string>? OfficeLocations { get; init; }
 
@@ -127,8 +127,8 @@ public sealed record TicketQuery
 
     /// <summary>
     /// When true, <see cref="OfficeLocations"/> still applies to a people My Team query.
-    /// Walk-up My Team leaves this false, so a member outside the office still matches
-    /// even if office names were copied onto the query. Incident and request-item My Team set it.
+    /// The desk leaves this false. A region clause here hid tickets that were assigned to a
+    /// selected teammate but stored under a different location name.
     /// </summary>
     public bool LimitTeamToOffices { get; init; }
 

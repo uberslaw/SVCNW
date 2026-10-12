@@ -1,12 +1,13 @@
 namespace ServiceNowDesk.Client;
 
 /// <summary>
-/// Shared roster and region for My Team.
-/// Walk-up My Team and incident / request-item My Team use the same selected people.
-/// All Open does not apply an office clause: it is every open row the table returns.
-/// Incident and request-item My Team then keep only those people inside the region.
-/// Settings region offices win when any are saved. Otherwise the queue office cities
-/// (notification offices, or the signed-in user's city) are the scope.
+/// Shared roster for My Team.
+/// Walk-ups, incidents, and request items use the same selected people.
+/// All Open is every open row the table returns, with no office clause.
+/// My Team is that same scope, then only rows assigned to the selected people.
+/// A region or office clause is not applied: it dropped teammates whose ticket
+/// location did not match Settings offices while My Tickets (assignee only) still showed.
+/// Region offices stay a Hardware concern.
 /// </summary>
 public static class TeamListScope
 {
@@ -25,7 +26,7 @@ public static class TeamListScope
     }
 
     /// <summary>
-    /// Place names for the incident and request-item My Team location clause.
+    /// Place names for a location clause. My Team does not use this.
     /// A saved region replaces the queue offices. An empty region keeps
     /// <paramref name="queueOffices"/> (null when that queue is not limited).
     /// </summary>

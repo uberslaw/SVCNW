@@ -136,6 +136,13 @@ public partial class MainViewModel : ObservableObject
         WalkUps.IncidentRequested += (_, conversion) => ConvertOpenTask = OpenConvertedIncidentAsync(conversion);
         Mix = new MixWorkspaceViewModel();
         Mix.TryLoadFromHostCacheAsync = () => Task.FromResult(TrySeedMixFromDeskCaches());
+        Incidents.TryPaintCachedPreset = preset => PaintCachedPreset(Incidents, preset);
+        RequestedItems.TryPaintCachedPreset = preset => PaintCachedPreset(RequestedItems, preset);
+        WalkUps.TryPaintCachedPreset = preset => PaintCachedPreset(WalkUps, preset);
+        Incidents.PopulationReady = () => SaveWorkspaceList(DeskSection.Incidents, Incidents);
+        RequestedItems.PopulationReady = () => SaveWorkspaceList(DeskSection.RequestedItems, RequestedItems);
+        WalkUps.PopulationReady = () => SaveWorkspaceList(DeskSection.WalkUps, WalkUps);
+        Requests.PopulationReady = () => SaveWorkspaceList(DeskSection.Requests, Requests);
         Mix.OpenRequested += (_, row) => MixOpenTask = OpenMixRowAsync(row);
         Search = new SearchWorkspaceViewModel();
         Knowledge = new KnowledgeWorkspaceViewModel(desktop);
@@ -1123,9 +1130,11 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private bool TrySeedMixFromDeskCaches()
     {
-        if (Mix.Preset.Assignment != AssignmentScope.Mine || Mix.Preset.Activity != ActivityFilter.Open)
-            return false;
         if (!string.IsNullOrWhiteSpace(Mix.SearchText) || !string.IsNullOrWhiteSpace(SearchText))
+            return false;
+        if (Mix.Preset.Assignment == AssignmentScope.MyGroups && Mix.Preset.Activity == ActivityFilter.Open)
+            return TrySeedMixFromTeamCache();
+        if (Mix.Preset.Assignment != AssignmentScope.Mine || Mix.Preset.Activity != ActivityFilter.Open)
             return false;
         if (!Incidents.HasLoaded || !RequestedItems.HasLoaded || !WalkUps.HasLoaded)
             return false;
@@ -1148,6 +1157,35 @@ public partial class MainViewModel : ObservableObject
             .ToArray();
         var asOf = OldestListStamp(Incidents.ListRefreshedAt, RequestedItems.ListRefreshedAt, WalkUps.ListRefreshedAt);
         Mix.ShowCachedRows(rows, asOf);
+        _loadedFor[DeskSection.InTheMix] = "";
+        return true;
+    }
+
+    /// <summary>
+    /// My Team on Mix reads the three team caches, not the My Tickets rows on screen.
+    /// </summary>
+    private bool TrySeedMixFromTeamCache()
+    {
+        if (Mix.TeamMemberIds.Count == 0)
+            return false;
+        var snapshot = LoadLists();
+        if (snapshot?.IncidentTeam is null || snapshot.RequestItemTeam is null || snapshot.WalkUpTeam is null)
+            return false;
+        if (!SameTeam(snapshot.IncidentTeam.TeamMemberIds, Mix.TeamMemberIds)
+            || !SameTeam(snapshot.RequestItemTeam.TeamMemberIds, Mix.TeamMemberIds)
+            || !SameTeam(snapshot.WalkUpTeam.TeamMemberIds, Mix.TeamMemberIds))
+            return false;
+
+        var rows = snapshot.IncidentTeam.Items.Select(row => TagMixRow(ToTicket(row), "INC", DeskSection.Incidents))
+            .Concat(snapshot.RequestItemTeam.Items.Select(row => TagMixRow(ToTicket(row), "RITM", DeskSection.RequestedItems)))
+            .Concat(snapshot.WalkUpTeam.Items.Select(row => TagMixRow(ToTicket(row), "IMS", DeskSection.WalkUps)))
+            .OrderByDescending(row => row.SortKey, StringComparer.Ordinal)
+            .ThenBy(row => row.Number, StringComparer.Ordinal)
+            .ToArray();
+        Mix.ShowCachedRows(rows, OldestListStamp(
+            snapshot.IncidentTeam.CapturedAt,
+            snapshot.RequestItemTeam.CapturedAt,
+            snapshot.WalkUpTeam.CapturedAt));
         _loadedFor[DeskSection.InTheMix] = "";
         return true;
     }
@@ -1230,10 +1268,14 @@ public partial class MainViewModel : ObservableObject
     private void ApplyTeamQueue()
     {
         var team = TeamIdsForAlerts();
+        var people = Leads.DefinedTeam(team);
         Incidents.UseTeamMembers(team);
         RequestedItems.UseTeamMembers(team);
         WalkUps.UseTeamMembers(team);
         Mix.UseTeamMembers(team);
+        Incidents.UseTeamNames(people);
+        RequestedItems.UseTeamNames(people);
+        WalkUps.UseTeamNames(people);
         _loadedFor.Remove(DeskSection.Incidents);
         _loadedFor.Remove(DeskSection.RequestedItems);
         _loadedFor.Remove(DeskSection.WalkUps);
@@ -2193,6 +2235,14 @@ public partial class MainViewModel : ObservableObject
     private IReadOnlyList<string> TeamIdsForAlerts() =>
         Connection.LeadsTeamLocked ? Leads.LockedMemberIds : Connection.LeadTeamMemberIds;
 
+    private void ApplyTeamNames()
+    {
+        var people = Leads.DefinedTeam(TeamIdsForAlerts());
+        Incidents.UseTeamNames(people);
+        RequestedItems.UseTeamNames(people);
+        WalkUps.UseTeamNames(people);
+    }
+
     private async Task ReloadLeadTeamAsync()
     {
         await LoadLeadRosterAsync().ConfigureAwait(false);
@@ -2231,6 +2281,7 @@ public partial class MainViewModel : ObservableObject
                     return;
                 Leads.SetGroupName(name);
                 Leads.SetRoster(members, Connection.LeadTeamMemberIds);
+                ApplyTeamNames();
                 Leads.RosterNote = group is null
                     ? "No assignment group matches the watched group name."
                     : members.Count == 0

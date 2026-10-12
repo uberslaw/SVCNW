@@ -77,7 +77,7 @@ public class InTheMixTests
     }
 
     [Fact]
-    public async Task MyTeamButtonLoadsABrisbaneOfficeTicketAndSkipsHongKong()
+    public async Task MyTeamButtonKeepsASelectedPersonsTicketOutsideTheRegion()
     {
         using var client = new SampleServiceNowClient();
         var mix = new MixWorkspaceViewModel();
@@ -100,7 +100,7 @@ public class InTheMixTests
         Assert.Contains(mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010005");
         Assert.Contains(mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010006");
         Assert.DoesNotContain(mix.Items, row => row.Number == "IMS0010007");
-        Assert.DoesNotContain(mix.Items, row => row.Number == "INC0010023");
+        Assert.Contains(mix.Items, row => row.Number == "INC0010023");
         Assert.DoesNotContain(mix.Items, row => row.Number == "INC0010020");
         Assert.Equal(0, mix.OpenEditorCount);
         Assert.Equal("Select a ticket.", mix.EmptyPrompt);
@@ -182,7 +182,7 @@ public class InTheMixTests
         await main.Incidents.RefreshAsync();
         Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010019");
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010020");
-        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010011");
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010011");
 
         Assert.Equal("My Tickets", main.Mix.Preset.Label);
         main.Mix.Preset = PresetCatalog.Mix.Single(preset => preset.Label == "My Team");
@@ -192,8 +192,8 @@ public class InTheMixTests
         Assert.Contains(main.Mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010005");
         Assert.Contains(main.Mix.Items, row => row.Kind == "IMS" && row.Number == "IMS0010006");
         Assert.DoesNotContain(main.Mix.Items, row => row.Number == "INC0010020");
-        Assert.DoesNotContain(main.Mix.Items, row => row.Number == "INC0010023");
-        Assert.DoesNotContain(main.Mix.Items, row => row.Kind == "INC" && row.Number == "INC0010011");
+        Assert.Contains(main.Mix.Items, row => row.Number == "INC0010023");
+        Assert.Contains(main.Mix.Items, row => row.Kind == "INC" && row.Number == "INC0010011");
         Assert.Equal(0, main.Mix.OpenEditorCount);
         Assert.Equal("Select a ticket.", main.Mix.EmptyPrompt);
 

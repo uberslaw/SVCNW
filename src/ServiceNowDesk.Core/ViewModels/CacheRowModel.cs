@@ -20,6 +20,10 @@ public sealed partial class CacheRowModel : ObservableObject
     [ObservableProperty] private string countText = "0 stored";
     [ObservableProperty] private string sizeText = "0 B on disk";
     [ObservableProperty] private string queryText = "";
+    /// <summary>
+    /// Second fact for lists that have My Team. Empty on Knowledge, Hardware, and Requests.
+    /// </summary>
+    [ObservableProperty] private string teamText = "";
     [ObservableProperty] private string lastAttemptText = "";
     [ObservableProperty] private bool isFailed;
     [ObservableProperty] private bool isBusy;
@@ -28,8 +32,34 @@ public sealed partial class CacheRowModel : ObservableObject
 
     public DateTimeOffset? LastGoodAt { get; private set; }
     public int StoredCount { get; private set; }
+    public int TeamStoredCount { get; private set; }
     public long StoredBytes { get; private set; }
     public string LastEncodedQuery { get; private set; } = "";
+
+    public void ClearTeamPopulation()
+    {
+        TeamStoredCount = 0;
+        TeamText = "";
+    }
+
+    /// <summary>Nobody is ticked on Leads, so this card must not look like a download of zero tickets.</summary>
+    public void ShowTeamNotSelected()
+    {
+        TeamStoredCount = 0;
+        TeamText = "My Team · not downloaded · no team selected";
+    }
+
+    public void ShowTeamNotDownloaded()
+    {
+        TeamStoredCount = 0;
+        TeamText = "My Team · not downloaded";
+    }
+
+    public void ShowTeamStored(int count)
+    {
+        TeamStoredCount = Math.Max(0, count);
+        TeamText = TeamStoredCount.ToString(CultureInfo.CurrentCulture) + " stored · My Team · selected people · open";
+    }
 
     public void SetStoredCount(int count)
     {

@@ -7,6 +7,7 @@ using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Query;
 using ServiceNowDesk.Services;
+using ServiceNowDesk.WorkEffort;
 
 namespace ServiceNowDesk.ViewModels;
 
@@ -24,6 +25,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     private IReadOnlyList<string> _teamMemberIds = [];
     private bool _useLeadTeam;
     private string _watchedGroupName = "";
+    private bool _queryFilteredByRegion;
+    private readonly Dictionary<string, string> _teamNames = new(StringComparer.OrdinalIgnoreCase);
 
     protected RecordWorkspaceViewModel(IDesktopServices desktop, string tableName, string recordLabel, bool allowCreate, IReadOnlyList<PresetOption> presets, DeskSection section, bool attachments = false)
     {
@@ -108,9 +111,36 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     public IReadOnlyList<string> TeamMemberIds => _teamMemberIds;
 
+    /// <summary>True after <see cref="UseTeamMembers"/> so My Team is the Leads roster, not every group.</summary>
+    public bool UsesLeadTeam => _useLeadTeam;
+
+    /// <summary>True when the last query for this list included a Settings region location clause.</summary>
+    public bool QueryFilteredByRegion => _queryFilteredByRegion;
+
+    /// <summary>Why the last refresh did not call ServiceNow. Empty when a query was sent or a cached query is shown.</summary>
+    public string QuerySkipReason { get; private set; } = "";
+
+    /// <summary>Cache population painted onto this list, or <c>none</c> when the rows did not come from one.</summary>
+    public string CachePopulationName { get; private set; } = "none";
+
+    public int CacheRowsStored { get; private set; }
+
+    /// <summary>Incidents, request items, and walk-ups can copy a troubleshooting block.</summary>
+    public bool ShowCopyDetails =>
+        Section is DeskSection.Incidents or DeskSection.RequestedItems or DeskSection.WalkUps;
+
     /// <summary>
-    /// Queue cities for Unassigned, and for My Team when no region offices are saved.
-    /// My Tickets ignores the list (assignee-only). All Open ignores it too.
+    /// Paints a saved My Tickets or My Team population before any network call.
+    /// Returns true when that fully handled the preset change.
+    /// </summary>
+    public Func<PresetOption, bool>? TryPaintCachedPreset { get; set; }
+
+    /// <summary>Saves the visible My Tickets or My Team rows after a successful list refresh.</summary>
+    public Action? PopulationReady { get; set; }
+
+    /// <summary>
+    /// Queue cities for Unassigned. My Tickets ignores the list (assignee-only).
+    /// All Open ignores it too. People My Team ignores it too.
     /// </summary>
     public void UseOfficeCities(IReadOnlyList<string>? cities)
     {
@@ -119,8 +149,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Settings region offices. Incident and request-item My Team use these instead of
-    /// <see cref="UseOfficeCities"/> when any are saved. Walk-up My Team ignores them.
+    /// Settings region offices. Reported on Copy details. People My Team does not add them
+    /// to the query. Hardware is what filters by this list.
     /// </summary>
     public void UseRegionOffices(IEnumerable<string>? offices) =>
         _regionOffices = RegionOfficeMatch.NormalizeOffices(offices);
@@ -137,6 +167,43 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             .Where(id => id.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    /// <summary>Display names already on the Leads roster. A missing or id-only name stays a sys_id.</summary>
+    public void UseTeamNames(IEnumerable<WorkEffortPerson>? people)
+    {
+        _teamNames.Clear();
+        if (people is null)
+            return;
+        foreach (var person in people)
+        {
+            var id = person.SysId?.Trim() ?? "";
+            if (id.Length == 0)
+                continue;
+            _teamNames[id] = person.DisplayName ?? "";
+        }
+    }
+
+    public IReadOnlyList<string> TeamLabels()
+    {
+        var labels = new List<string>(_teamMemberIds.Count);
+        foreach (var id in _teamMemberIds)
+        {
+            if (_teamNames.TryGetValue(id, out var name)
+                && name.Length > 0
+                && !name.Equals(id, StringComparison.OrdinalIgnoreCase))
+                labels.Add(name);
+            else
+                labels.Add(id);
+        }
+
+        return labels;
+    }
+
+    public void NoteCacheRead(string? population, int stored)
+    {
+        CachePopulationName = string.IsNullOrWhiteSpace(population) ? "none" : population.Trim();
+        CacheRowsStored = Math.Max(0, stored);
     }
 
     /// <summary>
@@ -202,7 +269,15 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     public virtual Task EnsureChoicesAsync() => Task.CompletedTask;
 
-    public void ShowCachedRows(IReadOnlyList<TicketRow> rows, int totalCount, DateTimeOffset? capturedAt = null)
+    public void ShowCachedRows(
+        IReadOnlyList<TicketRow> rows,
+        int totalCount,
+        DateTimeOffset? capturedAt = null,
+        string? encodedQuery = null,
+        string? filterSummary = null,
+        string? cachePopulation = null,
+        int? cacheStored = null,
+        bool? filteredByRegion = null)
     {
         var visible = rows.Where(ShowsOnThisList).ToArray();
         _suppressSelection = true;
@@ -217,8 +292,21 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         _boundRow = null;
         _suppressSelection = false;
         ErrorMessage = "";
+        QuerySkipReason = "";
         HasLoaded = true;
-        RefreshFilterChrome(BuildQuery(), Client?.LastTicketEncodedQuery ?? LastEncodedQuery);
+        var query = BuildQuery();
+        if (filteredByRegion is bool filtered)
+            _queryFilteredByRegion = filtered;
+        if (!string.IsNullOrWhiteSpace(filterSummary))
+            FilterSummary = filterSummary.Trim();
+        else
+            RefreshFilterChrome(query, encodedQuery ?? Client?.LastTicketEncodedQuery ?? LastEncodedQuery);
+        if (!string.IsNullOrWhiteSpace(encodedQuery))
+            LastEncodedQuery = encodedQuery.Trim();
+        else if (string.IsNullOrWhiteSpace(filterSummary))
+            LastEncodedQuery = Client?.LastTicketEncodedQuery ?? LastEncodedQuery;
+        if (cachePopulation is not null)
+            NoteCacheRead(cachePopulation, cacheStored ?? visible.Length);
         MarkListRefreshed(capturedAt);
     }
 
@@ -239,7 +327,15 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public async Task RefreshAsync()
+    public Task RefreshAsync() => RefreshListedAsync(keepRowsWhenEmpty: false);
+
+    /// <summary>
+    /// Reloads from ServiceNow without blanking rows already painted from the cache
+    /// when the server returns nothing.
+    /// </summary>
+    internal Task RefreshKeepingCachedRowsAsync() => RefreshListedAsync(keepRowsWhenEmpty: true);
+
+    private async Task RefreshListedAsync(bool keepRowsWhenEmpty)
     {
         if (Client is null)
             return;
@@ -248,6 +344,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         try
         {
             IsLoading = true;
+            QuerySkipReason = "";
             var trimmed = SearchText.Trim();
             var searchHint = trimmed.Length is > 0 and < 2 && !EncodedQuery.IsNumberQuery(trimmed)
                 ? "Type at least 2 characters to search."
@@ -256,11 +353,15 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             if (SkipListQuery(query, out var emptyHint))
             {
                 SearchHint = emptyHint;
+                QuerySkipReason = emptyHint;
+                NoteCacheRead("none", 0);
                 _suppressSelection = true;
                 Items.Clear();
                 TotalCount = 0;
                 _suppressSelection = false;
                 HasLoaded = true;
+                LastEncodedQuery = "";
+                RefreshFilterChrome(query, "");
                 MarkListRefreshed();
                 return;
             }
@@ -268,6 +369,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             SearchHint = searchHint;
             var openAtStart = _openVersion;
             var editorAtStart = EditorSysId;
+            var painted = Items.Count;
             var page = await FetchPageAsync(query, CancellationToken.None);
             if (version != _loadVersion)
                 return;
@@ -276,6 +378,12 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             var openStillApplying = openedDuringRefresh && EditorSysId == editorAtStart;
             var keep = openStillApplying ? null : EditorSysId;
             var visible = page.Items.Where(ShowsOnThisList).ToArray();
+            if (keepRowsWhenEmpty && visible.Length == 0 && painted > 0)
+            {
+                HasLoaded = true;
+                return;
+            }
+
             _suppressSelection = true;
             Items.Clear();
             foreach (var row in visible)
@@ -295,8 +403,11 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
             _suppressSelection = false;
             HasLoaded = true;
+            ErrorMessage = "";
             RefreshFilterChrome(query, Client?.LastTicketEncodedQuery ?? "");
             MarkListRefreshed();
+            if (string.IsNullOrWhiteSpace(SearchText))
+                PopulationReady?.Invoke();
         }
         catch (Exception ex)
         {
@@ -504,6 +615,36 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void CopyDetails()
+    {
+        var snapshot = new ListDiagnosticSnapshot(
+            SectionLabel(),
+            Preset?.Label ?? "",
+            _teamMemberIds.Count > 0,
+            _teamMemberIds.Count,
+            TeamLabels(),
+            _regionOffices.Count,
+            _queryFilteredByRegion,
+            CachePopulationName,
+            CacheRowsStored,
+            Items.Count,
+            string.IsNullOrWhiteSpace(QuerySkipReason) ? LastEncodedQuery : null,
+            QuerySkipReason,
+            ErrorMessage);
+        Desktop.CopyText(ListDiagnostics.Format(snapshot));
+        EditorMessage = "Copied list details.";
+    }
+
+    private string SectionLabel() => Section switch
+    {
+        DeskSection.Incidents => "Incidents",
+        DeskSection.RequestedItems => "Request items",
+        DeskSection.WalkUps => "Walk-ups",
+        DeskSection.Requests => "Requests",
+        _ => Section.ToString()
+    };
+
+    [RelayCommand]
     private void OpenInBrowser()
     {
         if (Client?.InstanceUri is null || string.IsNullOrEmpty(EditorSysId))
@@ -698,28 +839,18 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Office-scoped presets drop out-of-office rows on Upsert so opening a Daily Work / search
-    /// hit cannot inject Manila (or other) tickets into My Team / Unassigned.
-    /// My Tickets and All Open stay unscoped. Walk-up My Team keeps people outside the office.
-    /// Incident and request-item My Team keep a selected person inside the region.
+    /// Unassigned drops out-of-office rows on Upsert so opening a Daily Work / search
+    /// hit cannot inject another city's ticket into that queue.
+    /// My Tickets and All Open stay unscoped. People My Team keeps a selected assignee
+    /// in any location. The same scope as All Open, then the selected people.
     /// </summary>
     protected bool MatchesOfficeScope(TicketRow row)
     {
-        if (Section == DeskSection.WalkUps && _useLeadTeam && Preset?.Assignment == AssignmentScope.MyGroups)
-            return true;
+        if (_useLeadTeam && Preset?.Assignment == AssignmentScope.MyGroups)
+            return TeamListScope.Includes(_teamMemberIds, row.AssigneeId);
 
         if (Preset?.Assignment is not (AssignmentScope.MyGroups or AssignmentScope.Unassigned))
             return true;
-
-        if (_useLeadTeam && Preset.Assignment == AssignmentScope.MyGroups
-            && Section is DeskSection.Incidents or DeskSection.RequestedItems)
-        {
-            if (!TeamListScope.Includes(_teamMemberIds, row.AssigneeId))
-                return false;
-            if (_regionOffices.Count == 0 && !_limitOffices)
-                return true;
-            return OfficeQueue.Matches(row.Location, TeamListScope.Offices(_regionOffices, _officeCities));
-        }
 
         if (!_limitOffices)
             return true;
@@ -759,35 +890,33 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         return true;
     }
 
-    protected TicketQuery BuildQuery()
+    protected TicketQuery BuildQuery() => BuildQuery(Preset);
+
+    protected TicketQuery BuildQuery(PresetOption? preset)
     {
         var trimmed = SearchText.Trim();
         string? text = null;
         if (trimmed.Length >= 2 || EncodedQuery.IsNumberQuery(trimmed))
             text = trimmed;
 
-        var assignment = Preset?.Assignment ?? AssignmentScope.Any;
+        var assignment = preset?.Assignment ?? AssignmentScope.Any;
         IReadOnlyList<string>? offices = null;
         IReadOnlyList<string>? team = null;
         string? watched = null;
-        var limitTeamToOffices = false;
+        _queryFilteredByRegion = false;
         if (_useLeadTeam && assignment == AssignmentScope.MyGroups)
         {
-            // Same Leads people on every My Team list. Walk-ups are not office-limited.
-            // Incidents and request items stay inside the Settings region when one is saved,
-            // otherwise the queue office cities. All Open does not use this branch.
+            // Same Leads people on every My Team list. All Open does not filter by
+            // location, and neither does this. A region clause dropped tickets that
+            // were assigned to a selected person when the location name did not match
+            // a Settings office, while My Tickets (assignee only) still showed them.
             team = _teamMemberIds;
-            if (Section is DeskSection.Incidents or DeskSection.RequestedItems
-                && (_regionOffices.Count > 0 || _limitOffices))
-            {
-                offices = TeamListScope.Offices(_regionOffices, _officeCities);
-                limitTeamToOffices = true;
-            }
         }
         else if (_limitOffices && assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
         {
-            // Unassigned, and My Team before any people are selected: queue offices
+            // Unassigned, and My Team before the Leads roster is in use: queue offices
             // (notification cities, or the signed-in user's city). My Tickets stays assignee-only.
+            // Those queue cities are not the Settings region list.
             offices = _officeCities;
             if (assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0)
                 watched = _watchedGroupName;
@@ -801,14 +930,47 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         {
             Text = text,
             Assignment = assignment,
-            Activity = Preset?.Activity ?? ActivityFilter.Open,
-            AssignmentClause = Preset?.AssignmentClause,
+            Activity = preset?.Activity ?? ActivityFilter.Open,
+            AssignmentClause = preset?.AssignmentClause,
             OfficeLocations = offices,
             TeamMemberIds = team,
-            LimitTeamToOffices = limitTeamToOffices,
+            LimitTeamToOffices = false,
             WatchedGroupName = watched,
+            ListSection = Section,
             Limit = 50
         };
+    }
+
+    /// <summary>Downloads one preset without replacing the rows on screen.</summary>
+    public async Task<PopulationFetch> FetchPopulationAsync(PresetOption preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        var query = BuildQuery(preset);
+        var filtered = _queryFilteredByRegion;
+        var summary = TicketListFilter.DescribeActive(preset, query.OfficeLocations, query.TeamMemberIds);
+        if (SkipListQuery(query, out var hint))
+            return PopulationFetch.Skip(hint, summary, filtered);
+
+        try
+        {
+            var page = await FetchPageAsync(query, CancellationToken.None);
+            var visible = page.Items.Where(row => ShowsOnList(preset, row)).ToArray();
+            var total = visible.Length == page.Items.Count
+                ? page.TotalCount ?? visible.Length
+                : visible.Length;
+            return PopulationFetch.Loaded(visible, total, Client?.LastTicketEncodedQuery ?? "", summary, filtered);
+        }
+        catch (Exception ex)
+        {
+            return PopulationFetch.Fail(WorkspaceMessages.Describe(ex));
+        }
+    }
+
+    private bool ShowsOnList(PresetOption preset, TicketRow row)
+    {
+        if (preset.Activity != ActivityFilter.Open)
+            return true;
+        return AlertClassifier.IsStillOpen(Section, row.StateValue, row.StateLabel);
     }
 
     private void RefreshFilterChrome(TicketQuery query, string encodedQuery)
@@ -1049,6 +1211,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     {
         if (Client is null || Applying || value is null)
             return;
+        if (TryPaintCachedPreset?.Invoke(value) == true)
+            return;
         _ = RefreshAsync();
     }
 
@@ -1075,3 +1239,24 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 }
 
 public sealed record SavedTicketFields(string SysId, string ShortDescription, string StateLabel, string? AssigneeName, string? AssigneeId);
+
+/// <summary>One cache population fetched without touching the list on screen.</summary>
+public readonly record struct PopulationFetch(
+    bool Skipped,
+    bool Failed,
+    string SkipOrError,
+    TicketRow[] Rows,
+    int Total,
+    string EncodedQuery,
+    string FilterSummary,
+    bool FilteredByRegion)
+{
+    public static PopulationFetch Skip(string reason, string summary, bool filteredByRegion) =>
+        new(true, false, reason ?? "", [], 0, "", summary ?? "", filteredByRegion);
+
+    public static PopulationFetch Fail(string error) =>
+        new(false, true, error ?? "", [], 0, "", "", false);
+
+    public static PopulationFetch Loaded(TicketRow[] rows, int total, string encodedQuery, string summary, bool filteredByRegion) =>
+        new(false, false, "", rows ?? [], total, encodedQuery ?? "", summary ?? "", filteredByRegion);
+}
