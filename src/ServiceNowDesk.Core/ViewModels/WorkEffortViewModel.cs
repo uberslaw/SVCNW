@@ -18,6 +18,9 @@ public partial class WorkEffortViewModel : ObservableObject
     private IReadOnlyList<WorkEffortCredit> _boardCredits = [];
     private WorkEffortDetailSortColumn? _detailSortColumn;
     private bool _detailSortDescending;
+    private WorkEffortReport? _logReport;
+    private DateTime _logCapturedAt;
+    private DateTime? _logReplacedFrom;
 
     public WorkEffortViewModel()
     {
@@ -55,6 +58,8 @@ public partial class WorkEffortViewModel : ObservableObject
     [ObservableProperty] private string detailEmptyMessage = "";
     [ObservableProperty] private bool detailHasRows;
     [ObservableProperty] private string exportNote = "";
+    [ObservableProperty] private string calculationLog = "";
+    [ObservableProperty] private bool hasCalculationLog;
 
     public string DetailNumberHeader => DetailSortHeader("Number", WorkEffortDetailSortColumn.Number);
     public string DetailTitleHeader => DetailSortHeader("Short description", WorkEffortDetailSortColumn.Title);
@@ -103,6 +108,7 @@ public partial class WorkEffortViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(report);
         var key = Scoped(scale, teamKey ?? "");
         var entry = Store(scale, localNow, report, key);
+        PublishCalculationLog(entry.Report, entry.LoadedAt);
         // Paint when this result matches the in-flight team. If the team key drifted but
         // this scale is still loading, still clear IsLoading so the page cannot stick.
         if (scale != Scale)
@@ -140,6 +146,42 @@ public partial class WorkEffortViewModel : ObservableObject
         var entry = new WorkEffortCacheEntry(clock, report, key);
         _cache[scale] = entry;
         return entry;
+    }
+
+    /// <summary>
+    /// The latest finished load keeps its calculation log for this app session.
+    /// Leaving the page does not clear it. The next finished load replaces it.
+    /// </summary>
+    private void PublishCalculationLog(WorkEffortReport report, DateTime capturedAt)
+    {
+        if (report.Ledger is null && report.Facts is null)
+            return;
+        _logReplacedFrom = HasCalculationLog ? _logCapturedAt : null;
+        _logReport = report;
+        _logCapturedAt = capturedAt;
+        RenderCalculationLog();
+    }
+
+    private void RenderCalculationLog()
+    {
+        if (_logReport is null)
+        {
+            CalculationLog = "";
+            HasCalculationLog = false;
+            return;
+        }
+
+        CalculationLog = WorkEffortCalcLog.Format(_logReport, UpdateMode, _logCapturedAt, _logReplacedFrom);
+        HasCalculationLog = CalculationLog.Length > 0;
+    }
+
+    private void ClearCalculationLog()
+    {
+        _logReport = null;
+        _logCapturedAt = default;
+        _logReplacedFrom = null;
+        CalculationLog = "";
+        HasCalculationLog = false;
     }
 
     /// <summary>
@@ -267,6 +309,7 @@ public partial class WorkEffortViewModel : ObservableObject
             _loadingScale = null;
             _loadingTeam = "";
             ClearDetail();
+            ClearCalculationLog();
             if (UpdateMode != WorkEffortUpdateMode.Daily)
                 UpdateMode = WorkEffortUpdateMode.Daily;
         }
@@ -371,6 +414,14 @@ public partial class WorkEffortViewModel : ObservableObject
     [RelayCommand]
     private void Refresh() => RefreshRequested?.Invoke(this, EventArgs.Empty);
 
+    [RelayCommand]
+    private void OpenCalculationLog()
+    {
+        if (!HasCalculationLog || _desktop is null)
+            return;
+        _desktop.ShowCopyableText("Work Effort calculation log", CalculationLog);
+    }
+
     partial void OnScaleChanged(WorkEffortScale value)
     {
         _ = value;
@@ -411,6 +462,7 @@ public partial class WorkEffortViewModel : ObservableObject
         if (IsLoading || _shown is null)
             return;
         ShowEntry(_shown.Value);
+        RenderCalculationLog();
     }
 
     private bool TryGet(DateTime localNow, WorkEffortScale scale, string teamKey, out WorkEffortCacheEntry entry)

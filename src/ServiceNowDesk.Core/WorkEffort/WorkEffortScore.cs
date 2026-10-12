@@ -135,6 +135,14 @@ public sealed class WorkEffortBatch
     private readonly Dictionary<string, WorkEffortTouch> _rows = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, WorkEffortKind> _kindById = new(StringComparer.OrdinalIgnoreCase);
 
+    public bool Contains(WorkEffortKind kind, string? sysId)
+    {
+        var id = (sysId ?? "").Trim();
+        if (id.Length == 0)
+            return false;
+        return _rows.ContainsKey((int)kind + "\n" + id);
+    }
+
     public void Add(WorkEffortTouch touch)
     {
         var id = (touch.SysId ?? "").Trim();
@@ -193,7 +201,8 @@ public sealed record WorkEffortReport(
     string Status,
     string EmptyMessage,
     WorkEffortLedger? Ledger = null,
-    string Shift = "")
+    string Shift = "",
+    WorkEffortLoadFacts? Facts = null)
 {
     public const string EmptyGroupsMessage = "You are not in a group, so there is nobody to count.";
 
@@ -267,7 +276,8 @@ public static class WorkEffortScore
         IReadOnlyList<WorkEffortPerson> people,
         IEnumerable<WorkEffortTouch> touches,
         WorkEffortWindow window,
-        WorkEffortUpdateMode mode = WorkEffortUpdateMode.Daily)
+        WorkEffortUpdateMode mode = WorkEffortUpdateMode.Daily,
+        WorkEffortScoreNotes? notes = null)
     {
         ArgumentNullException.ThrowIfNull(people);
         ArgumentNullException.ThrowIfNull(touches);
@@ -282,7 +292,7 @@ public static class WorkEffortScore
         }
 
         var merged = Merge(touches);
-        var attempt = new WorkEffortAttempt(distinct, window, int.MaxValue, mode);
+        var attempt = new WorkEffortAttempt(distinct, window, int.MaxValue, mode, notes);
         foreach (var touch in merged)
             attempt.TakeRow(touch);
         return attempt.ToRows();

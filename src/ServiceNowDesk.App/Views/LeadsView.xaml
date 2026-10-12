@@ -201,20 +201,25 @@
                 <TextBlock Text="{Binding LockedTeamNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding LockedTeamNote, Converter={StaticResource StringVis}}"/>
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                           Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. Daily updates is on when this panel opens: one update credit (0.3) per person, per ticket, per local day. Allow multiple updates counts each save. An open, resolve, or close is not also an update on that same day. A later day still counts. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Figures load the first time you open a time scale each day. Date range counts the local days you pick, from the start date through the end of the end date. The update switch uses that loaded history and does not ask ServiceNow again. Refresh reloads the scale you are looking at. Leaving this page does not stop the load. After figures load, double-click a row for every ticket that person was credited, or a count cell for that metric alone. Double-click a ticket in the detail list to open it in its own window; several can stay open at once. Export writes a CSV for the open detail or the full board."/>
+                           Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. Daily updates is on when this panel opens: one update credit (0.3) per person, per ticket, per local day. Allow multiple updates counts each save. An open, resolve, or close is not also an update on that same day. A later day still counts. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Figures load the first time you open a time scale each day. Date range counts the local days you pick, from the start date through the end of the end date. The update switch uses that loaded history and does not ask ServiceNow again. Refresh reloads the scale you are looking at. Leaving this page does not stop the load. After figures load, double-click a row for every ticket that person was credited, or a count cell for that metric alone. Double-click a ticket in the detail list to open it in its own window; several can stay open at once. Export writes a CSV for the open detail or the full board. Calculation log opens a copyable account of how the latest load produced these figures, including any slice that hit the safety cap."/>
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="{Binding WorkEffort.AsOf}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"
                                Visibility="{Binding WorkEffort.AsOf, Converter={StaticResource StringVis}}"/>
-                    <Button Grid.Column="1" Content="Export board" Style="{StaticResource SecondaryButton}" MinWidth="104" Margin="0,0,8,0"
+                    <Button Grid.Column="1" Content="Calculation log" Style="{StaticResource SecondaryButton}" MinWidth="132" Margin="0,0,8,0"
+                            Command="{Binding WorkEffort.OpenCalculationLogCommand}"
+                            IsEnabled="{Binding WorkEffort.HasCalculationLog}"
+                            AutomationProperties.Name="Work Effort calculation log"/>
+                    <Button Grid.Column="2" Content="Export board" Style="{StaticResource SecondaryButton}" MinWidth="104" Margin="0,0,8,0"
                             Command="{Binding WorkEffort.ExportBoardCommand}"
                             IsEnabled="{Binding WorkEffort.HasRows}"
                             AutomationProperties.Name="Export work effort board"/>
-                    <Button Grid.Column="2" Content="Refresh" Style="{StaticResource SecondaryButton}" MinWidth="88"
+                    <Button Grid.Column="3" Content="Refresh" Style="{StaticResource SecondaryButton}" MinWidth="88"
                             Command="{Binding WorkEffort.RefreshCommand}"
                             AutomationProperties.Name="Refresh work effort"/>
                 </Grid>

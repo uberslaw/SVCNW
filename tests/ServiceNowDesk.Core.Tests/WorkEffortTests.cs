@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
@@ -1608,6 +1609,251 @@ public class WorkEffortTests
           {"sys_id":{"value":"a2","display_value":"a2"},"documentkey":{"value":"ims-3","display_value":"ims-3"},"tablename":{"value":"interaction","display_value":"interaction"},"user":{"value":"alex.rivera","display_value":"alex.rivera"},"sys_created_on":{"value":"2026-10-07 16:00:00","display_value":"2026-10-07 16:00:00"}}
         ]}
         """;
+
+    [Fact]
+    public async Task CappedSliceIsNamedAndKeptCreditsMatchTheBoardTotal()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            if (!path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            var query = SysParmQuery(path);
+            if (query.Contains("opened_at>=2026-10-05@", StringComparison.Ordinal))
+                return Api.Json(OpenedIncident("INC1001", "sample-user", "Alex Rivera", "2026-10-05 09:00:00"), total: 9);
+            if (query.Contains("opened_at>=2026-10-06@", StringComparison.Ordinal))
+                return Api.Json(OpenedIncident("INC1002", "sample-user", "Alex Rivera", "2026-10-06 09:00:00"), total: 1);
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.DateRange,
+            Now,
+            safetyCap: 1,
+            CancellationToken.None,
+            team: [Alex],
+            regionOffices: Sydney,
+            rangeStart: new DateTime(2026, 10, 5),
+            rangeEnd: new DateTime(2026, 10, 6));
+
+        var row = Assert.Single(report.Rows);
+        var log = WorkEffortCalcLog.Format(report, WorkEffortUpdateMode.Daily, Now, previousCapturedAt: null);
+        Assert.Contains("The safety cap of 1 was reached.", log, StringComparison.Ordinal);
+        Assert.Contains(WorkEffortCalcLog.CapExplanation, log, StringComparison.Ordinal);
+        Assert.Contains("Slice | Alex Rivera | 2026-10-05 | Sydney | incident | opened by | rows returned 1 | ServiceNow reported 9 | safety cap of 1 reached", log, StringComparison.Ordinal);
+        Assert.Contains("INC1001 | incident | opened | 2026-10-05 | 1 | AU Sydney Office | open weight", log, StringComparison.Ordinal);
+        Assert.Contains("INC1002 | incident | opened | 2026-10-06 | 1 | AU Sydney Office | open weight", log, StringComparison.Ordinal);
+        Assert.Equal(row.Weighted, CountedSum(log, row.Name));
+        Assert.Contains("Total " + row.WeightedText, log, StringComparison.Ordinal);
+        Assert.Contains("Credit lines add up to Total " + row.WeightedText, log, StringComparison.Ordinal);
+        Assert.Equal(2, row.IncOpened);
+        Assert.Equal(0, row.IncUpdated);
+    }
+
+    [Fact]
+    public async Task OutOfRegionRowIsExcludedAndDoesNotChangeTheTotal()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            var query = SysParmQuery(path);
+            if (!path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (query.Contains("location.nameLIKESydney", StringComparison.Ordinal))
+                return Api.Json(AlexIncidentJson);
+            if (query.Contains("location.nameLIKEYork", StringComparison.Ordinal))
+                return Api.Json(NewYorkOpenedJson);
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.Today,
+            Now,
+            [Alex],
+            ["Sydney", "York"],
+            progress: null,
+            CancellationToken.None);
+
+        var row = Assert.Single(report.Rows);
+        var log = WorkEffortCalcLog.Format(report, WorkEffortUpdateMode.Daily, Now, previousCapturedAt: null);
+        Assert.Contains("Region offices: Sydney, York", log, StringComparison.Ordinal);
+        Assert.Contains("Not counted | INC0099 | incident | Alex Rivera | 2026-10-07 | New York | York | outside region", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("Counted | Alex Rivera | INC0099 |", log, StringComparison.Ordinal);
+        Assert.Contains("Counted | Alex Rivera | INC0001 | incident | opened |", log, StringComparison.Ordinal);
+        Assert.Equal(1, row.IncOpened);
+        Assert.Equal(row.Weighted, CountedSum(log, row.Name));
+        Assert.Contains("Credit lines add up to Total " + row.WeightedText, log, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DailyUpdateOnTheOpenDayIsNotCountedAndTheOpenIs()
+    {
+        var window = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var touch = new WorkEffortTouch(
+            "inc-1",
+            WorkEffortKind.Incident,
+            "sample-user",
+            Now,
+            null,
+            null,
+            null,
+            null,
+            "alex.rivera",
+            Now,
+            [new WorkEffortUpdate("pat.other", Now)],
+            "INC1001",
+            "Opened and saved",
+            "AU Sydney Office");
+        var people = new[] { Alex };
+        var rows = WorkEffortScore.Build(people, [touch], window, WorkEffortUpdateMode.Daily);
+        var report = new WorkEffortReport(
+            rows,
+            "Counts for today.",
+            "",
+            new WorkEffortLedger(people, [touch], window));
+        var log = WorkEffortCalcLog.Format(report, WorkEffortUpdateMode.Daily, Now, previousCapturedAt: null);
+
+        var counted = CountedLines(log);
+        var opened = Assert.Single(counted);
+        Assert.Contains("| INC1001 | incident | opened | 2026-10-07 | 1 | AU Sydney Office | open weight", opened, StringComparison.Ordinal);
+        Assert.Contains(
+            "Not counted | INC1001 | incident | Alex Rivera | 2026-10-07 | AU Sydney Office | - | "
+            + WorkEffortCalcLog.UpdateSuppressed,
+            log,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Not counted | INC1001 | incident | pat.other | 2026-10-07 | AU Sydney Office | - | "
+            + WorkEffortCalcLog.NotSelected,
+            log,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(counted, line => line.Contains("| updated |", StringComparison.Ordinal));
+        Assert.Equal(Assert.Single(rows).Weighted, CountedSum(log, "Alex Rivera"));
+        Assert.Contains("Updates: Daily updates", log, StringComparison.Ordinal);
+        Assert.Contains("Scale: Today", log, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DateRangeRecordsOneSlicePerLocalDay()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            if (!path.Contains("table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            var query = SysParmQuery(path);
+            if (query.Contains("opened_at>=2026-10-05@", StringComparison.Ordinal))
+                return Api.Json(OpenedIncident("INC1001", "sample-user", "Alex Rivera", "2026-10-05 09:00:00"));
+            if (query.Contains("opened_at>=2026-10-06@", StringComparison.Ordinal))
+                return Api.Json(OpenedIncident("INC1002", "sample-user", "Alex Rivera", "2026-10-06 09:00:00"));
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.DateRange,
+            Now,
+            [Alex],
+            Sydney,
+            progress: null,
+            CancellationToken.None,
+            rangeStart: new DateTime(2026, 10, 5),
+            rangeEnd: new DateTime(2026, 10, 6));
+
+        var log = WorkEffortCalcLog.Format(report, WorkEffortUpdateMode.Daily, Now, previousCapturedAt: null);
+        Assert.Contains("Scale: Date range", log, StringComparison.Ordinal);
+        Assert.Contains("Window: 2026-10-05 00:00:00 through 2026-10-06 23:59:59 inclusive", log, StringComparison.Ordinal);
+        var incidentSlices = log.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("Slice |", StringComparison.Ordinal) && line.Contains("| incident |", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(2, incidentSlices.Length);
+        Assert.Contains(incidentSlices, line => line.Contains("2026-10-05", StringComparison.Ordinal) && !line.Contains("2026-10-06", StringComparison.Ordinal));
+        Assert.Contains(incidentSlices, line => line.Contains("2026-10-06", StringComparison.Ordinal) && !line.Contains("2026-10-05", StringComparison.Ordinal));
+        Assert.All(incidentSlices, line => Assert.Contains("safety cap of 8000 not reached", line, StringComparison.Ordinal));
+        var row = Assert.Single(report.Rows);
+        Assert.Equal(row.Weighted, CountedSum(log, row.Name));
+    }
+
+    [Fact]
+    public void CalculationLogSurvivesLeavingThePageAndANewLoadNamesThePreviousRun()
+    {
+        var desktop = new RecordingDesktopServices();
+        var page = new WorkEffortViewModel();
+        page.UseDesktop(desktop);
+        var first = ReportForLog();
+        page.Remember(WorkEffortScale.Today, Now, first, "team");
+        Assert.True(page.HasCalculationLog);
+        Assert.Contains("INC1001", page.CalculationLog, StringComparison.Ordinal);
+        Assert.DoesNotContain("replaced the previous", page.CalculationLog, StringComparison.Ordinal);
+
+        Assert.False(page.BeginLoad(Now.AddHours(1), force: false, "team"));
+        Assert.Contains("INC1001", page.CalculationLog, StringComparison.Ordinal);
+        var whileAway = page.CalculationLog;
+
+        page.OpenCalculationLogCommand.Execute(null);
+        var shown = Assert.Single(desktop.ShownText);
+        Assert.Equal("Work Effort calculation log", shown.Title);
+        Assert.Equal(whileAway, shown.Text);
+
+        Assert.True(page.BeginLoad(Now.AddHours(2), force: true, "team"));
+        Assert.Equal(whileAway, page.CalculationLog);
+        page.Remember(WorkEffortScale.Today, Now.AddHours(2), first, "team");
+        Assert.Contains("This run replaced the previous calculation log from 2026-10-07 15:00:00.", page.CalculationLog, StringComparison.Ordinal);
+        Assert.Contains("Captured: 2026-10-07 17:00:00", page.CalculationLog, StringComparison.Ordinal);
+
+        page.UpdateMode = WorkEffortUpdateMode.Multiple;
+        Assert.Contains("This run replaced the previous calculation log from 2026-10-07 15:00:00.", page.CalculationLog, StringComparison.Ordinal);
+        Assert.Contains("Updates: Allow multiple updates", page.CalculationLog, StringComparison.Ordinal);
+
+        page.Clear();
+        Assert.False(page.HasCalculationLog);
+        Assert.Equal("", page.CalculationLog);
+    }
+
+    private static WorkEffortReport ReportForLog()
+    {
+        var window = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var touch = new WorkEffortTouch(
+            "inc-1",
+            WorkEffortKind.Incident,
+            "sample-user",
+            Now,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            Number: "INC1001",
+            Location: "AU Sydney Office");
+        var people = new[] { Alex };
+        var rows = WorkEffortScore.Build(people, [touch], window);
+        return new WorkEffortReport(
+            rows,
+            "Counts for today.",
+            "",
+            new WorkEffortLedger(people, [touch], window),
+            Facts: new WorkEffortLoadFacts(["Sydney"], WorkEffortQuery.SafetyCap));
+    }
+
+    private static decimal CountedSum(string log, string person)
+    {
+        decimal sum = 0;
+        foreach (var line in CountedLines(log))
+        {
+            var parts = line.Split(" | ");
+            if (parts.Length < 7 || !parts[1].Equals(person, StringComparison.Ordinal))
+                continue;
+            sum += decimal.Parse(parts[6], CultureInfo.InvariantCulture);
+        }
+
+        return sum;
+    }
+
+    private static string[] CountedLines(string log) =>
+        log.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("Counted | ", StringComparison.Ordinal))
+            .ToArray();
 
     private static async Task WaitUntilAsync(Func<bool> ready)
     {
