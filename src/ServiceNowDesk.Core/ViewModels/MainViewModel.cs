@@ -2137,7 +2137,9 @@ public partial class MainViewModel : ObservableObject
                     team,
                     Connection.RegionOffices,
                     sink,
-                    cts.Token)
+                    cts.Token,
+                    Leads.WorkEffort.RangeStart,
+                    Leads.WorkEffort.RangeEnd)
                 .ConfigureAwait(false);
             PostToUi(() =>
             {

@@ -127,6 +127,8 @@ public interface IServiceNowClient : IDisposable
     /// <summary>
     /// Counts tickets opened in <paramref name="regionOffices"/> during the period.
     /// No saved offices returns the Settings prompt and does not call ServiceNow.
+    /// <see cref="WorkEffortScale.DateRange"/> uses <paramref name="rangeStart"/> and
+    /// <paramref name="rangeEnd"/> as inclusive local dates. Presets ignore those dates.
     /// </summary>
     Task<WorkEffortReport> GetWorkEffortAsync(
         WorkEffortScale scale,
@@ -134,7 +136,9 @@ public interface IServiceNowClient : IDisposable
         IReadOnlyList<WorkEffortPerson> team,
         IReadOnlyList<string>? regionOffices,
         IProgress<WorkEffortProgress>? progress,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        DateTime? rangeStart = null,
+        DateTime? rangeEnd = null);
 
     /// <summary>
     /// Members of the watched group in <paramref name="city"/>.

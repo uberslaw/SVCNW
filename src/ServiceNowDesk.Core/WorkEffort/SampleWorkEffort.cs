@@ -72,13 +72,13 @@ public static class SampleWorkEffort
         ];
     }
 
-    public static WorkEffortReport Report(WorkEffortScale scale, DateTime localNow)
+    public static WorkEffortReport Report(WorkEffortScale scale, DateTime localNow, DateTime? rangeStart = null, DateTime? rangeEnd = null)
     {
-        var window = WorkEffortWindow.For(scale, localNow);
+        var window = WorkEffortWindow.Resolve(scale, localNow, rangeStart, rangeEnd);
         var people = WorkEffortRoster.Collect(Memberships(), SignedIn);
         var touches = Touches(localNow);
         var rows = WorkEffortScore.Build(people, touches, window, WorkEffortUpdateMode.Daily);
-        return new WorkEffortReport(rows, WorkEffortWindow.CountsLabel(scale), "", new WorkEffortLedger(people, touches, window));
+        return new WorkEffortReport(rows, WorkEffortWindow.CountsLabel(window), "", new WorkEffortLedger(people, touches, window));
     }
 
     public static IReadOnlyList<WorkEffortPerson> WithLogins(IReadOnlyList<WorkEffortPerson>? team)

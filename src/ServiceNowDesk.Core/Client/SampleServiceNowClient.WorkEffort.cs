@@ -15,18 +15,22 @@ public sealed partial class SampleServiceNowClient
         WorkEffortScale scale,
         DateTime localNow,
         IReadOnlyList<WorkEffortPerson> team,
-        IReadOnlyList<string>? regionOffices,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken) =>
-        GetWorkEffortAsync(scale, localNow, team, progress, cancellationToken);
+        GetWorkEffortAsync(scale, localNow, team, regionOffices: null, progress, cancellationToken);
 
     public Task<WorkEffortReport> GetWorkEffortAsync(
         WorkEffortScale scale,
         DateTime localNow,
         IReadOnlyList<WorkEffortPerson> team,
+        IReadOnlyList<string>? regionOffices,
         IProgress<WorkEffortProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTime? rangeStart = null,
+        DateTime? rangeEnd = null)
     {
+        // Practice rows do not need a saved region. Presets and a date range both stay local.
+        _ = regionOffices;
         cancellationToken.ThrowIfCancellationRequested();
         var people = SampleWorkEffort.WithLogins(team);
         if (people.Count == 0)
@@ -55,10 +59,10 @@ public sealed partial class SampleServiceNowClient
         pace.CompleteTable();
         progress?.Report(pace.Snapshot());
         cancellationToken.ThrowIfCancellationRequested();
-        var window = WorkEffortWindow.For(scale, localNow);
+        var window = WorkEffortWindow.Resolve(scale, localNow, rangeStart, rangeEnd);
         var touches = SampleWorkEffort.Touches(localNow);
         var rows = WorkEffortScore.Build(people, touches, window, WorkEffortUpdateMode.Daily);
         var ledger = new WorkEffortLedger(people, touches, window);
-        return Task.FromResult(new WorkEffortReport(rows, WorkEffortWindow.CountsLabel(scale), "", ledger));
+        return Task.FromResult(new WorkEffortReport(rows, WorkEffortWindow.CountsLabel(window), "", ledger));
     }
 }

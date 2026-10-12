@@ -36,7 +36,11 @@ public partial class WorkEffortViewModel : ObservableObject
     private WorkEffortScale? _loadingScale;
 
     [ObservableProperty] private WorkEffortScale scale = WorkEffortScale.Today;
+    [ObservableProperty] private DateTime? rangeStart = DateTime.Today;
+    [ObservableProperty] private DateTime? rangeEnd = DateTime.Today;
     [ObservableProperty] private WorkEffortUpdateMode updateMode = WorkEffortUpdateMode.Daily;
+
+    public bool IsDateRange => Scale == WorkEffortScale.DateRange;
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string emptyMessage = "";
     [ObservableProperty] private string shift = "";
@@ -71,10 +75,11 @@ public partial class WorkEffortViewModel : ObservableObject
     /// </summary>
     public bool BeginLoad(DateTime localNow, bool force, string? teamKey = null)
     {
-        var key = teamKey ?? "";
+        var raw = teamKey ?? "";
+        var key = Scoped(Scale, raw);
         // Prefer a finished cache for this scale/team even when a load flag is still set,
         // so returning to the page never looks stuck after the query already completed.
-        if (!force && TryShowCached(localNow, key))
+        if (!force && TryShowCached(localNow, raw))
             return false;
         if (!force && IsLoading && _loadingScale == Scale
             && string.Equals(key, _loadingTeam, StringComparison.Ordinal))
@@ -87,7 +92,7 @@ public partial class WorkEffortViewModel : ObservableObject
 
     public bool TryShowCached(DateTime localNow, string? teamKey = null)
     {
-        if (!TryGet(localNow, Scale, teamKey ?? "", out var entry))
+        if (!TryGet(localNow, Scale, Scoped(Scale, teamKey ?? ""), out var entry))
             return false;
         ShowEntry(entry);
         return true;
@@ -96,7 +101,7 @@ public partial class WorkEffortViewModel : ObservableObject
     public void Remember(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string? teamKey = null)
     {
         ArgumentNullException.ThrowIfNull(report);
-        var key = teamKey ?? "";
+        var key = Scoped(scale, teamKey ?? "");
         var entry = Store(scale, localNow, report, key);
         // Paint when this result matches the in-flight team. If the team key drifted but
         // this scale is still loading, still clear IsLoading so the page cannot stick.
@@ -119,7 +124,7 @@ public partial class WorkEffortViewModel : ObservableObject
     public void Cache(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string? teamKey = null)
     {
         ArgumentNullException.ThrowIfNull(report);
-        Store(scale, localNow, report, teamKey ?? "");
+        Store(scale, localNow, report, Scoped(scale, teamKey ?? ""));
     }
 
     private WorkEffortCacheEntry Store(WorkEffortScale scale, DateTime localNow, WorkEffortReport report, string key)
@@ -162,7 +167,7 @@ public partial class WorkEffortViewModel : ObservableObject
         if (!BeginLoad(localNow, force: true, key))
             return Task.FromResult(WorkEffortReport.NoTeam());
 
-        var window = WorkEffortWindow.For(scale, localNow);
+        var window = WorkEffortWindow.Resolve(scale, localNow, RangeStart, RangeEnd);
         var progress = new Progress<WorkEffortProgress>(update => Apply(scale, update));
         return WorkEffortEngine.Start(people, window, tables, progress, cancellationToken, safetyCap);
     }
@@ -369,7 +374,35 @@ public partial class WorkEffortViewModel : ObservableObject
     partial void OnScaleChanged(WorkEffortScale value)
     {
         _ = value;
+        OnPropertyChanged(nameof(IsDateRange));
         ScaleChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    partial void OnRangeStartChanged(DateTime? value) => NotifyRange(value);
+
+    partial void OnRangeEndChanged(DateTime? value) => NotifyRange(value);
+
+    private void NotifyRange(DateTime? value)
+    {
+        _ = value;
+        if (Scale == WorkEffortScale.DateRange)
+            ScaleChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Date range keeps a separate cache entry per inclusive local window.
+    /// Presets stay keyed by the team alone.
+    /// </summary>
+    private string Scoped(WorkEffortScale scale, string teamKey)
+    {
+        if (scale != WorkEffortScale.DateRange)
+            return teamKey;
+        var window = WorkEffortWindow.Resolve(WorkEffortScale.DateRange, DateTime.Today, RangeStart, RangeEnd);
+        return teamKey
+            + "|range:"
+            + window.Start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            + ".."
+            + window.End.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     }
 
     partial void OnUpdateModeChanged(WorkEffortUpdateMode value)
