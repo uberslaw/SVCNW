@@ -21,7 +21,16 @@ public sealed partial class ServiceNowClient
         IReadOnlyList<WorkEffortPerson> team,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken) =>
-        LoadWorkEffortAsync(scale, localNow, team, WorkEffortQuery.SafetyCap, progress, cancellationToken);
+        GetWorkEffortAsync(scale, localNow, team, regionOffices: null, progress, cancellationToken);
+
+    public Task<WorkEffortReport> GetWorkEffortAsync(
+        WorkEffortScale scale,
+        DateTime localNow,
+        IReadOnlyList<WorkEffortPerson> team,
+        IReadOnlyList<string>? regionOffices,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken) =>
+        LoadWorkEffortAsync(scale, localNow, team, WorkEffortQuery.SafetyCap, regionOffices, progress, cancellationToken);
 
     internal Task<WorkEffortReport> GetWorkEffortAsync(
         WorkEffortScale scale,
@@ -29,20 +38,26 @@ public sealed partial class ServiceNowClient
         int safetyCap,
         CancellationToken cancellationToken,
         IProgress<WorkEffortProgress>? progress = null,
-        IReadOnlyList<WorkEffortPerson>? team = null) =>
-        LoadWorkEffortAsync(scale, localNow, team, safetyCap, progress, cancellationToken);
+        IReadOnlyList<WorkEffortPerson>? team = null,
+        IReadOnlyList<string>? regionOffices = null) =>
+        LoadWorkEffortAsync(scale, localNow, team, safetyCap, regionOffices, progress, cancellationToken);
 
     private async Task<WorkEffortReport> LoadWorkEffortAsync(
         WorkEffortScale scale,
         DateTime localNow,
         IReadOnlyList<WorkEffortPerson>? team,
         int safetyCap,
+        IReadOnlyList<string>? regionOffices,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {
         var people = WorkEffortTeam.Normalize(team);
         if (people.Count == 0)
             return WorkEffortReport.NoTeam();
+
+        var places = TeamListScope.Places(regionOffices);
+        if (places.Count == 0)
+            return WorkEffortReport.NoRegion();
 
         var window = WorkEffortWindow.For(scale, localNow);
         var cap = Math.Max(1, safetyCap);
@@ -54,29 +69,30 @@ public sealed partial class ServiceNowClient
         if (!WorkEffortQuery.HasScope(people))
             return WorkEffortReport.NoTeam();
 
-        // One person at a time, each with their own safety cap. The shared batch
-        // merges a record that shows up for more than one person.
+        // One person at a time, one office at a time. The shared batch merges a
+        // record that shows up for more than one person.
         var pace = new WorkEffortPace();
         var batch = new WorkEffortBatch();
         var truncated = false;
         progress?.Report(pace.Snapshot());
 
-        var incident = await LoadWorkEffortTableAsync(WorkEffortTablePlan.IncidentPlans, people, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+        var incident = await LoadWorkEffortTableAsync(WorkEffortTablePlan.IncidentPlans, people, places, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= incident.Truncated;
         if (incident.Problem is not null)
             problems.Add(incident.Problem);
 
-        var items = await LoadWorkEffortTableAsync(WorkEffortTablePlan.RequestedItemAttempts, people, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+        var items = await LoadWorkEffortTableAsync(WorkEffortTablePlan.RequestedItemAttempts, people, places, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= items.Truncated;
         if (items.Problem is not null)
             problems.Add(items.Problem);
 
-        var interactions = await LoadWorkEffortTableAsync(WorkEffortTablePlan.InteractionAttempts, people, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+        var interactions = await LoadWorkEffortTableAsync(WorkEffortTablePlan.InteractionAttempts, people, places, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= interactions.Truncated;
         if (interactions.Problem is not null)
             problems.Add(interactions.Problem);
 
-        var history = await LoadWorkEffortHistoryAsync(people, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+        var recordIds = batch.Touches().Select(touch => touch.SysId).ToArray();
+        var history = await LoadWorkEffortHistoryAsync(recordIds, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= history.Truncated;
         if (history.Problem is not null)
             problems.Add(history.Problem);
@@ -88,8 +104,8 @@ public sealed partial class ServiceNowClient
     }
 
     /// <summary>
-    /// One narrow user lookup for the ticked team when a sign-in name is missing.
-    /// Opens and resolves match on sys_id. Updates match on the sign-in name.
+    /// One narrow user lookup when a sign-in name is missing.
+    /// Opens match on sys_id. Journal and audit authors match on the sign-in name.
     /// </summary>
     private async Task<(IReadOnlyList<WorkEffortPerson> People, string? Problem)> ResolveTeamLoginsAsync(
         IReadOnlyList<WorkEffortPerson> people,
@@ -180,6 +196,7 @@ public sealed partial class ServiceNowClient
     private async Task<(bool Truncated, string? Problem)> LoadWorkEffortTableAsync(
         IReadOnlyList<WorkEffortTablePlan> plans,
         IReadOnlyList<WorkEffortPerson> people,
+        IReadOnlyList<string> places,
         WorkEffortWindow window,
         int safetyCap,
         WorkEffortBatch batch,
@@ -193,7 +210,7 @@ public sealed partial class ServiceNowClient
             pace.BeginTable();
             try
             {
-                var truncated = await LoadWorkEffortPlanAsync(plans[index], people, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+                var truncated = await LoadWorkEffortPlanAsync(plans[index], people, places, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
                 pace.CompleteTable();
                 progress?.Report(pace.Snapshot());
                 return (truncated, null);
@@ -221,6 +238,7 @@ public sealed partial class ServiceNowClient
     private async Task<bool> LoadWorkEffortPlanAsync(
         WorkEffortTablePlan plan,
         IReadOnlyList<WorkEffortPerson> people,
+        IReadOnlyList<string> places,
         WorkEffortWindow window,
         int safetyCap,
         WorkEffortBatch batch,
@@ -231,26 +249,31 @@ public sealed partial class ServiceNowClient
         var truncated = false;
         foreach (var person in people)
         {
-            var budget = new WorkEffortBudget(safetyCap);
-            var clause = WorkEffortQuery.Clause(plan, [person], window);
-            if (WorkEffortQuery.IsUnscoped(clause))
-                continue;
-
-            var hit = await PageWorkEffortAsync(
-                plan.Table,
-                plan.Fields,
-                clause,
-                budget,
-                row =>
+            foreach (var place in places)
+            {
+                foreach (var clause in WorkEffortQuery.OpenedInOffice(plan, person, window, place))
                 {
-                    var touch = ReadTouch(row, plan.Kind);
-                    if (touch is not null)
-                        batch.Add(touch);
-                },
-                pace,
-                progress,
-                cancellationToken).ConfigureAwait(false);
-            truncated |= hit || budget.Truncated;
+                    if (WorkEffortQuery.IsUnscoped(clause))
+                        continue;
+
+                    var budget = new WorkEffortBudget(safetyCap);
+                    var hit = await PageWorkEffortAsync(
+                        plan.Table,
+                        plan.Fields,
+                        clause,
+                        budget,
+                        row =>
+                        {
+                            var touch = ReadTouch(row, plan.Kind);
+                            if (touch is not null)
+                                batch.Add(touch);
+                        },
+                        pace,
+                        progress,
+                        cancellationToken).ConfigureAwait(false);
+                    truncated |= hit || budget.Truncated;
+                }
+            }
         }
 
         return truncated;
@@ -353,7 +376,7 @@ public sealed partial class ServiceNowClient
     /// the header row at the same local second are one moment when the score runs.
     /// </summary>
     private async Task<(bool Truncated, string? Problem)> LoadWorkEffortHistoryAsync(
-        IReadOnlyList<WorkEffortPerson> people,
+        IReadOnlyList<string> recordIds,
         WorkEffortWindow window,
         int safetyCap,
         WorkEffortBatch batch,
@@ -366,7 +389,7 @@ public sealed partial class ServiceNowClient
         pace.BeginTable();
         try
         {
-            truncated |= await LoadJournalAsync(people, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+            truncated |= await LoadJournalAsync(recordIds, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
             pace.CompleteTable();
             progress?.Report(pace.Snapshot());
         }
@@ -381,7 +404,7 @@ public sealed partial class ServiceNowClient
         pace.BeginTable();
         try
         {
-            truncated |= await LoadAuditAsync(people, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+            truncated |= await LoadAuditAsync(recordIds, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
             pace.CompleteTable();
             progress?.Report(pace.Snapshot());
         }
@@ -396,7 +419,7 @@ public sealed partial class ServiceNowClient
     }
 
     private async Task<bool> LoadJournalAsync(
-        IReadOnlyList<WorkEffortPerson> people,
+        IReadOnlyList<string> recordIds,
         WorkEffortWindow window,
         int safetyCap,
         WorkEffortBatch batch,
@@ -406,10 +429,10 @@ public sealed partial class ServiceNowClient
     {
         var pending = new List<JournalHit>();
         var truncated = false;
-        foreach (var person in people)
+        for (var index = 0; index < recordIds.Count; index += WorkEffortQuery.ChunkSize)
         {
             var budget = new WorkEffortBudget(safetyCap);
-            var clause = WorkEffortQuery.JournalClause([person], window);
+            var clause = WorkEffortQuery.JournalForRecords(recordIds.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray(), window);
             if (WorkEffortQuery.IsUnscoped(clause))
                 continue;
 
@@ -529,7 +552,7 @@ public sealed partial class ServiceNowClient
     }
 
     private async Task<bool> LoadAuditAsync(
-        IReadOnlyList<WorkEffortPerson> people,
+        IReadOnlyList<string> recordIds,
         WorkEffortWindow window,
         int safetyCap,
         WorkEffortBatch batch,
@@ -538,10 +561,10 @@ public sealed partial class ServiceNowClient
         CancellationToken cancellationToken)
     {
         var truncated = false;
-        foreach (var person in people)
+        for (var index = 0; index < recordIds.Count; index += WorkEffortQuery.ChunkSize)
         {
             var budget = new WorkEffortBudget(safetyCap);
-            var clause = WorkEffortQuery.AuditClause([person], window);
+            var clause = WorkEffortQuery.AuditForRecords(recordIds.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray(), window);
             if (WorkEffortQuery.IsUnscoped(clause))
                 continue;
 

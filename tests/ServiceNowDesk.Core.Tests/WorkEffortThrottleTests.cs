@@ -134,7 +134,7 @@ public class WorkEffortThrottleTests
             new WorkEffortPerson("sample-user", "Alex Rivera", "alex.rivera"),
             new WorkEffortPerson("user-jordan", "Jordan Lee", "jordan.lee")
         };
-        await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, team, CancellationToken.None);
+        await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, team, ["Sydney"], progress: null, CancellationToken.None);
         Assert.Equal(1, max);
         Assert.DoesNotContain(handler.Calls, call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal));
         Assert.Contains(handler.Calls, call => call.PathAndQuery.Contains("table/incident", StringComparison.Ordinal));

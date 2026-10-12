@@ -28,6 +28,8 @@ public class WorkEffortTests
         new("user-jordan", "Jordan Lee", "jordan.lee")
     ];
 
+    private static readonly string[] Sydney = ["Sydney"];
+
     [Fact]
     public void WeightingCountsOpenAndResolveSeparatelyAndDoesNotAlsoCountAnUpdate()
     {
@@ -219,38 +221,51 @@ public class WorkEffortTests
     [Fact]
     public void TheCountQueryUsesNarrowFieldsAndDropsCarets()
     {
-        var people = new[]
-        {
-            Alex,
-            new WorkEffortPerson("user-jordan", "Jordan Lee", "jordan^lee")
-        };
-        var clause = WorkEffortQuery.Clause(WorkEffortTablePlan.Incident, people, WorkEffortWindow.For(WorkEffortScale.Today, Now));
-        Assert.Contains("opened_byINsample-user,user-jordan", clause);
-        Assert.Contains("resolved_byINsample-user,user-jordan", clause);
-        Assert.Contains("closed_byINsample-user,user-jordan", clause);
-        Assert.Contains("sys_updated_byINalex.rivera,jordan lee", clause);
+        var jordan = new WorkEffortPerson("user-jordan", "Jordan Lee", "jordan^lee");
+        var today = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var clause = Assert.Single(WorkEffortQuery.OpenedBranches(WorkEffortTablePlan.Incident, Alex, today));
+        Assert.Contains("opened_byINsample-user", clause);
+        Assert.DoesNotContain("resolved_by", clause);
+        Assert.DoesNotContain("closed_by", clause);
+        Assert.DoesNotContain("sys_updated_by", clause);
         Assert.Contains("opened_at>=2026-10-07@00:00:00", clause);
         Assert.Contains("opened_at<=2026-10-07@23:59:59", clause);
-        Assert.DoesNotContain("jordan^lee", clause);
         Assert.DoesNotContain("opened_at<2026", clause);
         Assert.Contains("number", WorkEffortTablePlan.Incident.Fields);
         Assert.Contains("short_description", WorkEffortTablePlan.Incident.Fields);
+        Assert.Contains("resolved_by", WorkEffortTablePlan.Incident.Fields);
 
-        var rolling = WorkEffortQuery.Clause(
+        var office = Assert.Single(WorkEffortQuery.OpenedInOffice(WorkEffortTablePlan.Incident, jordan, today, "Sydney"));
+        Assert.Contains("opened_byINuser-jordan", office);
+        Assert.Contains("location.name=\"Sydney\"", office);
+        Assert.Contains("location.name=\"Sydney Office\"", office);
+        Assert.DoesNotContain("jordan^lee", office);
+        Assert.DoesNotContain("sys_updated_by", office);
+        Assert.DoesNotContain("resolved_by", office);
+        Assert.DoesNotContain("New York", office);
+
+        var york = Assert.Single(WorkEffortQuery.OpenedInOffice(WorkEffortTablePlan.Incident, Alex, today, "York"));
+        Assert.Contains("location.name=\"York\"", york);
+        Assert.DoesNotContain("New York", york);
+
+        var rolling = Assert.Single(WorkEffortQuery.OpenedBranches(
             WorkEffortTablePlan.Incident,
-            [Alex],
-            WorkEffortWindow.For(WorkEffortScale.Last4Weeks, new DateTime(2026, 10, 7, 15, 4, 5)));
-        Assert.Contains("sys_updated_on>=2026-09-09@15:04:05", rolling);
-        Assert.Contains("sys_updated_on<=2026-10-07@15:04:05", rolling);
+            Alex,
+            WorkEffortWindow.For(WorkEffortScale.Last4Weeks, new DateTime(2026, 10, 7, 15, 4, 5))));
+        Assert.Contains("opened_at>=2026-09-09@15:04:05", rolling);
+        Assert.Contains("opened_at<=2026-10-07@15:04:05", rolling);
+        Assert.DoesNotContain("sys_updated_on", rolling);
 
-        var journal = WorkEffortQuery.JournalClause(people, WorkEffortWindow.For(WorkEffortScale.Today, Now));
+        var journal = WorkEffortQuery.JournalForRecords(["inc-1"], today);
         Assert.Contains("elementINcomments,additional_comments,work_notes", journal);
-        Assert.Contains("sys_created_byINalex.rivera,sample-user", journal);
+        Assert.Contains("element_idINinc-1", journal);
         Assert.Contains("sys_created_on>=2026-10-07@00:00:00", journal);
+        Assert.DoesNotContain("sys_created_by", journal);
         Assert.DoesNotContain("jordan^lee", journal);
-        var audit = WorkEffortQuery.AuditClause([Alex], WorkEffortWindow.For(WorkEffortScale.Today, Now));
+        var audit = WorkEffortQuery.AuditForRecords(["inc-1"], today);
         Assert.Contains("tablenameINincident,sc_req_item,interaction", audit);
-        Assert.Contains("userINalex.rivera,sample-user", audit);
+        Assert.Contains("documentkeyINinc-1", audit);
+        Assert.DoesNotContain("userIN", audit);
     }
 
     [Fact]
@@ -265,7 +280,7 @@ public class WorkEffortTests
 
         var liveHandler = new StubHandler(GroupResponder(includeMembers: true, incidentTotal: null, rejectInteractionResolve: true));
         using var live = ServiceNowClient.Create(Api.BasicSession(), liveHandler);
-        var report = await live.GetWorkEffortAsync(WorkEffortScale.Today, Now, LiveTeam, CancellationToken.None);
+        var report = await live.GetWorkEffortAsync(WorkEffortScale.Today, Now, LiveTeam, Sydney, progress: null, CancellationToken.None);
         Assert.Equal(["Alex Rivera", "Jordan Lee"], report.Rows.Select(row => row.Name).ToArray());
         Assert.Equal(1, report.Rows[0].IncOpened);
         Assert.Equal(1, report.Rows[0].IncResolved);
@@ -288,6 +303,9 @@ public class WorkEffortTests
             Assert.DoesNotContain("user-sam", incident);
             Assert.Contains("opened_at>=2026-10-07@00:00:00", incident);
             Assert.Contains("opened_at<=2026-10-07@23:59:59", incident);
+            Assert.Contains("location.name=\"Sydney\"", incident);
+            Assert.DoesNotContain("sys_updated_byIN", incident);
+            Assert.DoesNotContain("resolved_byIN", incident);
             Assert.DoesNotContain("<", incidentCall.PathAndQuery);
         }
 
@@ -298,7 +316,7 @@ public class WorkEffortTests
         var interactions = liveHandler.Calls.Where(call => call.PathAndQuery.Contains("table/interaction", StringComparison.Ordinal)).ToArray();
         Assert.Contains(interactions, call => Uri.UnescapeDataString(call.PathAndQuery).Contains("resolved_by", StringComparison.Ordinal));
         var fallbacks = interactions.Where(call => !Uri.UnescapeDataString(call.PathAndQuery).Contains("resolved_by", StringComparison.Ordinal)).ToArray();
-        Assert.Equal(2, fallbacks.Length);
+        Assert.Equal(4, fallbacks.Length);
         foreach (var fallbackCall in fallbacks)
         {
             var fallback = Uri.UnescapeDataString(fallbackCall.PathAndQuery);
@@ -556,7 +574,7 @@ public class WorkEffortTests
         var handler = new StubHandler(GroupResponder(includeMembers: true, incidentTotal: null, rejectInteractionResolve: true));
         using var live = ServiceNowClient.Create(Api.BasicSession(), handler);
         var ticks = new ProgressList();
-        var report = await live.GetWorkEffortAsync(WorkEffortScale.Today, Now, LiveTeam, ticks, CancellationToken.None);
+        var report = await live.GetWorkEffortAsync(WorkEffortScale.Today, Now, LiveTeam, Sydney, ticks, CancellationToken.None);
 
         Assert.NotEmpty(ticks.Ticks);
         Assert.All(ticks.Ticks, tick =>
@@ -579,7 +597,7 @@ public class WorkEffortTests
     {
         var handler = new StubHandler(GroupResponder(includeMembers: true, incidentTotal: 9, rejectInteractionResolve: false));
         using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
-        var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None, team: LiveTeam);
+        var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None, team: LiveTeam, regionOffices: Sydney);
         Assert.Contains("safety cap", report.Status, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
     }
@@ -589,7 +607,7 @@ public class WorkEffortTests
     {
         var handler = new StubHandler(PersonResponder(alexTotal: 1, jordanTotal: 1));
         using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
-        var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None, team: LiveTeam);
+        var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None, team: LiveTeam, regionOffices: Sydney);
 
         var alex = Assert.Single(report.Rows, row => row.Name == "Alex Rivera");
         var jordan = Assert.Single(report.Rows, row => row.Name == "Jordan Lee");
@@ -605,11 +623,97 @@ public class WorkEffortTests
     {
         var handler = new StubHandler(PersonResponder(alexTotal: 9, jordanTotal: 1));
         using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
-        var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None, team: LiveTeam);
+        var report = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, safetyCap: 1, CancellationToken.None, team: LiveTeam, regionOffices: Sydney);
 
         var jordan = Assert.Single(report.Rows, row => row.Name == "Jordan Lee");
         Assert.Equal(1, jordan.IncOpened);
         Assert.Contains(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NoSavedOfficesSkipsTheDownloadAndAsksForSettings()
+    {
+        var handler = new StubHandler((_, _) => throw new InvalidOperationException("ServiceNow was called."));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var unnamed = new[] { new WorkEffortPerson("sample-user", "Alex Rivera", "") };
+
+        var missing = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, unnamed, CancellationToken.None);
+        Assert.Equal(WorkEffortReport.ChooseRegionMessage, missing.EmptyMessage);
+        Assert.Empty(missing.Rows);
+
+        var blank = await client.GetWorkEffortAsync(WorkEffortScale.Today, Now, unnamed, [], progress: null, CancellationToken.None);
+        Assert.Equal(WorkEffortReport.ChooseRegionMessage, blank.EmptyMessage);
+        Assert.Empty(blank.Rows);
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task OnlyTicketsOpenedInTheRegionAreRequested()
+    {
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = Uri.UnescapeDataString(request.RequestUri?.PathAndQuery ?? "");
+            var query = SysParmQuery(path);
+            if (query.Contains("sys_updated_by", StringComparison.Ordinal) || query.Contains("resolved_by", StringComparison.Ordinal))
+                return Api.Json(IncidentTouchJson);
+            if (path.Contains("table/incident", StringComparison.Ordinal)
+                && query.Contains("opened_byINsample-user", StringComparison.Ordinal)
+                && query.Contains("location.name=\"Sydney\"", StringComparison.Ordinal))
+                return Api.Json(IncidentTouchJson);
+            return Api.Json("""{"result":[]}""");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.Today,
+            Now,
+            LiveTeam,
+            ["Sydney", "Melbourne"],
+            progress: null,
+            CancellationToken.None);
+
+        var alex = Assert.Single(report.Rows, row => row.Name == "Alex Rivera");
+        var jordan = Assert.Single(report.Rows, row => row.Name == "Jordan Lee");
+        Assert.Equal(1, alex.IncOpened);
+        Assert.Equal(1, alex.IncResolved);
+        Assert.Equal(0, jordan.IncOpened);
+        Assert.Equal(0, jordan.IncUpdated);
+
+        var incidents = handler.Calls
+            .Where(call => call.PathAndQuery.Contains("table/incident", StringComparison.Ordinal))
+            .Select(call => Uri.UnescapeDataString(call.PathAndQuery))
+            .ToArray();
+        Assert.Equal(4, incidents.Length);
+        Assert.Contains(incidents, query => query.Contains("Sydney", StringComparison.Ordinal) && !query.Contains("Melbourne", StringComparison.Ordinal));
+        Assert.Contains(incidents, query => query.Contains("Melbourne", StringComparison.Ordinal) && !query.Contains("Sydney", StringComparison.Ordinal));
+        foreach (var incident in incidents)
+        {
+            var query = SysParmQuery(incident);
+            Assert.Contains("opened_at>=2026-10-07@00:00:00", query);
+            Assert.Contains("opened_at<=2026-10-07@23:59:59", query);
+            Assert.DoesNotContain("sys_updated_by", query);
+            Assert.DoesNotContain("resolved_by", query);
+            Assert.DoesNotContain("closed_by", query);
+        }
+
+        var journal = SysParmQuery(Uri.UnescapeDataString(
+            Assert.Single(handler.Calls, call => call.PathAndQuery.Contains("table/sys_journal_field", StringComparison.Ordinal)).PathAndQuery));
+        Assert.Contains("element_idINinc-1", journal);
+        Assert.DoesNotContain("sys_created_by", journal);
+        var audit = SysParmQuery(Uri.UnescapeDataString(
+            Assert.Single(handler.Calls, call => call.PathAndQuery.Contains("table/sys_audit", StringComparison.Ordinal)).PathAndQuery));
+        Assert.Contains("documentkeyINinc-1", audit);
+        Assert.DoesNotContain("userIN", audit);
+    }
+
+    private static string SysParmQuery(string pathAndQuery)
+    {
+        const string key = "sysparm_query=";
+        var start = pathAndQuery.IndexOf(key, StringComparison.Ordinal);
+        if (start < 0)
+            return "";
+        start += key.Length;
+        var end = pathAndQuery.IndexOf('&', start);
+        return end < 0 ? pathAndQuery[start..] : pathAndQuery[start..end];
     }
 
     private static Func<HttpRequestMessage, string, HttpResponseMessage> PersonResponder(int alexTotal, int jordanTotal) =>
@@ -805,7 +909,7 @@ public class WorkEffortTests
     {
         var handler = new StubHandler(HistoryResponder());
         using var live = ServiceNowClient.Create(Api.BasicSession(), handler);
-        var report = await live.GetWorkEffortAsync(WorkEffortScale.ThisWeek, Now, [Alex], CancellationToken.None);
+        var report = await live.GetWorkEffortAsync(WorkEffortScale.ThisWeek, Now, [Alex], Sydney, progress: null, CancellationToken.None);
         var daily = Assert.Single(report.Rows);
         Assert.Equal("Alex Rivera", daily.Name);
         Assert.Equal(1, daily.IncOpened);
@@ -827,11 +931,13 @@ public class WorkEffortTests
         var journalCall = handler.Calls.Single(call => call.PathAndQuery.Contains("table/sys_journal_field", StringComparison.Ordinal));
         var journal = Uri.UnescapeDataString(journalCall.PathAndQuery);
         Assert.Contains("elementINcomments,additional_comments,work_notes", journal);
-        Assert.Contains("sys_created_byINalex.rivera,sample-user", journal);
+        Assert.Contains("element_idINinc-1", journal);
+        Assert.DoesNotContain("sys_created_byIN", journal);
         Assert.Contains(WorkEffortQuery.JournalFields, journal);
         var audit = Uri.UnescapeDataString(handler.Calls.Single(call => call.PathAndQuery.Contains("table/sys_audit", StringComparison.Ordinal)).PathAndQuery);
         Assert.Contains("tablenameINincident,sc_req_item,interaction", audit);
-        Assert.Contains("userINalex.rivera,sample-user", audit);
+        Assert.Contains("documentkeyINinc-1", audit);
+        Assert.DoesNotContain("userIN", audit);
         Assert.Contains(
             handler.Calls,
             call => call.PathAndQuery.Contains("table/sc_req_item", StringComparison.Ordinal)
@@ -853,7 +959,7 @@ public class WorkEffortTests
             return Api.Json("""{"result":[]}""");
         });
         using var live = ServiceNowClient.Create(Api.BasicSession(), handler);
-        var report = await live.GetWorkEffortAsync(WorkEffortScale.ThisWeek, Now, [Alex], CancellationToken.None);
+        var report = await live.GetWorkEffortAsync(WorkEffortScale.ThisWeek, Now, [Alex], Sydney, progress: null, CancellationToken.None);
         var row = Assert.Single(report.Rows);
         Assert.Equal(1, row.IncOpened);
         Assert.Equal(1, row.IncUpdated);
@@ -1313,7 +1419,7 @@ public class WorkEffortHold : DispatchProxy
     {
         if (targetMethod is null)
             throw new InvalidOperationException("Missing ServiceNow method.");
-        if (targetMethod.Name == nameof(IServiceNowClient.GetWorkEffortAsync) && targetMethod.GetParameters().Length == 5)
+        if (targetMethod.Name == nameof(IServiceNowClient.GetWorkEffortAsync))
             return HoldAsync(args ?? []);
 
         try
@@ -1331,8 +1437,15 @@ public class WorkEffortHold : DispatchProxy
     {
         var scale = (WorkEffortScale)args[0]!;
         var localNow = (DateTime)args[1]!;
-        var progress = args[3] as IProgress<WorkEffortProgress>;
-        var token = args[4] is CancellationToken cancellation ? cancellation : CancellationToken.None;
+        IProgress<WorkEffortProgress>? progress = null;
+        var token = CancellationToken.None;
+        foreach (var arg in args)
+        {
+            if (arg is IProgress<WorkEffortProgress> reported)
+                progress = reported;
+            else if (arg is CancellationToken cancellation)
+                token = cancellation;
+        }
         Interlocked.Increment(ref Queries);
         Tokens.Add(token);
         progress?.Report(WorkEffortProgress.Loading(scale, 0));
