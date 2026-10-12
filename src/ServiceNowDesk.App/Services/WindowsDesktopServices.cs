@@ -4,6 +4,7 @@ using System.Text;
 using System.Windows;
 using Microsoft.Win32;
 using ServiceNowDesk.Services;
+using ServiceNowDesk.Views;
 
 namespace ServiceNowDesk.Services;
 
@@ -37,5 +38,13 @@ public sealed class WindowsDesktopServices : IDesktopServices
 
         File.WriteAllText(dialog.FileName, contents ?? "", encoding ?? Encoding.UTF8);
         return dialog.FileName;
+    }
+
+    public void ShowCopyableText(string title, string text)
+    {
+        var window = new WorkEffortCalcLogWindow(text ?? "");
+        if (!string.IsNullOrWhiteSpace(title))
+            window.Title = title;
+        window.Show();
     }
 }

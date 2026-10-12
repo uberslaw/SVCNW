@@ -48,22 +48,28 @@ public sealed class WorkEffortAttempt
     private readonly HashSet<LifeKey> _life = [];
     private readonly List<PendingUpdate> _updates = [];
     private readonly Dictionary<string, TouchLabel> _labels = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string>? _places;
     private readonly List<WorkEffortCredit> _credits = [];
+    private readonly WorkEffortScoreNotes? _notes;
     private bool _finished;
 
     public WorkEffortAttempt(
         IReadOnlyList<WorkEffortPerson> people,
         WorkEffortWindow window,
         int safetyCap,
-        WorkEffortUpdateMode mode = WorkEffortUpdateMode.Daily)
+        WorkEffortUpdateMode mode = WorkEffortUpdateMode.Daily,
+        WorkEffortScoreNotes? notes = null)
     {
         ArgumentNullException.ThrowIfNull(people);
         _people = people as WorkEffortPerson[] ?? people.ToArray();
         _window = window;
         _mode = mode;
+        _notes = notes;
         _cap = safetyCap < 1 ? 1 : safetyCap;
         _counts = new int[_people.Length * Width];
         _seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (notes is not null)
+            _places = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
     public int Received { get; private set; }
@@ -219,16 +225,35 @@ public sealed class WorkEffortAttempt
         if (id.Length == 0)
             return;
         if (!_seen.Add((int)touch.Kind + "\n" + id))
+        {
+            NoteDropped("", touch.Kind, id, touch.OpenedAt is DateTime openedAt ? WorkEffortWindow.LocalDay(openedAt) : null, WorkEffortCalcLog.DuplicateMerged);
             return;
+        }
 
         RememberLabel(touch.Kind, id, touch.Number, touch.Title);
+        RememberPlace(touch.Kind, id, touch.Location);
+        if (_notes is not null)
+        {
+            NoteIfOutside(touch, touch.OpenedAt);
+            NoteIfOutside(touch, touch.ResolvedAt);
+            NoteIfOutside(touch, touch.ClosedAt);
+        }
 
+        var sawOpened = false;
+        var sawResolved = false;
+        var sawClosed = false;
         for (var index = 0; index < _people.Length; index++)
         {
             var person = _people[index];
             var opened = InWindow(touch.OpenedAt) && Same(person.SysId, touch.OpenedBySysId);
             var resolved = InWindow(touch.ResolvedAt) && Same(person.SysId, touch.ResolvedBySysId);
             var closed = InWindow(touch.ClosedAt) && Same(person.SysId, touch.ClosedBySysId);
+            if (opened)
+                sawOpened = true;
+            if (resolved)
+                sawResolved = true;
+            if (closed)
+                sawClosed = true;
             if (opened)
                 _life.Add(new LifeKey(index, touch.Kind, id, DayNumber(touch.OpenedAt!.Value)));
             if (resolved)
@@ -291,6 +316,49 @@ public sealed class WorkEffortAttempt
 
                     break;
             }
+
+            if (resolved && closed)
+            {
+                NoteDropped(
+                    person.DisplayName,
+                    touch.Kind,
+                    id,
+                    WorkEffortWindow.LocalDay(touch.ClosedAt!.Value),
+                    WorkEffortCalcLog.CloseAlreadyResolved);
+            }
+        }
+
+        if (_notes is not null)
+        {
+            if (InWindow(touch.OpenedAt) && !string.IsNullOrWhiteSpace(touch.OpenedBySysId) && !sawOpened)
+            {
+                NoteDropped(
+                    touch.OpenedBySysId.Trim(),
+                    touch.Kind,
+                    id,
+                    WorkEffortWindow.LocalDay(touch.OpenedAt!.Value),
+                    WorkEffortCalcLog.NotSelected);
+            }
+
+            if (InWindow(touch.ResolvedAt) && !string.IsNullOrWhiteSpace(touch.ResolvedBySysId) && !sawResolved)
+            {
+                NoteDropped(
+                    touch.ResolvedBySysId.Trim(),
+                    touch.Kind,
+                    id,
+                    WorkEffortWindow.LocalDay(touch.ResolvedAt!.Value),
+                    WorkEffortCalcLog.NotSelected);
+            }
+
+            if (InWindow(touch.ClosedAt) && !string.IsNullOrWhiteSpace(touch.ClosedBySysId) && !sawClosed)
+            {
+                NoteDropped(
+                    touch.ClosedBySysId.Trim(),
+                    touch.Kind,
+                    id,
+                    WorkEffortWindow.LocalDay(touch.ClosedAt!.Value),
+                    WorkEffortCalcLog.NotSelected);
+            }
         }
 
         ConsiderUpdate(touch.Kind, id, touch.UpdatedBy, touch.UpdatedAt);
@@ -305,18 +373,36 @@ public sealed class WorkEffortAttempt
         if (at is not DateTime moment || string.IsNullOrWhiteSpace(by))
             return;
         if (!InWindow(moment))
+        {
+            NoteDropped(by.Trim(), kind, recordId, WorkEffortWindow.LocalDay(moment), WorkEffortCalcLog.OutsideWindow);
             return;
+        }
+
         var stamp = WorkEffortWindow.LocalStamp(moment);
         var day = DayNumber(stamp);
+        var matched = false;
         for (var index = 0; index < _people.Length; index++)
         {
             var person = _people[index];
             if (!Same(person.UserName, by) && !Same(person.SysId, by))
                 continue;
+            matched = true;
             if (_life.Contains(new LifeKey(index, kind, recordId, day)))
+            {
+                NoteDropped(
+                    person.DisplayName,
+                    kind,
+                    recordId,
+                    WorkEffortWindow.LocalDay(stamp),
+                    WorkEffortCalcLog.UpdateSuppressed);
                 continue;
+            }
+
             _updates.Add(new PendingUpdate(index, kind, recordId, stamp));
         }
+
+        if (!matched)
+            NoteDropped(by.Trim(), kind, recordId, WorkEffortWindow.LocalDay(stamp), WorkEffortCalcLog.NotSelected);
     }
 
     private void Finish()
@@ -338,7 +424,16 @@ public sealed class WorkEffortAttempt
             }
 
             if (!group.Moments.Add(update.Stamp.Ticks))
+            {
+                NoteDropped(
+                    _people[update.Person].DisplayName,
+                    update.Kind,
+                    update.RecordId,
+                    WorkEffortWindow.LocalDay(update.Stamp),
+                    WorkEffortCalcLog.DuplicateMerged);
                 continue;
+            }
+
             group.Stamps.Add(update.Stamp);
         }
 
@@ -349,7 +444,11 @@ public sealed class WorkEffortAttempt
             if (_mode == WorkEffortUpdateMode.Multiple)
             {
                 foreach (var stamp in pair.Value.Stamps.OrderBy(value => value))
+                {
                     AddUpdateCredit(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, stamp, day: "", updateCount);
+                    NoteKept(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, "updated", stamp, WorkEffortScore.UpdateWeight, WorkEffortCalcLog.EachSave);
+                }
+
                 AddUpdate(pair.Key.Person, pair.Key.Kind, updateCount);
             }
             else
@@ -362,10 +461,25 @@ public sealed class WorkEffortAttempt
                         byDay[day] = stamp;
                 }
 
+                var chosen = new HashSet<long>();
                 foreach (var stamp in byDay.Values.OrderBy(value => value))
                 {
+                    chosen.Add(stamp.Ticks);
                     var day = WorkEffortWindow.LocalDay(stamp).ToString("yyyy-MM-dd");
                     AddUpdateCredit(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, stamp, day, updateCount);
+                    NoteKept(pair.Key.Person, pair.Key.Kind, pair.Key.RecordId, "updated", stamp, WorkEffortScore.UpdateWeight, WorkEffortCalcLog.OneDailyUpdate);
+                }
+
+                foreach (var stamp in pair.Value.Stamps)
+                {
+                    if (chosen.Contains(stamp.Ticks))
+                        continue;
+                    NoteDropped(
+                        _people[pair.Key.Person].DisplayName,
+                        pair.Key.Kind,
+                        pair.Key.RecordId,
+                        WorkEffortWindow.LocalDay(stamp),
+                        WorkEffortCalcLog.DailyAlready);
                 }
 
                 AddUpdate(pair.Key.Person, pair.Key.Kind, byDay.Count);
@@ -394,6 +508,7 @@ public sealed class WorkEffortAttempt
     {
         var label = LabelOf(kind, recordId);
         var who = _people[person];
+        var whenLocal = WorkEffortWindow.LocalStamp(when);
         _credits.Add(new WorkEffortCredit(
             who.SysId,
             who.DisplayName,
@@ -402,7 +517,17 @@ public sealed class WorkEffortAttempt
             label.Title,
             kind,
             metric,
-            WorkEffortWindow.LocalStamp(when)));
+            whenLocal));
+        if (_notes is null)
+            return;
+        var amount = LifeAmount(kind);
+        var (action, rule) = metric switch
+        {
+            WorkEffortMetric.Opened => ("opened", WorkEffortCalcLog.OpenWeight),
+            WorkEffortMetric.Closed => ("resolved", WorkEffortCalcLog.CloseAsResolve),
+            _ => ("resolved", WorkEffortCalcLog.ResolveWeight)
+        };
+        NoteKept(person, kind, recordId, action, whenLocal, amount, rule);
     }
 
     private void AddUpdateCredit(int person, WorkEffortKind kind, string recordId, DateTime when, string day, int updateCount)
@@ -441,6 +566,73 @@ public sealed class WorkEffortAttempt
         var key = (int)kind + "\n" + recordId;
         return _labels.TryGetValue(key, out var label) ? label : new TouchLabel("", "");
     }
+
+    private void RememberPlace(WorkEffortKind kind, string recordId, string? location)
+    {
+        if (_places is null)
+            return;
+        var key = (int)kind + "\n" + recordId;
+        var place = (location ?? "").Trim();
+        if (_places.TryGetValue(key, out var existing) && existing.Length > 0)
+            return;
+        _places[key] = place;
+    }
+
+    private string PlaceOf(WorkEffortKind kind, string recordId)
+    {
+        if (_places is null)
+            return "";
+        var key = (int)kind + "\n" + recordId;
+        return _places.TryGetValue(key, out var place) && place.Length > 0 ? place : "(blank)";
+    }
+
+    private void NoteIfOutside(WorkEffortTouch touch, DateTime? moment)
+    {
+        if (moment is not DateTime value || InWindow(value))
+            return;
+        NoteDropped("", touch.Kind, touch.SysId, WorkEffortWindow.LocalDay(value), WorkEffortCalcLog.OutsideWindow);
+    }
+
+    private void NoteKept(int person, WorkEffortKind kind, string recordId, string action, DateTime when, decimal amount, string rule)
+    {
+        if (_notes is null)
+            return;
+        var who = _people[person];
+        var label = LabelOf(kind, recordId);
+        _notes.Kept.Add(new WorkEffortKeptCredit(
+            who.SysId,
+            who.DisplayName,
+            WorkEffortCalcLog.TicketLabel(label.Number, recordId),
+            recordId,
+            WorkEffortCalcLog.TableName(kind),
+            action,
+            WorkEffortWindow.LocalDay(when),
+            amount,
+            PlaceOf(kind, recordId),
+            rule));
+    }
+
+    private void NoteDropped(string personName, WorkEffortKind kind, string recordId, DateOnly? day, string reason)
+    {
+        if (_notes is null)
+            return;
+        var label = LabelOf(kind, recordId);
+        _notes.Dropped.Add(new WorkEffortScoreDrop(
+            personName,
+            WorkEffortCalcLog.TicketLabel(label.Number, recordId),
+            recordId,
+            WorkEffortCalcLog.TableName(kind),
+            PlaceOf(kind, recordId),
+            day,
+            reason));
+    }
+
+    private static decimal LifeAmount(WorkEffortKind kind) => kind switch
+    {
+        WorkEffortKind.RequestedItem => WorkEffortScore.RequestedItemWeight,
+        WorkEffortKind.Interaction => WorkEffortScore.InteractionWeight,
+        _ => WorkEffortScore.IncidentWeight
+    };
 
     private static int DayNumber(DateTime moment)
     {

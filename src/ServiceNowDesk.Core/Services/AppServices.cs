@@ -16,6 +16,9 @@ public interface IDesktopServices
     /// Returns the path written, or null when the user cancels.
     /// </summary>
     string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null);
+
+    /// <summary>Opens copyable text, such as the Work Effort calculation log.</summary>
+    void ShowCopyableText(string title, string text);
 }
 
 /// <summary>
@@ -77,10 +80,13 @@ public sealed class RecordingDesktopServices : IDesktopServices
     public List<string> CopiedText { get; } = [];
     public List<string> OpenedFiles { get; } = [];
     public List<string> SavedFiles { get; } = [];
+    public List<(string Title, string Text)> ShownText { get; } = [];
 
     public void OpenUrl(string url) => OpenedUrls.Add(url);
     public void CopyText(string text) => CopiedText.Add(text);
     public void OpenFile(string path) => OpenedFiles.Add(path);
+
+    public void ShowCopyableText(string title, string text) => ShownText.Add((title ?? "", text ?? ""));
 
     public string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null)
     {

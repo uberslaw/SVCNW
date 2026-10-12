@@ -68,6 +68,7 @@ public sealed partial class ServiceNowClient
         var window = WorkEffortWindow.Resolve(scale, localNow, rangeStart, rangeEnd);
         var slices = WorkEffortSlices.Plan(window, people.Count);
         var cap = Math.Max(1, safetyCap);
+        var facts = new WorkEffortLoadFacts(places, cap);
         var problems = new List<string>();
         var resolved = await ResolveTeamLoginsAsync(people, cancellationToken).ConfigureAwait(false);
         people = resolved.People;
@@ -85,24 +86,24 @@ public sealed partial class ServiceNowClient
         var truncated = false;
         progress?.Report(pace.Snapshot());
 
-        var incident = await LoadWorkEffortTableAsync(WorkEffortTablePlan.IncidentPlans, people, places, slices, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+        var incident = await LoadWorkEffortTableAsync(WorkEffortTablePlan.IncidentPlans, people, places, slices, cap, batch, facts, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= incident.Truncated;
         if (incident.Problem is not null)
             problems.Add(incident.Problem);
 
-        var items = await LoadWorkEffortTableAsync(WorkEffortTablePlan.RequestedItemAttempts, people, places, slices, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+        var items = await LoadWorkEffortTableAsync(WorkEffortTablePlan.RequestedItemAttempts, people, places, slices, cap, batch, facts, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= items.Truncated;
         if (items.Problem is not null)
             problems.Add(items.Problem);
 
-        var interactions = await LoadWorkEffortTableAsync(WorkEffortTablePlan.InteractionAttempts, people, places, slices, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+        var interactions = await LoadWorkEffortTableAsync(WorkEffortTablePlan.InteractionAttempts, people, places, slices, cap, batch, facts, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= interactions.Truncated;
         if (interactions.Problem is not null)
             problems.Add(interactions.Problem);
 
         // History is for the tickets opened in those slices, across the whole window.
         var recordIds = batch.Touches().Select(touch => touch.SysId).ToArray();
-        var history = await LoadWorkEffortHistoryAsync(recordIds, window, cap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+        var history = await LoadWorkEffortHistoryAsync(recordIds, window, cap, batch, facts, pace, progress, cancellationToken).ConfigureAwait(false);
         truncated |= history.Truncated;
         if (history.Problem is not null)
             problems.Add(history.Problem);
@@ -110,7 +111,7 @@ public sealed partial class ServiceNowClient
         var touches = batch.Touches();
         var ledger = new WorkEffortLedger(people, touches, window);
         var rows = WorkEffortScore.Build(people, touches, window, WorkEffortUpdateMode.Daily);
-        return new WorkEffortReport(rows, WorkEffortQuery.Status(window, truncated, problems), "", ledger);
+        return new WorkEffortReport(rows, WorkEffortQuery.Status(window, truncated, problems), "", ledger, "", facts);
     }
 
     /// <summary>
@@ -210,6 +211,7 @@ public sealed partial class ServiceNowClient
         IReadOnlyList<WorkEffortWindow> slices,
         int safetyCap,
         WorkEffortBatch batch,
+        WorkEffortLoadFacts facts,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
@@ -220,7 +222,7 @@ public sealed partial class ServiceNowClient
             pace.BeginTable();
             try
             {
-                var truncated = await LoadWorkEffortPlanAsync(plans[index], people, places, slices, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+                var truncated = await LoadWorkEffortPlanAsync(plans[index], people, places, slices, safetyCap, batch, facts, pace, progress, cancellationToken).ConfigureAwait(false);
                 pace.CompleteTable();
                 progress?.Report(pace.Snapshot());
                 return (truncated, null);
@@ -252,18 +254,22 @@ public sealed partial class ServiceNowClient
         IReadOnlyList<WorkEffortWindow> slices,
         int safetyCap,
         WorkEffortBatch batch,
+        WorkEffortLoadFacts facts,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {
         var truncated = false;
+        var tableName = WorkEffortCalcLog.TableName(plan.Kind);
         foreach (var person in people)
         {
             foreach (var slice in slices)
             {
+                var day = DateOnly.FromDateTime(slice.Start);
                 foreach (var place in places)
                 {
-                    truncated |= await ReadScopedAsync(
+                    var noted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var read = await ReadScopedAsync(
                         plan.Table,
                         plan.Fields,
                         slice,
@@ -276,13 +282,56 @@ public sealed partial class ServiceNowClient
                                 return;
                             // LIKE also returns a longer city (York finds New York). Keep the place rule.
                             if (!RegionOfficeMatch.LocationMatchesOffice(touch.Location, place))
+                            {
+                                if (noted.Add("out\n" + touch.SysId))
+                                {
+                                    facts.AddDrop(new WorkEffortSeenDrop(
+                                        person.DisplayName,
+                                        WorkEffortCalcLog.TicketLabel(touch.Number, touch.SysId),
+                                        touch.SysId,
+                                        tableName,
+                                        string.IsNullOrWhiteSpace(touch.Location) ? "(blank)" : touch.Location.Trim(),
+                                        day,
+                                        place,
+                                        WorkEffortCalcLog.OutsideRegion));
+                                }
+
                                 return;
+                            }
+
+                            if (batch.Contains(touch.Kind, touch.SysId) && noted.Add("dup\n" + touch.SysId))
+                            {
+                                facts.AddDrop(new WorkEffortSeenDrop(
+                                    person.DisplayName,
+                                    WorkEffortCalcLog.TicketLabel(touch.Number, touch.SysId),
+                                    touch.SysId,
+                                    tableName,
+                                    string.IsNullOrWhiteSpace(touch.Location) ? "(blank)" : touch.Location.Trim(),
+                                    day,
+                                    place,
+                                    WorkEffortCalcLog.DuplicateMerged));
+                            }
+
                             batch.Add(touch);
                         },
                         person.DisplayName,
                         pace,
                         progress,
                         cancellationToken).ConfigureAwait(false);
+                    foreach (var clause in read.Clauses)
+                    {
+                        facts.AddSlice(new WorkEffortSliceRecord(
+                            person.DisplayName,
+                            day,
+                            place,
+                            tableName,
+                            clause.Role,
+                            clause.RowsReturned,
+                            clause.HitSafetyCap,
+                            clause.ReportedTotal));
+                    }
+
+                    truncated |= read.Truncated;
                 }
 
                 progress?.Report(pace.Snapshot());
@@ -292,12 +341,22 @@ public sealed partial class ServiceNowClient
         return truncated;
     }
 
+    private static string ClauseRole(string clause)
+    {
+        if (clause.Contains("opened_byISEMPTY", StringComparison.Ordinal)
+            || (clause.Contains("opened_forIN", StringComparison.Ordinal)
+                && !clause.Contains("opened_byIN", StringComparison.Ordinal)))
+            return "opened for";
+        return "opened by";
+    }
+
     /// <summary>
     /// Reads every query for <paramref name="window"/>. A full page is continued. When the
     /// next page does not move forward, the window is read again in smaller pieces.
-    /// Returns true only when the smallest piece still cannot be continued.
+    /// <see cref="ScopedRead.Truncated"/> is true only when the smallest piece still cannot be continued.
+    /// Row counts are distinct ids handed to <paramref name="accept"/> across those pieces.
     /// </summary>
-    private async Task<bool> ReadScopedAsync(
+    private async Task<ScopedRead> ReadScopedAsync(
         string table,
         string fields,
         WorkEffortWindow window,
@@ -309,24 +368,91 @@ public sealed partial class ServiceNowClient
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var stuck = false;
-        foreach (var clause in queries(window))
+        var clauses = queries(window);
+        var tallies = new ClauseTally[clauses.Count];
+        var totals = new int?[clauses.Count];
+        var capped = new bool[clauses.Count];
+        for (var index = 0; index < tallies.Length; index++)
+            tallies[index] = new ClauseTally();
+
+        var truncated = await ReadScopedCoreAsync(
+            table,
+            fields,
+            window,
+            pageSize,
+            queries,
+            accept,
+            subject,
+            pace,
+            progress,
+            cancellationToken,
+            tallies,
+            totals,
+            capped,
+            pursue: null).ConfigureAwait(false);
+
+        var stats = new List<ClauseStats>(clauses.Count);
+        for (var index = 0; index < clauses.Count; index++)
         {
+            if (WorkEffortQuery.IsUnscoped(clauses[index]))
+                continue;
+            stats.Add(new ClauseStats(ClauseRole(clauses[index]), tallies[index].Rows, totals[index], capped[index]));
+        }
+
+        return new ScopedRead(truncated, stats);
+    }
+
+    private async Task<bool> ReadScopedCoreAsync(
+        string table,
+        string fields,
+        WorkEffortWindow window,
+        int pageSize,
+        Func<WorkEffortWindow, IReadOnlyList<string>> queries,
+        Action<JsonElement> accept,
+        string subject,
+        WorkEffortPace pace,
+        IProgress<WorkEffortProgress>? progress,
+        CancellationToken cancellationToken,
+        ClauseTally[] tallies,
+        int?[] totals,
+        bool[] capped,
+        bool[]? pursue)
+    {
+        var clauses = queries(window);
+        var stuckAt = new bool[clauses.Count];
+        var stuck = false;
+        for (var index = 0; index < clauses.Count; index++)
+        {
+            if (pursue is not null && (index >= pursue.Length || !pursue[index]))
+                continue;
+
+            var clause = clauses[index];
             if (WorkEffortQuery.IsUnscoped(clause))
                 continue;
-            var outcome = await PageWorkEffortAsync(
+
+            var tally = index < tallies.Length ? tallies[index] : null;
+            var read = await PageWorkEffortAsync(
                 table,
                 fields,
                 clause,
                 pageSize,
-                accept,
+                row =>
+                {
+                    tally?.Note(SysIdOf(row));
+                    accept(row);
+                },
                 subject,
                 window,
                 pace,
                 progress,
                 cancellationToken).ConfigureAwait(false);
-            if (outcome == PageOutcome.Stuck)
+            if (index < totals.Length && read.ReportedTotal is int reported && totals[index] is null)
+                totals[index] = reported;
+            if (read.Outcome == PageOutcome.Stuck)
+            {
                 stuck = true;
+                stuckAt[index] = true;
+            }
         }
 
         if (!stuck)
@@ -334,12 +460,20 @@ public sealed partial class ServiceNowClient
 
         var parts = WorkEffortSlices.Subdivide(window);
         if (parts.Count == 0)
+        {
+            for (var index = 0; index < stuckAt.Length && index < capped.Length; index++)
+            {
+                if (stuckAt[index])
+                    capped[index] = true;
+            }
+
             return true;
+        }
 
         var truncated = false;
         foreach (var part in parts)
         {
-            truncated |= await ReadScopedAsync(
+            truncated |= await ReadScopedCoreAsync(
                 table,
                 fields,
                 part,
@@ -349,7 +483,11 @@ public sealed partial class ServiceNowClient
                 subject,
                 pace,
                 progress,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                tallies,
+                totals,
+                capped,
+                stuckAt).ConfigureAwait(false);
         }
 
         return truncated;
@@ -363,7 +501,7 @@ public sealed partial class ServiceNowClient
     /// Rows already seen on this query are not handed to <paramref name="accept"/> again.
     /// A non-matching LIKE row still counts as a row on the page, so later matches are requested.
     /// </summary>
-    private async Task<PageOutcome> PageWorkEffortAsync(
+    private async Task<PageRead> PageWorkEffortAsync(
         string table,
         string fields,
         string query,
@@ -491,14 +629,14 @@ public sealed partial class ServiceNowClient
             }
 
             if (outcome == PageOutcome.Done)
-                return PageOutcome.Done;
+                return new PageRead(PageOutcome.Done, total);
             if (outcome == PageOutcome.Stuck)
-                return PageOutcome.Stuck;
+                return new PageRead(PageOutcome.Stuck, total);
             offset = nextOffset;
             page++;
         }
 
-        return PageOutcome.Stuck;
+        return new PageRead(PageOutcome.Stuck, total);
     }
 
     private enum PageOutcome
@@ -540,6 +678,7 @@ public sealed partial class ServiceNowClient
         WorkEffortWindow window,
         int safetyCap,
         WorkEffortBatch batch,
+        WorkEffortLoadFacts facts,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
@@ -549,7 +688,7 @@ public sealed partial class ServiceNowClient
         pace.BeginTable();
         try
         {
-            truncated |= await LoadJournalAsync(recordIds, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+            truncated |= await LoadJournalAsync(recordIds, window, safetyCap, batch, facts, pace, progress, cancellationToken).ConfigureAwait(false);
             pace.CompleteTable();
             progress?.Report(pace.Snapshot());
         }
@@ -564,7 +703,7 @@ public sealed partial class ServiceNowClient
         pace.BeginTable();
         try
         {
-            truncated |= await LoadAuditAsync(recordIds, window, safetyCap, batch, pace, progress, cancellationToken).ConfigureAwait(false);
+            truncated |= await LoadAuditAsync(recordIds, window, safetyCap, batch, facts, pace, progress, cancellationToken).ConfigureAwait(false);
             pace.CompleteTable();
             progress?.Report(pace.Snapshot());
         }
@@ -583,6 +722,7 @@ public sealed partial class ServiceNowClient
         WorkEffortWindow window,
         int safetyCap,
         WorkEffortBatch batch,
+        WorkEffortLoadFacts facts,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
@@ -592,7 +732,7 @@ public sealed partial class ServiceNowClient
         for (var index = 0; index < recordIds.Count; index += WorkEffortQuery.ChunkSize)
         {
             var chunk = recordIds.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray();
-            truncated |= await ReadScopedAsync(
+            var read = await ReadScopedAsync(
                 WorkEffortQuery.JournalTable,
                 WorkEffortQuery.JournalFields,
                 window,
@@ -611,6 +751,8 @@ public sealed partial class ServiceNowClient
                 pace,
                 progress,
                 cancellationToken).ConfigureAwait(false);
+            truncated |= read.Truncated;
+            RecordHistory(facts, "journal", read);
         }
 
         if (pending.Count > 0)
@@ -713,6 +855,7 @@ public sealed partial class ServiceNowClient
         WorkEffortWindow window,
         int safetyCap,
         WorkEffortBatch batch,
+        WorkEffortLoadFacts facts,
         WorkEffortPace pace,
         IProgress<WorkEffortProgress>? progress,
         CancellationToken cancellationToken)
@@ -721,7 +864,7 @@ public sealed partial class ServiceNowClient
         for (var index = 0; index < recordIds.Count; index += WorkEffortQuery.ChunkSize)
         {
             var chunk = recordIds.Skip(index).Take(WorkEffortQuery.ChunkSize).ToArray();
-            truncated |= await ReadScopedAsync(
+            var read = await ReadScopedAsync(
                 WorkEffortQuery.AuditTable,
                 WorkEffortQuery.AuditFields,
                 window,
@@ -737,9 +880,29 @@ public sealed partial class ServiceNowClient
                 pace,
                 progress,
                 cancellationToken).ConfigureAwait(false);
+            truncated |= read.Truncated;
+            RecordHistory(facts, "audit", read);
         }
 
         return truncated;
+    }
+
+    private static void RecordHistory(WorkEffortLoadFacts facts, string source, ScopedRead read)
+    {
+        if (read.Clauses.Count == 0)
+            return;
+
+        var rows = 0;
+        int? reported = null;
+        var capped = false;
+        foreach (var clause in read.Clauses)
+        {
+            rows += clause.RowsReturned;
+            capped |= clause.HitSafetyCap;
+            reported ??= clause.ReportedTotal;
+        }
+
+        facts.AddHistory(new WorkEffortHistoryRecord(source, rows, capped, reported));
     }
 
     private static bool TryReadJournal(JsonElement row, WorkEffortWindow window, out JournalHit hit)
@@ -820,6 +983,29 @@ public sealed partial class ServiceNowClient
     }
 
     private readonly record struct JournalHit(string RecordId, string By, DateTime At, WorkEffortKind? Kind);
+
+    private readonly record struct PageRead(PageOutcome Outcome, int? ReportedTotal);
+
+    private readonly record struct ClauseStats(string Role, int RowsReturned, int? ReportedTotal, bool HitSafetyCap);
+
+    private readonly record struct ScopedRead(bool Truncated, IReadOnlyList<ClauseStats> Clauses);
+
+    /// <summary>Distinct rows handed to the reader for one opener or history clause, including later pages.</summary>
+    private sealed class ClauseTally
+    {
+        private readonly HashSet<string> _ids = new(StringComparer.OrdinalIgnoreCase);
+        private int _anonymous;
+
+        public int Rows => _ids.Count + _anonymous;
+
+        public void Note(string id)
+        {
+            if (id.Length == 0)
+                _anonymous++;
+            else
+                _ids.Add(id);
+        }
+    }
 
     private static WorkEffortTouch? ReadTouch(JsonElement row, WorkEffortKind kind)
     {

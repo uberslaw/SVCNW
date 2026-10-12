@@ -63,6 +63,7 @@ public sealed partial class SampleServiceNowClient
         var touches = SampleWorkEffort.Touches(localNow);
         var rows = WorkEffortScore.Build(people, touches, window, WorkEffortUpdateMode.Daily);
         var ledger = new WorkEffortLedger(people, touches, window);
-        return Task.FromResult(new WorkEffortReport(rows, WorkEffortWindow.CountsLabel(window), "", ledger));
+        var facts = WorkEffortLoadFacts.PracticeData(TeamListScope.Places(regionOffices));
+        return Task.FromResult(new WorkEffortReport(rows, WorkEffortWindow.CountsLabel(window), "", ledger, "", facts));
     }
 }
