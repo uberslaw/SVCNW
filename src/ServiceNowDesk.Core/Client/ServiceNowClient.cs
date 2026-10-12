@@ -1912,8 +1912,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         CancellationToken cancellationToken)
     {
         var extra = ListExtraClause(query, textFields);
-        // Incident and request-item My Team use the signed-in user's groups OR the watched
-        // group name. Walk-up My Team passes TeamMemberIds and stays on the people clause.
+        // My Team without selected people stays on the signed-in user's groups OR the watched
+        // group name. Selected people (walk-ups, incidents, and request items) use assigned_to.
         if (string.IsNullOrWhiteSpace(query.AssignmentClause)
             && query.Assignment == AssignmentScope.MyGroups
             && query.TeamMemberIds is null)
@@ -1947,11 +1947,13 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             assignment,
             OpenListClause(query),
             extra);
-        // Walk-up My Team is people (TeamMemberIds), so office cities do not apply.
-        // My Team and Unassigned stay inside the watched offices. My Tickets is assignee-only.
+        // Walk-up My Team is people and leaves LimitTeamToOffices false, so office cities
+        // do not apply even when they were copied onto the query. Incident and request-item
+        // My Team set the flag and stay inside the region. Unassigned keeps the queue offices.
+        // My Tickets and All Open are not office-scoped.
         if (query.OfficeLocations is not null
             && query.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned
-            && query.TeamMemberIds is null)
+            && (query.TeamMemberIds is null || query.LimitTeamToOffices))
             return OfficeQueue.Queries(encoded, query.OfficeLocations);
         return [encoded];
     }

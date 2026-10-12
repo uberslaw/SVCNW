@@ -20,6 +20,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
     private IServiceNowClient? _client;
     private bool _limitOffices;
     private IReadOnlyList<string> _officeCities = [];
+    private IReadOnlyList<string> _regionOffices = [];
     private bool _useLeadTeam;
     private IReadOnlyList<string> _teamMemberIds = [];
     private string _watchedGroupName = "";
@@ -42,6 +43,9 @@ public partial class MixWorkspaceViewModel : ObservableObject
     public ObservableCollection<TicketRow> Items { get; } = [];
     public Action<TicketRow>? PrepareRow { get; set; }
     public IReadOnlyList<string> OfficeCities => _officeCities;
+
+    /// <summary>Office labels saved as "my region" on Settings. Empty when none are saved.</summary>
+    public IReadOnlyList<string> RegionOffices => _regionOffices;
 
     public IReadOnlyList<string> TeamMemberIds => _teamMemberIds;
 
@@ -88,8 +92,15 @@ public partial class MixWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Walk-up My Team in the mix uses the same Leads people as the Walk-ups page.
-    /// Incidents and request items keep the assignment-group My Team query.
+    /// Settings region offices. Incident and request-item rows on My Team use these
+    /// when any are saved. Walk-up rows ignore them.
+    /// </summary>
+    public void UseRegionOffices(IEnumerable<string>? offices) =>
+        _regionOffices = RegionOfficeMatch.NormalizeOffices(offices);
+
+    /// <summary>
+    /// Leads people for My Team. Walk-up rows use the people with no office limit.
+    /// Incident and request-item rows use the same people inside the region.
     /// </summary>
     public void UseTeamMembers(IReadOnlyList<string>? memberIds)
     {
@@ -102,8 +113,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Incident and request-item rows in the mix use this watched group on My Team.
-    /// Walk-up My Team still uses <see cref="UseTeamMembers"/> and ignores the name.
+    /// Group name used only when My Team has no selected people.
     /// </summary>
     public void UseWatchedGroup(string? name) =>
         _watchedGroupName = name?.Trim() ?? "";
@@ -205,6 +215,26 @@ public partial class MixWorkspaceViewModel : ObservableObject
             ErrorMessage = "";
             var query = BuildQuery();
             var walkQuery = BuildWalkUpQuery();
+            if (_useLeadTeam
+                && Preset.Assignment == AssignmentScope.MyGroups
+                && _teamMemberIds.Count == 0)
+            {
+                if (version != _loadVersion)
+                    return;
+
+                _suppressSelection = true;
+                Items.Clear();
+                TotalCount = 0;
+                Selected = null;
+                _bound = null;
+                _suppressSelection = false;
+                ErrorMessage = WalkUpTeam.EmptyPrompt;
+                HasLoaded = true;
+                RefreshFilterChrome(query, "");
+                MarkListRefreshed();
+                return;
+            }
+
             var errors = new List<string>();
             var incidents = await LoadTableAsync(version, "Incidents", errors, async () =>
             {
@@ -216,22 +246,11 @@ public partial class MixWorkspaceViewModel : ObservableObject
                 var page = await _client.SearchRequestedItemsAsync(query, CancellationToken.None).ConfigureAwait(true);
                 return page.Items.Select(record => Tag(TicketRow.FromItem(record), "RITM", DeskSection.RequestedItems)).ToArray();
             }).ConfigureAwait(true);
-            TicketRow[] walks;
-            if (_useLeadTeam
-                && Preset.Assignment == AssignmentScope.MyGroups
-                && _teamMemberIds.Count == 0)
+            var walks = await LoadTableAsync(version, "Walk-ups", errors, async () =>
             {
-                walks = [];
-                errors.Add("Walk-ups: " + WalkUpTeam.EmptyPrompt);
-            }
-            else
-            {
-                walks = await LoadTableAsync(version, "Walk-ups", errors, async () =>
-                {
-                    var page = await _client.SearchInteractionsAsync(walkQuery, CancellationToken.None).ConfigureAwait(true);
-                    return page.Items.Select(record => Tag(TicketRow.FromInteraction(record), "IMS", DeskSection.WalkUps)).ToArray();
-                }).ConfigureAwait(true);
-            }
+                var page = await _client.SearchInteractionsAsync(walkQuery, CancellationToken.None).ConfigureAwait(true);
+                return page.Items.Select(record => Tag(TicketRow.FromInteraction(record), "IMS", DeskSection.WalkUps)).ToArray();
+            }).ConfigureAwait(true);
             if (version != _loadVersion)
                 return;
 
@@ -307,9 +326,22 @@ public partial class MixWorkspaceViewModel : ObservableObject
             text = trimmed;
 
         IReadOnlyList<string>? offices = null;
-        // My Team / Unassigned stay inside watched offices. My Tickets is assignee-only.
-        if (_limitOffices && Preset.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+        IReadOnlyList<string>? team = null;
+        var limitTeamToOffices = false;
+        if (_useLeadTeam && Preset.Assignment == AssignmentScope.MyGroups)
+        {
+            team = _teamMemberIds;
+            if (_regionOffices.Count > 0 || _limitOffices)
+            {
+                offices = TeamListScope.Offices(_regionOffices, _officeCities);
+                limitTeamToOffices = true;
+            }
+        }
+        else if (_limitOffices && Preset.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
+        {
+            // Unassigned, and My Team before people are selected. All Open is not in this list.
             offices = _officeCities;
+        }
 
         return new TicketQuery
         {
@@ -317,7 +349,9 @@ public partial class MixWorkspaceViewModel : ObservableObject
             Assignment = Preset.Assignment,
             Activity = Preset.Activity,
             OfficeLocations = offices,
-            WatchedGroupName = Preset.Assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0
+            TeamMemberIds = team,
+            LimitTeamToOffices = limitTeamToOffices,
+            WatchedGroupName = team is null && Preset.Assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0
                 ? _watchedGroupName
                 : null,
             Limit = PageLimit
@@ -348,6 +382,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
         {
             TeamMemberIds = _teamMemberIds,
             OfficeLocations = null,
+            LimitTeamToOffices = false,
             WatchedGroupName = null
         };
     }

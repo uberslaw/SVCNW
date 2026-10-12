@@ -20,6 +20,7 @@
         <DockPanel x:Name="ListPane" Grid.Row="1" Grid.Column="0">
             <controls:PresetBar DockPanel.Dock="Top"/>
             <TextBlock DockPanel.Dock="Top" Text="{Binding TotalCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding SearchHint}" Foreground="{StaticResource CustomerBrush}" Margin="0,0,0,6" Visibility="{Binding SearchHint, Converter={StaticResource StringVis}}"/>
             <TextBlock DockPanel.Dock="Bottom" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" Text="Items come from catalog orders. Assign them, add notes, and close them here."/>
             <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" ItemTemplate="{StaticResource TicketRowTemplate}" ItemContainerStyle="{StaticResource TicketListItem}" Style="{StaticResource DeskList}"/>
         </DockPanel>

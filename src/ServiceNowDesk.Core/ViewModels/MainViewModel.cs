@@ -148,6 +148,8 @@ public partial class MainViewModel : ObservableObject
         {
             Connection.RememberRegionOffices(Region.SelectedOffices);
             _store.Save(Connection.BuildSettings());
+            if (IsConnected)
+                ApplyOfficeCities();
         };
         Leads = new LeadsViewModel();
         DailyWork = new DailyWorkViewModel(
@@ -1185,10 +1187,14 @@ public partial class MainViewModel : ObservableObject
     private void ApplyOfficeCities()
     {
         var cities = OfficeQueue.Cities(Connection.Notifications.OfficeLocations, _signedInUserLocation);
+        var region = Connection.RegionOffices;
         Incidents.UseOfficeCities(cities);
         RequestedItems.UseOfficeCities(cities);
         WalkUps.UseOfficeCities(cities);
         Mix.UseOfficeCities(cities);
+        Incidents.UseRegionOffices(region);
+        RequestedItems.UseRegionOffices(region);
+        Mix.UseRegionOffices(region);
         var watchedGroup = NotificationSettings.Committed.WatchedGroupName;
         Incidents.UseWatchedGroup(watchedGroup);
         RequestedItems.UseWatchedGroup(watchedGroup);
@@ -1224,11 +1230,15 @@ public partial class MainViewModel : ObservableObject
     private void ApplyTeamQueue()
     {
         var team = TeamIdsForAlerts();
+        Incidents.UseTeamMembers(team);
+        RequestedItems.UseTeamMembers(team);
         WalkUps.UseTeamMembers(team);
         Mix.UseTeamMembers(team);
+        _loadedFor.Remove(DeskSection.Incidents);
+        _loadedFor.Remove(DeskSection.RequestedItems);
         _loadedFor.Remove(DeskSection.WalkUps);
         _loadedFor.Remove(DeskSection.InTheMix);
-        if (IsConnected && SelectedSection is DeskSection.WalkUps or DeskSection.InTheMix)
+        if (IsConnected && SelectedSection is DeskSection.Incidents or DeskSection.RequestedItems or DeskSection.WalkUps or DeskSection.InTheMix)
             _ = EnsureSectionAsync();
     }
 

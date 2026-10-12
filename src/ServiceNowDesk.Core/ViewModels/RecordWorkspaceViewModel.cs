@@ -20,6 +20,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     private int _openVersion;
     private bool _limitOffices;
     private IReadOnlyList<string> _officeCities = [];
+    private IReadOnlyList<string> _regionOffices = [];
     private IReadOnlyList<string> _teamMemberIds = [];
     private bool _useLeadTeam;
     private string _watchedGroupName = "";
@@ -102,11 +103,14 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     public IReadOnlyList<string> OfficeCities => _officeCities;
 
+    /// <summary>Office labels saved as "my region" on Settings. Empty when none are saved.</summary>
+    public IReadOnlyList<string> RegionOffices => _regionOffices;
+
     public IReadOnlyList<string> TeamMemberIds => _teamMemberIds;
 
     /// <summary>
-    /// My Team and Unassigned keep tickets whose location is one of these cities.
-    /// My Tickets ignores the list (assignee-only).
+    /// Queue cities for Unassigned, and for My Team when no region offices are saved.
+    /// My Tickets ignores the list (assignee-only). All Open ignores it too.
     /// </summary>
     public void UseOfficeCities(IReadOnlyList<string>? cities)
     {
@@ -115,8 +119,15 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Walk-up My Team uses these Leads people. Other workspaces leave this unset and keep
-    /// the assignment-group clause.
+    /// Settings region offices. Incident and request-item My Team use these instead of
+    /// <see cref="UseOfficeCities"/> when any are saved. Walk-up My Team ignores them.
+    /// </summary>
+    public void UseRegionOffices(IEnumerable<string>? offices) =>
+        _regionOffices = RegionOfficeMatch.NormalizeOffices(offices);
+
+    /// <summary>
+    /// Leads people for My Team. The same ids are used for walk-ups, incidents, and request items.
+    /// An empty list keeps those My Team lists empty.
     /// </summary>
     public void UseTeamMembers(IReadOnlyList<string>? memberIds)
     {
@@ -129,8 +140,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Incident and request-item My Team include this watched group, the same group whose
-    /// members are the walk-up My Team roster.
+    /// Group name used only when My Team has no selected people. People My Team ignores it.
     /// </summary>
     public void UseWatchedGroup(string? name) =>
         _watchedGroupName = name?.Trim() ?? "";
@@ -690,15 +700,28 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     /// <summary>
     /// Office-scoped presets drop out-of-office rows on Upsert so opening a Daily Work / search
     /// hit cannot inject Manila (or other) tickets into My Team / Unassigned.
-    /// My Tickets stays assignee-only. Cached rows often have no location; the list query
-    /// already applied the office filter for team queues.
+    /// My Tickets and All Open stay unscoped. Walk-up My Team keeps people outside the office.
+    /// Incident and request-item My Team keep a selected person inside the region.
     /// </summary>
     protected bool MatchesOfficeScope(TicketRow row)
     {
-        var leadTeamPeople = _useLeadTeam && Preset?.Assignment == AssignmentScope.MyGroups;
-        if (!_limitOffices
-            || leadTeamPeople
-            || Preset?.Assignment is not (AssignmentScope.MyGroups or AssignmentScope.Unassigned))
+        if (Section == DeskSection.WalkUps && _useLeadTeam && Preset?.Assignment == AssignmentScope.MyGroups)
+            return true;
+
+        if (Preset?.Assignment is not (AssignmentScope.MyGroups or AssignmentScope.Unassigned))
+            return true;
+
+        if (_useLeadTeam && Preset.Assignment == AssignmentScope.MyGroups
+            && Section is DeskSection.Incidents or DeskSection.RequestedItems)
+        {
+            if (!TeamListScope.Includes(_teamMemberIds, row.AssigneeId))
+                return false;
+            if (_regionOffices.Count == 0 && !_limitOffices)
+                return true;
+            return OfficeQueue.Matches(row.Location, TeamListScope.Offices(_regionOffices, _officeCities));
+        }
+
+        if (!_limitOffices)
             return true;
         return OfficeQueue.Matches(row.Location, _officeCities);
     }
@@ -747,15 +770,24 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         IReadOnlyList<string>? offices = null;
         IReadOnlyList<string>? team = null;
         string? watched = null;
+        var limitTeamToOffices = false;
         if (_useLeadTeam && assignment == AssignmentScope.MyGroups)
         {
-            // Walk-up My Team is the Leads people, including members outside the office.
+            // Same Leads people on every My Team list. Walk-ups are not office-limited.
+            // Incidents and request items stay inside the Settings region when one is saved,
+            // otherwise the queue office cities. All Open does not use this branch.
             team = _teamMemberIds;
+            if (Section is DeskSection.Incidents or DeskSection.RequestedItems
+                && (_regionOffices.Count > 0 || _limitOffices))
+            {
+                offices = TeamListScope.Offices(_regionOffices, _officeCities);
+                limitTeamToOffices = true;
+            }
         }
         else if (_limitOffices && assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
         {
-            // My Team / Unassigned: watched notification offices, or the signed-in user's city
-            // when that list is empty (see OfficeQueue.Cities). My Tickets stays assignee-only.
+            // Unassigned, and My Team before any people are selected: queue offices
+            // (notification cities, or the signed-in user's city). My Tickets stays assignee-only.
             offices = _officeCities;
             if (assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0)
                 watched = _watchedGroupName;
@@ -773,6 +805,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             AssignmentClause = Preset?.AssignmentClause,
             OfficeLocations = offices,
             TeamMemberIds = team,
+            LimitTeamToOffices = limitTeamToOffices,
             WatchedGroupName = watched,
             Limit = 50
         };
