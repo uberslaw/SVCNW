@@ -20,6 +20,7 @@ public sealed class ReferenceChoiceField : ObservableObject
     private IServiceNowClient? _client;
     private CancellationTokenSource? _filterDelay;
     private int _applyDepth;
+    private int _pushBack;
     private int _filterVersion;
     private int _matchCount;
     private int _commitGate;
@@ -435,9 +436,30 @@ public sealed class ReferenceChoiceField : ObservableObject
     private void AssignId(string? value)
     {
         var next = value ?? "";
+        if (_pushBack > 0)
+            return;
         if (string.Equals(_id, next, StringComparison.Ordinal))
         {
             OnPropertyChanged(nameof(SelectedLabel));
+            return;
+        }
+
+        // The combo clears Id when the current row is not in the visible page.
+        if (_applyDepth == 0
+            && next.Length == 0
+            && _id.Length > 0
+            && Choices.All(choice => !choice.Value.Equals(_id, StringComparison.OrdinalIgnoreCase)))
+        {
+            _pushBack++;
+            try
+            {
+                OnPropertyChanged(nameof(Id));
+            }
+            finally
+            {
+                _pushBack--;
+            }
+
             return;
         }
 

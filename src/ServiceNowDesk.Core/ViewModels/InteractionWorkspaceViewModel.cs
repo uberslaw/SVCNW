@@ -45,11 +45,18 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
 
     public override async Task EnsureChoicesAsync()
     {
-        await LoadChoiceListsAsync();
-        if (Client is null || Assignment.GroupsLoaded)
-            return;
-        Assignment.Use(Client);
-        await Assignment.LoadGroupsAsync();
+        try
+        {
+            await LoadChoiceListsAsync();
+            if (Client is null || Assignment.GroupsLoaded)
+                return;
+            Assignment.Use(Client);
+            await Assignment.LoadGroupsAsync();
+        }
+        finally
+        {
+            AdoptUntouchedForm();
+        }
     }
 
     public Task ReloadChoiceListsAsync()
@@ -72,6 +79,7 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
             outcomes = DefaultChoices.InteractionOutcomes.ToArray();
         foreach (var choice in outcomes)
             ResolveChoices.Add(choice);
+        AdoptUntouchedForm();
     }
 
     protected override Task ResolveReferencesAsync(CancellationToken cancellationToken) =>
@@ -91,21 +99,23 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
         UpsertRow(TicketRow.FromInteraction(record));
     }
 
-    protected override bool ComputeDirty()
-    {
-        if (!string.IsNullOrWhiteSpace(JournalText))
-            return true;
-        if (_loaded is null)
-            return IsNew && HasNewInput();
+    protected override IReadOnlyList<string> ReadEditableFields() =>
+    [
+        ShortDescription ?? "",
+        Description ?? "",
+        JournalText ?? "",
+        State ?? "",
+        Type ?? "",
+        Caller.SysId ?? "",
+        Caller.Text ?? "",
+        Assignment.GroupId ?? "",
+        Assignment.MemberId ?? ""
+    ];
 
-        var record = _loaded;
-        return ShortDescription != record.ShortDescription
-            || Description != record.Description
-            || State != record.State
-            || Type != record.Type
-            || Id(Caller.SysId) != Id(record.OpenedFor.SysId)
-            || Id(Assignment.MemberId) != Id(record.AssignedTo.SysId)
-            || Id(Assignment.GroupId) != Id(record.AssignmentGroup.SysId);
+    protected override void RememberCombos()
+    {
+        RememberCombo(nameof(State), State);
+        RememberCombo(nameof(Type), Type);
     }
 
     protected override void OnStartNew()
@@ -245,6 +255,9 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
 
     partial void OnStateChanged(string value)
     {
+        if (RestoreComboIfCleared(nameof(State), value, StateChoices, restored => State = restored))
+            return;
+
         if (!Applying && IsClosedState(value))
         {
             if (ResolveChoices.Any(choice => choice.Value == value))
@@ -262,6 +275,8 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
 
     partial void OnTypeChanged(string value)
     {
+        if (RestoreComboIfCleared(nameof(Type), value, TypeChoices, restored => Type = restored))
+            return;
         if (!Applying)
             Touch();
     }
@@ -299,20 +314,8 @@ public partial class InteractionWorkspaceViewModel : RecordWorkspaceViewModel
         };
     }
 
-    private bool HasNewInput() =>
-        !string.IsNullOrWhiteSpace(ShortDescription)
-        || !string.IsNullOrWhiteSpace(Description)
-        || !string.IsNullOrEmpty(Caller.SysId)
-        || !string.IsNullOrEmpty(Assignment.MemberId)
-        || !string.IsNullOrEmpty(Assignment.GroupId)
-        || !string.IsNullOrWhiteSpace(JournalText)
-        || State != "new"
-        || Type != DefaultChoices.WalkUpType;
-
     private static bool IsClosedState(string? value) =>
         value?.Contains("closed", StringComparison.OrdinalIgnoreCase) == true;
-
-    private static string Id(string? value) => value ?? "";
 
     private Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
         Client is null

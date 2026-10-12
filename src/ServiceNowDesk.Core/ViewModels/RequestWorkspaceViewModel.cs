@@ -34,7 +34,17 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
 
     public event EventHandler<string>? RelatedItemRequested;
 
-    public override Task EnsureChoicesAsync() => LoadChoiceListsAsync();
+    public override async Task EnsureChoicesAsync()
+    {
+        try
+        {
+            await LoadChoiceListsAsync();
+        }
+        finally
+        {
+            AdoptUntouchedForm();
+        }
+    }
 
     public Task ReloadChoiceListsAsync()
     {
@@ -63,6 +73,8 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
                     ResolveChoices.Add(choice);
             }
         }
+
+        AdoptUntouchedForm();
     }
 
     protected override Task ResolveReferencesAsync(CancellationToken cancellationToken) =>
@@ -82,21 +94,23 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
         await LoadRelatedAsync(record.SysId);
     }
 
-    protected override bool ComputeDirty()
-    {
-        if (!string.IsNullOrWhiteSpace(JournalText))
-            return true;
-        if (_loaded is null)
-            return IsNew && HasNewInput();
+    protected override IReadOnlyList<string> ReadEditableFields() =>
+    [
+        ShortDescription ?? "",
+        Description ?? "",
+        JournalText ?? "",
+        SpecialInstructions ?? "",
+        RequestState ?? "",
+        Priority ?? "",
+        DueDate ?? "",
+        RequestedFor.SysId ?? "",
+        RequestedFor.Text ?? ""
+    ];
 
-        var record = _loaded;
-        return ShortDescription != record.ShortDescription
-            || Description != record.Description
-            || SpecialInstructions != record.SpecialInstructions
-            || RequestState != record.RequestState
-            || Priority != record.Priority
-            || DueDate != record.DueDate
-            || RequestedFor.SysId != record.RequestedFor.SysId;
+    protected override void RememberCombos()
+    {
+        RememberCombo(nameof(RequestState), RequestState);
+        RememberCombo(nameof(Priority), Priority);
     }
 
     protected override void OnStartNew()
@@ -201,6 +215,9 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
 
     partial void OnRequestStateChanged(string value)
     {
+        if (RestoreComboIfCleared(nameof(RequestState), value, StateChoices, restored => RequestState = restored))
+            return;
+
         if (!Applying && value.StartsWith("closed", StringComparison.OrdinalIgnoreCase))
         {
             BeginResolve();
@@ -214,7 +231,12 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
             Touch();
     }
 
-    partial void OnPriorityChanged(string value) => Touch();
+    partial void OnPriorityChanged(string value)
+    {
+        if (RestoreComboIfCleared(nameof(Priority), value, PriorityChoices, restored => Priority = restored))
+            return;
+        Touch();
+    }
     partial void OnSpecialInstructionsChanged(string value) => Touch();
     partial void OnDueDateChanged(string value) => Touch();
 
@@ -277,12 +299,6 @@ public partial class RequestWorkspaceViewModel : RecordWorkspaceViewModel
             RequestedForId = RequestedFor.SysId != record.RequestedFor.SysId ? RequestedFor.SysId : null
         };
     }
-
-    private bool HasNewInput() =>
-        !string.IsNullOrWhiteSpace(ShortDescription)
-        || !string.IsNullOrWhiteSpace(Description)
-        || !string.IsNullOrEmpty(RequestedFor.SysId)
-        || !string.IsNullOrWhiteSpace(JournalText);
 
     private Task<IReadOnlyList<ReferenceSuggestion>> SearchUsersAsync(string text, CancellationToken cancellationToken) =>
         Client is null

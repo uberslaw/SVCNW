@@ -85,12 +85,19 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
 
     public override async Task EnsureChoicesAsync()
     {
-        await LoadChoiceListsAsync();
-        await LoadReferenceChoicesAsync();
-        if (Client is null || Assignment.GroupsLoaded)
-            return;
-        Assignment.Use(Client);
-        await Assignment.LoadGroupsAsync();
+        try
+        {
+            await LoadChoiceListsAsync();
+            await LoadReferenceChoicesAsync();
+            if (Client is null || Assignment.GroupsLoaded)
+                return;
+            Assignment.Use(Client);
+            await Assignment.LoadGroupsAsync();
+        }
+        finally
+        {
+            AdoptUntouchedForm();
+        }
     }
 
     public Task ReloadChoiceListsAsync()
@@ -113,6 +120,7 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         PublishContactChoices();
         await FillChoicesAsync(HoldReasonChoices, "incident", "hold_reason", DefaultChoices.HoldReasons, includeBlank: true, blankLabel: "None");
         await FillChoicesAsync(ResolveChoices, "incident", "close_code", DefaultChoices.CloseCodes);
+        AdoptUntouchedForm();
     }
 
     protected override Task ResolveReferencesAsync(CancellationToken cancellationToken) =>
@@ -135,29 +143,36 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         await LoadSubcategoriesAsync(record.Category, record.Subcategory, record.SubcategoryLabel);
     }
 
-    protected override bool ComputeDirty()
-    {
-        if (!string.IsNullOrWhiteSpace(JournalText))
-            return true;
-        if (_loaded is null)
-            return IsNew && HasNewInput();
+    protected override IReadOnlyList<string> ReadEditableFields() =>
+    [
+        ShortDescription ?? "",
+        Description ?? "",
+        JournalText ?? "",
+        State ?? "",
+        Impact ?? "",
+        Urgency ?? "",
+        Category ?? "",
+        Subcategory ?? "",
+        ContactType ?? "",
+        HoldReason ?? "",
+        FollowUp ?? "",
+        Caller.SysId ?? "",
+        Caller.Text ?? "",
+        Assignment.GroupId ?? "",
+        Assignment.MemberId ?? "",
+        ServiceOffering.Id ?? "",
+        ConfigurationItem.Id ?? ""
+    ];
 
-        var record = _loaded;
-        return ShortDescription != record.ShortDescription
-            || Description != record.Description
-            || State != record.State
-            || Impact != record.Impact
-            || Urgency != record.Urgency
-            || Category != record.Category
-            || Subcategory != record.Subcategory
-            || ContactType != record.ContactType
-            || HoldReason != record.HoldReason
-            || FollowUp != record.FollowUp
-            || Caller.SysId != record.Caller.SysId
-            || Assignment.MemberId != record.AssignedTo.SysId
-            || Assignment.GroupId != record.AssignmentGroup.SysId
-            || !SameId(ServiceOffering.Id, record.ServiceOffering.SysId)
-            || !SameId(ConfigurationItem.Id, record.ConfigurationItem.SysId);
+    protected override void RememberCombos()
+    {
+        RememberCombo(nameof(State), State);
+        RememberCombo(nameof(Impact), Impact);
+        RememberCombo(nameof(Urgency), Urgency);
+        RememberCombo(nameof(Category), Category);
+        RememberCombo(nameof(Subcategory), Subcategory);
+        RememberCombo(nameof(ContactType), ContactType);
+        RememberCombo(nameof(HoldReason), HoldReason);
     }
 
     protected override void OnStartNew()
@@ -299,6 +314,9 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
 
     partial void OnStateChanged(string value)
     {
+        if (RestoreComboIfCleared(nameof(State), value, StateChoices, restored => State = restored))
+            return;
+
         if (!Applying && value is "6" or "7")
         {
             BeginResolve();
@@ -317,20 +335,49 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
         OnPropertyChanged(nameof(ShowHoldReason));
     }
 
-    partial void OnImpactChanged(string value) => Touch();
-    partial void OnUrgencyChanged(string value) => Touch();
+    partial void OnImpactChanged(string value)
+    {
+        if (RestoreComboIfCleared(nameof(Impact), value, ImpactChoices, restored => Impact = restored))
+            return;
+        Touch();
+    }
+
+    partial void OnUrgencyChanged(string value)
+    {
+        if (RestoreComboIfCleared(nameof(Urgency), value, UrgencyChoices, restored => Urgency = restored))
+            return;
+        Touch();
+    }
+
     partial void OnContactTypeChanged(string value)
     {
+        if (RestoreComboIfCleared(nameof(ContactType), value, ContactChoices, restored => ContactType = restored))
+            return;
         if (!Applying)
             _contactEdited = true;
         Touch();
     }
-    partial void OnHoldReasonChanged(string value) => Touch();
+
+    partial void OnHoldReasonChanged(string value)
+    {
+        if (RestoreComboIfCleared(nameof(HoldReason), value, HoldReasonChoices, restored => HoldReason = restored))
+            return;
+        Touch();
+    }
+
     partial void OnFollowUpChanged(string value) => Touch();
-    partial void OnSubcategoryChanged(string value) => Touch();
+
+    partial void OnSubcategoryChanged(string value)
+    {
+        if (RestoreComboIfCleared(nameof(Subcategory), value, SubcategoryChoices, restored => Subcategory = restored))
+            return;
+        Touch();
+    }
 
     partial void OnCategoryChanged(string value)
     {
+        if (RestoreComboIfCleared(nameof(Category), value, CategoryChoices, restored => Category = restored))
+            return;
         if (!Applying)
             Touch();
         if (!Applying)
@@ -341,7 +388,10 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     {
         await FillChoicesAsync(SubcategoryChoices, "incident", "subcategory", [], category, includeBlank: true, blankLabel: "None");
         EnsureChoice(SubcategoryChoices, selectedValue, selectedLabel);
-        Subcategory = selectedValue;
+        // Intentional. A combo must not put the previous subcategory back when the new list lacks it.
+        Applying = true;
+        Subcategory = selectedValue ?? "";
+        Applying = false;
     }
 
     private void Apply(IncidentRecord record)
@@ -419,12 +469,8 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
     {
         if (template is null || !AllowCreate || !IsReady || Client is null)
             return;
-        if (IsDirty)
-        {
-            ShowUnsavedBanner = true;
-            EditorMessage = "Save or discard unsaved changes first.";
+        if (HasUnsavedEdits("Save or discard unsaved changes first."))
             return;
-        }
 
         BeginNew();
         Applying = true;
@@ -555,24 +601,6 @@ public partial class IncidentWorkspaceViewModel : RecordWorkspaceViewModel
             CallerDisplay = string.IsNullOrEmpty(Caller.SysId) ? "" : Caller.Text
         };
     }
-
-    private bool HasNewInput() =>
-        !string.IsNullOrWhiteSpace(ShortDescription)
-        || !string.IsNullOrWhiteSpace(Description)
-        || !string.IsNullOrEmpty(Caller.SysId)
-        || !string.IsNullOrEmpty(Assignment.MemberId)
-        || !string.IsNullOrEmpty(Assignment.GroupId)
-        || !string.IsNullOrEmpty(ServiceOffering.Id)
-        || !string.IsNullOrEmpty(ConfigurationItem.Id)
-        || !string.IsNullOrWhiteSpace(JournalText)
-        || State != "1"
-        || Impact != "3"
-        || Urgency != "3"
-        || !string.IsNullOrEmpty(Category)
-        || !string.IsNullOrEmpty(Subcategory)
-        || ContactType != ContactTypeCatalog.DefaultValue(ContactChoices)
-        || !string.IsNullOrEmpty(HoldReason)
-        || !string.IsNullOrWhiteSpace(FollowUp);
 
     private void EnsureFollowUpDefault()
     {

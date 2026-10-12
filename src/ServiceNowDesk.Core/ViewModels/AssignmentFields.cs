@@ -13,6 +13,7 @@ public sealed class AssignmentFields : ObservableObject
     private bool _applying;
     private int _version;
     private int _groupVersion;
+    private int _pushBack;
     private string _groupId = "";
     private string _memberId = "";
 
@@ -205,13 +206,44 @@ public sealed class AssignmentFields : ObservableObject
     private void Assign(ref string field, string? value, string propertyName, Action<string> changed)
     {
         var next = value ?? "";
+        // A combo write-back while we push the previous value must not clear it again.
+        if (_pushBack > 0)
+            return;
         if (string.Equals(field, next, StringComparison.Ordinal))
             return;
+        if (!_applying && IsBindingClear(field, next, propertyName))
+        {
+            _pushBack++;
+            try
+            {
+                OnPropertyChanged(propertyName);
+            }
+            finally
+            {
+                _pushBack--;
+            }
+
+            return;
+        }
+
         field = next;
         changed(next);
         OnPropertyChanged(propertyName);
         if (propertyName == nameof(MemberId))
             OnPropertyChanged(nameof(SelectedMemberLabel));
+    }
+
+    /// <summary>
+    /// ComboBox SelectedValue becomes null when the current id is not in the list
+    /// (the list is empty, or it was just cleared). Selecting Unassigned is a real
+    /// edit because that blank row is in the list while the previous id still is too.
+    /// </summary>
+    private bool IsBindingClear(string current, string next, string propertyName)
+    {
+        if (next.Length > 0 || current.Length == 0)
+            return false;
+        var list = propertyName == nameof(GroupId) ? Groups : Members;
+        return list.All(choice => !string.Equals(choice.Value, current, StringComparison.Ordinal));
     }
 
     private string VisibleMemberLabel(string id)

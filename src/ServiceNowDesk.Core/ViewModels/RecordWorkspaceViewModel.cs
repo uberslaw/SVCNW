@@ -27,6 +27,9 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     private string _watchedGroupName = "";
     private bool _queryFilteredByRegion;
     private readonly Dictionary<string, string> _teamNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _comboValue = new(StringComparer.Ordinal);
+    private string[]? _cleanFields;
+    private int _applyingDepth;
 
     protected RecordWorkspaceViewModel(IDesktopServices desktop, string tableName, string recordLabel, bool allowCreate, IReadOnlyList<PresetOption> presets, DeskSection section, bool attachments = false)
     {
@@ -44,7 +47,23 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     protected IDesktopServices Desktop { get; }
     protected IServiceNowClient? Client { get; private set; }
-    protected bool Applying { get; set; }
+
+    /// <summary>
+    /// Nested loads and choice rebuilds each take a level. Programmatic sets inside
+    /// a level are not user edits.
+    /// </summary>
+    protected bool Applying
+    {
+        get => _applyingDepth > 0;
+        set
+        {
+            if (value)
+                _applyingDepth++;
+            else if (_applyingDepth > 0)
+                _applyingDepth--;
+        }
+    }
+
     protected string? EditorSysId { get; set; }
 
     public string TableName { get; }
@@ -256,6 +275,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         IsNew = false;
         HasEditor = false;
         IsDirty = false;
+        // The session is gone. Do not compare the cleared fields with the ticket that was open.
+        _cleanFields = null;
         ShowResolvePanel = false;
         ShowUnsavedBanner = false;
         ErrorMessage = "";
@@ -274,12 +295,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     public async Task OpenFromSearchAsync(string sysId)
     {
-        if (IsDirty)
-        {
-            ShowUnsavedBanner = true;
-            EditorMessage = "Save or discard unsaved changes before opening another record.";
+        if (HasUnsavedEdits("Save or discard unsaved changes before opening another record."))
             return;
-        }
 
         await LoadEditorAsync(sysId, CancellationToken.None);
     }
@@ -450,12 +467,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     {
         if (!CanCreate())
             return;
-        if (IsDirty)
-        {
-            ShowUnsavedBanner = true;
-            EditorMessage = "Save or discard unsaved changes first.";
+        if (HasUnsavedEdits("Save or discard unsaved changes first."))
             return;
-        }
 
         BeginNew();
     }
@@ -472,6 +485,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             return;
         }
 
+        var saved = false;
         try
         {
             IsEditorBusy = true;
@@ -493,6 +507,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
                 assignee?.Name,
                 assignee?.Id));
             await RefreshAttachmentsAsync(CancellationToken.None);
+            saved = true;
         }
         catch (Exception ex)
         {
@@ -502,7 +517,10 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         {
             Applying = false;
             IsEditorBusy = false;
-            RecalculateDirty();
+            if (saved)
+                AcceptCleanState();
+            else
+                RecalculateDirty();
         }
     }
 
@@ -522,7 +540,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         finally
         {
             Applying = false;
-            RecalculateDirty();
+            AcceptCleanState();
         }
     }
 
@@ -586,6 +604,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             return;
         }
 
+        var resolved = false;
         try
         {
             IsEditorBusy = true;
@@ -609,6 +628,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             ShowUnsavedBanner = false;
             EditorMessage = "Updated " + Number + ".";
             await RefreshAsync();
+            resolved = true;
         }
         catch (Exception ex)
         {
@@ -618,7 +638,10 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         {
             Applying = false;
             IsEditorBusy = false;
-            RecalculateDirty();
+            if (resolved)
+                AcceptCleanState();
+            else
+                RecalculateDirty();
         }
     }
 
@@ -737,10 +760,8 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             return;
         if (IsNew && HasEditor && Selected is null)
             return;
-        if (IsDirty)
+        if (HasUnsavedEdits("Save or discard unsaved changes first."))
         {
-            ShowUnsavedBanner = true;
-            EditorMessage = "Save or discard unsaved changes first.";
             if (_boundRow is not null && Selected != _boundRow)
             {
                 _suppressSelection = true;
@@ -786,7 +807,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         {
             _suppressSelection = false;
             Applying = false;
-            RecalculateDirty();
+            AcceptCleanState();
         }
     }
 
@@ -1031,7 +1052,13 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
 
     protected abstract Task<PagedResult<TicketRow>> FetchPageAsync(TicketQuery query, CancellationToken cancellationToken);
     protected abstract Task LoadRecordAsync(string sysId, CancellationToken cancellationToken);
-    protected abstract bool ComputeDirty();
+
+    /// <summary>
+    /// Field values a person can change. The clean snapshot is taken after load, after the
+    /// blank form is prepared, and after choice lists settle. A later difference is a hand edit.
+    /// </summary>
+    protected abstract IReadOnlyList<string> ReadEditableFields();
+
     protected abstract void OnStartNew();
     protected abstract void Restore();
     protected abstract Task SaveNewAsync(CancellationToken cancellationToken);
@@ -1103,6 +1130,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             return;
 
         var version = ++_openVersion;
+        var acceptLoaded = false;
         try
         {
             IsEditorBusy = true;
@@ -1164,6 +1192,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             if (_boundRow is not null)
                 Selected = _boundRow;
             _suppressSelection = false;
+            acceptLoaded = true;
         }
         catch (OperationCanceledException)
         {
@@ -1179,7 +1208,12 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
             {
                 Applying = false;
                 IsEditorBusy = false;
-                RecalculateDirty();
+                // Opening or viewing a record is the new clean baseline, including values
+                // the server and choice lists filled in. Only a later hand edit is dirty.
+                if (acceptLoaded)
+                    AcceptCleanState();
+                else
+                    RecalculateDirty();
             }
         }
     }
@@ -1216,7 +1250,84 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     {
         if (Applying)
             return;
-        IsDirty = ComputeDirty();
+        if (_cleanFields is null)
+        {
+            IsDirty = false;
+            return;
+        }
+
+        var current = ReadEditableFields();
+        IsDirty = current.Count != _cleanFields.Length || !current.SequenceEqual(_cleanFields);
+    }
+
+    /// <summary>
+    /// Remembers the form as the user sees it after a load or a blank open.
+    /// Binding and choice-list fills that happen before this are not edits.
+    /// </summary>
+    protected void AcceptCleanState()
+    {
+        _cleanFields = ReadEditableFields().ToArray();
+        RememberCombos();
+        IsDirty = false;
+        ShowUnsavedBanner = false;
+    }
+
+    /// <summary>
+    /// Choice lists and group catalogs can rewrite defaults after the form is shown.
+    /// Keep that as the clean snapshot unless the user has already edited by hand.
+    /// </summary>
+    protected void AdoptUntouchedForm()
+    {
+        if (!IsDirty)
+            AcceptCleanState();
+    }
+
+    protected virtual void RememberCombos()
+    {
+    }
+
+    protected void RememberCombo(string key, string? value) =>
+        _comboValue[key] = value ?? "";
+
+    /// <summary>
+    /// A combo writes null when its current value is missing from ItemsSource (empty list,
+    /// or the list was just cleared). That is binding, not a person clearing the field.
+    /// A real clear still counts when the previous value is present in the list.
+    /// </summary>
+    protected bool RestoreComboIfCleared(string key, string? incoming, IEnumerable<Choice> choices, Action<string> writeBack)
+    {
+        var next = incoming ?? "";
+        _comboValue.TryGetValue(key, out var held);
+        held ??= "";
+        if (!Applying
+            && next.Length == 0
+            && held.Length > 0
+            && choices.All(choice => !string.Equals(choice.Value, held, StringComparison.Ordinal)))
+        {
+            writeBack(held);
+            return true;
+        }
+
+        _comboValue[key] = next;
+        return false;
+    }
+
+    /// <summary>
+    /// True when a hand edit should block opening another record. An untouched form,
+    /// including one that only looks dirty because it was opened, does not block.
+    /// </summary>
+    protected bool HasUnsavedEdits(string message)
+    {
+        RecalculateDirty();
+        if (!IsDirty)
+        {
+            ShowUnsavedBanner = false;
+            return false;
+        }
+
+        ShowUnsavedBanner = true;
+        EditorMessage = message;
+        return true;
     }
 
     private bool CanCreate() => AllowCreate && IsReady && Client is not null;
@@ -1250,17 +1361,14 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         }
         if (!IsNew && value.SysId == EditorSysId)
             return;
-        if (IsDirty)
+        if (HasUnsavedEdits("Save or discard unsaved changes before opening another record."))
         {
-            ShowUnsavedBanner = true;
-            EditorMessage = "Save or discard unsaved changes before opening another record.";
             _suppressSelection = true;
             Selected = _boundRow;
             _suppressSelection = false;
             return;
         }
 
-        ShowUnsavedBanner = false;
         QueueOpen(value.SysId);
     }
 

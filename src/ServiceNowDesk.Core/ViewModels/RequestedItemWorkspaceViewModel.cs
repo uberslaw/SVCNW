@@ -75,12 +75,19 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
 
     public override async Task EnsureChoicesAsync()
     {
-        await LoadChoiceListsAsync();
-        await LoadReferenceChoicesAsync();
-        if (Client is null || Assignment.GroupsLoaded)
-            return;
-        Assignment.Use(Client);
-        await Assignment.LoadGroupsAsync();
+        try
+        {
+            await LoadChoiceListsAsync();
+            await LoadReferenceChoicesAsync();
+            if (Client is null || Assignment.GroupsLoaded)
+                return;
+            Assignment.Use(Client);
+            await Assignment.LoadGroupsAsync();
+        }
+        finally
+        {
+            AdoptUntouchedForm();
+        }
     }
 
     public Task ReloadChoiceListsAsync()
@@ -101,6 +108,7 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         foreach (var choice in DefaultChoices.ItemOutcomes)
             ResolveChoices.Add(choice);
         OnPropertyChanged(nameof(ShowHoldReason));
+        AdoptUntouchedForm();
     }
 
     protected override async Task<PagedResult<TicketRow>> FetchPageAsync(TicketQuery query, CancellationToken cancellationToken)
@@ -119,25 +127,27 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
         UpsertRow(TicketRow.FromItem(record));
     }
 
-    protected override bool ComputeDirty()
-    {
-        if (!string.IsNullOrWhiteSpace(JournalText))
-            return true;
-        if (_loaded is null)
-            return false;
+    protected override IReadOnlyList<string> ReadEditableFields() =>
+    [
+        ShortDescription ?? "",
+        Description ?? "",
+        JournalText ?? "",
+        State ?? "",
+        Priority ?? "",
+        CloseNotes ?? "",
+        HoldReason ?? "",
+        FollowUp ?? "",
+        Assignment.GroupId ?? "",
+        Assignment.MemberId ?? "",
+        ServiceOffering.Id ?? "",
+        ConfigurationItem.Id ?? ""
+    ];
 
-        var record = _loaded;
-        return ShortDescription != record.ShortDescription
-            || Description != record.Description
-            || State != record.State
-            || Priority != record.Priority
-            || CloseNotes != record.CloseNotes
-            || HoldReason != record.HoldReason
-            || FollowUp != record.FollowUp
-            || !SameId(Assignment.MemberId, record.AssignedTo.SysId)
-            || !SameId(Assignment.GroupId, record.AssignmentGroup.SysId)
-            || !SameId(ServiceOffering.Id, record.ServiceOffering.SysId)
-            || !SameId(ConfigurationItem.Id, record.ConfigurationItem.SysId);
+    protected override void RememberCombos()
+    {
+        RememberCombo(nameof(State), State);
+        RememberCombo(nameof(Priority), Priority);
+        RememberCombo(nameof(HoldReason), HoldReason);
     }
 
     protected override void OnStartNew()
@@ -223,6 +233,9 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
 
     partial void OnStateChanged(string value)
     {
+        if (RestoreComboIfCleared(nameof(State), value, StateChoices, restored => State = restored))
+            return;
+
         if (!Applying && (value is "3" or "4" or "7") && !AlertClassifier.IsOnHold(DeskSection.RequestedItems, value, SelectedStateLabel))
         {
             BeginResolve();
@@ -248,9 +261,22 @@ public partial class RequestedItemWorkspaceViewModel : RecordWorkspaceViewModel
             FollowUp = next;
     }
 
-    partial void OnPriorityChanged(string value) => Touch();
+    partial void OnPriorityChanged(string value)
+    {
+        if (RestoreComboIfCleared(nameof(Priority), value, PriorityChoices, restored => Priority = restored))
+            return;
+        Touch();
+    }
+
     partial void OnCloseNotesChanged(string value) => Touch();
-    partial void OnHoldReasonChanged(string value) => Touch();
+
+    partial void OnHoldReasonChanged(string value)
+    {
+        if (RestoreComboIfCleared(nameof(HoldReason), value, HoldReasonChoices, restored => HoldReason = restored))
+            return;
+        Touch();
+    }
+
     partial void OnFollowUpChanged(string value) => Touch();
 
     private static bool SameId(string? left, string? right) =>
