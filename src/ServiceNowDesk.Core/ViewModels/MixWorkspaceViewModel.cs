@@ -220,7 +220,8 @@ public partial class MixWorkspaceViewModel : ObservableObject
             var walkQuery = BuildWalkUpQuery();
             if (_useLeadTeam
                 && Preset.Assignment == AssignmentScope.MyGroups
-                && _teamMemberIds.Count == 0)
+                && _teamMemberIds.Count == 0
+                && _watchedGroupName.Length == 0)
             {
                 if (version != _loadVersion)
                     return;
@@ -332,8 +333,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
         IReadOnlyList<string>? team = null;
         if (_useLeadTeam && Preset.Assignment == AssignmentScope.MyGroups)
         {
-            // Match All Open's lack of a location clause, then keep selected people.
-            // Walk-ups, incidents, and request items share this roster.
+            // Selected people, any office, plus the watched assignment group.
             team = _teamMemberIds;
         }
         else if (_limitOffices && Preset.Assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
@@ -350,7 +350,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
             OfficeLocations = offices,
             TeamMemberIds = team,
             LimitTeamToOffices = false,
-            WatchedGroupName = team is null && Preset.Assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0
+            WatchedGroupName = Preset.Assignment == AssignmentScope.MyGroups && _watchedGroupName.Length > 0
                 ? _watchedGroupName
                 : null,
             Limit = PageLimit
@@ -381,8 +381,7 @@ public partial class MixWorkspaceViewModel : ObservableObject
         {
             TeamMemberIds = _teamMemberIds,
             OfficeLocations = null,
-            LimitTeamToOffices = false,
-            WatchedGroupName = null
+            LimitTeamToOffices = false
         };
     }
 

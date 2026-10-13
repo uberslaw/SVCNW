@@ -882,7 +882,9 @@ public partial class MainViewModel
         if (_lists is null || !string.IsNullOrWhiteSpace(workspace.SearchText))
             return;
         var population = PopulationOf(workspace);
-        if (population == MyTeamPopulation && workspace.TeamMemberIds.Count == 0)
+        if (population == MyTeamPopulation
+            && workspace.TeamMemberIds.Count == 0
+            && workspace.WatchedGroupName.Length == 0)
             return;
         // Unassigned and All open stay on screen. They must not replace My Tickets or My Team.
         if (population is null && section != DeskSection.Requests)
@@ -1074,6 +1076,13 @@ public partial class MainViewModel
         _ => key
     };
 
+    private static bool WatchedGroupMissingFrom(CachedTicketList list, string watchedGroup)
+    {
+        if (watchedGroup.Length == 0)
+            return false;
+        return (list.EncodedQuery ?? "").Contains(watchedGroup, StringComparison.OrdinalIgnoreCase) == false;
+    }
+
     private static bool ListIsStale(CachedTicketList? list) =>
         list is null
         || list.Items.Count == 0
@@ -1131,6 +1140,12 @@ public partial class MainViewModel
             return false;
 
         ApplyPopulation(workspace, list, population);
+        if (population == MyTeamPopulation && WatchedGroupMissingFrom(list, workspace.WatchedGroupName))
+        {
+            _ = workspace.RefreshKeepingCachedRowsAsync();
+            return true;
+        }
+
         if (!ListIsStale(list))
             return true;
 

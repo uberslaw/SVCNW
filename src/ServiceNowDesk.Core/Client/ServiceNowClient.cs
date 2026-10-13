@@ -1916,6 +1916,12 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         // group name. Selected people (walk-ups, incidents, and request items) use assigned_to.
         if (string.IsNullOrWhiteSpace(query.AssignmentClause)
             && query.Assignment == AssignmentScope.MyGroups
+            && query.TeamMemberIds is not null
+            && !string.IsNullOrWhiteSpace(query.WatchedGroupName))
+            return PeopleAndWatchedGroupClauses(query, textFields, extra);
+
+        if (string.IsNullOrWhiteSpace(query.AssignmentClause)
+            && query.Assignment == AssignmentScope.MyGroups
             && query.TeamMemberIds is null)
             return await MyGroupScopeClausesAsync(query, textFields, extra, cancellationToken).ConfigureAwait(false);
 
@@ -1978,6 +1984,63 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         }
 
         return extra;
+    }
+
+    /// <summary>
+    /// Selected people, any office, plus the watched assignment group with no location filter.
+    /// Unassigned incidents in that group stay on My Team.
+    /// </summary>
+    private IReadOnlyList<string> PeopleAndWatchedGroupClauses(TicketQuery query, SearchFieldSet textFields, string extra)
+    {
+        var text = EncodedQuery.TextSearch(query.Text, textFields);
+        var open = OpenListClause(query);
+        var clauses = new List<string>();
+        var people = AlertQueryBuilder.AssignedToAny(query.TeamMemberIds);
+        if (!string.IsNullOrWhiteSpace(people))
+            clauses.Add(EncodedQuery.Build(text, people, open, extra));
+
+        var group = WatchedGroupNameClause(query.WatchedGroupName);
+        if (group.Length > 0)
+            clauses.Add(EncodedQuery.Build(text, group, open, extra));
+
+        if (clauses.Count == 0)
+            clauses.Add(EncodedQuery.Build(text, "sys_id=NO_TEAM", open, extra));
+        return clauses;
+    }
+
+    /// <summary>
+    /// Prefer a cached group sys_id so "aus dt - client services" matches "AUS DT - Client Services".
+    /// Otherwise use the saved name.
+    /// </summary>
+    private string WatchedGroupNameClause(string? name)
+    {
+        var watched = (name ?? "").Trim();
+        if (watched.Length == 0)
+            return "";
+
+        string? sysId = null;
+        lock (_cacheGate)
+        {
+            var match = _groups.FirstOrDefault(group =>
+                group.Label.Equals(watched, StringComparison.OrdinalIgnoreCase)
+                || group.Value.Equals(watched, StringComparison.OrdinalIgnoreCase));
+            if (match is not null && !string.IsNullOrWhiteSpace(match.Value))
+                sysId = match.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(sysId))
+        {
+            try
+            {
+                return "assignment_group=" + EncodedQuery.SafeToken(sysId, "group id");
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        var quoted = AlertQueryBuilder.Quote(watched);
+        return quoted.Length == 0 ? "" : "assignment_group.name=" + quoted;
     }
 
     /// <summary>

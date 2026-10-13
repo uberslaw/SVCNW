@@ -4,7 +4,8 @@ namespace ServiceNowDesk.Client;
 /// Shared roster for My Team.
 /// Walk-ups, incidents, and request items use the same selected people.
 /// All Open is every open row the table returns, with no office clause.
-/// My Team is that same scope, then only rows assigned to the selected people.
+/// My Team keeps rows assigned to the selected people, and also rows in the
+/// watched assignment group, including unassigned incidents in that queue.
 /// A region or office clause is not applied: it dropped teammates whose ticket
 /// location did not match Settings offices while My Tickets (assignee only) still showed.
 /// Region offices stay a Hardware concern.

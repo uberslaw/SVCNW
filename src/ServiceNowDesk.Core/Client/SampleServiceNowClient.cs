@@ -2841,9 +2841,11 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
                 case AssignmentScope.Unassigned when assignedTo.Length != 0:
                     return false;
                 case AssignmentScope.MyGroups when query.TeamMemberIds is not null:
-                    if (!TeamListScope.Includes(query.TeamMemberIds, assignedTo))
-                        return false;
-                    break;
+                    if (TeamListScope.Includes(query.TeamMemberIds, assignedTo))
+                        break;
+                    if (InWatchedGroup(groupId, groupDisplay, query.WatchedGroupName))
+                        break;
+                    return false;
                 case AssignmentScope.MyGroups when !InMyTeamGroup(groupId, groupDisplay, query.WatchedGroupName):
                     return false;
             }
@@ -2862,6 +2864,20 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         }
 
         return EncodedQuery.Matches(query.Text, number, haystack);
+    }
+
+    /// <summary>
+    /// The watched assignment group only. Personal membership is not implied, so a
+    /// different Client Services ticket stays off a people-plus-watched-group My Team.
+    /// </summary>
+    private static bool InWatchedGroup(string groupId, string? groupDisplay, string? watchedGroupName)
+    {
+        var watched = EncodedQuery.Sanitize(watchedGroupName);
+        if (watched.Length == 0)
+            return false;
+        if (groupId.Equals(watched, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return (groupDisplay ?? "").Equals(watched, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -2905,6 +2921,23 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         var open = query.Activity == ActivityFilter.Open && query.ListSection is DeskSection section
             ? AlertQueryBuilder.StillWorking(section)
             : EncodedQuery.ActivityClause(query.Activity);
+        if (string.IsNullOrWhiteSpace(query.AssignmentClause)
+            && query.Assignment == AssignmentScope.MyGroups
+            && query.TeamMemberIds is not null
+            && !string.IsNullOrWhiteSpace(query.WatchedGroupName))
+        {
+            var pieces = new List<string>();
+            var people = AlertQueryBuilder.AssignedToAny(query.TeamMemberIds);
+            if (!string.IsNullOrWhiteSpace(people))
+                pieces.Add(EncodedQuery.Build(EncodedQuery.TextSearch(query.Text), people, open, ""));
+            var quoted = AlertQueryBuilder.Quote(query.WatchedGroupName);
+            if (quoted.Length > 0)
+                pieces.Add(EncodedQuery.Build(EncodedQuery.TextSearch(query.Text), "assignment_group.name=" + quoted, open, ""));
+            if (pieces.Count == 0)
+                pieces.Add(EncodedQuery.Build(EncodedQuery.TextSearch(query.Text), "sys_id=NO_TEAM", open, ""));
+            return string.Join(" | ", pieces);
+        }
+
         if (string.IsNullOrWhiteSpace(query.AssignmentClause)
             && query.Assignment == AssignmentScope.MyGroups
             && query.TeamMemberIds is null)

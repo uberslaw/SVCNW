@@ -41,9 +41,10 @@ public class MyTeamCacheTests
         Assert.Contains(saved.IncidentTeam.Items, row => row.Number == "INC0010019" && row.AssigneeId == "user-jordan");
         Assert.Contains(saved.IncidentTeam.Items, row => row.Number == "INC0010023");
         Assert.Contains(saved.IncidentTeam.Items, row => row.Number == "INC0010024" && row.AssigneeId == "sample-user");
-        Assert.DoesNotContain(saved.IncidentTeam.Items, row => row.AssigneeId == "user-sam");
-        Assert.DoesNotContain(saved.IncidentTeam.Items, row => row.Number == "INC0010008");
+        Assert.Contains(saved.IncidentTeam.Items, row => row.Number == "INC0010008" && row.AssigneeId == "user-sam");
+        Assert.Contains(saved.IncidentTeam.Items, row => row.Number == "INC0010018" && row.Unassigned);
         Assert.Contains("assigned_toIN", saved.IncidentTeam.EncodedQuery, StringComparison.Ordinal);
+        Assert.Contains("assignment_group.name=\"Aus DT - Client Services\"", saved.IncidentTeam.EncodedQuery, StringComparison.Ordinal);
         Assert.Contains("user-jordan", saved.IncidentTeam.EncodedQuery, StringComparison.Ordinal);
         Assert.Contains("sample-user", saved.IncidentTeam.EncodedQuery, StringComparison.Ordinal);
         Assert.DoesNotContain("location.name", saved.IncidentTeam.EncodedQuery, StringComparison.Ordinal);
@@ -79,7 +80,8 @@ public class MyTeamCacheTests
             DownloadCacheOnLaunch = false,
             RegionOffices = ["Sydney", "Brisbane"],
             LeadTeamMemberIds = ["user-jordan"],
-            LeadTeamSaved = true
+            LeadTeamSaved = true,
+            WatchedGroupName = ""
         });
         var now = DateTimeOffset.UtcNow;
         lists.Save(DeskListScope.Practice, new DeskListSnapshot
@@ -171,7 +173,8 @@ public class MyTeamCacheTests
         {
             UseSampleData = true,
             DownloadCacheOnLaunch = true,
-            LeadTeamMemberIds = []
+            LeadTeamMemberIds = [],
+            WatchedGroupName = "Aus DT - Client Services"
         });
         var main = new MainViewModel(settings, new RecordingDesktopServices(), lists: lists);
         await main.InitializeAsync();
@@ -192,10 +195,12 @@ public class MyTeamCacheTests
 
         main.Incidents.Preset = PresetCatalog.Incidents.Single(preset => preset.Label == "My Team");
         await main.Incidents.RefreshAsync();
-        Assert.Empty(main.Incidents.Items);
-        Assert.Equal(WalkUpTeam.EmptyPrompt, main.Incidents.SearchHint);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010018" && row.Unassigned);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010007");
+        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010019");
+        Assert.NotEqual(WalkUpTeam.EmptyPrompt, main.Incidents.SearchHint);
         var after = lists.Load(DeskListScope.Practice);
-        Assert.Null(after!.IncidentTeam);
+        Assert.Contains(after!.IncidentTeam!.Items, row => row.Number == "INC0010018");
     }
 
     private static CachedTicketList Fresh(string number) => new()

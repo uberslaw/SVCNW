@@ -6,8 +6,8 @@ using ServiceNowDesk.ViewModels;
 namespace ServiceNowDesk.Tests;
 
 /// <summary>
-/// Incident and request-item My Team is the selected Leads people.
-/// All Open is every open row. My Team uses that same scope, then keeps selected assignees.
+/// Incident and request-item My Team keeps the selected Leads people and the watched
+/// assignment group, including unassigned incidents in that group.
 /// A Settings region office list does not drop a teammate whose ticket is somewhere else.
 /// </summary>
 public class MyTeamMemberTests
@@ -22,8 +22,8 @@ public class MyTeamMemberTests
         Assert.Contains(team.Items, row => row.Number == "INC0010007");
         Assert.Contains(team.Items, row => row.Number == "INC0010023");
         Assert.Contains("assigned_toINuser-jordan", client.LastTicketEncodedQuery, StringComparison.Ordinal);
+        Assert.Contains("assignment_group.name=\"Aus DT - Client Services\"", client.LastTicketEncodedQuery, StringComparison.Ordinal);
         Assert.DoesNotContain("location.name", client.LastTicketEncodedQuery, StringComparison.Ordinal);
-        Assert.DoesNotContain("assignment_group", client.LastTicketEncodedQuery, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -34,9 +34,9 @@ public class MyTeamMemberTests
 
         Assert.Contains(team.Items, row => row.Number == "RITM0010007");
         Assert.Contains("assigned_toINuser-jordan", client.LastTicketEncodedQuery, StringComparison.Ordinal);
+        Assert.Contains("assignment_group.name=\"Aus DT - Client Services\"", client.LastTicketEncodedQuery, StringComparison.Ordinal);
         Assert.DoesNotContain("location.name", client.LastTicketEncodedQuery, StringComparison.Ordinal);
         Assert.Contains("stateNOT IN3,4,7", client.LastTicketEncodedQuery, StringComparison.Ordinal);
-        Assert.DoesNotContain("assignment_group", client.LastTicketEncodedQuery, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -46,11 +46,11 @@ public class MyTeamMemberTests
         var incidents = await client.SearchIncidentsAsync(People("user-sam", DeskSection.Incidents), CancellationToken.None);
         var items = await client.SearchRequestedItemsAsync(People("user-sam", DeskSection.RequestedItems), CancellationToken.None);
 
+        Assert.Contains(incidents.Items, row => row.Number == "INC0010007");
         Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010019");
-        Assert.DoesNotContain(incidents.Items, row => row.Number == "INC0010007");
         Assert.Contains(items.Items, row => row.Number == "RITM0010010");
+        Assert.Contains(items.Items, row => row.Number == "RITM0010009");
         Assert.DoesNotContain(items.Items, row => row.Number == "RITM0010007");
-        Assert.DoesNotContain(items.Items, row => row.Number == "RITM0010009");
     }
 
     [Fact]
@@ -121,8 +121,8 @@ public class MyTeamMemberTests
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010023");
         Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010020");
         Assert.Contains("assigned_toINuser-sam", main.Incidents.LastEncodedQuery, StringComparison.Ordinal);
+        Assert.Contains("assignment_group.name=\"Aus DT - Client Services\"", main.Incidents.LastEncodedQuery, StringComparison.Ordinal);
         Assert.DoesNotContain("location.name", main.Incidents.LastEncodedQuery, StringComparison.Ordinal);
-        Assert.DoesNotContain("assignment_group", main.Incidents.LastEncodedQuery, StringComparison.Ordinal);
         Assert.DoesNotContain("offices:", main.Incidents.FilterSummary, StringComparison.Ordinal);
 
         main.Incidents.Preset = AllOpen();
@@ -135,13 +135,34 @@ public class MyTeamMemberTests
     }
 
     [Fact]
+    public async Task WatchedGroupIncidentsShowOnMyTeamWhenNobodySelectedOwnsThem()
+    {
+        var main = await OpenDeskAsync(new DeskSettings
+        {
+            LeadTeamMemberIds = ["user-sam"],
+            WatchedGroupName = "aus dt - client services"
+        });
+
+        main.Incidents.Preset = MyTeam();
+        await main.Incidents.RefreshAsync();
+
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010018" && row.Unassigned);
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010007");
+        Assert.Contains(main.Incidents.Items, row => row.Number == "INC0010008");
+        Assert.DoesNotContain(main.Incidents.Items, row => row.Number == "INC0010019");
+        Assert.Contains("assignment_group.name=\"aus dt - client services\"", main.Incidents.LastEncodedQuery, StringComparison.Ordinal);
+        Assert.DoesNotContain("location.name", main.Incidents.LastEncodedQuery, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task NoSelectedTeamMembersLeavesMyTeamEmpty()
     {
         var main = await OpenDeskAsync(new DeskSettings
         {
             RegionOffices = ["Brisbane", "Sydney", "Hong Kong"],
             OfficeLocations = ["Brisbane", "Hong Kong"],
-            LeadTeamMemberIds = []
+            LeadTeamMemberIds = [],
+            WatchedGroupName = ""
         });
 
         main.Incidents.Preset = MyTeam();
@@ -185,12 +206,13 @@ public class MyTeamMemberTests
         var queries = handler.Calls.Select(call => QueryOf(call.PathAndQuery)).Where(query => query.Length > 0).ToArray();
         Assert.Contains(queries, query => query.Contains("assigned_toINuser-jordan", StringComparison.Ordinal)
             && query.Contains("stateNOT IN6,7,8", StringComparison.Ordinal)
-            && !query.Contains("location.name", StringComparison.Ordinal)
-            && !query.Contains("assignment_group", StringComparison.Ordinal));
+            && !query.Contains("location.name", StringComparison.Ordinal));
+        Assert.Contains(queries, query => query.Contains("assignment_group.name=\"Aus DT - Client Services\"", StringComparison.Ordinal)
+            && query.Contains("stateNOT IN6,7,8", StringComparison.Ordinal)
+            && !query.Contains("location.name", StringComparison.Ordinal));
         Assert.Contains(queries, query => query.Contains("assigned_toINuser-sam", StringComparison.Ordinal)
             && query.Contains("stateNOT IN3,4,7", StringComparison.Ordinal)
-            && !query.Contains("location.name", StringComparison.Ordinal)
-            && !query.Contains("assignment_group", StringComparison.Ordinal));
+            && !query.Contains("location.name", StringComparison.Ordinal));
         Assert.DoesNotContain(handler.Calls, call => call.PathAndQuery.Contains("sys_user_grmember", StringComparison.Ordinal));
     }
 

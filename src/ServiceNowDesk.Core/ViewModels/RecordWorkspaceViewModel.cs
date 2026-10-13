@@ -238,8 +238,11 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Group name used only when My Team has no selected people. People My Team ignores it.
+    /// Watched assignment group. My Team includes its open tickets as well as
+    /// tickets assigned to the selected Leads people.
     /// </summary>
+    public string WatchedGroupName => _watchedGroupName;
+
     public void UseWatchedGroup(string? name) =>
         _watchedGroupName = name?.Trim() ?? "";
 
@@ -912,7 +915,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
     protected bool MatchesOfficeScope(TicketRow row)
     {
         if (_useLeadTeam && Preset?.Assignment == AssignmentScope.MyGroups)
-            return TeamListScope.Includes(_teamMemberIds, row.AssigneeId);
+            return TeamListScope.Includes(_teamMemberIds, row.AssigneeId) || RowInWatchedGroup(row);
 
         if (Preset?.Assignment is not (AssignmentScope.MyGroups or AssignmentScope.Unassigned))
             return true;
@@ -920,6 +923,15 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         if (!_limitOffices)
             return true;
         return OfficeQueue.Matches(row.Location, _officeCities);
+    }
+
+    private bool RowInWatchedGroup(TicketRow row)
+    {
+        if (_watchedGroupName.Length == 0)
+            return false;
+        if (row.AssignmentGroupId.Equals(_watchedGroupName, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return row.AssignmentGroupDisplay.Equals(_watchedGroupName, StringComparison.OrdinalIgnoreCase);
     }
 
     private void RemoveFromList(string sysId)
@@ -949,7 +961,7 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         hint = "";
         if (!_useLeadTeam || query.Assignment != AssignmentScope.MyGroups)
             return false;
-        if (_teamMemberIds.Count > 0)
+        if (_teamMemberIds.Count > 0 || _watchedGroupName.Length > 0)
             return false;
         hint = WalkUpTeam.EmptyPrompt;
         return true;
@@ -971,11 +983,14 @@ public abstract partial class RecordWorkspaceViewModel : ObservableObject
         _queryFilteredByRegion = false;
         if (_useLeadTeam && assignment == AssignmentScope.MyGroups)
         {
-            // Same Leads people on every My Team list. All Open does not filter by
-            // location, and neither does this. A region clause dropped tickets that
-            // were assigned to a selected person when the location name did not match
-            // a Settings office, while My Tickets (assignee only) still showed them.
+            // Selected people, any office, plus the watched assignment group.
+            // The group clause is what puts AUS DT - Client Services queue incidents
+            // on My Team when they are unassigned or assigned to someone not ticked.
+            // A location clause is not added: it dropped teammates whose ticket
+            // location did not match a Settings office.
             team = _teamMemberIds;
+            if (_watchedGroupName.Length > 0)
+                watched = _watchedGroupName;
         }
         else if (_limitOffices && assignment is AssignmentScope.MyGroups or AssignmentScope.Unassigned)
         {
