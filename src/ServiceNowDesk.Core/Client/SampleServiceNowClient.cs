@@ -2649,6 +2649,7 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
             Model = "HP ZBook Ultra 16 inch G1i Mobile Workstation",
             ModelCategory = HardwareCatalog.Computer,
             AssignedTo = Jordan,
+            ConfigurationItem = new ReferenceValue("ci-syd-01", "SYD-ZB16-01"),
             Location = new ReferenceValue("loc-syd", "Sydney Office"),
             Stockroom = ReferenceValue.Empty,
             InstallStatus = HardwareCatalog.InUse,

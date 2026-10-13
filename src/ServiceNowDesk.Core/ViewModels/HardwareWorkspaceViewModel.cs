@@ -24,6 +24,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     private CancellationTokenSource? _downloadCts;
     private CancellationTokenSource? _columnFilterCts;
     private IServiceNowClient? _client;
+    private IDesktopServices? _desktop;
     private HardwareAsset? _loaded;
     private bool _choicesReady;
     private bool _suppressSelection;
@@ -118,6 +119,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string officeSearchText = "";
     [ObservableProperty] private string officeStatus = "";
     [ObservableProperty] private string catalogStatus = "";
+    [ObservableProperty] private string exportNote = "";
     [ObservableProperty] private string serialFilter = "";
     [ObservableProperty] private string assignedFilter = "";
     [ObservableProperty] private string commentsFilter = "";
@@ -142,6 +144,8 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string comments = "";
 
     private bool Applying { get; set; }
+
+    public void UseDesktop(IDesktopServices desktop) => _desktop = desktop;
 
     public void Attach(IServiceNowClient? client)
     {
@@ -583,6 +587,8 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         left.SerialNumber == right.SerialNumber
         && left.Model == right.Model
         && left.AssignedTo.SysId == right.AssignedTo.SysId
+        && left.ConfigurationItem.SysId == right.ConfigurationItem.SysId
+        && left.ConfigurationItem.Display == right.ConfigurationItem.Display
         && left.Location.SysId == right.Location.SysId
         && left.InstallStatus == right.InstallStatus
         && left.Substatus == right.Substatus
@@ -824,6 +830,11 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     public const string RegionOfficesMissingMessage = "Choose region offices in Settings.";
     public const string RegionNoLocationsMessage = "No loaded locations match the region offices in Settings.";
     public const string RegionAppliedMessage = "Showing hardware in your region.";
+    public const string RegionExportMissingMessage = "Choose a region on this page, or save region offices in Settings.";
+    public const string RegionExportUnavailableMessage = "Export is not available.";
+    public const string RegionExportBusyMessage = "A download is already running.";
+    public const string RegionExportEmptyMessage = "No In use computers in the region.";
+    public const string RegionExportCancelledMessage = "Export cancelled.";
 
     public string ModelFilterCountText => _selectedModels.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
     public string LocationFilterCountText => _selectedLocations.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -875,6 +886,177 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         SetLocationFilter(matches);
         OfficeStatus = matches.Count == 0 ? RegionNoLocationsMessage : RegionAppliedMessage;
     }
+
+    /// <summary>
+    /// Saves a CSV of In use computers in the hardware-page region, or the Settings region
+    /// when this page has no region selected. Columns are model, configuration item, and assigned to.
+    /// </summary>
+    [RelayCommand]
+    private async Task DownloadRegionLaptopsAsync()
+    {
+        var offices = ExportRegionOffices();
+        if (offices.Count == 0)
+        {
+            ExportNote = RegionExportMissingMessage;
+            return;
+        }
+
+        if (_desktop is null)
+        {
+            ExportNote = RegionExportUnavailableMessage;
+            return;
+        }
+
+        if (IsDownloading)
+        {
+            ExportNote = RegionExportBusyMessage;
+            return;
+        }
+
+        if (_client is not null)
+        {
+            await EnsureChoicesAsync();
+            if (!await MergeRegionIntoCatalogAsync(offices))
+                return;
+        }
+        else if (_catalog.Count == 0)
+        {
+            LoadCatalogFromStore();
+        }
+
+        var rows = _catalog
+            .Where(asset => HardwareRegionExport.IsInUseComputer(asset, InstallStatuses))
+            .Where(asset => HardwareRegionExport.InRegion(asset, offices))
+            .ToArray();
+        if (rows.Length == 0)
+        {
+            ExportNote = RegionExportEmptyMessage;
+            return;
+        }
+
+        var path = _desktop.SaveTextFile(
+            HardwareRegionExport.FileName,
+            "CSV (*.csv)|*.csv|All files (*.*)|*.*",
+            HardwareRegionExport.Format(rows),
+            HardwareRegionExport.Utf8Bom,
+            HardwareRegionExport.DialogTitle);
+        ExportNote = path is null
+            ? RegionExportCancelledMessage
+            : "Saved "
+              + rows.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+              + " computers to "
+              + path;
+    }
+
+    private IReadOnlyList<string> ExportRegionOffices()
+    {
+        var picked = RegionOfficeMatch.NormalizeOffices(RegionPicker.SelectedOffices);
+        if (picked.Count > 0)
+            return picked;
+
+        return _settings is null
+            ? []
+            : RegionOfficeMatch.NormalizeOffices(_settings.Load().RegionOffices);
+    }
+
+    /// <summary>
+    /// Downloads computers for <paramref name="offices"/> and merges them into the saved list.
+    /// Returns false when the download did not finish.
+    /// </summary>
+    private async Task<bool> MergeRegionIntoCatalogAsync(IReadOnlyList<string> offices)
+    {
+        if (_client is null || offices.Count == 0)
+            return true;
+
+        if (IsDownloading)
+        {
+            ExportNote = RegionExportBusyMessage;
+            return false;
+        }
+
+        _downloadCts?.Cancel();
+        _downloadCts = new CancellationTokenSource();
+        var token = _downloadCts.Token;
+        IsDownloading = true;
+        DownloadPercent = 0;
+        ErrorMessage = "";
+        CatalogStatus = "Downloading computers for the region…";
+        try
+        {
+            if (_catalog.Count == 0)
+                LoadCatalogFromStore();
+            var keepRegion = RegionPicker.SelectedOffices.ToArray();
+            if (!_officesReady)
+                PrepareOfficesLocal();
+            if (keepRegion.Length > 0 && RegionPicker.SelectedOffices.Count == 0)
+            {
+                _suppressRegion = true;
+                try
+                {
+                    RegionPicker.Load(keepRegion);
+                }
+                finally
+                {
+                    _suppressRegion = false;
+                }
+            }
+
+            await EnsureReferenceLocationsAsync();
+
+            var progress = new Progress<DownloadTick>(tick => DownloadPercent = tick.Percent);
+            var downloaded = await _client.DownloadHardwareAsync(offices, LocationSysIdsFor(offices), progress, token);
+            var kept = downloaded.Assets
+                .Where(asset => HardwareCatalog.MatchesLocation(asset, offices))
+                .ToArray();
+            var previous = _catalog.ToDictionary(asset => asset.SysId, StringComparer.OrdinalIgnoreCase);
+            if (kept.Length == 0 && previous.Count > 0)
+            {
+                DownloadPercent = 100;
+                CatalogStatus = "Download returned no computers; kept the saved list.";
+                return true;
+            }
+
+            foreach (var asset in kept)
+                previous[asset.SysId] = asset;
+
+            _catalog.Clear();
+            _catalog.AddRange(previous.Values.OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase));
+            SaveCatalogToStore(SelectedOfficeNames());
+            ApplyCatalogToRows(SelectedOfficeNames());
+            DownloadPercent = 100;
+            CatalogStatus = "Downloaded "
+                + kept.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + " computers for the region.";
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            CatalogStatus = "Download cancelled.";
+            ExportNote = RegionExportCancelledMessage;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = WorkspaceMessages.Describe(ex);
+            CatalogStatus = "Update finished with errors.";
+            ExportNote = ErrorMessage;
+            return false;
+        }
+        finally
+        {
+            IsDownloading = false;
+        }
+    }
+
+    private string[] LocationSysIdsFor(IReadOnlyList<string> offices) =>
+        Offices
+            .Where(office => !string.IsNullOrWhiteSpace(office.SysId)
+                && offices.Any(name =>
+                    HardwareOfficeNames.SamePlace(office.Name, name)
+                    || RegionOfficeMatch.LocationMatchesOffice(office.Name, name)))
+            .Select(office => office.SysId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private void ScheduleColumnFilters()
     {

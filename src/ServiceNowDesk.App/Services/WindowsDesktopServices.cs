@@ -22,7 +22,7 @@ public sealed class WindowsDesktopServices : IDesktopServices
         Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
     }
 
-    public string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null)
+    public string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null, string? title = null)
     {
         var dialog = new SaveFileDialog
         {
@@ -31,7 +31,7 @@ public sealed class WindowsDesktopServices : IDesktopServices
             AddExtension = true,
             DefaultExt = ".csv",
             OverwritePrompt = true,
-            Title = "Export Work Effort"
+            Title = string.IsNullOrWhiteSpace(title) ? "Export" : title
         };
         if (dialog.ShowDialog() != true)
             return null;

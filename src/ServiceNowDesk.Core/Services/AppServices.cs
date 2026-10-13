@@ -15,7 +15,7 @@ public interface IDesktopServices
     /// Shows a save dialog (or writes to a temp path in tests) and stores the text.
     /// Returns the path written, or null when the user cancels.
     /// </summary>
-    string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null);
+    string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null, string? title = null);
 
     /// <summary>Opens copyable text, such as the Work Effort calculation log.</summary>
     void ShowCopyableText(string title, string text);
@@ -88,7 +88,7 @@ public sealed class RecordingDesktopServices : IDesktopServices
 
     public void ShowCopyableText(string title, string text) => ShownText.Add((title ?? "", text ?? ""));
 
-    public string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null)
+    public string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null, string? title = null)
     {
         _ = filter;
         var name = string.IsNullOrWhiteSpace(suggestedFileName) ? "export.txt" : Path.GetFileName(suggestedFileName);

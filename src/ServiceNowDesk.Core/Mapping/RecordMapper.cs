@@ -392,6 +392,7 @@ public static class RecordMapper
             DisplayName = string.IsNullOrWhiteSpace(displayName.Display) ? displayName.Value : displayName.Display,
             Model = string.IsNullOrWhiteSpace(model.Display) ? model.SysId : model.Display,
             ModelCategory = SnowField.Read(record, "model_category").Display,
+            ConfigurationItem = Reference(record, "ci"),
             AssignedTo = Reference(record, "assigned_to"),
             Location = Reference(record, "location"),
             Stockroom = Reference(record, "stockroom"),

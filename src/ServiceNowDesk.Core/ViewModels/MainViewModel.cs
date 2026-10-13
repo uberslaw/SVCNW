@@ -125,6 +125,7 @@ public partial class MainViewModel : ObservableObject
         Connection = new ConnectionViewModel();
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
         Hardware = new HardwareWorkspaceViewModel(store, hardwareCatalog, CacheScope);
+        Hardware.UseDesktop(desktop);
         Hardware.DefaultSaved += (_, _) =>
         {
             var saved = _store.Load();

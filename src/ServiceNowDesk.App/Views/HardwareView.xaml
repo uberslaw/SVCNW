@@ -83,7 +83,7 @@
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <TextBlock Text="Region" Style="{StaticResource FieldLabel}"/>
                     <TextBlock Text="{Binding AccountOfficeText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                    <TextBlock Text="Choose a region to show that hardware on this window only. It does not change the region in Settings. Clear override returns to your office. Refresh this office downloads the selected offices. Refresh all downloads every location." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <TextBlock Text="Choose a region to show that hardware on this window only. It does not change the region in Settings. Clear override returns to your office. Refresh this office downloads the selected offices. Refresh all downloads every location. Download region laptops saves a CSV of model, configuration item, and assigned to for computers whose state is In use. It uses the region on this page, or the offices saved in Settings." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
                     <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" MaxHeight="220" Margin="0,0,0,6">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <views:RegionSettingsView DataContext="{Binding RegionPicker}"
@@ -98,7 +98,14 @@
                                 IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBool}}"/>
                         <Button Content="Refresh all" Style="{StaticResource SecondaryButton}" Command="{Binding RefreshAllCatalogCommand}"
                                 IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBool}}"/>
+                        <Button Content="Download region laptops" Style="{StaticResource SecondaryButton}"
+                                Command="{Binding DownloadRegionLaptopsCommand}" Margin="8,0,0,0"
+                                IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBool}}"
+                                ToolTip="CSV of model, configuration item, and assigned to for In use computers in the region"
+                                AutomationProperties.Name="Download region laptops"/>
                     </StackPanel>
+                    <TextBlock Text="{Binding ExportNote}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4"
+                               Visibility="{Binding ExportNote, Converter={StaticResource StringVis}}"/>
                     <TextBlock Text="{Binding OfficeStatus}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4"
                                Visibility="{Binding OfficeStatus, Converter={StaticResource StringVis}}"/>
                     <TextBlock Text="{Binding CatalogStatus}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4"

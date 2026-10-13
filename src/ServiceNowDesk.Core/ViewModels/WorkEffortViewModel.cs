@@ -676,7 +676,8 @@ public partial class WorkEffortViewModel : ObservableObject
             fileName,
             "CSV (*.csv)|*.csv|All files (*.*)|*.*",
             csv,
-            WorkEffortCsv.Utf8Bom);
+            WorkEffortCsv.Utf8Bom,
+            "Export Work Effort");
         ExportNote = path is null ? "Export cancelled." : "Saved " + path;
     }
 

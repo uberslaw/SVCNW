@@ -8,6 +8,7 @@ public sealed record HardwareAsset
     public string Model { get; init; } = "";
     public string ModelCategory { get; init; } = "";
     public ReferenceValue AssignedTo { get; init; }
+    public ReferenceValue ConfigurationItem { get; init; }
     public ReferenceValue Location { get; init; }
     public ReferenceValue Stockroom { get; init; }
     public string InstallStatus { get; init; } = "";
