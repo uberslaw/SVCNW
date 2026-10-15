@@ -104,6 +104,17 @@
                                 ToolTip="CSV of model, configuration item, and assigned to for In use computers in the region"
                                 AutomationProperties.Name="Download region laptops"/>
                     </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="Laptop refresh" Style="{StaticResource SecondaryButton}"
+                                Command="{Binding OpenLaptopRefreshCommand}"
+                                Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource InverseBoolVis}}"
+                                ToolTip="Who should get the next laptop, and who a boxed serial was assigned to"
+                                AutomationProperties.Name="Laptop refresh"/>
+                        <Button Content="Hardware list" Style="{StaticResource SecondaryButton}"
+                                Command="{Binding CloseLaptopRefreshCommand}"
+                                Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource BoolVis}}"
+                                AutomationProperties.Name="Hardware list"/>
+                    </StackPanel>
                     <TextBlock Text="{Binding ExportNote}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4"
                                Visibility="{Binding ExportNote, Converter={StaticResource StringVis}}"/>
                     <TextBlock Text="{Binding OfficeStatus}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4"
@@ -116,7 +127,8 @@
                                    Text="{Binding DownloadPercent, StringFormat={}{0}%}"/>
                     </Grid>
                 </StackPanel>
-                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False"
+                          Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource InverseBoolVis}}">
                     <TextBlock Text="{Binding ShownCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
                     <TextBlock Text="  Filtering…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
                                Visibility="{Binding IsFiltering, Converter={StaticResource BoolVis}}"
@@ -163,11 +175,13 @@
                   DataGrid visual/namescope tree, so RelativeSource AncestorType=DataGrid and ElementName
                   bindings to HardwareList both fail — typed text never reaches *Filter properties.
                 -->
+                <Grid>
                 <ScrollViewer x:Name="HardwareTableScroll"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Disabled"
                               HorizontalAlignment="Stretch"
-                              Focusable="False">
+                              Focusable="False"
+                              Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource InverseBoolVis}}">
                 <DockPanel x:Name="HardwareTableContent" HorizontalAlignment="Stretch">
                 <Grid x:Name="HardwareFilters" DockPanel.Dock="Top" Margin="1,0,1,4">
                     <Grid.ColumnDefinitions>
@@ -245,6 +259,163 @@
                 </DataGrid>
                 </DockPanel>
                 </ScrollViewer>
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource BoolVis}}"
+                              AutomationProperties.Name="Laptop refresh">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                                   Text="Import the list of laptops due this financial year. That is who still has an old laptop. Laptops in the stock room (state In stock or In box, nobody assigned, and not already on that list) are the ones in a box. The oldest delivery dates are who should be next, until you tick that they still have the old laptop. When a boxed serial is later assigned, it shows under who actually received it. Type the reason there. The region on this page limits these lists."/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button Content="Import due list" Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding LaptopRefresh.ImportDueListCommand}" Margin="0,0,8,0"
+                                    AutomationProperties.Name="Import due list"/>
+                            <Button Content="Export sheet" Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding LaptopRefresh.ExportSheetCommand}"
+                                    AutomationProperties.Name="Export laptop refresh"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding LaptopRefresh.Summary}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                        <TextBlock Text="{Binding LaptopRefresh.Status}" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Visibility="{Binding LaptopRefresh.Status, Converter={StaticResource StringVis}}"/>
+
+                        <TextBlock Text="{Binding LaptopRefresh.InBoxHeading}" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBlock Text="No laptops in the box for this region." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                                   Visibility="{Binding LaptopRefresh.ShowEmptyInBox, Converter={StaticResource BoolVis}}"/>
+                        <DataGrid ItemsSource="{Binding LaptopRefresh.InBox}"
+                                  Style="{StaticResource DeskDataGrid}"
+                                  ColumnHeaderStyle="{StaticResource DeskDataGridColumnHeader}"
+                                  CellStyle="{StaticResource DeskDataGridCell}"
+                                  RowStyle="{StaticResource DeskDataGridRow}"
+                                  ColumnHeaderHeight="32"
+                                  MaxHeight="160"
+                                  Margin="0,0,0,12"
+                                  HeadersVisibility="Column"
+                                  AutomationProperties.Name="Laptops in the box"
+                                  Visibility="{Binding LaptopRefresh.HasInBox, Converter={StaticResource BoolVis}}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="140"/>
+                                <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="220"/>
+                                <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="140"/>
+                                <DataGridTextColumn Header="Stockroom" Binding="{Binding Stockroom}" Width="160"/>
+                                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="160"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Text="{Binding LaptopRefresh.NextHeading}" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"
+                                   Text="Oldest first. Next matches the number of laptops in the box. On hold, completed, and anyone who already received a boxed laptop are not offered one. Completed rows are hidden."/>
+                        <TextBlock Text="Nobody is waiting in this region." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                                   Visibility="{Binding LaptopRefresh.ShowEmptyNext, Converter={StaticResource BoolVis}}"/>
+                        <DataGrid ItemsSource="{Binding LaptopRefresh.Next}"
+                                  Style="{StaticResource DeskDataGrid}"
+                                  ColumnHeaderStyle="{StaticResource DeskDataGridColumnHeader}"
+                                  CellStyle="{StaticResource DeskDataGridCell}"
+                                  RowStyle="{StaticResource DeskDataGridRow}"
+                                  ColumnHeaderHeight="32"
+                                  MaxHeight="360"
+                                  Margin="0,0,0,12"
+                                  HeadersVisibility="Column"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  AutomationProperties.Name="Who should be next"
+                                  Visibility="{Binding LaptopRefresh.HasNext, Converter={StaticResource BoolVis}}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Queue" Binding="{Binding QueueText}" Width="130" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo}" Width="150" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Computer" Binding="{Binding Hostname}" Width="150" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="200" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Age" Binding="{Binding AgeText}" Width="70" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Delivered" Binding="{Binding DeliveredText}" Width="100" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="110" IsReadOnly="True"/>
+                                <DataGridTemplateColumn Header="Still has it" Width="90">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding StillHasLaptop, UpdateSourceTrigger=PropertyChanged}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Still has the old laptop"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Check" Binding="{Binding CheckText}" Width="90" IsReadOnly="True"/>
+                                <DataGridTemplateColumn Header="On hold" Width="70">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding OnHold, UpdateSourceTrigger=PropertyChanged}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      AutomationProperties.Name="On hold"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Vacation student" Width="110">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding VacationStudent, UpdateSourceTrigger=PropertyChanged}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Vacation student"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Status" Width="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Text="{Binding Status, UpdateSourceTrigger=LostFocus}"
+                                                     BorderThickness="1" BorderBrush="{StaticResource LineBrush}"
+                                                     Padding="4,2" VerticalAlignment="Center"
+                                                     AutomationProperties.Name="Upgrade status"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="Comment" Width="220">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Text="{Binding Comment, UpdateSourceTrigger=LostFocus}"
+                                                     BorderThickness="1" BorderBrush="{StaticResource LineBrush}"
+                                                     Padding="4,2" VerticalAlignment="Center"
+                                                     AutomationProperties.Name="Upgrade comment"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="240" IsReadOnly="True"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Text="{Binding LaptopRefresh.ReceivedHeading}" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"
+                                   Text="A serial that was in the box is now assigned in ServiceNow. Type why, the same way the Melbourne sheet uses Comments. The first hardware refresh only remembers what is in the box."/>
+                        <TextBlock Text="Nobody has received a boxed laptop yet." Foreground="{StaticResource MutedBrush}"
+                                   Visibility="{Binding LaptopRefresh.ShowEmptyReceived, Converter={StaticResource BoolVis}}"/>
+                        <DataGrid ItemsSource="{Binding LaptopRefresh.Received}"
+                                  Style="{StaticResource DeskDataGrid}"
+                                  ColumnHeaderStyle="{StaticResource DeskDataGridColumnHeader}"
+                                  CellStyle="{StaticResource DeskDataGridCell}"
+                                  RowStyle="{StaticResource DeskDataGridRow}"
+                                  ColumnHeaderHeight="32"
+                                  MaxHeight="220"
+                                  HeadersVisibility="Column"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  AutomationProperties.Name="Who actually received a laptop"
+                                  Visibility="{Binding LaptopRefresh.HasReceived, Converter={StaticResource BoolVis}}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="140" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="200" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo}" Width="150" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Was" Binding="{Binding PreviousState}" Width="140" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Old laptop" Binding="{Binding OldLaptop}" Width="220" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Seen" Binding="{Binding SeenText}" Width="140" IsReadOnly="True"/>
+                                <DataGridTemplateColumn Header="Reason" Width="240">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBox Text="{Binding Reason, UpdateSourceTrigger=LostFocus}"
+                                                     BorderThickness="1" BorderBrush="{StaticResource LineBrush}"
+                                                     Padding="4,2" VerticalAlignment="Center"
+                                                     AutomationProperties.Name="Reason they received it"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </ScrollViewer>
+                </Grid>
             </DockPanel>
 
             <DockPanel Grid.Column="2">

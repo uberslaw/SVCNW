@@ -49,11 +49,13 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     public HardwareWorkspaceViewModel(
         ISettingsStore? settings = null,
         IHardwareCatalogStore? catalogStore = null,
-        Func<string>? cacheScope = null)
+        Func<string>? cacheScope = null,
+        ILaptopRefreshStore? laptopRefresh = null)
     {
         _settings = settings;
         _catalogStore = catalogStore ?? new MemoryHardwareCatalogStore();
         _cacheScope = cacheScope ?? (() => DeskListScope.Practice);
+        LaptopRefresh = new LaptopRefreshViewModel(laptopRefresh ?? new MemoryLaptopRefreshStore(), _cacheScope);
         AssignedTo = new ReferenceFieldModel(SearchUsersAsync, match: MatchUsersAsync);
         Location = new ReferenceFieldModel(SearchLocationsAsync);
         Stockroom = new ReferenceFieldModel(SearchStockroomsAsync);
@@ -81,6 +83,9 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     /// Region tree for this hardware window. It does not write the Settings region.
     /// </summary>
     public RegionSettingsViewModel RegionPicker { get; }
+
+    /// <summary>Due laptops, stock-room boxes, and who a boxed serial was assigned to.</summary>
+    public LaptopRefreshViewModel LaptopRefresh { get; }
 
     public ReferenceFieldModel AssignedTo { get; }
     public ReferenceFieldModel Location { get; }
@@ -139,13 +144,18 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string serialNumber = "";
     [ObservableProperty] private string displayName = "";
     [ObservableProperty] private string modelName = "";
+    [ObservableProperty] private bool laptopRefreshOpen;
     [ObservableProperty] private string installStatus = "";
     [ObservableProperty] private string substatus = "";
     [ObservableProperty] private string comments = "";
 
     private bool Applying { get; set; }
 
-    public void UseDesktop(IDesktopServices desktop) => _desktop = desktop;
+    public void UseDesktop(IDesktopServices desktop)
+    {
+        _desktop = desktop;
+        LaptopRefresh.UseDesktop(desktop);
+    }
 
     public void Attach(IServiceNowClient? client)
     {
@@ -545,6 +555,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             _catalogIsAllLocations = false;
             _catalogCapturedAt = default;
             CatalogStatus = "No computers saved on this PC yet.";
+            LaptopRefresh.NoteCatalog(_catalog, _catalogIsAllLocations, SelectedOfficeNames(), InstallStatuses);
             return;
         }
 
@@ -556,6 +567,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             + (snapshot.CapturedAt == default
                 ? "."
                 : " as of " + snapshot.CapturedAt.ToLocalTime().ToString("g", System.Globalization.CultureInfo.CurrentCulture) + ".");
+        LaptopRefresh.NoteCatalog(_catalog, _catalogIsAllLocations, SelectedOfficeNames(), InstallStatuses);
     }
 
     private void SaveCatalogToStore(IReadOnlyList<string> offices)
@@ -568,6 +580,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             Offices = offices.ToList(),
             Items = [.. _catalog]
         });
+        LaptopRefresh.NoteCatalog(_catalog, _catalogIsAllLocations, offices, InstallStatuses);
     }
 
     private void ApplyCatalogToRows(IReadOnlyList<string> offices)
@@ -947,6 +960,16 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
               + " computers to "
               + path;
     }
+
+    [RelayCommand]
+    private void OpenLaptopRefresh()
+    {
+        LaptopRefreshOpen = true;
+        LaptopRefresh.NoteCatalog(_catalog, _catalogIsAllLocations, SelectedOfficeNames(), InstallStatuses);
+    }
+
+    [RelayCommand]
+    private void CloseLaptopRefresh() => LaptopRefreshOpen = false;
 
     private IReadOnlyList<string> ExportRegionOffices()
     {
@@ -1596,6 +1619,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         else
             OfficeStatus = "Showing " + string.Join(", ", offices) + ".";
         OnPropertyChanged(nameof(OfficeSelectionSummary));
+        LaptopRefresh.UseOffices(offices, InstallStatuses);
     }
 
     private void ApplyColumnFilters(string? keepSysId)

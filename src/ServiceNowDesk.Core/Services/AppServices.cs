@@ -19,6 +19,9 @@ public interface IDesktopServices
 
     /// <summary>Opens copyable text, such as the Work Effort calculation log.</summary>
     void ShowCopyableText(string title, string text);
+
+    /// <summary>Shows an open dialog. Returns the chosen path, or null when cancelled. Does not read the file.</summary>
+    string? PickOpenFile(string filter, string? title = null);
 }
 
 /// <summary>
@@ -81,12 +84,22 @@ public sealed class RecordingDesktopServices : IDesktopServices
     public List<string> OpenedFiles { get; } = [];
     public List<string> SavedFiles { get; } = [];
     public List<(string Title, string Text)> ShownText { get; } = [];
+    public List<string> OpenedPickers { get; } = [];
+
+    /// <summary>Path returned by the next <see cref="PickOpenFile"/> call. Null cancels.</summary>
+    public string? NextOpenFile { get; set; }
 
     public void OpenUrl(string url) => OpenedUrls.Add(url);
     public void CopyText(string text) => CopiedText.Add(text);
     public void OpenFile(string path) => OpenedFiles.Add(path);
 
     public void ShowCopyableText(string title, string text) => ShownText.Add((title ?? "", text ?? ""));
+
+    public string? PickOpenFile(string filter, string? title = null)
+    {
+        OpenedPickers.Add(string.IsNullOrWhiteSpace(title) ? filter : title);
+        return string.IsNullOrWhiteSpace(NextOpenFile) ? null : NextOpenFile;
+    }
 
     public string? SaveTextFile(string suggestedFileName, string filter, string contents, Encoding? encoding = null, string? title = null)
     {

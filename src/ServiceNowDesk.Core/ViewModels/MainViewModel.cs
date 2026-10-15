@@ -108,7 +108,8 @@ public partial class MainViewModel : ObservableObject
         Func<IServiceNowClient>? sampleClientFactory = null,
         IQueueDismissalStore? queueDismissals = null,
         ITicketPopOut? ticketPopOut = null,
-        TransferMeter? transfer = null)
+        TransferMeter? transfer = null,
+        ILaptopRefreshStore? laptopRefresh = null)
     {
         _store = store;
         _desktop = desktop;
@@ -124,7 +125,7 @@ public partial class MainViewModel : ObservableObject
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
-        Hardware = new HardwareWorkspaceViewModel(store, hardwareCatalog, CacheScope);
+        Hardware = new HardwareWorkspaceViewModel(store, hardwareCatalog, CacheScope, laptopRefresh);
         Hardware.UseDesktop(desktop);
         Hardware.DefaultSaved += (_, _) =>
         {

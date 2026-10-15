@@ -47,4 +47,15 @@ public sealed class WindowsDesktopServices : IDesktopServices
             window.Title = title;
         window.Show();
     }
+
+    public string? PickOpenFile(string filter, string? title = null)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Filter = string.IsNullOrWhiteSpace(filter) ? "All files (*.*)|*.*" : filter,
+            Title = string.IsNullOrWhiteSpace(title) ? "Open" : title,
+            CheckFileExists = true
+        };
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
 }

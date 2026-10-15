@@ -40,6 +40,7 @@ public partial class App : Application
             dailyWork: FileDailyWorkStore.InApplicationData(),
             personalTasks: FilePersonalTaskStore.InApplicationData(),
             hardwareCatalog: FileHardwareCatalogStore.InApplicationData(),
+            laptopRefresh: FileLaptopRefreshStore.InApplicationData(),
             queueDismissals: FileQueueDismissalStore.InApplicationData(),
             ticketPopOut: new WindowsTicketPopOut(),
             transfer: new TransferMeter(FileTransferStatsStore.InApplicationData()));
