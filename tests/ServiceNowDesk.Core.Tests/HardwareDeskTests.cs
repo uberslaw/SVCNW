@@ -1259,6 +1259,179 @@ public class HardwareDeskTests
         Assert.NotEqual(DeskSettings.DefaultInstanceUrl, again.BuildSettings().InstanceUrl);
     }
 
+    [Fact]
+    public async Task LongLocationListIsSeveralQueriesAndTheMergedCatalogKeepsEachChunk()
+    {
+        var names = Enumerable.Range(0, 40).Select(index => $"City{index:00}").ToArray();
+        var ids = Enumerable.Range(0, 40).Select(index => index.ToString("x32")).ToArray();
+        var queries = HardwareCatalog.DownloadQueries(names, ids);
+
+        Assert.True(queries.Count > 1);
+        Assert.All(queries, query => Assert.InRange(query.Length, 1, HardwareCatalog.MaxQueryLength));
+        Assert.Equal(
+            HardwareCatalog.DownloadQuery(names, ids),
+            string.Join("^NQ", queries.Select(StripOrder)) + "^ORDERBYserial_number");
+        foreach (var id in ids)
+            Assert.Contains(queries, query => query.Contains("location=" + id, StringComparison.Ordinal));
+        foreach (var name in names)
+            Assert.Contains(queries, query => query.Contains("location.name=\"" + name + "\"", StringComparison.Ordinal));
+
+        var firstChunk = queries.ToList().FindIndex(query => query.Contains("location=" + ids[0], StringComparison.Ordinal));
+        var lastChunk = queries.ToList().FindIndex(query => query.Contains("location=" + ids[^1], StringComparison.Ordinal));
+        Assert.NotEqual(firstChunk, lastChunk);
+
+        using var client = new SampleServiceNowClient();
+        client.AddComputer(ChunkComputer("hw-chunk-a", "CHUNKA", ids[0], names[0]));
+        client.AddComputer(ChunkComputer("hw-chunk-b", "CHUNKB", ids[^1], names[^1]));
+        var downloaded = await client.DownloadHardwareAsync(names, ids, null, CancellationToken.None);
+
+        Assert.Contains(downloaded.Assets, asset => asset.SerialNumber == "CHUNKA" && asset.Location.SysId == ids[0]);
+        Assert.Contains(downloaded.Assets, asset => asset.SerialNumber == "CHUNKB" && asset.Location.SysId == ids[^1]);
+        var gets = client.RecentActivity
+            .Where(activity => activity.Method == "GET" && activity.Path.Contains("alm_hardware?sysparm_query=", StringComparison.Ordinal))
+            .Select(activity => activity.Path)
+            .ToArray();
+        Assert.Equal(queries.Count, gets.Length);
+        foreach (var query in queries)
+            Assert.Contains(gets, path => path.Contains(Uri.EscapeDataString(query), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CloseHidesTheAssetEditorUntilSaveOrDiscard()
+    {
+        using var client = new SampleServiceNowClient();
+        var workspace = await OpenHardwareAsync(client);
+        await workspace.OpenAsync("hw-inuse");
+        Assert.True(workspace.HasEditor);
+        Assert.Equal("5CG0000DBR", workspace.SerialNumber);
+
+        workspace.CloseEditorCommand.Execute(null);
+
+        Assert.False(workspace.HasEditor);
+        Assert.Null(workspace.Selected);
+
+        await workspace.OpenAsync("hw-inuse");
+        workspace.Comments = "unsaved note";
+        Assert.True(workspace.IsDirty);
+        workspace.CloseEditorCommand.Execute(null);
+
+        Assert.True(workspace.HasEditor);
+        Assert.Equal("Save or discard unsaved changes first.", workspace.EditorMessage);
+        Assert.Equal("unsaved note", workspace.Comments);
+        Assert.Equal("Assigned laptop", (await client.GetHardwareAsync("hw-inuse", CancellationToken.None)).Comments);
+
+        var view = RepoFile("src/ServiceNowDesk.App/Views/HardwareView.xaml");
+        Assert.Contains("CloseEditorCommand", view, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Close asset\"", view, StringComparison.Ordinal);
+        Assert.Contains("Width=\"380\"", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("ColumnDefinition Width=\"380\"", view, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LocationPickerCollapsesCityAndOfficeAndKeepsTheStoredSysId()
+    {
+        using var client = new SampleServiceNowClient();
+        client.AddLocation("loc-city", "Brisbane");
+        client.AddLocation("loc-cns", "Cairns");
+        client.AddComputer(new HardwareAsset
+        {
+            SysId = "hw-city",
+            SerialNumber = "1234567",
+            DisplayName = "432423000000 - Samsung SM-G990U",
+            Model = "Samsung SM-G990U",
+            ModelCategory = HardwareCatalog.Computer,
+            Location = new ReferenceValue("loc-city", "Brisbane"),
+            InstallStatus = HardwareCatalog.InUse,
+            InstallStatusLabel = HardwareCatalog.InUse
+        });
+
+        var workspace = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+        workspace.Attach(client);
+        await workspace.RefreshAsync();
+
+        Assert.Equal("Brisbane Office", Assert.Single(workspace.LocationChoices, choice => HardwareOfficeNames.SamePlace(choice, "Brisbane")));
+        Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane");
+        Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
+
+        workspace.SetLocationFilter(["Brisbane"]);
+        await workspace.ColumnFiltersReady;
+        Assert.Equal(["Brisbane Office"], workspace.SelectedLocationFilters.ToArray());
+        Assert.Contains(workspace.Items, asset => asset.SerialNumber == "1234567");
+        Assert.Contains(workspace.Items, asset => asset.Location.Display == "Brisbane Office");
+
+        await workspace.OpenAsync("hw-city");
+        Assert.Equal("loc-city", workspace.Location.SysId);
+        Assert.Equal("Brisbane", workspace.Location.Text);
+
+        workspace.Location.Text = "Bris";
+        await WaitUntilAsync(() => workspace.Location.Suggestions.Count > 0);
+        var place = Assert.Single(workspace.Location.Suggestions);
+        Assert.Equal("Brisbane Office", place.Display);
+        Assert.Equal("loc-bne", place.SysId);
+
+        workspace.Location.Choose(place);
+        Assert.Equal("loc-city", workspace.Location.SysId);
+        Assert.Equal("Brisbane", workspace.Location.Text);
+        Assert.False(workspace.IsDirty);
+
+        workspace.Comments = "Kept on the city record";
+        await workspace.SaveCommand.ExecuteAsync(null);
+        var kept = await client.GetHardwareAsync("hw-city", CancellationToken.None);
+        Assert.Equal("loc-city", kept.Location.SysId);
+        Assert.Equal("Brisbane", kept.Location.Display);
+        Assert.DoesNotContain("location", client.LastHardwarePayload, StringComparison.OrdinalIgnoreCase);
+
+        workspace.Location.Text = "Cair";
+        await WaitUntilAsync(() => workspace.Location.Suggestions.Any(suggestion => suggestion.SysId == "loc-cns"));
+        var cairns = Assert.Single(workspace.Location.Suggestions);
+        Assert.Equal("loc-cns", cairns.SysId);
+        workspace.Location.Choose(cairns);
+        Assert.Equal("loc-cns", workspace.Location.SysId);
+        Assert.Equal("Cairns", workspace.Location.Text);
+        await workspace.SaveCommand.ExecuteAsync(null);
+
+        var moved = await client.GetHardwareAsync("hw-city", CancellationToken.None);
+        Assert.Equal("loc-cns", moved.Location.SysId);
+        Assert.Equal("Cairns", moved.Location.Display);
+        Assert.Contains("\"location\":\"loc-cns\"", client.LastHardwarePayload, StringComparison.Ordinal);
+    }
+
+    private static string StripOrder(string query)
+    {
+        const string order = "^ORDERBYserial_number";
+        return query.EndsWith(order, StringComparison.Ordinal) ? query[..^order.Length] : query;
+    }
+
+    private static HardwareAsset ChunkComputer(string sysId, string serial, string locationId, string location) => new()
+    {
+        SysId = sysId,
+        SerialNumber = serial,
+        Model = "HP EliteBook",
+        ModelCategory = HardwareCatalog.Computer,
+        Location = new ReferenceValue(locationId, location),
+        InstallStatus = HardwareCatalog.InUse,
+        InstallStatusLabel = HardwareCatalog.InUse
+    };
+
+    private static async Task WaitUntilAsync(Func<bool> ready)
+    {
+        for (var attempt = 0; attempt < 40 && !ready(); attempt++)
+            await Task.Delay(50);
+    }
+
+    private static string RepoFile(string relative)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "ServiceNowDesk.sln")))
+                return File.ReadAllText(Path.Combine(dir.FullName, relative));
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException("Could not find ServiceNowDesk.sln from " + AppContext.BaseDirectory);
+    }
+
     private static HardwareAsset HongKongVm(string serial) => new()
     {
         SysId = "hw-hk-vm",

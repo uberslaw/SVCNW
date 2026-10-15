@@ -443,7 +443,9 @@
                         <TextBlock Text="{Binding EditorMessage}" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,8" Visibility="{Binding EditorMessage, Converter={StaticResource StringVis}}"/>
                         <StackPanel Orientation="Horizontal">
                             <Button Content="Save" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Margin="0,0,8,0"/>
-                            <Button Content="Discard" Style="{StaticResource SecondaryButton}" Command="{Binding DiscardCommand}"/>
+                            <Button Content="Discard" Style="{StaticResource SecondaryButton}" Command="{Binding DiscardCommand}" Margin="0,0,8,0"/>
+                            <Button Content="Close" Style="{StaticResource SecondaryButton}" Command="{Binding CloseEditorCommand}"
+                                    AutomationProperties.Name="Close asset"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
