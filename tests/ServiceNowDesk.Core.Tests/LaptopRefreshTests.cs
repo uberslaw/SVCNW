@@ -307,6 +307,113 @@ public class LaptopRefreshTests
     }
 
     [Fact]
+    public void FullDeviceExportSplitsOldLaptopsFromYoungStock()
+    {
+        var sydney = LaptopAgeSheet.ReadCsv("""
+            Melbourne,OLD1,MELLT1,HP EliteBook 840 G3,In use,9y 9m,Ceanu Geuder,Ceanu.Geuder,David,Long Term Leave,Not completed,840 G3
+            """);
+        var snapshot = new LaptopRefreshSnapshot();
+        LaptopRefreshLogic.ReplaceDueList(snapshot, sydney, "sydney.xlsx", DateTimeOffset.Now);
+
+        var all = LaptopAgeSheet.ReadCsv("""
+            Location,Serial #,Hostname,Model,Assigned To,State,Substate,Stockroom,Delivery Date,Age
+            Melbourne,OLD1,MELLT1,HP EliteBook 840 G3,Ceanu Geuder,In Use,,,2017-01-16,9y 9m
+            Melbourne,OLD2,MELLT2,HP EliteBook 840 G4,Fiona Whitworth,In Use,,,2018-02-01,8y 8m
+            Melbourne,YOUNG1,MELLT3,HP ZBook X,Duncan Roberts,In Use,,,2026-07-01,0y 3m
+            Melbourne,MID1,MELLT4,Dell Latitude 5421,Three Year,In Use,,,2023-01-15,3y 8m
+            Melbourne,STOCKNEW,ZBOOKHOST,HP ZBook X G1i,,In Stock,Available,Melbourne stock,2026-01-19,0y 8m
+            Melbourne,STOCKOLD,OLDHOST,HP ZBook Studio G3,,In Stock,Available,Melbourne stock,2016-03-01,10y 7m
+            Melbourne,HOLD1,HOLDHOST,HP EliteBook,,In Stock,Legal hold,Melbourne stock,2026-02-01,0y 8m
+            Melbourne,PEND1,PENDHOST,HP EliteBook,,In Stock,Pending transfer,Melbourne stock,2026-03-01,0y 7m
+            Brisbane,TRANSIT1,THOST,HP ZBook X,,In Transit,,,2026-06-01,0y 4m
+            Melbourne,MAINT1,MAHOST,HP EliteBook,Fix Person,In Maintenance,,,2015-01-01,11y 9m
+            Sydney,BARE1,BAREHOST,HP EliteBook,,In Use,,,2016-01-01,10y 9m
+            """);
+        Assert.True(LaptopRefreshLogic.IsFullInventory(all, Today));
+        LaptopRefreshLogic.ReplaceInventory(snapshot, all, "All Devices.xlsx", DateTimeOffset.Now, Today);
+
+        Assert.Equal(["OLD1", "OLD2"], snapshot.Due.Select(device => device.SerialNumber).ToArray());
+        var kept = snapshot.Due.Single(device => device.SerialNumber == "OLD1");
+        Assert.Equal("David", kept.HandledBy);
+        Assert.Equal("Ceanu.Geuder", kept.UserName);
+        Assert.Equal("840 G3", kept.ListedModel);
+        Assert.Equal("Long Term Leave", snapshot.Notes.Single(note => note.SerialNumber == "OLD1").Comment);
+        Assert.Equal(["STOCKNEW", "TRANSIT1"], snapshot.Available.Select(device => device.SerialNumber).ToArray());
+
+        var plan = LaptopRefreshLogic.Build(snapshot, [], [], null, Today);
+        Assert.Equal(["Ceanu Geuder", "Fiona Whitworth"], plan.Next.Select(row => row.AssignedTo).ToArray());
+        Assert.Equal("Next", plan.Next[0].QueueText);
+        Assert.Equal("David", plan.Next[0].HandledBy);
+        Assert.Equal("Long Term Leave", plan.Next[0].Comment);
+        Assert.Equal("Next", plan.Next[1].QueueText);
+        Assert.Equal(["STOCKNEW", "TRANSIT1"], plan.InBox.Select(row => row.SerialNumber).ToArray());
+        Assert.Equal("Melbourne stock", plan.InBox.Single(row => row.SerialNumber == "STOCKNEW").Stockroom);
+        Assert.Equal("In Stock · Available", plan.InBox.Single(row => row.SerialNumber == "STOCKNEW").State);
+        Assert.Equal("In Transit", plan.InBox.Single(row => row.SerialNumber == "TRANSIT1").State);
+
+        var melbourne = LaptopRefreshLogic.Build(snapshot, [], ["Melbourne"], null, Today);
+        Assert.Equal(["STOCKNEW"], melbourne.InBox.Select(row => row.SerialNumber).ToArray());
+        Assert.Equal("Next", melbourne.Next[0].QueueText);
+        Assert.Equal("Later", melbourne.Next[1].QueueText);
+    }
+
+    [Fact]
+    public void FourYearExportStaysADueListIncludingOldStock()
+    {
+        var import = LaptopAgeSheet.ReadCsv("""
+            Location,Serial #,Hostname,Model,Assigned To,State,Substate,Stockroom,Delivery Date,Age
+            Melbourne,OLD1,MELLT1,Dell Precision 5560,Sam,In Use,,,2018-03-01,8y 7m
+            Melbourne,OLDSTOCK,MELLT9,Dell Precision 5560,,In Stock,Available,Melbourne,2019-01-01,7y 9m
+            """);
+        Assert.False(LaptopRefreshLogic.IsFullInventory(import, Today));
+        var snapshot = new LaptopRefreshSnapshot();
+        LaptopRefreshLogic.ReplaceDueList(snapshot, import, "4-years.xlsx", DateTimeOffset.Now);
+        Assert.Equal(["OLD1", "OLDSTOCK"], snapshot.Due.Select(device => device.SerialNumber).ToArray());
+        Assert.Empty(snapshot.Available);
+
+        var plan = LaptopRefreshLogic.Build(
+            snapshot,
+            [Box("OLDSTOCK", "Dell Precision 5560", "Melbourne", "In stock", "Available")],
+            ["Melbourne"],
+            null,
+            Today);
+        Assert.Empty(plan.InBox);
+        Assert.Equal(["Sam"], plan.Next.Select(row => row.AssignedTo).ToArray());
+    }
+
+    [Fact]
+    public void ImportReadsTheFullDeviceList()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var old = today.AddYears(-6).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var young = today.AddMonths(-8).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var mid = today.AddYears(-3).AddMonths(-6).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var store = new MemoryLaptopRefreshStore();
+        var desktop = new RecordingDesktopServices();
+        var refresh = Workspace(store, desktop);
+        var path = Path.Combine(Path.GetTempPath(), "servicenow-desk-tests", "all-devices.csv");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, string.Join('\n',
+        [
+            "Location,Serial #,Hostname,Model,Assigned To,State,Substate,Stockroom,Delivery Date,Age",
+            "Melbourne,OLD1,MELLT1,HP EliteBook,Sam,In Use,,," + old + ",6y 0m",
+            "Melbourne,YOUNG1,MELLT2,HP ZBook,Alex,In Use,,," + young + ",0y 8m",
+            "Melbourne,MID1,MELLT3,Dell Latitude,Jo,In Use,,," + mid + ",3y 6m",
+            "Melbourne,STOCKNEW,Z1,HP ZBook X,,In Stock,Available,Melbourne stock," + young + ",0y 8m",
+            "Brisbane,TRANSIT1,T1,HP ZBook X,,In Transit,,," + young + ",0y 8m",
+            "Melbourne,STOCKOLD,Z0,HP ZBook Studio,,In Stock,Available,Melbourne stock," + old + ",6y 0m"
+        ]));
+        desktop.NextOpenFile = path;
+        refresh.ImportDueListCommand.Execute(null);
+
+        Assert.Contains("in use for 4 years or more", refresh.Status, StringComparison.Ordinal);
+        Assert.Contains("1 in stock and 1 in transit", refresh.Status, StringComparison.Ordinal);
+        Assert.Equal(["Sam"], refresh.Next.Select(row => row.AssignedTo).ToArray());
+        Assert.Equal(["STOCKNEW", "TRANSIT1"], refresh.InBox.Select(item => item.SerialNumber).ToArray());
+        Assert.Equal("Melbourne stock", refresh.InBox.Single(item => item.SerialNumber == "STOCKNEW").Stockroom);
+    }
+
+    [Fact]
     public void HardwarePageOffersLaptopRefresh()
     {
         var view = RepoFile("src/ServiceNowDesk.App/Views/HardwareView.xaml");

@@ -124,6 +124,7 @@ public partial class LaptopRefreshViewModel : ObservableObject
         }
 
         var source = Path.GetFileName(path);
+        var today = DateOnly.FromDateTime(DateTime.Today);
         if (import.IsStockList)
         {
             LaptopRefreshLogic.ReplaceAvailable(_snapshot, import, source);
@@ -136,6 +137,31 @@ public partial class LaptopRefreshViewModel : ObservableObject
                 + ". "
                 + inStock.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 + " in stock, "
+                + inTransit.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + " in transit.";
+        }
+        else if (LaptopRefreshLogic.IsFullInventory(import, today))
+        {
+            LaptopRefreshLogic.ReplaceInventory(_snapshot, import, source, DateTimeOffset.Now, today);
+            var inStock = _snapshot.Available.Count(device => device.State.Contains("stock", StringComparison.OrdinalIgnoreCase));
+            var inTransit = _snapshot.Available.Count(device => device.State.Contains("transit", StringComparison.OrdinalIgnoreCase));
+            var people = _snapshot.Due.Count;
+            var peopleText = people == 1
+                ? "1 has been in use for 4 years or more. "
+                : people.ToString(System.Globalization.CultureInfo.InvariantCulture) + " have been in use for 4 years or more. ";
+            var available = _snapshot.Available.Count;
+            var availableText = available == 1
+                ? "1 is available to assign: "
+                : available.ToString(System.Globalization.CultureInfo.InvariantCulture) + " are available to assign: ";
+            Status = "Read "
+                + import.Devices.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + " devices from "
+                + source
+                + ". "
+                + peopleText
+                + availableText
+                + inStock.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + " in stock and "
                 + inTransit.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 + " in transit.";
         }

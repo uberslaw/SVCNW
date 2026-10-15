@@ -264,7 +264,7 @@
                               AutomationProperties.Name="Laptop refresh">
                     <StackPanel>
                         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                                   Text="Import the upgrade list (one row per person and the laptop they have now) or the available-devices export (laptops in stock or in transit). The file is recognised either way. People who are not completed, oldest first, are who should be next. Put a vacation student, leave, or any other reason in the comment. The region on this page limits these lists."/>
+                                   Text="Import the full device list, the upgrade list, or the available-devices export. The file is recognised from its columns. People still using a laptop from 4 years ago or earlier, oldest first, are who should be next. Laptops in stock or in transit under 3 years old are the ones in the box. A vacation student, leave, or any other reason goes in the comment. The region on this page limits these lists."/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button Content="Import list" Style="{StaticResource SecondaryButton}"
                                     Command="{Binding LaptopRefresh.ImportDueListCommand}" Margin="0,0,8,0"
