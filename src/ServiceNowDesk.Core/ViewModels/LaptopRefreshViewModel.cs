@@ -36,16 +36,19 @@ public partial class LaptopRefreshViewModel : ObservableObject
     }
 
     public ObservableCollection<InBoxLaptop> InBox { get; } = [];
+    public ObservableCollection<InTransitLaptop> InTransit { get; } = [];
     public ObservableCollection<NextLaptopRow> Next { get; } = [];
     public ObservableCollection<ReceivedLaptopRow> Received { get; } = [];
 
     [ObservableProperty] private string summary = "Import the spreadsheet of laptops due this financial year. The oldest delivery date is who should be next.";
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string inBoxHeading = "In the box";
+    [ObservableProperty] private string inTransitHeading = "In transit";
     [ObservableProperty] private string nextHeading = "Who should be next";
     [ObservableProperty] private string receivedHeading = "Who actually received a laptop";
     [ObservableProperty] private bool hasDueList;
     [ObservableProperty] private bool hasInBox;
+    [ObservableProperty] private bool hasInTransit;
     [ObservableProperty] private bool hasNext;
     [ObservableProperty] private bool hasReceived;
     [ObservableProperty] private bool showEmptyInBox;
@@ -128,42 +131,25 @@ public partial class LaptopRefreshViewModel : ObservableObject
         if (import.IsStockList)
         {
             LaptopRefreshLogic.ReplaceAvailable(_snapshot, import, source);
-            var inStock = import.Devices.Count(device => device.State.Contains("stock", StringComparison.OrdinalIgnoreCase));
-            var inTransit = import.Devices.Count(device => device.State.Contains("transit", StringComparison.OrdinalIgnoreCase));
             Status = "Imported "
-                + _snapshot.Available.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + " available laptops from "
                 + source
                 + ". "
-                + inStock.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + " in stock, "
-                + inTransit.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + " in transit.";
+                + DescribeAvailability(_snapshot.Available.Count, _snapshot.InTransit?.Count ?? 0);
         }
         else if (LaptopRefreshLogic.IsFullInventory(import, today))
         {
             LaptopRefreshLogic.ReplaceInventory(_snapshot, import, source, DateTimeOffset.Now, today);
-            var inStock = _snapshot.Available.Count(device => device.State.Contains("stock", StringComparison.OrdinalIgnoreCase));
-            var inTransit = _snapshot.Available.Count(device => device.State.Contains("transit", StringComparison.OrdinalIgnoreCase));
             var people = _snapshot.Due.Count;
             var peopleText = people == 1
                 ? "1 has been in use for 4 years or more. "
                 : people.ToString(System.Globalization.CultureInfo.InvariantCulture) + " have been in use for 4 years or more. ";
-            var available = _snapshot.Available.Count;
-            var availableText = available == 1
-                ? "1 is available to assign: "
-                : available.ToString(System.Globalization.CultureInfo.InvariantCulture) + " are available to assign: ";
             Status = "Read "
                 + import.Devices.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 + " devices from "
                 + source
                 + ". "
                 + peopleText
-                + availableText
-                + inStock.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + " in stock and "
-                + inTransit.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                + " in transit.";
+                + DescribeAvailability(_snapshot.Available.Count, _snapshot.InTransit?.Count ?? 0);
         }
         else if (import.HasSerial)
         {
@@ -272,10 +258,13 @@ public partial class LaptopRefreshViewModel : ObservableObject
             foreach (var row in Received)
                 row.Detach();
             InBox.Clear();
+            InTransit.Clear();
             Next.Clear();
             Received.Clear();
             foreach (var row in _plan.InBox)
                 InBox.Add(row);
+            foreach (var row in _plan.InTransit)
+                InTransit.Add(row);
             foreach (var row in _plan.Next)
                 Next.Add(new NextLaptopRow(row, SaveNext));
             foreach (var row in _plan.Received)
@@ -283,12 +272,14 @@ public partial class LaptopRefreshViewModel : ObservableObject
 
             HasDueList = _snapshot.Due.Count > 0;
             HasInBox = InBox.Count > 0;
+            HasInTransit = InTransit.Count > 0;
             HasNext = Next.Count > 0;
             HasReceived = Received.Count > 0;
             ShowEmptyInBox = !HasInBox && (HasDueList || _catalog.Count > 0);
             ShowEmptyNext = HasDueList && !HasNext;
             ShowEmptyReceived = HasDueList && !HasReceived;
             InBoxHeading = "In the box (" + InBox.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
+            InTransitHeading = "In transit (" + InTransit.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
             NextHeading = "Who should be next (" + _plan.NextSlotCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
             ReceivedHeading = "Who actually received a laptop (" + Received.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
             Summary = Describe();
@@ -308,10 +299,14 @@ public partial class LaptopRefreshViewModel : ObservableObject
                 : "Import the spreadsheet of laptops due this financial year so old machines already in stock are not counted as new boxes.";
         }
 
+        var transit = _plan.InTransit.Count > 0
+            ? _plan.InTransit.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + " in transit · "
+            : "";
         var text = _plan.DueCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
             + " due · "
             + _plan.InBox.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
             + " in the box · "
+            + transit
             + _plan.NextSlotCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
             + " should be next · "
             + _plan.Received.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
@@ -336,6 +331,15 @@ public partial class LaptopRefreshViewModel : ObservableObject
             text += " Refresh the hardware list to see which serials are in the stock room.";
 
         return text;
+    }
+
+    private static string DescribeAvailability(int inStock, int inTransit)
+    {
+        var stock = inStock.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + (inStock == 1 ? " in stock is available to assign. " : " in stock are available to assign. ");
+        var transit = inTransit.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + (inTransit == 1 ? " is in transit." : " are in transit.");
+        return stock + transit;
     }
 
     private LaptopCheckNote NoteFor(string serial)

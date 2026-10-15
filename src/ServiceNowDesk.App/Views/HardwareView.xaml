@@ -75,11 +75,14 @@
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="16"/>
-                <ColumnDefinition Width="380"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <DockPanel>
+            <DockPanel HorizontalAlignment="Stretch">
+                <Border DockPanel.Dock="Top" Style="{StaticResource Banner}" Background="{StaticResource ErrorSoftBrush}"
+                        Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}">
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
+                </Border>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <TextBlock Text="Region" Style="{StaticResource FieldLabel}"/>
                     <TextBlock Text="{Binding AccountOfficeText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
@@ -185,13 +188,13 @@
                 <DockPanel x:Name="HardwareTableContent" HorizontalAlignment="Stretch">
                 <Grid x:Name="HardwareFilters" DockPanel.Dock="Top" Margin="1,0,1,4">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="1.2*" MinWidth="96"/>
-                        <ColumnDefinition Width="2.4*" MinWidth="148"/>
-                        <ColumnDefinition Width="1.2*" MinWidth="96"/>
-                        <ColumnDefinition Width="1.2*" MinWidth="200"/>
-                        <ColumnDefinition Width="*" MinWidth="200"/>
-                        <ColumnDefinition Width="1.1*" MinWidth="200"/>
-                        <ColumnDefinition Width="1.5*" MinWidth="110"/>
+                        <ColumnDefinition Width="1.1*" MinWidth="90"/>
+                        <ColumnDefinition Width="2.4*" MinWidth="160"/>
+                        <ColumnDefinition Width="1.6*" MinWidth="120"/>
+                        <ColumnDefinition Width="1.2*" MinWidth="130"/>
+                        <ColumnDefinition Width="0.8*" MinWidth="80"/>
+                        <ColumnDefinition Width="0.9*" MinWidth="90"/>
+                        <ColumnDefinition Width="2*" MinWidth="140"/>
                     </Grid.ColumnDefinitions>
                     <TextBox Style="{StaticResource DeskColumnFilter}" Margin="6,0,4,0"
                              Text="{Binding SerialFilter, UpdateSourceTrigger=PropertyChanged}"
@@ -234,25 +237,25 @@
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                           AutomationProperties.Name="Hardware list">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="1.2*" MinWidth="96"
+                        <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="1.1*" MinWidth="90"
                                             SortMemberPath="SerialNumber"
                                             ElementStyle="{StaticResource DeskDataGridAccentText}"/>
-                        <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="2.4*" MinWidth="148"
+                        <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="2.4*" MinWidth="160"
                                             SortMemberPath="Model"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo.Display}" Width="1.2*" MinWidth="96"
+                        <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo.Display}" Width="1.6*" MinWidth="120"
                                             SortMemberPath="AssignedTo.Display"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="Location" Binding="{Binding Location.Display}" Width="1.2*" MinWidth="200"
+                        <DataGridTextColumn Header="Location" Binding="{Binding Location.Display}" Width="1.2*" MinWidth="130"
                                             SortMemberPath="Location.Display"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="State" Binding="{Binding InstallStatusLabel}" Width="*" MinWidth="200"
+                        <DataGridTextColumn Header="State" Binding="{Binding InstallStatusLabel}" Width="0.8*" MinWidth="80"
                                             SortMemberPath="InstallStatusLabel"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="Substate" Binding="{Binding SubstatusLabel}" Width="1.1*" MinWidth="200"
+                        <DataGridTextColumn Header="Substate" Binding="{Binding SubstatusLabel}" Width="0.9*" MinWidth="90"
                                             SortMemberPath="SubstatusLabel"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
-                        <DataGridTextColumn Header="Comments" Binding="{Binding Comments}" Width="1.5*" MinWidth="110"
+                        <DataGridTextColumn Header="Comments" Binding="{Binding Comments}" Width="2*" MinWidth="140"
                                             SortMemberPath="Comments"
                                             ElementStyle="{StaticResource DeskDataGridText}"/>
                     </DataGrid.Columns>
@@ -264,7 +267,7 @@
                               AutomationProperties.Name="Laptop refresh">
                     <StackPanel>
                         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                                   Text="Import the full device list, the upgrade list, or the available-devices export. The file is recognised from its columns. People still using a laptop from 4 years ago or earlier, oldest first, are who should be next. Laptops in stock or in transit under 3 years old are the ones in the box. A vacation student, leave, or any other reason goes in the comment. The region on this page limits these lists."/>
+                                   Text="Import the full device list, the upgrade list, or the available-devices export. The file is recognised from its columns. People still using a laptop from 4 years ago or earlier, oldest first, are who should be next. Laptops in stock under 3 years old are the ones in the box. Laptops in transit stay in transit until they are changed to in stock. A vacation student, leave, or any other reason goes in the comment. The region on this page limits these lists."/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button Content="Import list" Style="{StaticResource SecondaryButton}"
                                     Command="{Binding LaptopRefresh.ImportDueListCommand}" Margin="0,0,8,0"
@@ -292,11 +295,32 @@
                                   AutomationProperties.Name="Laptops in the box"
                                   Visibility="{Binding LaptopRefresh.HasInBox, Converter={StaticResource BoolVis}}">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="140"/>
-                                <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="220"/>
-                                <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="140"/>
-                                <DataGridTextColumn Header="Stockroom" Binding="{Binding Stockroom}" Width="160"/>
-                                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="160"/>
+                                <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="2*" MinWidth="120"/>
+                                <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="3*" MinWidth="160"/>
+                                <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="2*" MinWidth="120"/>
+                                <DataGridTextColumn Header="Stockroom" Binding="{Binding Stockroom}" Width="2*" MinWidth="120"/>
+                                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="2*" MinWidth="120"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Text="{Binding LaptopRefresh.InTransitHeading}" FontWeight="SemiBold" Margin="0,0,0,4"
+                                   Visibility="{Binding LaptopRefresh.HasInTransit, Converter={StaticResource BoolVis}}"/>
+                        <DataGrid ItemsSource="{Binding LaptopRefresh.InTransit}"
+                                  Style="{StaticResource DeskDataGrid}"
+                                  ColumnHeaderStyle="{StaticResource DeskDataGridColumnHeader}"
+                                  CellStyle="{StaticResource DeskDataGridCell}"
+                                  RowStyle="{StaticResource DeskDataGridRow}"
+                                  ColumnHeaderHeight="32"
+                                  MaxHeight="160"
+                                  Margin="0,0,0,12"
+                                  HeadersVisibility="Column"
+                                  AutomationProperties.Name="Laptops in transit"
+                                  Visibility="{Binding LaptopRefresh.HasInTransit, Converter={StaticResource BoolVis}}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="2*" MinWidth="120"/>
+                                <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="3*" MinWidth="160"/>
+                                <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="2*" MinWidth="120"/>
+                                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="2*" MinWidth="100"/>
                             </DataGrid.Columns>
                         </DataGrid>
 
@@ -322,7 +346,6 @@
                                 <DataGridTextColumn Header="Queue" Binding="{Binding QueueText}" Width="130" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo}" Width="150" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="User name" Binding="{Binding UserName}" Width="140" IsReadOnly="True"/>
-                                <DataGridTextColumn Header="Done by" Binding="{Binding HandledBy}" Width="110" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Model code" Binding="{Binding ListedModel}" Width="90" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Computer" Binding="{Binding Hostname}" Width="150" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="200" IsReadOnly="True"/>
@@ -412,12 +435,8 @@
                 </Grid>
             </DockPanel>
 
-            <DockPanel Grid.Column="2">
-                <StackPanel DockPanel.Dock="Top">
-                    <Border Style="{StaticResource Banner}" Background="{StaticResource ErrorSoftBrush}" Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}">
-                        <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
-                    </Border>
-                </StackPanel>
+            <DockPanel Grid.Column="1" Width="380" Margin="16,0,0,0"
+                       Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
                 <Border DockPanel.Dock="Bottom" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,8,0,0"
                         Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
                     <StackPanel>
@@ -428,8 +447,6 @@
                         </StackPanel>
                     </StackPanel>
                 </Border>
-                <TextBlock DockPanel.Dock="Top" Text="Select a serial number to open the asset." Margin="0,24,0,0" HorizontalAlignment="Center" Foreground="{StaticResource MutedBrush}"
-                           Visibility="{Binding HasEditor, Converter={StaticResource InverseBoolVis}}"/>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
                     <StackPanel>
                         <TextBlock Text="Serial number" Style="{StaticResource FieldLabel}"/>

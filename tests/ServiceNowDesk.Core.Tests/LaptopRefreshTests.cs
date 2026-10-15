@@ -298,12 +298,32 @@ public class LaptopRefreshTests
         var snapshot = new LaptopRefreshSnapshot();
         LaptopRefreshLogic.ReplaceDueList(snapshot, people, "sydney.xlsx", DateTimeOffset.Now);
         LaptopRefreshLogic.ReplaceAvailable(snapshot, stock, "devices.xlsx");
+        Assert.Equal(["5CD6220H4F"], snapshot.Available.Select(device => device.SerialNumber).ToArray());
+        Assert.Equal(["5CD6220H03"], snapshot.InTransit.Select(device => device.SerialNumber).ToArray());
         var plan = LaptopRefreshLogic.Build(snapshot, [], ["Sydney"], null, Today);
         Assert.Equal(["5CD6220H4F"], plan.InBox.Select(row => row.SerialNumber).ToArray());
+        Assert.Empty(plan.InTransit);
+        Assert.Equal(1, plan.NextSlotCount);
         Assert.Equal(["Arash Jafari", "Seamus Byrne"], plan.Next.Select(row => row.AssignedTo).ToArray());
         Assert.Equal("Next", plan.Next[0].QueueText);
         Assert.Equal("Later", plan.Next[1].QueueText);
         Assert.Equal("David", people.Devices[0].HandledBy);
+        Assert.Equal("5320", plan.Next[0].ListedModel);
+
+        var open = LaptopRefreshLogic.Build(snapshot, [], [], null, Today);
+        Assert.Equal(["5CD6220H4F"], open.InBox.Select(row => row.SerialNumber).ToArray());
+        Assert.DoesNotContain(open.InBox, row => row.SerialNumber == "5CD6220H03");
+        var transit = Assert.Single(open.InTransit);
+        Assert.Equal("5CD6220H03", transit.SerialNumber);
+        Assert.Equal("Brisbane", transit.Location);
+        Assert.Equal("In Transit", transit.State);
+        Assert.Equal(1, open.NextSlotCount);
+
+        var sheet = LaptopRefreshLogic.Format(open);
+        Assert.Contains("User name,Model code,", sheet, StringComparison.Ordinal);
+        Assert.DoesNotContain("Done by", sheet, StringComparison.Ordinal);
+        Assert.Contains("In transit", sheet, StringComparison.Ordinal);
+        Assert.Contains("5CD6220H03", sheet, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -338,23 +358,46 @@ public class LaptopRefreshTests
         Assert.Equal("Ceanu.Geuder", kept.UserName);
         Assert.Equal("840 G3", kept.ListedModel);
         Assert.Equal("Long Term Leave", snapshot.Notes.Single(note => note.SerialNumber == "OLD1").Comment);
-        Assert.Equal(["STOCKNEW", "TRANSIT1"], snapshot.Available.Select(device => device.SerialNumber).ToArray());
+        Assert.Equal(["STOCKNEW"], snapshot.Available.Select(device => device.SerialNumber).ToArray());
+        Assert.Equal(["TRANSIT1"], snapshot.InTransit.Select(device => device.SerialNumber).ToArray());
 
         var plan = LaptopRefreshLogic.Build(snapshot, [], [], null, Today);
         Assert.Equal(["Ceanu Geuder", "Fiona Whitworth"], plan.Next.Select(row => row.AssignedTo).ToArray());
         Assert.Equal("Next", plan.Next[0].QueueText);
         Assert.Equal("David", plan.Next[0].HandledBy);
+        Assert.Equal("840 G3", plan.Next[0].ListedModel);
+        Assert.DoesNotContain("Done by", plan.Next[0].Detail, StringComparison.Ordinal);
         Assert.Equal("Long Term Leave", plan.Next[0].Comment);
-        Assert.Equal("Next", plan.Next[1].QueueText);
-        Assert.Equal(["STOCKNEW", "TRANSIT1"], plan.InBox.Select(row => row.SerialNumber).ToArray());
+        Assert.Equal("Later", plan.Next[1].QueueText);
+        Assert.Equal(1, plan.NextSlotCount);
+        Assert.Equal(["STOCKNEW"], plan.InBox.Select(row => row.SerialNumber).ToArray());
+        Assert.DoesNotContain(plan.InBox, row => row.SerialNumber == "TRANSIT1");
         Assert.Equal("Melbourne stock", plan.InBox.Single(row => row.SerialNumber == "STOCKNEW").Stockroom);
         Assert.Equal("In Stock · Available", plan.InBox.Single(row => row.SerialNumber == "STOCKNEW").State);
-        Assert.Equal("In Transit", plan.InBox.Single(row => row.SerialNumber == "TRANSIT1").State);
+        var transit = Assert.Single(plan.InTransit);
+        Assert.Equal("TRANSIT1", transit.SerialNumber);
+        Assert.Equal("In Transit", transit.State);
 
         var melbourne = LaptopRefreshLogic.Build(snapshot, [], ["Melbourne"], null, Today);
         Assert.Equal(["STOCKNEW"], melbourne.InBox.Select(row => row.SerialNumber).ToArray());
+        Assert.Empty(melbourne.InTransit);
         Assert.Equal("Next", melbourne.Next[0].QueueText);
         Assert.Equal("Later", melbourne.Next[1].QueueText);
+
+        LaptopRefreshLogic.ReplaceDueList(snapshot, sydney, "sydney-again.xlsx", DateTimeOffset.Now);
+        Assert.Equal(["STOCKNEW"], snapshot.Available.Select(device => device.SerialNumber).ToArray());
+        Assert.Equal(["TRANSIT1"], snapshot.InTransit.Select(device => device.SerialNumber).ToArray());
+
+        snapshot.Due.Add(new DueLaptop
+        {
+            SerialNumber = "TRANSIT1",
+            AssignedTo = "Transit Person",
+            Location = "Brisbane",
+            State = "In Use"
+        });
+        var hidden = LaptopRefreshLogic.Build(snapshot, [], [], null, Today);
+        Assert.DoesNotContain(hidden.InTransit, row => row.SerialNumber == "TRANSIT1");
+        Assert.DoesNotContain(hidden.InBox, row => row.SerialNumber == "TRANSIT1");
     }
 
     [Fact]
@@ -407,10 +450,16 @@ public class LaptopRefreshTests
         refresh.ImportDueListCommand.Execute(null);
 
         Assert.Contains("in use for 4 years or more", refresh.Status, StringComparison.Ordinal);
-        Assert.Contains("1 in stock and 1 in transit", refresh.Status, StringComparison.Ordinal);
+        Assert.Contains("1 in stock is available to assign. 1 is in transit.", refresh.Status, StringComparison.Ordinal);
         Assert.Equal(["Sam"], refresh.Next.Select(row => row.AssignedTo).ToArray());
-        Assert.Equal(["STOCKNEW", "TRANSIT1"], refresh.InBox.Select(item => item.SerialNumber).ToArray());
+        Assert.Equal("Next", Assert.Single(refresh.Next).QueueText);
+        Assert.Equal(["STOCKNEW"], refresh.InBox.Select(item => item.SerialNumber).ToArray());
+        Assert.DoesNotContain(refresh.InBox, item => item.SerialNumber == "TRANSIT1");
         Assert.Equal("Melbourne stock", refresh.InBox.Single(item => item.SerialNumber == "STOCKNEW").Stockroom);
+        var transit = Assert.Single(refresh.InTransit);
+        Assert.Equal("TRANSIT1", transit.SerialNumber);
+        Assert.Equal("In Transit", transit.State);
+        Assert.True(refresh.HasInTransit);
     }
 
     [Fact]
@@ -423,6 +472,13 @@ public class LaptopRefreshTests
         Assert.Contains("Who actually received a laptop", view, StringComparison.Ordinal);
         Assert.Contains("Still has the old laptop", view, StringComparison.Ordinal);
         Assert.Contains("Reason they received it", view, StringComparison.Ordinal);
+        Assert.Contains("Model code", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("Done by", view, StringComparison.Ordinal);
+        Assert.Contains("Laptops in transit", view, StringComparison.Ordinal);
+        Assert.Contains("Laptops in stock under 3 years old are the ones in the box.", view, StringComparison.Ordinal);
+        Assert.Contains("Laptops in transit stay in transit until they are changed to in stock.", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("ColumnDefinition Width=\"380\"", view, StringComparison.Ordinal);
+        Assert.Contains("Width=\"*\"", view, StringComparison.Ordinal);
     }
 
     private static LaptopRefreshViewModel Workspace(ILaptopRefreshStore store, RecordingDesktopServices desktop)

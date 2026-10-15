@@ -50,6 +50,9 @@ public sealed class LaptopRefreshSnapshot
     public string SourceName { get; set; } = "";
     public List<DueLaptop> Due { get; set; } = [];
     public List<DueLaptop> Available { get; set; } = [];
+
+    /// <summary>Unassigned laptops still in transit. They are not in the box.</summary>
+    public List<DueLaptop> InTransit { get; set; } = [];
     public string AvailableSource { get; set; } = "";
     public List<LaptopCheckNote> Notes { get; set; } = [];
     public List<BoxedSerial> Watching { get; set; } = [];
@@ -57,6 +60,8 @@ public sealed class LaptopRefreshSnapshot
 }
 
 public sealed record InBoxLaptop(string SerialNumber, string Model, string Location, string Stockroom, string State);
+
+public sealed record InTransitLaptop(string SerialNumber, string Model, string Location, string State);
 
 public sealed record NextLaptop(
     string SerialNumber,
@@ -93,6 +98,7 @@ public sealed record ReceivedLaptopView(
 public sealed class LaptopRefreshPlan
 {
     public IReadOnlyList<InBoxLaptop> InBox { get; init; } = [];
+    public IReadOnlyList<InTransitLaptop> InTransit { get; init; } = [];
     public IReadOnlyList<NextLaptop> Next { get; init; } = [];
     public IReadOnlyList<ReceivedLaptopView> Received { get; init; } = [];
     public int DueCount { get; init; }
@@ -105,7 +111,8 @@ public readonly record struct TrackingApplyResult(int Updated, IReadOnlyList<str
 /// <summary>
 /// Who should get the next laptop in the box, and who a boxed serial was actually assigned to.
 /// Age comes from the imported delivery date. A full device export is split: in-use laptops
-/// 4 years or older are the queue, and unassigned stock or transit under 3 years is the box.
+/// 4 years or older are the queue, and unassigned laptops in stock under 3 years are the box.
+/// In transit stays on its own list until the state is changed to in stock.
 /// Serials already on the due list are old machines, not new boxes.
 /// </summary>
 public static class LaptopRefreshLogic
@@ -138,10 +145,21 @@ public static class LaptopRefreshLogic
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(import);
-        snapshot.Available = import.Devices
-            .Where(device => !string.IsNullOrWhiteSpace(device.SerialNumber))
-            .Select(CopyDevice)
-            .ToList();
+        var available = new List<DueLaptop>();
+        var transit = new List<DueLaptop>();
+        foreach (var device in import.Devices)
+        {
+            if (string.IsNullOrWhiteSpace(device.SerialNumber))
+                continue;
+            var copy = CopyDevice(device);
+            if (IsTransit(copy))
+                transit.Add(copy);
+            else
+                available.Add(copy);
+        }
+
+        snapshot.Available = available;
+        snapshot.InTransit = transit;
         snapshot.AvailableSource = sourceName ?? "";
     }
 
@@ -169,8 +187,9 @@ public static class LaptopRefreshLogic
 
     /// <summary>
     /// Splits one device export. People in use for <see cref="DueAgeYears"/> years or more stay
-    /// on the due list. Unassigned laptops in stock or in transit under <see cref="BoxAgeYears"/>
-    /// years are the ones available to assign. Notes already saved for a serial are left as they are.
+    /// on the due list. Unassigned laptops in stock under <see cref="BoxAgeYears"/> years are the
+    /// ones available to assign. In transit stays on <see cref="LaptopRefreshSnapshot.InTransit"/>.
+    /// Notes already saved for a serial are left as they are.
     /// </summary>
     public static void ReplaceInventory(
         LaptopRefreshSnapshot snapshot,
@@ -184,6 +203,7 @@ public static class LaptopRefreshLogic
         var previous = IndexDue(snapshot.Due);
         var due = new List<DueLaptop>();
         var available = new List<DueLaptop>();
+        var transit = new List<DueLaptop>();
         foreach (var device in import.Devices)
         {
             if (string.IsNullOrWhiteSpace(device.SerialNumber))
@@ -197,12 +217,19 @@ public static class LaptopRefreshLogic
                 continue;
             }
 
+            if (IsTransit(device))
+            {
+                transit.Add(CopyDevice(device));
+                continue;
+            }
+
             if (IsYoungBox(device, today))
                 available.Add(CopyDevice(device));
         }
 
         snapshot.Due = due;
         snapshot.Available = available;
+        snapshot.InTransit = transit;
         snapshot.AvailableSource = sourceName ?? "";
         snapshot.SourceName = sourceName ?? "";
         snapshot.ImportedAt = importedAt;
@@ -384,11 +411,21 @@ public static class LaptopRefreshLogic
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
         var dueSerials = DueSerials(snapshot);
 
+        var inTransit = new List<InTransitLaptop>();
+        var importedStock = snapshot.Available.Count > 0
+            || (snapshot.InTransit?.Count ?? 0) > 0
+            || !string.IsNullOrWhiteSpace(snapshot.AvailableSource);
         var inBox = new List<InBoxLaptop>();
-        if (snapshot.Available.Count > 0)
+        if (importedStock)
         {
             foreach (var device in snapshot.Available)
             {
+                if (IsTransit(device))
+                {
+                    AppendTransit(inTransit, device, dueSerials, officeList);
+                    continue;
+                }
+
                 if (string.IsNullOrWhiteSpace(device.SerialNumber) || dueSerials.Contains(device.SerialNumber))
                     continue;
                 if (!InOffices(device.Location, officeList))
@@ -400,6 +437,9 @@ public static class LaptopRefreshLogic
                     device.Stockroom ?? "",
                     FormatState(device.State, device.Substate)));
             }
+
+            foreach (var device in snapshot.InTransit ?? [])
+                AppendTransit(inTransit, device, dueSerials, officeList);
         }
         else
         {
@@ -421,6 +461,7 @@ public static class LaptopRefreshLogic
         }
 
         inBox.Sort((left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.SerialNumber, right.SerialNumber));
+        inTransit.Sort((left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.SerialNumber, right.SerialNumber));
 
         var completed = 0;
         var waiting = new List<PendingRow>();
@@ -476,6 +517,7 @@ public static class LaptopRefreshLogic
         return new LaptopRefreshPlan
         {
             InBox = inBox,
+            InTransit = inTransit,
             Next = next,
             Received = receivedViews,
             DueCount = snapshot.Due.Count(device => InOffices(device.Location, officeList)),
@@ -519,7 +561,7 @@ public static class LaptopRefreshLogic
         var builder = new StringBuilder();
         builder.Append("Who should be next");
         builder.Append('\n');
-        builder.Append("Queue,Computename,Model,Assigned to,User name,Done by,Model code,Age,Delivery date,Location,Still has the old laptop,On hold,Status,Comment,Detail");
+        builder.Append("Queue,Computename,Model,Assigned to,User name,Model code,Age,Delivery date,Location,Still has the old laptop,On hold,Status,Comment,Detail");
         builder.Append('\n');
         foreach (var row in plan.Next)
         {
@@ -529,7 +571,6 @@ public static class LaptopRefreshLogic
                 row.Model,
                 row.AssignedTo,
                 row.UserName,
-                row.HandledBy,
                 row.ListedModel,
                 row.AgeText,
                 row.DeliveredText,
@@ -549,6 +590,14 @@ public static class LaptopRefreshLogic
         builder.Append('\n');
         foreach (var row in plan.InBox)
             Append(builder, [row.SerialNumber, row.Model, row.Location, row.Stockroom, row.State]);
+
+        builder.Append('\n');
+        builder.Append("In transit");
+        builder.Append('\n');
+        builder.Append("Serial,Model,Location,State");
+        builder.Append('\n');
+        foreach (var row in plan.InTransit)
+            Append(builder, [row.SerialNumber, row.Model, row.Location, row.State]);
 
         builder.Append('\n');
         builder.Append("Who actually received a laptop");
@@ -623,8 +672,6 @@ public static class LaptopRefreshLogic
             parts.Add(device.Priority.Trim());
         if (!string.IsNullOrWhiteSpace(device.UserName))
             parts.Add(device.UserName.Trim());
-        if (!string.IsNullOrWhiteSpace(device.HandledBy))
-            parts.Add("Done by " + device.HandledBy.Trim());
         if (!string.IsNullOrWhiteSpace(device.ListedModel))
             parts.Add(device.ListedModel.Trim());
         if (asset is not null)
@@ -827,15 +874,38 @@ public static class LaptopRefreshLogic
         !string.IsNullOrWhiteSpace(device.AssignedTo)
         && HardwareCatalog.SameLabel(device.State, HardwareCatalog.InUse);
 
+    private static bool IsTransit(DueLaptop device) =>
+        HardwareCatalog.SameLabel(device.State, HardwareCatalog.InTransit);
+
+    private static void AppendTransit(
+        List<InTransitLaptop> transit,
+        DueLaptop device,
+        HashSet<string> dueSerials,
+        IReadOnlyList<string> offices)
+    {
+        if (string.IsNullOrWhiteSpace(device.SerialNumber) || dueSerials.Contains(device.SerialNumber))
+            return;
+        if (!InOffices(device.Location, offices))
+            return;
+        var serial = device.SerialNumber.Trim();
+        if (transit.Any(item => item.SerialNumber.Equals(serial, StringComparison.OrdinalIgnoreCase)))
+            return;
+        transit.Add(new InTransitLaptop(
+            serial,
+            device.Model ?? "",
+            device.Location ?? "",
+            FormatState(device.State, device.Substate)));
+    }
+
     /// <summary>
-    /// Young unassigned stock, including laptops in transit. Legal hold and pending transfer stay out.
+    /// Young unassigned stock. Legal hold and pending transfer stay out of the box.
+    /// In transit is listed on its own and is left out of this pool.
     /// </summary>
     private static bool IsYoungBox(DueLaptop device, DateOnly today)
     {
         if (!string.IsNullOrWhiteSpace(device.AssignedTo))
             return false;
-        if (!HardwareCatalog.SameLabel(device.State, HardwareCatalog.InStock)
-            && !HardwareCatalog.SameLabel(device.State, HardwareCatalog.InTransit))
+        if (!HardwareCatalog.SameLabel(device.State, HardwareCatalog.InStock))
             return false;
         if (HardwareCatalog.SameLabel(device.Substate, "Legal hold")
             || HardwareCatalog.SameLabel(device.Substate, "Pending transfer"))
