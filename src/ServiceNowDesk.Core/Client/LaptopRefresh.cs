@@ -49,6 +49,8 @@ public sealed class LaptopRefreshSnapshot
     public DateTimeOffset ImportedAt { get; set; }
     public string SourceName { get; set; } = "";
     public List<DueLaptop> Due { get; set; } = [];
+    public List<DueLaptop> Available { get; set; } = [];
+    public string AvailableSource { get; set; } = "";
     public List<LaptopCheckNote> Notes { get; set; } = [];
     public List<BoxedSerial> Watching { get; set; } = [];
     public List<ReceivedLaptop> Received { get; set; } = [];
@@ -68,10 +70,12 @@ public sealed record NextLaptop(
     string Warranty,
     string Priority,
     string Detail,
+    string UserName,
+    string HandledBy,
+    string ListedModel,
     bool IsNext,
     bool StillHasLaptop,
     bool OnHold,
-    bool VacationStudent,
     string Status,
     string Comment,
     string QueueText);
@@ -119,6 +123,17 @@ public static class LaptopRefreshLogic
             ApplyNotes(snapshot, import);
     }
 
+    public static void ReplaceAvailable(LaptopRefreshSnapshot snapshot, LaptopAgeImport import, string sourceName)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(import);
+        snapshot.Available = import.Devices
+            .Where(device => !string.IsNullOrWhiteSpace(device.SerialNumber))
+            .Select(CopyDevice)
+            .ToList();
+        snapshot.AvailableSource = sourceName ?? "";
+    }
+
     public static TrackingApplyResult ApplyNotes(LaptopRefreshSnapshot snapshot, LaptopAgeImport import)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -144,8 +159,6 @@ public static class LaptopRefreshLogic
                 var note = NoteFor(snapshot, NoteKey(device));
                 if (import.HasOnHold)
                     note.OnHold = row.OnHold;
-                if (import.HasVacation)
-                    note.VacationStudent = row.VacationStudent;
                 if (import.HasStatus)
                     note.Status = row.Status ?? "";
                 if (import.HasComment && !string.IsNullOrWhiteSpace(row.Comment))
@@ -298,20 +311,39 @@ public static class LaptopRefreshLogic
         var dueSerials = DueSerials(snapshot);
 
         var inBox = new List<InBoxLaptop>();
-        foreach (var asset in catalog)
+        if (snapshot.Available.Count > 0)
         {
-            if (!IsInTheBox(asset, statuses))
-                continue;
-            if (string.IsNullOrWhiteSpace(asset.SerialNumber) || dueSerials.Contains(asset.SerialNumber))
-                continue;
-            if (!InOffices(asset.Location.Display, officeList))
-                continue;
-            inBox.Add(new InBoxLaptop(
-                asset.SerialNumber.Trim(),
-                asset.Model ?? "",
-                asset.Location.Display ?? "",
-                asset.Stockroom.Display ?? "",
-                FormatState(asset.InstallStatusLabel, asset.SubstatusLabel)));
+            foreach (var device in snapshot.Available)
+            {
+                if (string.IsNullOrWhiteSpace(device.SerialNumber) || dueSerials.Contains(device.SerialNumber))
+                    continue;
+                if (!InOffices(device.Location, officeList))
+                    continue;
+                inBox.Add(new InBoxLaptop(
+                    device.SerialNumber.Trim(),
+                    device.Model ?? "",
+                    device.Location ?? "",
+                    "",
+                    device.State ?? ""));
+            }
+        }
+        else
+        {
+            foreach (var asset in catalog)
+            {
+                if (!IsInTheBox(asset, statuses))
+                    continue;
+                if (string.IsNullOrWhiteSpace(asset.SerialNumber) || dueSerials.Contains(asset.SerialNumber))
+                    continue;
+                if (!InOffices(asset.Location.Display, officeList))
+                    continue;
+                inBox.Add(new InBoxLaptop(
+                    asset.SerialNumber.Trim(),
+                    asset.Model ?? "",
+                    asset.Location.Display ?? "",
+                    asset.Stockroom.Display ?? "",
+                    FormatState(asset.InstallStatusLabel, asset.SubstatusLabel)));
+            }
         }
 
         inBox.Sort((left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.SerialNumber, right.SerialNumber));
@@ -413,7 +445,7 @@ public static class LaptopRefreshLogic
         var builder = new StringBuilder();
         builder.Append("Who should be next");
         builder.Append('\n');
-        builder.Append("Queue,Computename,Model,Assigned to,Department,Warranty expiration,Priority,Age,Delivery date,Location,Still has the old laptop,On hold,Status,Vacation student,Comment,Detail");
+        builder.Append("Queue,Computename,Model,Assigned to,User name,Done by,Model code,Age,Delivery date,Location,Still has the old laptop,On hold,Status,Comment,Detail");
         builder.Append('\n');
         foreach (var row in plan.Next)
         {
@@ -422,16 +454,15 @@ public static class LaptopRefreshLogic
                 row.Hostname,
                 row.Model,
                 row.AssignedTo,
-                row.Department,
-                row.Warranty,
-                row.Priority,
+                row.UserName,
+                row.HandledBy,
+                row.ListedModel,
                 row.AgeText,
                 row.DeliveredText,
                 row.Location,
                 row.StillHasLaptop ? "Yes" : "Pending",
                 row.OnHold ? "Yes" : "",
                 row.Status,
-                row.VacationStudent ? "Yes" : "",
                 row.Comment,
                 row.Detail
             ]);
@@ -496,10 +527,12 @@ public static class LaptopRefreshLogic
             device.Warranty ?? "",
             device.Priority ?? "",
             Detail(device, row.Asset, row.Queue),
+            device.UserName ?? "",
+            device.HandledBy ?? "",
+            device.ListedModel ?? "",
             isNext,
             row.Note.StillHasLaptop,
             IsOnHold(row.Note),
-            row.Note.VacationStudent,
             row.Note.Status ?? "",
             row.Note.Comment ?? "",
             queue);
@@ -514,6 +547,12 @@ public static class LaptopRefreshLogic
             parts.Add("Warranty " + device.Warranty.Trim());
         if (!string.IsNullOrWhiteSpace(device.Priority))
             parts.Add(device.Priority.Trim());
+        if (!string.IsNullOrWhiteSpace(device.UserName))
+            parts.Add(device.UserName.Trim());
+        if (!string.IsNullOrWhiteSpace(device.HandledBy))
+            parts.Add("Done by " + device.HandledBy.Trim());
+        if (!string.IsNullOrWhiteSpace(device.ListedModel))
+            parts.Add(device.ListedModel.Trim());
         if (asset is not null)
         {
             var state = FormatState(asset.InstallStatusLabel, asset.SubstatusLabel);
@@ -717,8 +756,10 @@ public static class LaptopRefreshLogic
         Department = device.Department,
         Warranty = device.Warranty,
         Priority = device.Priority,
+        UserName = device.UserName,
+        HandledBy = device.HandledBy,
+        ListedModel = device.ListedModel,
         OnHold = device.OnHold,
-        VacationStudent = device.VacationStudent,
         Status = device.Status,
         Comment = device.Comment
     };

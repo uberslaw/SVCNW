@@ -264,11 +264,11 @@
                               AutomationProperties.Name="Laptop refresh">
                     <StackPanel>
                         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                                   Text="Import the list of laptops due this financial year. That is who still has an old laptop. Laptops in the stock room (state In stock or In box, nobody assigned, and not already on that list) are the ones in a box. The oldest delivery dates are who should be next, until you tick that they still have the old laptop. When a boxed serial is later assigned, it shows under who actually received it. Type the reason there. The region on this page limits these lists."/>
+                                   Text="Import the upgrade list (one row per person and the laptop they have now) or the available-devices export (laptops in stock or in transit). The file is recognised either way. People who are not completed, oldest first, are who should be next. Put a vacation student, leave, or any other reason in the comment. The region on this page limits these lists."/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <Button Content="Import due list" Style="{StaticResource SecondaryButton}"
+                            <Button Content="Import list" Style="{StaticResource SecondaryButton}"
                                     Command="{Binding LaptopRefresh.ImportDueListCommand}" Margin="0,0,8,0"
-                                    AutomationProperties.Name="Import due list"/>
+                                    AutomationProperties.Name="Import list"/>
                             <Button Content="Export sheet" Style="{StaticResource SecondaryButton}"
                                     Command="{Binding LaptopRefresh.ExportSheetCommand}"
                                     AutomationProperties.Name="Export laptop refresh"/>
@@ -302,7 +302,7 @@
 
                         <TextBlock Text="{Binding LaptopRefresh.NextHeading}" FontWeight="SemiBold" Margin="0,0,0,4"/>
                         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"
-                                   Text="Oldest first. Next matches the number of laptops in the box. On hold, completed, and anyone who already received a boxed laptop are not offered one. Completed rows are hidden."/>
+                                   Text="Oldest first. Next matches how many available laptops are in this region. Completed rows are hidden. A comment is the reason, including a vacation student."/>
                         <TextBlock Text="Nobody is waiting in this region." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                                    Visibility="{Binding LaptopRefresh.ShowEmptyNext, Converter={StaticResource BoolVis}}"/>
                         <DataGrid ItemsSource="{Binding LaptopRefresh.Next}"
@@ -321,6 +321,9 @@
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Queue" Binding="{Binding QueueText}" Width="130" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Assigned to" Binding="{Binding AssignedTo}" Width="150" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="User name" Binding="{Binding UserName}" Width="140" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Done by" Binding="{Binding HandledBy}" Width="110" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Model code" Binding="{Binding ListedModel}" Width="90" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Computer" Binding="{Binding Hostname}" Width="150" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="200" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Age" Binding="{Binding AgeText}" Width="70" IsReadOnly="True"/>
@@ -342,15 +345,6 @@
                                             <CheckBox IsChecked="{Binding OnHold, UpdateSourceTrigger=PropertyChanged}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
                                                       AutomationProperties.Name="On hold"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="Vacation student" Width="110">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <CheckBox IsChecked="{Binding VacationStudent, UpdateSourceTrigger=PropertyChanged}"
-                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                      AutomationProperties.Name="Vacation student"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>

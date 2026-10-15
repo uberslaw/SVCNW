@@ -124,7 +124,22 @@ public partial class LaptopRefreshViewModel : ObservableObject
         }
 
         var source = Path.GetFileName(path);
-        if (import.HasSerial)
+        if (import.IsStockList)
+        {
+            LaptopRefreshLogic.ReplaceAvailable(_snapshot, import, source);
+            var inStock = import.Devices.Count(device => device.State.Contains("stock", StringComparison.OrdinalIgnoreCase));
+            var inTransit = import.Devices.Count(device => device.State.Contains("transit", StringComparison.OrdinalIgnoreCase));
+            Status = "Imported "
+                + _snapshot.Available.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + " available laptops from "
+                + source
+                + ". "
+                + inStock.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + " in stock, "
+                + inTransit.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + " in transit.";
+        }
+        else if (import.HasSerial)
         {
             LaptopRefreshLogic.ReplaceDueList(_snapshot, import, source, DateTimeOffset.Now);
             var oldest = _snapshot.Due
@@ -197,7 +212,6 @@ public partial class LaptopRefreshViewModel : ObservableObject
         var wasCompleted = LaptopRefreshLogic.IsCompleted(note);
         note.StillHasLaptop = row.StillHasLaptop;
         note.OnHold = row.OnHold;
-        note.VacationStudent = row.VacationStudent;
         note.Status = row.Status ?? "";
         note.Comment = row.Comment ?? "";
         Save();
@@ -337,10 +351,12 @@ public partial class NextLaptopRow : ObservableObject
         AgeText = source.AgeText;
         DeliveredText = source.DeliveredText;
         Detail = source.Detail;
+        UserName = source.UserName;
+        HandledBy = source.HandledBy;
+        ListedModel = source.ListedModel;
         QueueText = source.QueueText;
         StillHasLaptop = source.StillHasLaptop;
         OnHold = source.OnHold;
-        VacationStudent = source.VacationStudent;
         Status = source.Status;
         Comment = source.Comment;
         _ready = true;
@@ -354,12 +370,14 @@ public partial class NextLaptopRow : ObservableObject
     public string AgeText { get; }
     public string DeliveredText { get; }
     public string Detail { get; }
+    public string UserName { get; }
+    public string HandledBy { get; }
+    public string ListedModel { get; }
     public string QueueText { get; }
     public string CheckText => StillHasLaptop ? "Confirmed" : "Pending";
 
     [ObservableProperty] private bool stillHasLaptop;
     [ObservableProperty] private bool onHold;
-    [ObservableProperty] private bool vacationStudent;
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string comment = "";
 
@@ -373,12 +391,6 @@ public partial class NextLaptopRow : ObservableObject
     }
 
     partial void OnOnHoldChanged(bool value)
-    {
-        if (_ready)
-            _save(this);
-    }
-
-    partial void OnVacationStudentChanged(bool value)
     {
         if (_ready)
             _save(this);

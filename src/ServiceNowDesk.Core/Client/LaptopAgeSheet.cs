@@ -24,8 +24,10 @@ public sealed class DueLaptop
     public string Department { get; set; } = "";
     public string Warranty { get; set; } = "";
     public string Priority { get; set; } = "";
+    public string UserName { get; set; } = "";
+    public string HandledBy { get; set; } = "";
+    public string ListedModel { get; set; } = "";
     public bool OnHold { get; set; }
-    public bool VacationStudent { get; set; }
     public string Status { get; set; } = "";
     public string Comment { get; set; } = "";
 }
@@ -40,10 +42,15 @@ public sealed class LaptopAgeImport
     public bool HasSerial { get; init; }
     public bool HasOnHold { get; init; }
     public bool HasStatus { get; init; }
-    public bool HasVacation { get; init; }
     public bool HasComment { get; init; }
 
-    public bool HasTracking => HasOnHold || HasStatus || HasVacation || HasComment;
+    /// <summary>
+    /// A stock export: serials in stock or in transit, with no person column.
+    /// The Sydney upgrade list is the other file, one row per person.
+    /// </summary>
+    public bool IsStockList { get; init; }
+
+    public bool HasTracking => HasOnHold || HasStatus || HasComment;
 }
 
 /// <summary>
@@ -136,7 +143,11 @@ public static class LaptopAgeSheet
 
         var headerIndex = FindHeader(table);
         if (headerIndex < 0)
+        {
+            if (table.Any(LooksLikeUpgradeRow))
+                return FromUpgradeRows(table);
             throw new InvalidDataException("This file needs a Serial, Computename, or Assigned to column.");
+        }
 
         var columns = MapColumns(table[headerIndex]);
         if (!columns.ContainsKey("serial")
@@ -164,9 +175,8 @@ public static class LaptopAgeSheet
                 Warranty = Cell(row, columns, "warranty"),
                 Priority = Cell(row, columns, "priority"),
                 Status = Cell(row, columns, "status"),
-                Comment = Cell(row, columns, "comment"),
-                OnHold = Truthy(Cell(row, columns, "onhold")),
-                VacationStudent = Truthy(Cell(row, columns, "vacation"))
+                Comment = VacationComment(Cell(row, columns, "comment"), Truthy(Cell(row, columns, "vacation"))),
+                OnHold = Truthy(Cell(row, columns, "onhold"))
             };
             device.DeliveryDate = ParseDelivery(Cell(row, columns, "delivery"));
 
@@ -198,10 +208,126 @@ public static class LaptopAgeSheet
             HasSerial = columns.ContainsKey("serial") && devices.Any(device => !string.IsNullOrWhiteSpace(device.SerialNumber)),
             HasOnHold = columns.ContainsKey("onhold"),
             HasStatus = columns.ContainsKey("status"),
-            HasVacation = columns.ContainsKey("vacation"),
-            HasComment = columns.ContainsKey("comment")
+            HasComment = columns.ContainsKey("comment") || columns.ContainsKey("vacation"),
+            IsStockList = columns.ContainsKey("serial")
+                && !columns.ContainsKey("assigned")
+                && (columns.ContainsKey("state") || columns.ContainsKey("delivery"))
         };
     }
+
+    /// <summary>
+    /// Sydney upgrades sheet: no title row. Location, serial, hostname, model, state, age,
+    /// person, user name, who did it, comment, Completed or Not completed, model code.
+    /// </summary>
+    private static LaptopAgeImport FromUpgradeRows(IReadOnlyList<IReadOnlyList<string>> table)
+    {
+        var devices = new List<DueLaptop>();
+        var seenSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in table)
+        {
+            if (!LooksLikeUpgradeRow(row))
+                continue;
+
+            var handled = At(row, 8);
+            var comment = At(row, 9);
+            if (!LooksLikePerson(handled))
+            {
+                if (handled.Length > 0)
+                    comment = JoinComment(comment, handled);
+                handled = "";
+            }
+
+            if (IsCompletedWord(comment))
+                comment = "";
+
+            var device = new DueLaptop
+            {
+                Location = At(row, 0),
+                SerialNumber = At(row, 1),
+                Hostname = At(row, 2),
+                Model = At(row, 3),
+                State = At(row, 4),
+                AgeText = At(row, 5),
+                AssignedTo = At(row, 6),
+                UserName = At(row, 7),
+                HandledBy = handled,
+                Comment = comment,
+                Status = At(row, 10),
+                ListedModel = At(row, 11)
+            };
+            if (device.Status.Equals("on hold", StringComparison.OrdinalIgnoreCase))
+                device.OnHold = true;
+            if (!string.IsNullOrWhiteSpace(device.SerialNumber) && !seenSerials.Add(device.SerialNumber))
+                continue;
+            devices.Add(device);
+        }
+
+        if (devices.Count == 0)
+            throw new InvalidDataException("This file has no laptop rows.");
+
+        return new LaptopAgeImport
+        {
+            Devices = devices,
+            HasSerial = true,
+            HasStatus = true,
+            HasComment = true
+        };
+    }
+
+    private static bool LooksLikeUpgradeRow(IReadOnlyList<string> row)
+    {
+        if (row.Count < 7)
+            return false;
+        var serial = At(row, 1);
+        var person = At(row, 6);
+        if (serial.Length < 4 || person.Length < 2)
+            return false;
+        if (serial.Contains(' ', StringComparison.Ordinal))
+            return false;
+        return person.Any(char.IsLetter);
+    }
+
+    private static bool LooksLikePerson(string text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0 || trimmed.Length > 40 || trimmed.Any(char.IsDigit))
+            return false;
+        if (trimmed.Contains("user", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("finish", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("leave", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length is >= 1 and <= 4 && words[0].Any(char.IsLetter);
+    }
+
+    private static bool IsCompletedWord(string text)
+    {
+        var letters = new string(text.Where(char.IsLetter).ToArray());
+        return letters.Equals("completed", StringComparison.OrdinalIgnoreCase)
+            || letters.Equals("complete", StringComparison.OrdinalIgnoreCase)
+            || letters.Equals("compledted", StringComparison.OrdinalIgnoreCase)
+            || letters.Equals("complleted", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string VacationComment(string comment, bool vacation)
+    {
+        if (!vacation)
+            return comment ?? "";
+        return JoinComment(comment, "Vacation student");
+    }
+
+    private static string JoinComment(string? comment, string extra)
+    {
+        var text = (comment ?? "").Trim();
+        if (text.Length == 0)
+            return extra;
+        if (text.Contains(extra, StringComparison.OrdinalIgnoreCase))
+            return text;
+        return text + ". " + extra;
+    }
+
+    private static string At(IReadOnlyList<string> row, int index) =>
+        index < row.Count ? (row[index] ?? "").Trim() : "";
 
     private static int FindHeader(IReadOnlyList<IReadOnlyList<string>> table)
     {
@@ -436,12 +562,14 @@ public static class LaptopAgeSheet
         {
             var cells = new Dictionary<int, string>();
             var max = 0;
+            var position = 0;
             foreach (var cell in row.Elements(main + "c"))
             {
+                position++;
                 var reference = cell.Attribute("r")?.Value ?? "";
                 var index = ColumnIndex(reference);
                 if (index <= 0)
-                    continue;
+                    index = position;
                 cells[index] = CellText(cell, main, shared);
                 if (index > max)
                     max = index;
