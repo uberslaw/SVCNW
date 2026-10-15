@@ -950,16 +950,27 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
     public Task<PagedResult<HardwareAsset>> SearchHardwareAsync(TicketQuery query, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var encoded = HardwareCatalog.ListQuery(query.Text, query.Locations, query.LocationSysIds);
-        LastHardwareQuery = encoded;
-        var matches = _hardware
-            .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
-            .Where(asset => !ApplyHardwareLocationFilter || HardwareCatalog.MatchesLocation(asset, query.Locations))
+        var queries = HardwareCatalog.ListQueries(query.Text, query.Locations, query.LocationSysIds);
+        LastHardwareQuery = string.Join(" | ", queries);
+        var matches = new Dictionary<string, HardwareAsset>(StringComparer.OrdinalIgnoreCase);
+        foreach (var encoded in queries)
+        {
+            Record("GET", "api/now/table/alm_hardware?sysparm_query=" + Uri.EscapeDataString(encoded));
+            foreach (var asset in _hardware)
+            {
+                if (!HardwareCatalog.MatchesSearch(asset, query.Text) || asset.SysId.Length == 0)
+                    continue;
+                if (ApplyHardwareLocationFilter && !HardwareCatalog.QuerySelectsAsset(encoded, asset))
+                    continue;
+                matches[asset.SysId] = asset;
+            }
+        }
+
+        var ordered = matches.Values
             .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        Record("GET", "api/now/table/alm_hardware?sysparm_query=" + Uri.EscapeDataString(encoded));
         var limit = Math.Clamp(query.Limit, 1, 100);
-        return Task.FromResult(new PagedResult<HardwareAsset>(matches.Take(limit).ToArray(), matches.Length));
+        return Task.FromResult(new PagedResult<HardwareAsset>(ordered.Skip(Math.Max(0, query.Offset)).Take(limit).ToArray(), ordered.Length));
     }
 
     public Task<HardwareCatalogDownload> DownloadHardwareAsync(
@@ -968,17 +979,28 @@ public sealed partial class SampleServiceNowClient : IServiceNowClient
         IProgress<DownloadTick>? progress,
         CancellationToken cancellationToken)
     {
-        var encoded = HardwareCatalog.DownloadQuery(locations, locationSysIds);
-        LastHardwareQuery = encoded;
-        var matches = _hardware
-            .Where(HardwareCatalog.IsComputer)
-            .Where(asset => !ApplyHardwareLocationFilter || HardwareCatalog.MatchesLocation(asset, locations))
+        var queries = HardwareCatalog.DownloadQueries(locations, locationSysIds);
+        LastHardwareQuery = string.Join(" | ", queries);
+        var matches = new Dictionary<string, HardwareAsset>(StringComparer.OrdinalIgnoreCase);
+        foreach (var encoded in queries)
+        {
+            Record("GET", "api/now/table/alm_hardware?sysparm_query=" + Uri.EscapeDataString(encoded));
+            foreach (var asset in _hardware)
+            {
+                if (!HardwareCatalog.IsComputer(asset) || asset.SysId.Length == 0)
+                    continue;
+                if (ApplyHardwareLocationFilter && !HardwareCatalog.QuerySelectsAsset(encoded, asset))
+                    continue;
+                matches[asset.SysId] = asset;
+            }
+        }
+
+        var ordered = matches.Values
             .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        progress?.Report(new DownloadTick(0, Math.Max(matches.Length, 1)));
-        progress?.Report(new DownloadTick(Math.Max(matches.Length, 1), Math.Max(matches.Length, 1)));
-        Record("GET", "api/now/table/alm_hardware?sysparm_query=" + Uri.EscapeDataString(encoded));
-        return Task.FromResult(new HardwareCatalogDownload(matches, false));
+        progress?.Report(new DownloadTick(0, Math.Max(ordered.Length, 1)));
+        progress?.Report(new DownloadTick(Math.Max(ordered.Length, 1), Math.Max(ordered.Length, 1)));
+        return Task.FromResult(new HardwareCatalogDownload(ordered, false));
     }
 
     public Task<HardwareAsset> GetHardwareAsync(string sysId, CancellationToken cancellationToken)

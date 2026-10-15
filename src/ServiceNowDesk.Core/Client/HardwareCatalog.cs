@@ -152,6 +152,16 @@ public static class HardwareCatalog
     }
 
     /// <summary>
+    /// Encoded <c>sysparm_query</c> budget for one hardware request. ServiceNow rejects a longer
+    /// query when it builds pagination URLs ("The ServiceNow query was too long.").
+    /// The same budget the alert queries use, measured before URL encoding.
+    /// </summary>
+    public const int MaxQueryLength = 900;
+
+    private const string ComputerScope = "model_category.name=Computer";
+    private const string SerialOrder = "^ORDERBYserial_number";
+
+    /// <summary>
     /// Computer rows, restricted to the selected offices, ordered by serial.
     /// Each checked office is queried as its own name and as the same place with or without
     /// a trailing " Office", one complete clause per label joined by ^NQ. A parenthesized
@@ -159,38 +169,170 @@ public static class HardwareCatalog
     /// A quoted <c>IN</c> list is not used either: ServiceNow keeps those quote characters,
     /// so <c>location.nameIN"Brisbane","Brisbane Office"</c> matches neither stored name.
     /// When location sys_ids are known, those are preferred so the live name spelling does not matter.
+    /// A long office list is issued as several requests; see <see cref="ListQueries"/>.
     /// </summary>
     public static string ListQuery(
         string? text,
         IReadOnlyList<string>? locations = null,
-        IReadOnlyList<string>? locationSysIds = null)
-    {
-        var term = EncodedQuery.Sanitize(text);
-        var branches = LocationBranches(locations, locationSysIds).ToArray();
-        if (branches.Length == 0)
-            return string.Join("^NQ", TextBranches("model_category.name=Computer", term)) + "^ORDERBYserial_number";
+        IReadOnlyList<string>? locationSysIds = null) =>
+        JoinClauses(ListClauses(text, locations, locationSysIds));
 
-        var parts = new List<string>();
-        foreach (var branch in branches)
-            parts.AddRange(TextBranches("model_category.name=Computer^" + branch, term));
-        return string.Join("^NQ", parts) + "^ORDERBYserial_number";
-    }
+    /// <summary>
+    /// Same filter as <see cref="ListQuery"/>, split so each request stays within <see cref="MaxQueryLength"/>.
+    /// Every location branch is present in some query.
+    /// </summary>
+    public static IReadOnlyList<string> ListQueries(
+        string? text,
+        IReadOnlyList<string>? locations = null,
+        IReadOnlyList<string>? locationSysIds = null) =>
+        Pack(ListClauses(text, locations, locationSysIds));
 
     /// <summary>
     /// Full computer download. With offices, each place is matched by sys_id, exact name,
     /// and a <c>LIKE</c> on the city stem so "Brisbane" still finds "AU Brisbane Office".
     /// Local <see cref="MatchesLocation"/> then keeps the rows that belong to the place.
+    /// A long office list is issued as several requests; see <see cref="DownloadQueries"/>.
     /// </summary>
     public static string DownloadQuery(
         IReadOnlyList<string>? locations = null,
-        IReadOnlyList<string>? locationSysIds = null)
+        IReadOnlyList<string>? locationSysIds = null) =>
+        JoinClauses(DownloadClauses(locations, locationSysIds));
+
+    /// <summary>
+    /// Same download as <see cref="DownloadQuery"/>, one request per chunk of location branches.
+    /// Callers merge the rows. Offices are kept: each sys_id, exact name, and city stem is in a chunk.
+    /// </summary>
+    public static IReadOnlyList<string> DownloadQueries(
+        IReadOnlyList<string>? locations = null,
+        IReadOnlyList<string>? locationSysIds = null) =>
+        Pack(DownloadClauses(locations, locationSysIds));
+
+    /// <summary>
+    /// True when <paramref name="query"/> asks for this asset's location, or asks for every computer.
+    /// </summary>
+    public static bool QuerySelectsAsset(string? query, HardwareAsset asset)
+    {
+        if (!IsComputer(asset))
+            return false;
+
+        var encoded = query ?? "";
+        if (!HasLocationConstraint(encoded))
+            return true;
+
+        var id = asset.Location.SysId ?? "";
+        if (id.Length > 0 && ContainsToken(encoded, "location=" + id))
+            return true;
+
+        var display = asset.Location.Display ?? "";
+        if (display.Length > 0 && ContainsToken(encoded, "location.name=" + Quote(display)))
+            return true;
+
+        foreach (var stem in LikeStems(encoded))
+        {
+            if (HardwareOfficeNames.SamePlace(display, stem) || HardwareOfficeNames.LoosePlace(display, stem))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static IReadOnlyList<string> ListClauses(
+        string? text,
+        IReadOnlyList<string>? locations,
+        IReadOnlyList<string>? locationSysIds)
+    {
+        var term = EncodedQuery.Sanitize(text);
+        var branches = LocationBranches(locations, locationSysIds).ToArray();
+        if (branches.Length == 0)
+            return TextBranches(ComputerScope, term).ToArray();
+
+        var parts = new List<string>();
+        foreach (var branch in branches)
+            parts.AddRange(TextBranches(ComputerScope + "^" + branch, term));
+        return parts;
+    }
+
+    private static IReadOnlyList<string> DownloadClauses(
+        IReadOnlyList<string>? locations,
+        IReadOnlyList<string>? locationSysIds)
     {
         var branches = LocationBranches(locations, locationSysIds, includeLike: true).ToArray();
         if (branches.Length == 0)
-            return "model_category.name=Computer^ORDERBYserial_number";
+            return [];
 
-        var parts = branches.Select(branch => "model_category.name=Computer^" + branch);
-        return string.Join("^NQ", parts) + "^ORDERBYserial_number";
+        return branches.Select(branch => ComputerScope + "^" + branch).ToArray();
+    }
+
+    private static string JoinClauses(IReadOnlyList<string> clauses) =>
+        clauses.Count == 0
+            ? ComputerScope + SerialOrder
+            : string.Join("^NQ", clauses) + SerialOrder;
+
+    /// <summary>
+    /// Packs clauses into requests. A clause that is already longer than the budget is sent alone
+    /// so that office is still queried.
+    /// </summary>
+    private static IReadOnlyList<string> Pack(IReadOnlyList<string> clauses)
+    {
+        if (clauses.Count == 0)
+            return [ComputerScope + SerialOrder];
+
+        var queries = new List<string>();
+        var current = new List<string>();
+        var length = 0;
+        foreach (var clause in clauses)
+        {
+            var extra = (current.Count == 0 ? 0 : 3) + clause.Length;
+            if (current.Count > 0 && length + extra + SerialOrder.Length > MaxQueryLength)
+            {
+                queries.Add(string.Join("^NQ", current) + SerialOrder);
+                current.Clear();
+                length = 0;
+                extra = clause.Length;
+            }
+
+            current.Add(clause);
+            length += extra;
+        }
+
+        if (current.Count > 0)
+            queries.Add(string.Join("^NQ", current) + SerialOrder);
+        return queries;
+    }
+
+    private static bool HasLocationConstraint(string query) =>
+        query.Contains("location=", StringComparison.Ordinal)
+        || query.Contains("location.name", StringComparison.Ordinal);
+
+    private static bool ContainsToken(string query, string token)
+    {
+        var index = 0;
+        while ((index = query.IndexOf(token, index, StringComparison.Ordinal)) >= 0)
+        {
+            var beforeOk = index == 0 || query[index - 1] == '^';
+            var after = index + token.Length;
+            var afterOk = after >= query.Length || query[after] == '^';
+            if (beforeOk && afterOk)
+                return true;
+            index += Math.Max(1, token.Length);
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<string> LikeStems(string query)
+    {
+        const string marker = "location.nameLIKE";
+        var index = 0;
+        while ((index = query.IndexOf(marker, index, StringComparison.Ordinal)) >= 0)
+        {
+            var start = index + marker.Length;
+            var end = query.IndexOf('^', start);
+            var stem = end < 0 ? query[start..] : query[start..end];
+            if (stem.Length > 0)
+                yield return stem;
+            index = start;
+        }
     }
 
     private static IEnumerable<string> LocationBranches(
@@ -417,4 +559,85 @@ public static class HardwareOfficeNames
         HardwareOfficeLabelKind.Seed => 0,
         _ => 1
     };
+
+    /// <summary>
+    /// One picker row per place. "Brisbane" and "Brisbane Office" share a row.
+    /// The label is the Office form when both records exist, otherwise the name that exists.
+    /// The suggestion sys_id is that label's real location record.
+    /// </summary>
+    public static IReadOnlyList<ReferenceSuggestion> CollapseLocationChoices(IReadOnlyList<ReferenceSuggestion>? choices)
+    {
+        var groups = new List<List<ReferenceSuggestion>>();
+        foreach (var choice in choices ?? [])
+        {
+            var name = Normalize(choice.Display);
+            if (name.Length == 0)
+                continue;
+
+            var group = groups.FirstOrDefault(existing => existing.Any(item => SamePlace(item.Display, name)));
+            if (group is null)
+            {
+                groups.Add([choice]);
+                continue;
+            }
+
+            if (group.Any(item =>
+                    string.Equals(Normalize(item.Display), name, StringComparison.OrdinalIgnoreCase)
+                    && (string.IsNullOrEmpty(choice.SysId)
+                        || string.Equals(item.SysId, choice.SysId, StringComparison.OrdinalIgnoreCase))))
+                continue;
+
+            group.Add(choice);
+        }
+
+        var collapsed = new List<ReferenceSuggestion>(groups.Count);
+        foreach (var group in groups)
+        {
+            var winner = group[0];
+            for (var index = 1; index < group.Count; index++)
+            {
+                var candidate = group[index];
+                if (UseIncomingLabel(winner.Display, HardwareOfficeLabelKind.Reference, candidate.Display, HardwareOfficeLabelKind.Reference))
+                    winner = candidate;
+            }
+
+            collapsed.Add(winner);
+        }
+
+        collapsed.Sort((left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.Display, right.Display));
+        return collapsed;
+    }
+
+    /// <summary>Display labels for <see cref="CollapseLocationChoices"/>, one string per place.</summary>
+    public static IReadOnlyList<string> CollapseLabels(IEnumerable<string?>? labels)
+    {
+        var suggestions = new List<ReferenceSuggestion>();
+        foreach (var label in labels ?? [])
+        {
+            var text = Normalize(label);
+            if (text.Length == 0)
+                continue;
+            suggestions.Add(new ReferenceSuggestion("", text, ""));
+        }
+
+        return CollapseLocationChoices(suggestions).Select(item => item.Display).ToArray();
+    }
+
+    /// <summary>
+    /// The collapsed label for <paramref name="value"/> when that place is in <paramref name="labels"/>.
+    /// </summary>
+    public static string LabelForPlace(string? value, IEnumerable<string>? labels)
+    {
+        var text = Normalize(value);
+        if (text.Length == 0)
+            return "";
+
+        foreach (var label in labels ?? [])
+        {
+            if (SamePlace(text, label))
+                return label;
+        }
+
+        return text;
+    }
 }

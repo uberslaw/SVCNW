@@ -1534,23 +1534,57 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         ArgumentNullException.ThrowIfNull(query);
         var limit = Math.Clamp(query.Limit, 1, 100);
         var offset = Math.Max(0, query.Offset);
-        var result = await GetListAsync(
-            "alm_hardware",
-            HardwareFields,
-            HardwareCatalog.ListQuery(query.Text, query.Locations, query.LocationSysIds),
-            limit,
-            offset,
-            cancellationToken).ConfigureAwait(false);
-        using (result)
+        var queries = HardwareCatalog.ListQueries(query.Text, query.Locations, query.LocationSysIds);
+        if (queries.Count == 1)
         {
-            var items = RequireArray(result.Document)
-                .EnumerateArray()
-                .Select(RecordMapper.Hardware)
-                .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
-                .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            return new PagedResult<HardwareAsset>(items, result.TotalCount);
+            var result = await GetListAsync(
+                "alm_hardware",
+                HardwareFields,
+                queries[0],
+                limit,
+                offset,
+                cancellationToken,
+                queries[0].Length > HardwareCatalog.MaxQueryLength).ConfigureAwait(false);
+            using (result)
+            {
+                var items = RequireArray(result.Document)
+                    .EnumerateArray()
+                    .Select(RecordMapper.Hardware)
+                    .Where(asset => HardwareCatalog.MatchesSearch(asset, query.Text))
+                    .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                return new PagedResult<HardwareAsset>(items, result.TotalCount);
+            }
         }
+
+        var merged = new Dictionary<string, HardwareAsset>(StringComparer.OrdinalIgnoreCase);
+        foreach (var encoded in queries)
+        {
+            var result = await GetListAsync(
+                "alm_hardware",
+                HardwareFields,
+                encoded,
+                limit,
+                0,
+                cancellationToken,
+                encoded.Length > HardwareCatalog.MaxQueryLength).ConfigureAwait(false);
+            using (result)
+            {
+                foreach (var asset in RequireArray(result.Document).EnumerateArray().Select(RecordMapper.Hardware))
+                {
+                    if (!HardwareCatalog.MatchesSearch(asset, query.Text) || asset.SysId.Length == 0)
+                        continue;
+                    merged[asset.SysId] = asset;
+                }
+            }
+        }
+
+        var page = merged.Values
+            .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
+            .Skip(offset)
+            .Take(limit)
+            .ToArray();
+        return new PagedResult<HardwareAsset>(page, merged.Count);
     }
 
     public async Task<HardwareCatalogDownload> DownloadHardwareAsync(
@@ -1559,22 +1593,46 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         IProgress<DownloadTick>? progress,
         CancellationToken cancellationToken)
     {
-        var assets = new List<HardwareAsset>();
-        var query = HardwareCatalog.DownloadQuery(locations, locationSysIds);
-        var truncated = await PageRowsAsync(
-            "alm_hardware",
-            HardwareFields,
-            query,
-            FormCatalogPolicy.MaxHardwareAssets,
-            progress,
-            row =>
+        var queries = HardwareCatalog.DownloadQueries(locations, locationSysIds);
+        var assets = new Dictionary<string, HardwareAsset>(StringComparer.OrdinalIgnoreCase);
+        var truncated = false;
+        var received = 0;
+        foreach (var query in queries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var remaining = FormCatalogPolicy.MaxHardwareAssets - assets.Count;
+            if (remaining <= 0)
             {
-                var asset = RecordMapper.Hardware(row);
-                if (HardwareCatalog.IsComputer(asset))
-                    assets.Add(asset);
-            },
-            cancellationToken).ConfigureAwait(false);
-        return new HardwareCatalogDownload(assets, truncated);
+                truncated = true;
+                break;
+            }
+
+            var chunkTruncated = await PageRowsAsync(
+                "alm_hardware",
+                HardwareFields,
+                query,
+                remaining,
+                progress,
+                row =>
+                {
+                    var asset = RecordMapper.Hardware(row);
+                    if (!HardwareCatalog.IsComputer(asset) || asset.SysId.Length == 0)
+                        return;
+                    assets[asset.SysId] = asset;
+                    received++;
+                },
+                cancellationToken,
+                query.Length > HardwareCatalog.MaxQueryLength).ConfigureAwait(false);
+            truncated |= chunkTruncated;
+        }
+
+        if (queries.Count > 1)
+            progress?.Report(new DownloadTick(Math.Max(received, 1), Math.Max(received, 1)));
+
+        var ordered = assets.Values
+            .OrderBy(asset => asset.SerialNumber, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new HardwareCatalogDownload(ordered, truncated);
     }
 
     public Task<HardwareAsset> GetHardwareAsync(string sysId, CancellationToken cancellationToken) =>
@@ -2998,7 +3056,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         int maxRows,
         IProgress<DownloadTick>? progress,
         Action<JsonElement> accept,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool suppressPaginationHeader = false)
     {
         const int pageSize = 200;
         var offset = 0;
@@ -3010,7 +3069,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         while (kept < maxRows)
         {
             var limit = Math.Min(pageSize, Math.Max(1, maxRows - kept));
-            var result = await GetListAsync(table, fields, query, limit, offset, cancellationToken).ConfigureAwait(false);
+            var result = await GetListAsync(table, fields, query, limit, offset, cancellationToken, suppressPaginationHeader).ConfigureAwait(false);
             using (result)
             {
                 var rows = RequireArray(result.Document);
