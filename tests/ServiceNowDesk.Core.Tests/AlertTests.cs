@@ -169,17 +169,26 @@ public class AlertTests
             new AlertSearch("sample-user", "Aus DT^active=false", ["Gold Coast", "Brisbane"]),
             CancellationToken.None);
 
-        var groupQuery = handler.Calls
+        var groupQueries = handler.Calls
             .Select(call => QueryOf(call.PathAndQuery))
-            .First(query => query.Contains("assignment_group.name", StringComparison.Ordinal));
-        Assert.Contains("assignment_group.name=\"Aus DT active=false\"", groupQuery);
-        Assert.Contains("location.name=\"Gold Coast\"", groupQuery);
-        Assert.Contains("location.name=\"Brisbane\"", groupQuery);
-        Assert.Contains("location.name=\"Brisbane Office\"", groupQuery);
-        Assert.Contains("^NQ", groupQuery);
-        Assert.DoesNotContain("location.nameIN", groupQuery);
-        Assert.DoesNotContain("^active=false", groupQuery);
-        Assert.Contains("active=true", groupQuery);
+            .Where(query => query.Contains("assignment_group.name=\"Aus DT active=false\"", StringComparison.Ordinal))
+            .ToArray();
+        var located = groupQueries.Where(query => query.Contains("location.name=", StringComparison.Ordinal)).ToArray();
+        Assert.NotEmpty(located);
+        Assert.All(groupQueries, query =>
+        {
+            Assert.Contains("active=true", query);
+            Assert.DoesNotContain("location.nameIN", query);
+            Assert.DoesNotContain("^active=false", query);
+            Assert.False(
+                query.Contains("Gold Coast", StringComparison.Ordinal)
+                && query.Contains("\"Brisbane\"", StringComparison.Ordinal));
+        });
+        Assert.All(located, query => Assert.Contains("^NQ", query));
+        Assert.Contains(located, query => query.Contains("location.name=\"Gold Coast\"", StringComparison.Ordinal)
+            && query.Contains("location.name=\"Gold Coast Office\"", StringComparison.Ordinal));
+        Assert.Contains(located, query => query.Contains("location.name=\"Brisbane\"", StringComparison.Ordinal)
+            && query.Contains("location.name=\"Brisbane Office\"", StringComparison.Ordinal));
     }
 
     [Fact]

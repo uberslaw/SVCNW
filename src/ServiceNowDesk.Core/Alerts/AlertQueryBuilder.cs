@@ -126,6 +126,8 @@ public static class AlertQueryBuilder
     /// <summary>
     /// Encoded query for open incidents in the watched group whose location name is one of the cities.
     /// Returns null when the group or the city list is blank, so the caller sends no request.
+    /// The Table API group queue uses <see cref="WatchedGroupQueries"/> instead: one <c>^NQ</c>
+    /// chain for every watched office comes back with no rows.
     /// </summary>
     public static string? WatchedGroup(string? groupName, IEnumerable<string>? locations, DeskSection section = DeskSection.Incidents)
     {
@@ -137,6 +139,22 @@ public static class AlertQueryBuilder
         return OfficeQueue.ApplyTo(
             "assignment_group.name=" + group + "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on",
             cities);
+    }
+
+    /// <summary>
+    /// One open-group query per watched office. <paramref name="groupClause"/> is
+    /// <c>assignment_group=&lt;sys_id&gt;</c> or <c>assignment_group.name="..."</c>.
+    /// Empty when the clause or the city list is blank.
+    /// </summary>
+    public static IReadOnlyList<string> WatchedGroupQueries(string? groupClause, IEnumerable<string>? locations, DeskSection section = DeskSection.Incidents)
+    {
+        var clause = (groupClause ?? "").Trim();
+        var cities = OfficeCities(locations);
+        if (clause.Length == 0 || cities.Length == 0)
+            return [];
+
+        var head = clause + "^" + StillWorking(section) + "^ORDERBYDESCsys_updated_on";
+        return OfficeQueue.Queries(head, cities);
     }
 
     /// <summary>

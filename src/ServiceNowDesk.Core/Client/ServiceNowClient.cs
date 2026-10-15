@@ -326,10 +326,7 @@ public sealed partial class ServiceNowClient : IServiceNowClient
         var requests = await QueryAlertsAsync("sc_request", AlertRequestFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.Requests), AlertKind.AssignedToMe, DeskSection.Requests, includeLocation: false, cancellationToken).ConfigureAwait(false);
         var items = await QueryAlertsAsync("sc_req_item", AlertItemFields, AlertQueryBuilder.AssignedToMe(search.UserSysId, DeskSection.RequestedItems, search.Locations), AlertKind.AssignedToMe, DeskSection.RequestedItems, includeLocation: true, cancellationToken).ConfigureAwait(false);
 
-        var groupQuery = AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations);
-        var group = groupQuery is null
-            ? AlertBucket.Empty
-            : await LoadWatchedGroupBucketAsync(search, groupQuery, cancellationToken).ConfigureAwait(false);
+        var group = await LoadWatchedGroupBucketAsync(search, cancellationToken).ConfigureAwait(false);
 
         var assignedRows = incidents.Rows.Concat(requests.Rows).Concat(items.Rows).ToArray();
         var assignedTotal = incidents.TotalCount + requests.TotalCount + items.TotalCount;
@@ -401,33 +398,47 @@ public sealed partial class ServiceNowClient : IServiceNowClient
     /// <summary>
     /// Group-queue notifications: open incidents and request items in the watched group at the
     /// office cities, plus unassigned request items in the signed-in user's groups at those offices.
-    /// The same membership and watched-name scopes as <see cref="ListUnassignedGroupQueueAsync"/>.
+    /// Each office is its own request. A single chain for the default five cities is ignored by
+    /// the Table API and the queue stays empty while those tickets exist.
+    /// The group clause prefers the cached sys_id so "Aus DT - Client Services" matches
+    /// "AUS DT - Client Services".
     /// </summary>
     private async Task<AlertBucket> LoadWatchedGroupBucketAsync(
         AlertSearch search,
-        string incidentQuery,
         CancellationToken cancellationToken)
     {
-        var incidents = await QueryAlertsAsync(
-            "incident",
-            AlertIncidentFields,
-            incidentQuery,
-            AlertKind.WatchedGroup,
-            DeskSection.Incidents,
-            includeLocation: true,
-            cancellationToken).ConfigureAwait(false);
+        var incidentQueries = GroupQueueQueries(search.GroupName, search.Locations, DeskSection.Incidents);
+        var itemQueries = GroupQueueQueries(search.GroupName, search.Locations, DeskSection.RequestedItems);
+        if (incidentQueries.Count == 0 && itemQueries.Count == 0)
+            return AlertBucket.Empty;
 
-        var itemQuery = AlertQueryBuilder.WatchedGroup(search.GroupName, search.Locations, DeskSection.RequestedItems);
-        var namedItems = itemQuery is null
-            ? AlertBucket.Empty
-            : await QueryAlertsAsync(
+        var incidents = new List<AlertRecord>();
+        foreach (var query in incidentQueries)
+        {
+            var bucket = await QueryAlertsAsync(
+                "incident",
+                AlertIncidentFields,
+                query,
+                AlertKind.WatchedGroup,
+                DeskSection.Incidents,
+                includeLocation: true,
+                cancellationToken).ConfigureAwait(false);
+            incidents.AddRange(bucket.Rows);
+        }
+
+        var namedItems = new List<AlertRecord>();
+        foreach (var query in itemQueries)
+        {
+            var bucket = await QueryAlertsAsync(
                 "sc_req_item",
                 AlertItemFields,
-                itemQuery,
+                query,
                 AlertKind.WatchedGroup,
                 DeskSection.RequestedItems,
                 includeLocation: true,
                 cancellationToken).ConfigureAwait(false);
+            namedItems.AddRange(bucket.Rows);
+        }
 
         IReadOnlyList<string> memberIds;
         try
@@ -457,8 +468,8 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             unassigned.AddRange(bucket.Rows);
         }
 
-        var rows = incidents.Rows
-            .Concat(namedItems.Rows)
+        var rows = incidents
+            .Concat(namedItems)
             .Concat(unassigned)
             .GroupBy(row => row.SysId, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
@@ -2007,6 +2018,13 @@ public sealed partial class ServiceNowClient : IServiceNowClient
             clauses.Add(EncodedQuery.Build(text, "sys_id=NO_TEAM", open, extra));
         return clauses;
     }
+
+    /// <summary>
+    /// Open watched-group rows, one request per office. Uses the cached group sys_id when the
+    /// saved name differs only by case.
+    /// </summary>
+    private IReadOnlyList<string> GroupQueueQueries(string? groupName, IEnumerable<string>? locations, DeskSection section) =>
+        AlertQueryBuilder.WatchedGroupQueries(WatchedGroupNameClause(groupName), locations, section);
 
     /// <summary>
     /// Prefer a cached group sys_id so "aus dt - client services" matches "AUS DT - Client Services".

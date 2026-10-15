@@ -2,6 +2,7 @@ using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Client;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Navigation;
+using ServiceNowDesk.ViewModels;
 
 namespace ServiceNowDesk.Tests;
 
@@ -149,6 +150,121 @@ public class TeamQueueTests
         Assert.DoesNotContain(queue, row => row.Number == "RITM0010010");
         Assert.DoesNotContain(queue, row => row.Number == "INC0010018");
         Assert.All(queue, row => Assert.True(string.IsNullOrWhiteSpace(row.AssignedToSysId)));
+    }
+
+    [Fact]
+    public async Task GroupQueueShowsAssignedTicketsWhenEachOfficeIsRequestedAlone()
+    {
+        var offices = NotificationPreferences.DefaultLocations;
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? "";
+            var query = QueryOf(path);
+            if (!path.Contains("/api/now/table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (!query.Contains("assignment_group.name=\"Aus DT - Client Services\"", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (query.Contains("assigned_toISEMPTY", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (!IsOneOffice(query, "Brisbane", offices))
+                return Api.Json("""{"result":[]}""");
+
+            return Api.Json("{\"result\":[" + AssignedGroupIncident() + "]}");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var snapshot = await client.GetOpenAlertsAsync(
+            new AlertSearch("sample-user", "Aus DT - Client Services", offices),
+            CancellationToken.None);
+
+        var groupQueries = handler.Calls
+            .Select(call => QueryOf(call.PathAndQuery))
+            .Where(query => query.Contains("assignment_group.name=\"Aus DT - Client Services\"", StringComparison.Ordinal))
+            .ToArray();
+        Assert.NotEmpty(groupQueries);
+        Assert.All(groupQueries, query =>
+        {
+            Assert.True(query.Length <= AlertQueryBuilder.MaxQueryLength, query);
+            Assert.True(offices.Count(city => query.Contains(city, StringComparison.Ordinal)) <= 1, query);
+        });
+        Assert.Contains(groupQueries, query => IsOneOffice(query, "Brisbane", offices)
+            && query.Contains("stateNOT IN6,7,8", StringComparison.Ordinal)
+            && !query.Contains("assigned_toISEMPTY", StringComparison.Ordinal));
+
+        var ticket = Assert.Single(snapshot.Bucket(AlertKind.WatchedGroup).Rows, row => row.Number == "INC0010007");
+        Assert.Equal("Jordan Lee", ticket.Assignee);
+        Assert.Equal("Aus DT - Client Services", ticket.Group);
+        Assert.Equal(DeskSection.Incidents, ticket.Section);
+
+        var notifications = new NotificationWorkspaceViewModel();
+        notifications.Show(snapshot);
+        notifications.SelectQueueCommand.Execute(AlertKind.WatchedGroup);
+        var shown = Assert.Single(notifications.DashboardRows, row => row.Number == "INC0010007");
+        Assert.Equal("Jordan Lee", shown.Assignee);
+        Assert.Equal("Group queue", shown.QueueLabel);
+    }
+
+    [Fact]
+    public async Task GroupQueueUsesTheCachedGroupIdWhenTheSavedNameDiffersByCase()
+    {
+        var catalog = new MemoryCatalog(new FormCatalogSnapshot
+        {
+            Groups = [new CachedAssignmentGroup { SysId = "group-aus", Name = "AUS DT - Client Services" }]
+        });
+        var handler = new StubHandler((request, _) =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? "";
+            var query = QueryOf(path);
+            if (!path.Contains("/api/now/table/incident", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (!query.Contains("assignment_group=group-aus", StringComparison.Ordinal)
+                || query.Contains("assignment_group.name", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            if (!query.Contains("location.name=\"Brisbane\"", StringComparison.Ordinal))
+                return Api.Json("""{"result":[]}""");
+            return Api.Json("{\"result\":[" + AssignedGroupIncident("AUS DT - Client Services") + "]}");
+        });
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler, catalog);
+        var snapshot = await client.GetOpenAlertsAsync(
+            new AlertSearch("sample-user", "Aus DT - Client Services", ["Brisbane"]),
+            CancellationToken.None);
+
+        var ticket = Assert.Single(snapshot.Bucket(AlertKind.WatchedGroup).Rows);
+        Assert.Equal("INC0010007", ticket.Number);
+        Assert.Equal("Jordan Lee", ticket.Assignee);
+        Assert.Equal("AUS DT - Client Services", ticket.Group);
+        Assert.Contains(handler.Calls, call => QueryOf(call.PathAndQuery).Contains("assignment_group=group-aus", StringComparison.Ordinal)
+            && !QueryOf(call.PathAndQuery).Contains("assignment_group.name", StringComparison.Ordinal));
+    }
+
+    private static bool IsOneOffice(string query, string city, IReadOnlyList<string> offices)
+    {
+        if (!query.Contains(city, StringComparison.Ordinal))
+            return false;
+        return offices.All(office =>
+            office.Equals(city, StringComparison.OrdinalIgnoreCase)
+            || !query.Contains(office, StringComparison.Ordinal));
+    }
+
+    private static string AssignedGroupIncident(string groupName = "Aus DT - Client Services") =>
+        "{\"sys_id\":{\"value\":\"inc-group\",\"display_value\":\"inc-group\"},"
+        + "\"number\":{\"value\":\"INC0010007\",\"display_value\":\"INC0010007\"},"
+        + "\"short_description\":{\"value\":\"Badge printer\",\"display_value\":\"Badge printer\"},"
+        + "\"state\":{\"value\":\"2\",\"display_value\":\"In Progress\"},"
+        + "\"assigned_to\":{\"value\":\"user-jordan\",\"display_value\":\"Jordan Lee\"},"
+        + "\"assignment_group\":{\"value\":\"group-aus\",\"display_value\":\"" + groupName + "\"},"
+        + "\"location\":{\"value\":\"loc-bne\",\"display_value\":\"Brisbane Office\"},"
+        + "\"active\":{\"value\":\"true\",\"display_value\":\"true\"},"
+        + "\"sys_updated_on\":{\"value\":\"2026-10-06 09:00:00\",\"display_value\":\"2026-10-06 09:00:00\"}}";
+
+    private sealed class MemoryCatalog(FormCatalogSnapshot snapshot) : IFormCatalogStore
+    {
+        public FormCatalogSnapshot? Load(Uri instanceUri) => snapshot;
+
+        public void Save(Uri instanceUri, FormCatalogSnapshot next)
+        {
+        }
+
+        public long StoredBytes(Uri instanceUri) => 0;
     }
 
     private static string Row(string id, string number, string groupId, string groupName) =>
