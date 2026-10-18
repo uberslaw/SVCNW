@@ -300,15 +300,19 @@ public static class WorkEffortScore
 
     /// <summary>
     /// Scores the cached ledger in <paramref name="mode"/> and fills the shift line.
-    /// A report with no ledger is returned as it was loaded.
+    /// <paramref name="loadedDay"/>, when it sits inside the loaded window, scores only that local day.
+    /// A day outside the window is ignored. A report with no ledger is returned as it was loaded.
     /// </summary>
-    public static WorkEffortReport Present(WorkEffortReport report, WorkEffortUpdateMode mode)
+    public static WorkEffortReport Present(WorkEffortReport report, WorkEffortUpdateMode mode, DateOnly? loadedDay = null)
     {
         ArgumentNullException.ThrowIfNull(report);
         if (report.Ledger is null)
             return report with { Shift = report.Shift };
-        var daily = Build(report.Ledger.People, report.Ledger.Touches, report.Ledger.Window, WorkEffortUpdateMode.Daily);
-        var multiple = Build(report.Ledger.People, report.Ledger.Touches, report.Ledger.Window, WorkEffortUpdateMode.Multiple);
+        var window = report.Ledger.Window;
+        if (loadedDay is DateOnly day && window.IncludesLocalDay(day))
+            window = window.ClippedTo(day);
+        var daily = Build(report.Ledger.People, report.Ledger.Touches, window, WorkEffortUpdateMode.Daily);
+        var multiple = Build(report.Ledger.People, report.Ledger.Touches, window, WorkEffortUpdateMode.Multiple);
         var rows = mode == WorkEffortUpdateMode.Multiple ? multiple : daily;
         return report with { Rows = rows, Shift = ShiftLine(daily, multiple) };
     }

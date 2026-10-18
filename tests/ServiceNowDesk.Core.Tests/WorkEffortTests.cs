@@ -98,7 +98,7 @@ public class WorkEffortTests
 
         Assert.Equal(1, Assert.Single(today).IncOpened);
         Assert.Equal(1, Assert.Single(week).IncOpened);
-        Assert.Equal(1, Assert.Single(month).IncOpened);
+        Assert.Equal(2, Assert.Single(month).IncOpened);
         Assert.Equal(2, Assert.Single(four).IncOpened);
         Assert.Equal(3, Assert.Single(six).IncOpened);
 
@@ -114,10 +114,10 @@ public class WorkEffortTests
             rolling);
         Assert.Equal(1, Assert.Single(edges).IncOpened);
 
-        Assert.Equal(new DateTime(2026, 10, 5), WorkEffortWindow.For(WorkEffortScale.ThisWeek, Now).Start);
+        Assert.Equal(new DateTime(2026, 10, 1), WorkEffortWindow.For(WorkEffortScale.ThisWeek, Now).Start);
         Assert.Equal(new DateTime(2026, 10, 7, 23, 59, 59), WorkEffortWindow.For(WorkEffortScale.ThisWeek, Now).End);
         Assert.Equal(new DateTime(2026, 10, 5), WorkEffortWindow.For(WorkEffortScale.ThisWeek, new DateTime(2026, 10, 11, 9, 0, 0)).Start);
-        Assert.Equal(new DateTime(2026, 10, 1), WorkEffortWindow.For(WorkEffortScale.ThisMonth, Now).Start);
+        Assert.Equal(new DateTime(2026, 9, 8), WorkEffortWindow.For(WorkEffortScale.ThisMonth, Now).Start);
         Assert.Equal(Now.AddMonths(-6), WorkEffortWindow.For(WorkEffortScale.SixMonths, Now).Start);
         Assert.Equal(Now.AddMonths(-12), WorkEffortWindow.For(WorkEffortScale.TwelveMonths, Now).Start);
     }
@@ -520,7 +520,7 @@ public class WorkEffortTests
 
         ready.SetResult();
         await WaitUntilAsync(() => !main.Leads.WorkEffort.IsLoading && main.Leads.WorkEffort.HasRows);
-        Assert.Contains("this week", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
+        Assert.Contains("last 7 days", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
         var afterWeek = hold.Queries;
         Assert.True(afterWeek > queriesAfterOpen);
 
@@ -532,7 +532,7 @@ public class WorkEffortTests
         main.Leads.WorkEffort.Scale = WorkEffortScale.ThisWeek;
         Assert.Equal(afterToday, hold.Queries);
         Assert.False(main.Leads.WorkEffort.IsLoading);
-        Assert.Contains("this week", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
+        Assert.Contains("last 7 days", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
 
         main.Leads.WorkEffort.RefreshCommand.Execute(null);
         await WaitUntilAsync(() => !main.Leads.WorkEffort.IsLoading && hold.Queries > afterToday);
@@ -706,18 +706,18 @@ public class WorkEffortTests
         Assert.True(1 * 2 > WorkEffortSlices.PersonDayBudget);
         var days = WorkEffortSlices.Plan(twoDays, 1);
         Assert.Equal(2, days.Count);
-        Assert.Equal(new DateTime(2026, 10, 5), days[0].Start);
-        Assert.Equal(new DateTime(2026, 10, 5, 23, 59, 59), days[0].End);
-        Assert.Equal(new DateTime(2026, 10, 6), days[1].Start);
-        Assert.Equal(new DateTime(2026, 10, 6, 23, 59, 59), days[1].End);
+        Assert.Equal(new DateTime(2026, 10, 6), days[0].Start);
+        Assert.Equal(new DateTime(2026, 10, 6, 23, 59, 59), days[0].End);
+        Assert.Equal(new DateTime(2026, 10, 5), days[1].Start);
+        Assert.Equal(new DateTime(2026, 10, 5, 23, 59, 59), days[1].End);
 
         var six = WorkEffortWindow.For(WorkEffortScale.SixMonths, Now);
         Assert.True(WorkEffortSlices.Days(six) > 1);
         Assert.True(WorkEffortSlices.UseDaySlices(1, WorkEffortSlices.Days(six)));
         var longSlices = WorkEffortSlices.Plan(six, 1);
         Assert.Equal(WorkEffortSlices.Days(six), longSlices.Count);
-        Assert.Equal(six.Start, longSlices[0].Start);
-        Assert.Equal(six.End, longSlices[^1].End);
+        Assert.Equal(six.End, longSlices[0].End);
+        Assert.Equal(six.Start, longSlices[^1].Start);
 
         var week = WorkEffortWindow.For(WorkEffortScale.ThisWeek, Now);
         Assert.True(WorkEffortSlices.UseDaySlices(8, WorkEffortSlices.Days(week)));
@@ -906,7 +906,7 @@ public class WorkEffortTests
     }
 
     [Fact]
-    public async Task ThisMonthIsOneLocalDayPerPersonAndAFinishedLoadIsNotPartial()
+    public async Task Last30DaysIsOneLocalDayPerPersonAndAFinishedLoadIsNotPartial()
     {
         var handler = new StubHandler((_, _) => Api.Json("""{"result":[]}"""));
         using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
@@ -920,23 +920,223 @@ public class WorkEffortTests
             CancellationToken.None);
 
         var incidents = IncidentQueries(handler);
-        Assert.Equal(7, incidents.Length);
-        for (var day = 1; day <= 7; day++)
+        Assert.Equal(30, incidents.Length);
+        var window = WorkEffortWindow.For(WorkEffortScale.ThisMonth, Now);
+        var day = DateOnly.FromDateTime(window.End);
+        var first = DateOnly.FromDateTime(window.Start);
+        var index = 0;
+        while (day >= first)
         {
-            var stamp = "2026-10-" + day.ToString("00");
-            Assert.Contains(incidents, query => query.Contains("opened_at>=" + stamp + "@00:00:00", StringComparison.Ordinal)
-                && query.Contains("opened_at<=" + stamp + "@23:59:59", StringComparison.Ordinal)
-                && query.Contains("sample-user", StringComparison.Ordinal));
+            var stamp = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            Assert.Contains("opened_at>=" + stamp + "@00:00:00", incidents[index], StringComparison.Ordinal);
+            Assert.Contains("opened_at<=" + stamp + "@23:59:59", incidents[index], StringComparison.Ordinal);
+            Assert.Contains("sample-user", incidents[index], StringComparison.Ordinal);
+            day = day.AddDays(-1);
+            index++;
         }
 
-        Assert.DoesNotContain(incidents, query => query.Contains("opened_at>=2026-10-01@", StringComparison.Ordinal)
+        Assert.DoesNotContain(incidents, query => query.Contains("opened_at>=2026-09-08@", StringComparison.Ordinal)
             && query.Contains("opened_at<=2026-10-07@", StringComparison.Ordinal));
-        Assert.Contains("Counts for this month so far.", report.Status, StringComparison.Ordinal);
+        Assert.Contains("Counts for the last 30 days.", report.Status, StringComparison.Ordinal);
         Assert.DoesNotContain(WorkEffortQuery.CapNotice, report.Status, StringComparison.Ordinal);
-        Assert.Contains(ticks.Ticks, tick => tick.Status.Contains("Alex Rivera", StringComparison.Ordinal)
-            && tick.Status.Contains("2026-10-01", StringComparison.Ordinal)
-            && tick.Status.Contains("page ", StringComparison.Ordinal));
+        var readings = ticks.Ticks
+            .Select(tick => tick.Status)
+            .Where(status => status.Contains("Alex Rivera", StringComparison.Ordinal) && status.Contains("page ", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Contains("2026-10-07", readings[0], StringComparison.Ordinal);
+        Assert.Contains("2026-09-08", readings[^1], StringComparison.Ordinal);
         Assert.Equal(0, Assert.Single(report.Rows).IncOpened);
+    }
+
+    [Fact]
+    public void Last7DaysIsSevenLocalDaysEndingToday()
+    {
+        var wednesday = new DateTime(2026, 10, 7, 15, 0, 0);
+        Assert.Equal(DayOfWeek.Wednesday, wednesday.DayOfWeek);
+        var midweek = WorkEffortWindow.For(WorkEffortScale.ThisWeek, wednesday);
+        Assert.Equal(new DateTime(2026, 10, 1), midweek.Start);
+        Assert.Equal(new DateTime(2026, 10, 7, 23, 59, 59), midweek.End);
+        Assert.Equal(7, WorkEffortSlices.Days(midweek));
+
+        var monday = new DateTime(2026, 10, 5, 9, 0, 0);
+        Assert.Equal(DayOfWeek.Monday, monday.DayOfWeek);
+        var week = WorkEffortWindow.For(WorkEffortScale.ThisWeek, monday);
+        Assert.Equal(new DateTime(2026, 9, 29), week.Start);
+        Assert.Equal(new DateTime(2026, 10, 5, 23, 59, 59), week.End);
+        Assert.Equal(7, WorkEffortSlices.Days(week));
+    }
+
+    [Fact]
+    public void Last30DaysIsThirtyLocalDaysEndingToday()
+    {
+        var seventh = new DateTime(2026, 10, 7, 15, 0, 0);
+        Assert.NotEqual(1, seventh.Day);
+        var month = WorkEffortWindow.For(WorkEffortScale.ThisMonth, seventh);
+        Assert.Equal(new DateTime(2026, 9, 8), month.Start);
+        Assert.Equal(new DateTime(2026, 10, 7, 23, 59, 59), month.End);
+        Assert.Equal(30, WorkEffortSlices.Days(month));
+
+        var first = new DateTime(2026, 10, 1, 8, 30, 0);
+        Assert.Equal(1, first.Day);
+        var onTheFirst = WorkEffortWindow.For(WorkEffortScale.ThisMonth, first);
+        Assert.Equal(new DateTime(2026, 9, 2), onTheFirst.Start);
+        Assert.Equal(new DateTime(2026, 10, 1, 23, 59, 59), onTheFirst.End);
+        Assert.Equal(30, WorkEffortSlices.Days(onTheFirst));
+    }
+
+    [Fact]
+    public async Task DownloadVisitsNewestDayThenEachPersonBeforeThePreviousDay()
+    {
+        var handler = new StubHandler((_, _) => Api.Json("""{"result":[]}"""));
+        using var client = ServiceNowClient.Create(Api.BasicSession(), handler);
+        var ticks = new ProgressList();
+        var report = await client.GetWorkEffortAsync(
+            WorkEffortScale.DateRange,
+            Now,
+            LiveTeam,
+            Sydney,
+            ticks,
+            CancellationToken.None,
+            rangeStart: new DateTime(2026, 10, 5),
+            rangeEnd: new DateTime(2026, 10, 7));
+
+        var incidents = IncidentQueries(handler);
+        var expected = new (string Day, string Person)[]
+        {
+            ("2026-10-07", "sample-user"),
+            ("2026-10-07", "user-jordan"),
+            ("2026-10-06", "sample-user"),
+            ("2026-10-06", "user-jordan"),
+            ("2026-10-05", "sample-user"),
+            ("2026-10-05", "user-jordan")
+        };
+        Assert.Equal(expected.Length, incidents.Length);
+        for (var index = 0; index < expected.Length; index++)
+        {
+            Assert.Contains("opened_at>=" + expected[index].Day + "@00:00:00", incidents[index], StringComparison.Ordinal);
+            Assert.Contains("opened_byIN" + expected[index].Person, incidents[index], StringComparison.Ordinal);
+        }
+
+        var log = WorkEffortCalcLog.Format(report, WorkEffortUpdateMode.Daily, Now, previousCapturedAt: null);
+        var slices = log.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("Slice |", StringComparison.Ordinal) && line.Contains("| incident |", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(
+            [
+                "Alex Rivera | 2026-10-07",
+                "Jordan Lee | 2026-10-07",
+                "Alex Rivera | 2026-10-06",
+                "Jordan Lee | 2026-10-06",
+                "Alex Rivera | 2026-10-05",
+                "Jordan Lee | 2026-10-05"
+            ],
+            slices.Select(SlicePersonDay).ToArray());
+
+        var readings = ticks.Ticks
+            .Select(tick => tick.Status)
+            .Where(status => status.StartsWith("Reading ", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Contains("Alex Rivera", readings[0], StringComparison.Ordinal);
+        Assert.Contains("2026-10-07", readings[0], StringComparison.Ordinal);
+        var jordan = Array.FindIndex(readings, status => status.Contains("Jordan Lee", StringComparison.Ordinal));
+        Assert.True(jordan > 0);
+        Assert.Contains("2026-10-07", readings[jordan], StringComparison.Ordinal);
+        var nextAlex = Array.FindIndex(readings, jordan, status => status.Contains("Alex Rivera", StringComparison.Ordinal));
+        Assert.True(nextAlex > jordan);
+        Assert.Contains("2026-10-06", readings[nextAlex], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FilteringALoadedLedgerToOneDayRescoresWithoutAnotherQuery()
+    {
+        using var client = new SampleServiceNowClient();
+        var desktop = new RecordingDesktopServices();
+        var page = new WorkEffortViewModel();
+        page.UseDesktop(desktop);
+        page.Scale = WorkEffortScale.Last4Weeks;
+        var queries = new Dictionary<WorkEffortScale, int>();
+        await OpenWorkEffortAsync(page, client, Now, force: true, queries);
+        Assert.Equal(1, queries[WorkEffortScale.Last4Weeks]);
+        Assert.True(page.CanFilterLoadedDay);
+        Assert.False(page.IsLoading);
+        Assert.DoesNotContain(WorkEffortQuery.CapNotice, page.Status, StringComparison.Ordinal);
+        var status = page.Status;
+
+        var signals = 0;
+        page.ScaleChanged += (_, _) => signals++;
+        page.RefreshRequested += (_, _) => signals++;
+
+        var alex = page.Rows.Single(row => row.Name == "Alex Rivera");
+        var fullOpened = alex.IncOpened;
+        var fullWeighted = alex.Weighted;
+        Assert.True(fullOpened > 1);
+
+        var today = new DateOnly(2026, 10, 7);
+        page.SelectedLoadedDay = page.LoadedDayChoices.Single(choice => choice.Day == today);
+        Assert.Equal(1, queries[WorkEffortScale.Last4Weeks]);
+        Assert.Equal(0, signals);
+        Assert.False(page.IsLoading);
+        Assert.Equal(status, page.Status);
+        Assert.DoesNotContain(WorkEffortQuery.CapNotice, page.Status, StringComparison.Ordinal);
+
+        alex = page.Rows.Single(row => row.Name == "Alex Rivera");
+        Assert.Equal(1, alex.IncOpened);
+        Assert.NotEqual(fullWeighted, alex.Weighted);
+        page.ShowCellDetail(alex, WorkEffortColumn.IncOpened);
+        var opened = page.DetailLines.Select(line => line.DisplayNumber).ToArray();
+        Assert.Contains("INC0010001", opened);
+        Assert.DoesNotContain("INC0010004", opened);
+        page.ShowPersonDetail(alex);
+        Assert.DoesNotContain(page.DetailLines, line => line.DisplayNumber == "INC0010004");
+
+        page.ExportBoardCommand.Execute(null);
+        var filteredCsv = File.ReadAllText(Assert.Single(desktop.SavedFiles));
+        Assert.Contains("INC0010001", filteredCsv, StringComparison.Ordinal);
+        Assert.DoesNotContain("INC0010004", filteredCsv, StringComparison.Ordinal);
+        Assert.Contains("Showing 2026-10-07 of the loaded window.", page.CalculationLog, StringComparison.Ordinal);
+        Assert.Contains("INC opened " + fullOpened.ToString(CultureInfo.InvariantCulture), page.CalculationLog, StringComparison.Ordinal);
+
+        page.SelectedLoadedDay = page.LoadedDayChoices.Single(choice => choice.Day is null);
+        Assert.Equal(1, queries[WorkEffortScale.Last4Weeks]);
+        Assert.Equal(0, signals);
+        Assert.False(page.IsLoading);
+        Assert.Equal(status, page.Status);
+        alex = page.Rows.Single(row => row.Name == "Alex Rivera");
+        Assert.Equal(fullOpened, alex.IncOpened);
+        Assert.Equal(fullWeighted, alex.Weighted);
+        Assert.DoesNotContain("Showing 2026-10-07 of the loaded window.", page.CalculationLog, StringComparison.Ordinal);
+
+        desktop.SavedFiles.Clear();
+        page.ExportBoardCommand.Execute(null);
+        Assert.Contains("INC0010004", File.ReadAllText(Assert.Single(desktop.SavedFiles)), StringComparison.Ordinal);
+
+        page.SelectedLoadedDay = new WorkEffortLoadedDay(new DateOnly(2026, 8, 1), "2026-08-01");
+        Assert.Equal(fullOpened, page.Rows.Single(row => row.Name == "Alex Rivera").IncOpened);
+        Assert.Equal(1, queries[WorkEffortScale.Last4Weeks]);
+        Assert.Equal(0, signals);
+        Assert.False(page.IsLoading);
+        Assert.Null(page.SelectedLoadedDay!.Day);
+
+        Assert.True(page.BeginLoad(Now, force: true));
+        Assert.True(page.IsLoading);
+        var loadingStatus = page.Status;
+        page.SelectedLoadedDay = page.LoadedDayChoices.Single(choice => choice.Day == today);
+        Assert.True(page.IsLoading);
+        Assert.Equal(loadingStatus, page.Status);
+        Assert.DoesNotContain(WorkEffortQuery.CapNotice, page.Status, StringComparison.Ordinal);
+        Assert.Equal(1, queries[WorkEffortScale.Last4Weeks]);
+        Assert.Equal(0, signals);
+    }
+
+    [Fact]
+    public async Task TodayDoesNotOfferALoadedDayFilter()
+    {
+        using var client = new SampleServiceNowClient();
+        var page = new WorkEffortViewModel();
+        await OpenWorkEffortAsync(page, client, Now, force: false, []);
+        Assert.False(page.CanFilterLoadedDay);
+        Assert.Empty(page.LoadedDayChoices);
     }
 
     [Fact]
@@ -1116,6 +1316,14 @@ public class WorkEffortTests
         builder.Append("\"sys_updated_by\":{\"value\":\"alex.rivera\",\"display_value\":\"alex.rivera\"},");
         builder.Append("\"sys_updated_on\":{\"value\":\"").Append(opened).Append("\",\"display_value\":\"").Append(opened).Append("\"},");
         builder.Append("\"location\":{\"value\":\"loc\",\"display_value\":\"").Append(location).Append("\"}}");
+    }
+
+    private static string SlicePersonDay(string line)
+    {
+        const string prefix = "Slice | ";
+        var body = line.StartsWith(prefix, StringComparison.Ordinal) ? line[prefix.Length..] : line;
+        var office = body.IndexOf(" | ", body.IndexOf(" | ", StringComparison.Ordinal) + 3, StringComparison.Ordinal);
+        return office < 0 ? body : body[..office];
     }
 
     private static string[] IncidentQueries(StubHandler handler) =>
