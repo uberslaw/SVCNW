@@ -44,8 +44,8 @@ public readonly record struct WorkEffortProgress(int Completed, int Total, strin
 
     public static string Phrase(WorkEffortScale scale) => scale switch
     {
-        WorkEffortScale.ThisWeek => "this week",
-        WorkEffortScale.ThisMonth => "this month",
+        WorkEffortScale.ThisWeek => "the last 7 days",
+        WorkEffortScale.ThisMonth => "the last 30 days",
         WorkEffortScale.Last4Weeks => "the last 4 weeks",
         WorkEffortScale.SixMonths => "the last 6 months",
         WorkEffortScale.TwelveMonths => "the last 12 months",

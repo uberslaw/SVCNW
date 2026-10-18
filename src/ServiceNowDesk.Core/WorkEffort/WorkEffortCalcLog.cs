@@ -145,7 +145,8 @@ public static class WorkEffortCalcLog
         WorkEffortReport report,
         WorkEffortUpdateMode mode,
         DateTime capturedAt,
-        DateTime? previousCapturedAt)
+        DateTime? previousCapturedAt,
+        DateOnly? showingDay = null)
     {
         ArgumentNullException.ThrowIfNull(report);
         var facts = report.Facts;
@@ -177,6 +178,12 @@ public static class WorkEffortCalcLog
                 .Append(" through ")
                 .Append(Stamp(window.End))
                 .AppendLine(" inclusive");
+            if (showingDay is DateOnly shown && window.IncludesLocalDay(shown))
+            {
+                builder.Append("Showing ")
+                    .Append(shown.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+                    .AppendLine(" of the loaded window.");
+            }
         }
         else
         {
@@ -438,8 +445,8 @@ public static class WorkEffortCalcLog
 
     private static string ScaleLabel(WorkEffortScale scale) => scale switch
     {
-        WorkEffortScale.ThisWeek => "This week",
-        WorkEffortScale.ThisMonth => "This month",
+        WorkEffortScale.ThisWeek => "Last 7 days",
+        WorkEffortScale.ThisMonth => "Last 30 days",
         WorkEffortScale.Last4Weeks => "Last 4 weeks",
         WorkEffortScale.SixMonths => "6 months",
         WorkEffortScale.TwelveMonths => "12 months",

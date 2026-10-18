@@ -21,6 +21,9 @@ public partial class WorkEffortViewModel : ObservableObject
     private WorkEffortReport? _logReport;
     private DateTime _logCapturedAt;
     private DateTime? _logReplacedFrom;
+    private LoadedSpan? _loadedSpan;
+    private WorkEffortLoadedDay? _acceptedDay;
+    private bool _muteDayFilter;
 
     public WorkEffortViewModel()
     {
@@ -29,6 +32,8 @@ public partial class WorkEffortViewModel : ObservableObject
     public ObservableCollection<WorkEffortRow> Rows { get; } = [];
 
     public ObservableCollection<WorkEffortCredit> DetailLines { get; } = [];
+
+    public ObservableCollection<WorkEffortLoadedDay> LoadedDayChoices { get; } = [];
 
     public event EventHandler? ScaleChanged;
 
@@ -42,6 +47,8 @@ public partial class WorkEffortViewModel : ObservableObject
     [ObservableProperty] private DateTime? rangeStart = DateTime.Today;
     [ObservableProperty] private DateTime? rangeEnd = DateTime.Today;
     [ObservableProperty] private WorkEffortUpdateMode updateMode = WorkEffortUpdateMode.Daily;
+    [ObservableProperty] private WorkEffortLoadedDay? selectedLoadedDay;
+    [ObservableProperty] private bool canFilterLoadedDay;
 
     public bool IsDateRange => Scale == WorkEffortScale.DateRange;
     [ObservableProperty] private string status = "";
@@ -171,7 +178,16 @@ public partial class WorkEffortViewModel : ObservableObject
             return;
         }
 
-        CalculationLog = WorkEffortCalcLog.Format(_logReport, UpdateMode, _logCapturedAt, _logReplacedFrom);
+        DateOnly? showing = null;
+        if (_logReport.Ledger is { } logged
+            && _shown?.Report.Ledger is { } displayed
+            && logged.Window.Start == displayed.Window.Start
+            && logged.Window.End == displayed.Window.End
+            && logged.Window.Scale == displayed.Window.Scale
+            && SelectedLoadedDay?.Day is DateOnly day
+            && logged.Window.IncludesLocalDay(day))
+            showing = day;
+        CalculationLog = WorkEffortCalcLog.Format(_logReport, UpdateMode, _logCapturedAt, _logReplacedFrom, showing);
         HasCalculationLog = CalculationLog.Length > 0;
     }
 
@@ -261,6 +277,7 @@ public partial class WorkEffortViewModel : ObservableObject
             ProgressValue = 0;
             ProgressMaximum = WorkEffortEstimate.BarMaximum;
             IsLoading = true;
+            CanFilterLoadedDay = false;
             Status = WorkEffortEstimate.Text(1);
         }
     }
@@ -286,6 +303,7 @@ public partial class WorkEffortViewModel : ObservableObject
             Status = message ?? "";
             IsLoading = false;
             _loadingScale = null;
+            CanFilterLoadedDay = false;
         }
     }
 
@@ -310,6 +328,13 @@ public partial class WorkEffortViewModel : ObservableObject
             _loadingTeam = "";
             ClearDetail();
             ClearCalculationLog();
+            _loadedSpan = null;
+            _acceptedDay = null;
+            _muteDayFilter = true;
+            LoadedDayChoices.Clear();
+            SelectedLoadedDay = null;
+            CanFilterLoadedDay = false;
+            _muteDayFilter = false;
             if (UpdateMode != WorkEffortUpdateMode.Daily)
                 UpdateMode = WorkEffortUpdateMode.Daily;
         }
@@ -462,7 +487,28 @@ public partial class WorkEffortViewModel : ObservableObject
         if (IsLoading || _shown is null)
             return;
         ShowEntry(_shown.Value);
-        RenderCalculationLog();
+    }
+
+    partial void OnSelectedLoadedDayChanged(WorkEffortLoadedDay? value)
+    {
+        if (_muteDayFilter)
+            return;
+        // A day filter never starts, cancels, or marks a load. While a load is running the
+        // pick is kept and applied when that load paints, if the day is still inside it.
+        if (IsLoading || _shown is null)
+            return;
+
+        var window = _shown.Value.Report.Ledger?.Window;
+        if (value?.Day is DateOnly day && (window is null || !window.Value.IncludesLocalDay(day)))
+        {
+            _muteDayFilter = true;
+            SelectedLoadedDay = _acceptedDay ?? LoadedDayChoices.FirstOrDefault(choice => choice.Day is null);
+            _muteDayFilter = false;
+            return;
+        }
+
+        _acceptedDay = value;
+        ShowEntry(_shown.Value);
     }
 
     private bool TryGet(DateTime localNow, WorkEffortScale scale, string teamKey, out WorkEffortCacheEntry entry)
@@ -478,8 +524,9 @@ public partial class WorkEffortViewModel : ObservableObject
 
     private void ShowEntry(WorkEffortCacheEntry entry)
     {
-        // Set AsOf before ApplyReport clears IsLoading so waiters never see rows without a stamp.
-        var presented = WorkEffortScore.Present(entry.Report, UpdateMode);
+        // Set AsOf before WriteReport clears IsLoading so waiters never see rows without a stamp.
+        var day = DayFor(entry.Report);
+        var presented = WorkEffortScore.Present(entry.Report, UpdateMode, day);
         lock (_gate)
         {
             _shown = entry;
@@ -487,9 +534,11 @@ public partial class WorkEffortViewModel : ObservableObject
             WriteReport(presented);
         }
 
-        RebuildBoardCredits(presented);
+        ApplyDayChoices(entry.Report, day);
+        RebuildBoardCredits(presented, day);
         if (ShowDetail)
             RefreshOpenDetail();
+        RenderCalculationLog();
     }
 
     private void ApplyReport(WorkEffortReport report)
@@ -500,7 +549,8 @@ public partial class WorkEffortViewModel : ObservableObject
             WriteReport(report);
         }
 
-        RebuildBoardCredits(report);
+        CanFilterLoadedDay = false;
+        RebuildBoardCredits(report, null);
         if (ShowDetail)
             RefreshOpenDetail();
     }
@@ -522,7 +572,57 @@ public partial class WorkEffortViewModel : ObservableObject
             SelectedRow = null;
     }
 
-    private void RebuildBoardCredits(WorkEffortReport report)
+    private DateOnly? DayFor(WorkEffortReport report)
+    {
+        if (report.Ledger is null)
+            return null;
+        var window = report.Ledger.Window;
+        if (WorkEffortSlices.Days(window) <= 1)
+            return null;
+        if (_loadedSpan != new LoadedSpan(window.Start, window.End, window.Scale))
+            return null;
+        if (SelectedLoadedDay?.Day is not DateOnly day || !window.IncludesLocalDay(day))
+            return null;
+        return day;
+    }
+
+    private void ApplyDayChoices(WorkEffortReport report, DateOnly? day)
+    {
+        var window = report.Ledger?.Window;
+        if (window is null || WorkEffortSlices.Days(window.Value) <= 1)
+        {
+            CanFilterLoadedDay = false;
+            _loadedSpan = window is WorkEffortWindow single
+                ? new LoadedSpan(single.Start, single.End, single.Scale)
+                : null;
+            return;
+        }
+
+        var span = new LoadedSpan(window.Value.Start, window.Value.End, window.Value.Scale);
+        if (_loadedSpan == span && LoadedDayChoices.Count > 0)
+        {
+            CanFilterLoadedDay = true;
+            return;
+        }
+
+        _muteDayFilter = true;
+        LoadedDayChoices.Clear();
+        LoadedDayChoices.Add(new WorkEffortLoadedDay(null, "All loaded days"));
+        var last = DateOnly.FromDateTime(window.Value.End);
+        var first = DateOnly.FromDateTime(window.Value.Start);
+        for (var cursor = last; cursor >= first; cursor = cursor.AddDays(-1))
+            LoadedDayChoices.Add(new WorkEffortLoadedDay(cursor, cursor.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+        var selected = day is DateOnly picked
+            ? LoadedDayChoices.FirstOrDefault(choice => choice.Day == picked)
+            : null;
+        SelectedLoadedDay = selected ?? LoadedDayChoices[0];
+        _acceptedDay = SelectedLoadedDay;
+        _loadedSpan = span;
+        CanFilterLoadedDay = true;
+        _muteDayFilter = false;
+    }
+
+    private void RebuildBoardCredits(WorkEffortReport report, DateOnly? day)
     {
         if (report.Ledger is null)
         {
@@ -530,10 +630,13 @@ public partial class WorkEffortViewModel : ObservableObject
             return;
         }
 
+        var window = day is DateOnly selected && report.Ledger.Window.IncludesLocalDay(selected)
+            ? report.Ledger.Window.ClippedTo(selected)
+            : report.Ledger.Window;
         _boardCredits = WorkEffortDetail.Build(
             report.Ledger.People,
             report.Ledger.Touches,
-            report.Ledger.Window,
+            window,
             UpdateMode);
     }
 
@@ -695,4 +798,22 @@ public partial class WorkEffortViewModel : ObservableObject
     }
 
     private readonly record struct WorkEffortCacheEntry(DateTime LoadedAt, WorkEffortReport Report, string TeamKey);
+
+    private readonly record struct LoadedSpan(DateTime Start, DateTime End, WorkEffortScale Scale);
+}
+
+/// <summary>
+/// One choice in the loaded-day filter. A null <see cref="Day"/> means every day in the load.
+/// </summary>
+public sealed class WorkEffortLoadedDay
+{
+    public WorkEffortLoadedDay(DateOnly? day, string label)
+    {
+        Day = day;
+        Label = label ?? "";
+    }
+
+    public DateOnly? Day { get; }
+
+    public string Label { get; }
 }

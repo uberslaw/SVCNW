@@ -5,7 +5,9 @@ namespace ServiceNowDesk.WorkEffort;
 public enum WorkEffortScale
 {
     Today,
+    /// <summary>Last 7 local days ending today. The identifier stays <c>ThisWeek</c>.</summary>
     ThisWeek,
+    /// <summary>Last 30 local days ending today. The identifier stays <c>ThisMonth</c>.</summary>
     ThisMonth,
     Last4Weeks,
     SixMonths,
@@ -14,8 +16,9 @@ public enum WorkEffortScale
 }
 
 /// <summary>
-/// Local calendar windows. Today, this week, and this month run through the end of the local day.
-/// Week starts Monday. The longer scales are rolling windows that end at the local clock.
+/// Local calendar windows. Today, the last 7 days, and the last 30 days run through the end of the local day.
+/// Last 7 days is today and the six days before it. Last 30 days is today and the 29 days before it.
+/// The longer preset scales are rolling windows that end at the local clock.
 /// </summary>
 public readonly record struct WorkEffortWindow(DateTime Start, DateTime End, WorkEffortScale Scale)
 {
@@ -31,8 +34,8 @@ public readonly record struct WorkEffortWindow(DateTime Start, DateTime End, Wor
         var endOfToday = now.Date.AddDays(1).AddSeconds(-1);
         return scale switch
         {
-            WorkEffortScale.ThisWeek => new(Monday(now), endOfToday, scale),
-            WorkEffortScale.ThisMonth => new(new DateTime(now.Year, now.Month, 1), endOfToday, scale),
+            WorkEffortScale.ThisWeek => new(now.Date.AddDays(-6), endOfToday, scale),
+            WorkEffortScale.ThisMonth => new(now.Date.AddDays(-29), endOfToday, scale),
             WorkEffortScale.Last4Weeks => new(now.AddDays(-28), now, scale),
             WorkEffortScale.SixMonths => new(now.AddMonths(-6), now, scale),
             WorkEffortScale.TwelveMonths => new(now.AddMonths(-12), now, scale),
@@ -68,6 +71,33 @@ public readonly record struct WorkEffortWindow(DateTime Start, DateTime End, Wor
         return ForRange(start, end);
     }
 
+    /// <summary>
+    /// True when <paramref name="day"/> is one of the local calendar days this window covers.
+    /// </summary>
+    public bool IncludesLocalDay(DateOnly day)
+    {
+        var first = DateOnly.FromDateTime(Start);
+        var last = DateOnly.FromDateTime(End);
+        return day >= first && day <= last;
+    }
+
+    /// <summary>
+    /// The part of this window that falls on <paramref name="day"/>.
+    /// A day outside the window is ignored and this window is returned unchanged.
+    /// </summary>
+    public WorkEffortWindow ClippedTo(DateOnly day)
+    {
+        if (!IncludesLocalDay(day))
+            return this;
+        var start = day.ToDateTime(TimeOnly.MinValue);
+        var end = day.ToDateTime(new TimeOnly(23, 59, 59));
+        if (start < Start)
+            start = Start;
+        if (end > End)
+            end = End;
+        return start > end ? this : new WorkEffortWindow(start, end, Scale);
+    }
+
     public bool Contains(DateTime moment)
     {
         var value = moment.Kind == DateTimeKind.Utc
@@ -94,8 +124,8 @@ public readonly record struct WorkEffortWindow(DateTime Start, DateTime End, Wor
 
     public static string CountsLabel(WorkEffortScale scale) => scale switch
     {
-        WorkEffortScale.ThisWeek => "Counts for this week.",
-        WorkEffortScale.ThisMonth => "Counts for this month so far.",
+        WorkEffortScale.ThisWeek => "Counts for the last 7 days.",
+        WorkEffortScale.ThisMonth => "Counts for the last 30 days.",
         WorkEffortScale.Last4Weeks => "Counts for the last 4 weeks.",
         WorkEffortScale.SixMonths => "Counts for the last 6 months.",
         WorkEffortScale.TwelveMonths => "Counts for the last 12 months.",
@@ -118,12 +148,6 @@ public readonly record struct WorkEffortWindow(DateTime Start, DateTime End, Wor
     {
         var value = moment.Kind == DateTimeKind.Utc ? moment.ToLocalTime() : moment;
         return DateOnly.FromDateTime(value);
-    }
-
-    private static DateTime Monday(DateTime now)
-    {
-        var days = ((int)now.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        return now.Date.AddDays(-days);
     }
 }
 

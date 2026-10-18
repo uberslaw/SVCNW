@@ -3,8 +3,9 @@ namespace ServiceNowDesk.WorkEffort;
 /// <summary>
 /// How a Work Effort download is split. One person is always one download.
 /// The whole window stays one query for that person when people × days is at most
-/// <see cref="PersonDayBudget"/>. Above the budget, each person is queried one local
-/// day at a time, then the next day, then the next person.
+/// <see cref="PersonDayBudget"/>. Above the budget, each local day is one snippet.
+/// The visit order is the newest day first, and on that day every selected person,
+/// then the previous day, then every person again. The calls stay one at a time.
 /// </summary>
 public static class WorkEffortSlices
 {
@@ -35,7 +36,7 @@ public static class WorkEffortSlices
     }
 
     /// <summary>
-    /// The query windows for one person, in order. Either the original window, or one clipped local day.
+    /// The query windows, newest local day first. Either the original window, or one clipped local day.
     /// </summary>
     public static IReadOnlyList<WorkEffortWindow> Plan(WorkEffortWindow window, int people)
     {
@@ -43,9 +44,9 @@ public static class WorkEffortSlices
             return [window];
 
         var slices = new List<WorkEffortWindow>();
-        var day = DateOnly.FromDateTime(window.Start);
-        var last = DateOnly.FromDateTime(window.End);
-        while (day <= last)
+        var first = DateOnly.FromDateTime(window.Start);
+        var day = DateOnly.FromDateTime(window.End);
+        while (day >= first)
         {
             var sliceStart = day.ToDateTime(TimeOnly.MinValue);
             var sliceEnd = day.ToDateTime(new TimeOnly(23, 59, 59));
@@ -55,7 +56,7 @@ public static class WorkEffortSlices
                 sliceEnd = window.End;
             if (sliceStart <= sliceEnd)
                 slices.Add(new WorkEffortWindow(sliceStart, sliceEnd, window.Scale));
-            day = day.AddDays(1);
+            day = day.AddDays(-1);
         }
 
         return slices.Count == 0 ? [window] : slices;

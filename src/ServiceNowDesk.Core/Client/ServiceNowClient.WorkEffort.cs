@@ -77,7 +77,8 @@ public sealed partial class ServiceNowClient
         if (!WorkEffortQuery.HasScope(people))
             return WorkEffortReport.NoTeam();
 
-        // One person at a time. A window longer than one local day is one local day at a time.
+        // Newest local day first, then every selected person for that day, then the previous day.
+        // One request at a time. A window of one local day stays one query per person.
         // Each request asks for one page. A full page is continued until ServiceNow runs out of rows.
         // When that page cannot be continued, the same slice is read again in smaller pieces.
         // The shared batch merges a record that shows up on more than one page.
@@ -261,9 +262,9 @@ public sealed partial class ServiceNowClient
     {
         var truncated = false;
         var tableName = WorkEffortCalcLog.TableName(plan.Kind);
-        foreach (var person in people)
+        foreach (var slice in slices)
         {
-            foreach (var slice in slices)
+            foreach (var person in people)
             {
                 var day = DateOnly.FromDateTime(slice.Start);
                 foreach (var place in places)

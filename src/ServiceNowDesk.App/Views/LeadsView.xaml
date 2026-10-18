@@ -201,7 +201,7 @@
                 <TextBlock Text="{Binding LockedTeamNote}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
                            Visibility="{Binding LockedTeamNote, Converter={StaticResource StringVis}}"/>
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
-                           Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. Daily updates is on when this panel opens: one update credit (0.3) per person, per ticket, per local day. Allow multiple updates counts each save. An open, resolve, or close is not also an update on that same day. A later day still counts. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Figures load the first time you open a time scale each day. Date range counts the local days you pick, from the start date through the end of the end date. The update switch uses that loaded history and does not ask ServiceNow again. Refresh reloads the scale you are looking at. Leaving this page does not stop the load. After figures load, double-click a row for every ticket that person was credited, or a count cell for that metric alone. Double-click a ticket in the detail list to open it in its own window; several can stay open at once. Export writes a CSV for the open detail or the full board. Calculation log opens a copyable account of how the latest load produced these figures, including any slice that hit the safety cap."/>
+                           Text="Only the people you tick on My team, once each. IMS is a walk-up. Open or resolve: incident 1, request item 0.7, walk-up 0.6. Daily updates is on when this panel opens: one update credit (0.3) per person, per ticket, per local day. Allow multiple updates counts each save. An open, resolve, or close is not also an update on that same day. A later day still counts. Closing counts as the resolve when that person did not also resolve it. If nobody is ticked, define the team before a report runs. A long report stays on a background task and shows how many minutes are left. Last 7 days is today and the six local days before it, from midnight on the first of those days through the end of today. Last 30 days is today and the 29 local days before it. Figures load the first time you open a time scale each day. Date range counts the local days you pick, from the start date through the end of the end date. After a period longer than one day has loaded, Filter loaded figures narrows the scoreboard to one of those days or shows all of them. That filter uses the figures already loaded and does not ask ServiceNow again. The update switch uses that loaded history and does not ask ServiceNow again. Refresh reloads the scale you are looking at. Leaving this page does not stop the load. After figures load, double-click a row for every ticket that person was credited, or a count cell for that metric alone. Double-click a ticket in the detail list to open it in its own window; several can stay open at once. Export writes a CSV for the open detail or the board on screen, including a loaded-day filter when one is set. Calculation log opens a copyable account of how the latest load produced these figures, including any slice that hit the safety cap."/>
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -227,12 +227,12 @@
                     <RadioButton GroupName="WorkEffortScale" Content="Today" Margin="0,0,16,8"
                                  IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=Today}"
                                  AutomationProperties.Name="Today"/>
-                    <RadioButton GroupName="WorkEffortScale" Content="This week" Margin="0,0,16,8"
+                    <RadioButton GroupName="WorkEffortScale" Content="Last 7 days" Margin="0,0,16,8"
                                  IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=ThisWeek}"
-                                 AutomationProperties.Name="This week"/>
-                    <RadioButton GroupName="WorkEffortScale" Content="This month" Margin="0,0,16,8"
+                                 AutomationProperties.Name="Last 7 days"/>
+                    <RadioButton GroupName="WorkEffortScale" Content="Last 30 days" Margin="0,0,16,8"
                                  IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=ThisMonth}"
-                                 AutomationProperties.Name="This month"/>
+                                 AutomationProperties.Name="Last 30 days"/>
                     <RadioButton GroupName="WorkEffortScale" Content="Last 4 weeks" Margin="0,0,16,8"
                                  IsChecked="{Binding WorkEffort.Scale, Converter={StaticResource EnumEq}, ConverterParameter=Last4Weeks}"
                                  AutomationProperties.Name="Last 4 weeks"/>
@@ -257,6 +257,19 @@
                     <DatePicker SelectedDate="{Binding WorkEffort.RangeEnd}" Width="140"
                                 ToolTip="Last local day, included through the end of that day"
                                 AutomationProperties.Name="Work Effort end date"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12"
+                            Visibility="{Binding WorkEffort.CanFilterLoadedDay, Converter={StaticResource BoolVis}}"
+                            AutomationProperties.Name="Filter loaded figures">
+                    <TextBlock Text="Filter loaded figures" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox Width="180"
+                              ItemsSource="{Binding WorkEffort.LoadedDayChoices}"
+                              SelectedItem="{Binding WorkEffort.SelectedLoadedDay}"
+                              DisplayMemberPath="Label"
+                              AutomationProperties.Name="Loaded day"/>
+                    <TextBlock Text="Uses the days already downloaded. ServiceNow is not asked again."
+                               VerticalAlignment="Center" Margin="12,0,0,0"
+                               Foreground="{StaticResource MutedBrush}"/>
                 </StackPanel>
                 <WrapPanel Margin="0,0,0,8" AutomationProperties.Name="Work Effort update counting">
                     <RadioButton GroupName="WorkEffortUpdates" Content="Daily updates" Margin="0,0,16,8"
