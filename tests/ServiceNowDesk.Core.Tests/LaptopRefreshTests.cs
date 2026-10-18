@@ -463,10 +463,43 @@ public class LaptopRefreshTests
     }
 
     [Fact]
+    public void HardwareTabsLeaveTheTableAsTheMainPage()
+    {
+        var workspace = new HardwareWorkspaceViewModel(new MemorySettingsStore());
+        Assert.True(workspace.ShowHardwareList);
+        Assert.False(workspace.RegionPickerOpen);
+
+        workspace.OpenRegionPickerCommand.Execute(null);
+        Assert.True(workspace.RegionPickerOpen);
+        workspace.ConfirmRegionCommand.Execute(null);
+        Assert.False(workspace.RegionPickerOpen);
+        Assert.True(workspace.ShowHardwareList);
+
+        workspace.ShowDeliveryPageCommand.Execute(null);
+        Assert.True(workspace.ShowDelivery);
+        Assert.False(workspace.ShowHardwareList);
+        Assert.False(workspace.ShowUpgrades);
+
+        workspace.OpenLaptopRefreshCommand.Execute(null);
+        Assert.True(workspace.ShowUpgrades);
+        Assert.True(workspace.LaptopRefreshOpen);
+        Assert.False(workspace.ShowDelivery);
+
+        workspace.ShowHardwarePageCommand.Execute(null);
+        Assert.True(workspace.ShowHardwareList);
+        Assert.False(workspace.LaptopRefreshOpen);
+    }
+
+    [Fact]
     public void HardwarePageOffersLaptopRefresh()
     {
         var view = RepoFile("src/ServiceNowDesk.App/Views/HardwareView.xaml");
         Assert.Contains("OpenLaptopRefreshCommand", view, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Upgrades\"", view, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Delivery\"", view, StringComparison.Ordinal);
+        Assert.Contains("ConfirmRegionCommand", view, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Region\"", view, StringComparison.Ordinal);
+        Assert.Contains("Scanned serials", view, StringComparison.Ordinal);
         Assert.Contains("Import list", view, StringComparison.Ordinal);
         Assert.DoesNotContain("Vacation student", view, StringComparison.Ordinal);
         Assert.Contains("Who actually received a laptop", view, StringComparison.Ordinal);

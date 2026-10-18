@@ -7,6 +7,13 @@ using ServiceNowDesk.Services;
 
 namespace ServiceNowDesk.ViewModels;
 
+public enum HardwareSection
+{
+    List,
+    Delivery,
+    Upgrades
+}
+
 public partial class HardwareWorkspaceViewModel : ObservableObject
 {
     /// <summary>
@@ -61,7 +68,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         Stockroom = new ReferenceFieldModel(SearchStockroomsAsync);
         ReceiveStockroom = new ReferenceFieldModel(SearchStockroomsAsync);
         AssignedTo.Changed += (_, _) => Touch();
-        Location.Changed += (_, _) => Touch();
+        Location.Changed += (_, _) => OnLocationChanged();
         Stockroom.Changed += (_, _) => Touch();
         ReceiveStockroom.Changed += (_, _) =>
         {
@@ -145,6 +152,24 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string displayName = "";
     [ObservableProperty] private string modelName = "";
     [ObservableProperty] private bool laptopRefreshOpen;
+    [ObservableProperty] private HardwareSection section = HardwareSection.List;
+    [ObservableProperty] private bool regionPickerOpen;
+
+    public bool ShowHardwareList => Section == HardwareSection.List;
+    public bool ShowDelivery => Section == HardwareSection.Delivery;
+    public bool ShowUpgrades => Section == HardwareSection.Upgrades;
+
+    partial void OnSectionChanged(HardwareSection value)
+    {
+        var upgrades = value == HardwareSection.Upgrades;
+        if (LaptopRefreshOpen != upgrades)
+            LaptopRefreshOpen = upgrades;
+        OnPropertyChanged(nameof(ShowHardwareList));
+        OnPropertyChanged(nameof(ShowDelivery));
+        OnPropertyChanged(nameof(ShowUpgrades));
+        if (upgrades)
+            LaptopRefresh.NoteCatalog(_catalog, _catalogIsAllLocations, SelectedOfficeNames(), InstallStatuses);
+    }
     [ObservableProperty] private string installStatus = "";
     [ObservableProperty] private string substatus = "";
     [ObservableProperty] private string comments = "";
@@ -780,6 +805,66 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         ErrorMessage = "";
     }
 
+    /// <summary>
+    /// Hides the asset editor and gives the hardware table the full width.
+    /// Unsaved edits stay on the form until Save or Discard, the same warning used when another row is selected.
+    /// </summary>
+    [RelayCommand]
+    private void CloseEditor()
+    {
+        if (IsDirty && _loaded is not null)
+        {
+            EditorMessage = "Save or discard unsaved changes first.";
+            return;
+        }
+
+        _suppressSelection = true;
+        Selected = null;
+        _suppressSelection = false;
+        _loaded = null;
+        HasEditor = false;
+        IsDirty = false;
+        EditorMessage = "";
+    }
+
+    private void OnLocationChanged()
+    {
+        if (Applying)
+            return;
+        if (KeepLoadedLocationWhenPlaceIsUnchanged())
+            return;
+        Touch();
+    }
+
+    /// <summary>
+    /// The picker shows one label for "Brisbane" and "Brisbane Office". Choosing that label
+    /// keeps the sys_id already stored on the asset. A different place replaces it.
+    /// </summary>
+    private bool KeepLoadedLocationWhenPlaceIsUnchanged()
+    {
+        var record = _loaded;
+        if (record is null || record.Location.IsEmpty)
+            return false;
+        if (string.IsNullOrEmpty(Location.SysId)
+            || string.Equals(Location.SysId, record.Location.SysId, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (!HardwareOfficeNames.SamePlace(Location.Text, record.Location.Display))
+            return false;
+
+        Applying = true;
+        try
+        {
+            Location.Set(record.Location.SysId, record.Location.Display);
+        }
+        finally
+        {
+            Applying = false;
+        }
+
+        IsDirty = ComputeDirty();
+        return true;
+    }
+
     public Task OpenAsync(string sysId)
     {
         OpenTask = OpenCoreAsync(sysId);
@@ -962,14 +1047,22 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenLaptopRefresh()
-    {
-        LaptopRefreshOpen = true;
-        LaptopRefresh.NoteCatalog(_catalog, _catalogIsAllLocations, SelectedOfficeNames(), InstallStatuses);
-    }
+    private void ShowHardwarePage() => Section = HardwareSection.List;
 
     [RelayCommand]
-    private void CloseLaptopRefresh() => LaptopRefreshOpen = false;
+    private void ShowDeliveryPage() => Section = HardwareSection.Delivery;
+
+    [RelayCommand]
+    private void OpenLaptopRefresh() => Section = HardwareSection.Upgrades;
+
+    [RelayCommand]
+    private void CloseLaptopRefresh() => Section = HardwareSection.List;
+
+    [RelayCommand]
+    private void OpenRegionPicker() => RegionPickerOpen = true;
+
+    [RelayCommand]
+    private void ConfirmRegion() => RegionPickerOpen = false;
 
     private IReadOnlyList<string> ExportRegionOffices()
     {
@@ -1268,7 +1361,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             Comments = FieldDiff.Changed(Comments, record.Comments),
             AssignedToId = !string.IsNullOrEmpty(AssignedTo.SysId) && AssignedTo.SysId != record.AssignedTo.SysId ? AssignedTo.SysId : null,
             ClearAssignedTo = string.IsNullOrEmpty(AssignedTo.SysId) && !record.AssignedTo.IsEmpty,
-            LocationId = !string.IsNullOrEmpty(Location.SysId) && Location.SysId != record.Location.SysId ? Location.SysId : null,
+            LocationId = LocationChange(record),
             ClearLocation = string.IsNullOrEmpty(Location.SysId) && !record.Location.IsEmpty,
             StockroomId = !string.IsNullOrEmpty(Stockroom.SysId) && Stockroom.SysId != record.Stockroom.SysId ? Stockroom.SysId : null,
             ClearStockroom = string.IsNullOrEmpty(Stockroom.SysId) && !record.Stockroom.IsEmpty
@@ -1311,19 +1404,35 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// A different place writes that location's real sys_id. The other spelling of the current place does not.
+    /// </summary>
+    private string? LocationChange(HardwareAsset record)
+    {
+        if (string.IsNullOrEmpty(Location.SysId)
+            || string.Equals(Location.SysId, record.Location.SysId, StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (HardwareOfficeNames.SamePlace(Location.Text, record.Location.Display))
+            return null;
+        return Location.SysId;
+    }
+
     private bool ComputeDirty()
     {
         if (_loaded is null)
             return false;
         var record = _loaded;
-        return SerialNumber != record.SerialNumber
-            || Comments != record.Comments
-            || InstallStatus != record.InstallStatus
-            || Substatus != record.Substatus
-            || AssignedTo.SysId != record.AssignedTo.SysId
-            || Location.SysId != record.Location.SysId
-            || Stockroom.SysId != record.Stockroom.SysId;
+        return Differs(SerialNumber, record.SerialNumber)
+            || Differs(Comments, record.Comments)
+            || Differs(InstallStatus, record.InstallStatus)
+            || Differs(Substatus, record.Substatus)
+            || Differs(AssignedTo.SysId, record.AssignedTo.SysId)
+            || Differs(Location.SysId, record.Location.SysId)
+            || Differs(Stockroom.SysId, record.Stockroom.SysId);
     }
+
+    private static bool Differs(string? left, string? right) =>
+        !string.Equals(left ?? "", right ?? "", StringComparison.Ordinal);
 
     private void Touch()
     {
@@ -1730,7 +1839,7 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
         HardwareCatalog.MatchesColumn(asset.SerialNumber, SerialFilter)
         && HardwareColumnFilter.Matches(asset.Model, _selectedModels)
         && HardwareCatalog.MatchesColumn(asset.AssignedTo.Display, AssignedFilter)
-        && HardwareColumnFilter.Matches(asset.Location.Display, _selectedLocations)
+        && LocationFilterMatches(asset.Location.Display, _selectedLocations)
         && HardwareColumnFilter.Matches(asset.InstallStatusLabel, _selectedStates)
         && HardwareColumnFilter.Matches(asset.SubstatusLabel, _selectedSubstates)
         && HardwareCatalog.MatchesColumn(asset.Comments, CommentsFilter);
@@ -1769,10 +1878,55 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     {
         var changed = false;
         changed |= UpdateChoices(ModelChoices, _selectedModels, _loadedRows.Select(asset => asset.Model), preferred: null);
-        changed |= UpdateChoices(LocationChoices, _selectedLocations, _loadedRows.Select(asset => asset.Location.Display), preferred: null);
+        changed |= UpdateLocationChoices();
         changed |= UpdateChoices(StateChoices, _selectedStates, _loadedRows.Select(asset => asset.InstallStatusLabel), HardwareColumnFilter.StateOrder);
         changed |= UpdateChoices(SubstateChoices, _selectedSubstates, _loadedRows.Select(asset => asset.SubstatusLabel), preferred: null);
         return changed;
+    }
+
+    private bool UpdateLocationChoices()
+    {
+        var labels = HardwareOfficeNames.CollapseLabels(_loadedRows.Select(asset => asset.Location.Display));
+        var changedSelection = RemapLocationSelection(labels);
+        return UpdateChoices(LocationChoices, _selectedLocations, labels, preferred: null) || changedSelection;
+    }
+
+    private bool RemapLocationSelection(IReadOnlyList<string> labels)
+    {
+        var next = _selectedLocations
+            .Select(value => HardwareOfficeNames.LabelForPlace(value, labels))
+            .Where(value => value.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (next.Length == _selectedLocations.Count && next.All(value => _selectedLocations.Contains(value)))
+            return false;
+
+        _selectedLocations.Clear();
+        foreach (var value in next)
+            _selectedLocations.Add(value);
+        return true;
+    }
+
+    /// <summary>
+    /// A selected place matches the bare city and the "Office" form. The table still shows the stored name.
+    /// </summary>
+    private static bool LocationFilterMatches(string? value, IEnumerable<string>? selected)
+    {
+        if (selected is null)
+            return true;
+
+        var any = false;
+        foreach (var choice in selected)
+        {
+            var label = (choice ?? "").Trim();
+            if (label.Length == 0)
+                continue;
+            any = true;
+            if (HardwareOfficeNames.SamePlace(value, label))
+                return true;
+        }
+
+        return !any;
     }
 
     private static bool UpdateChoices(
@@ -1854,10 +2008,14 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
             ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
             : _client.MatchUsersAsync(text, cancellationToken);
 
-    private Task<IReadOnlyList<ReferenceSuggestion>> SearchLocationsAsync(string text, CancellationToken cancellationToken) =>
-        _client is null
-            ? Task.FromResult<IReadOnlyList<ReferenceSuggestion>>([])
-            : _client.SearchLocationsAsync(text, cancellationToken);
+    private async Task<IReadOnlyList<ReferenceSuggestion>> SearchLocationsAsync(string text, CancellationToken cancellationToken)
+    {
+        if (_client is null)
+            return [];
+
+        var found = await _client.SearchLocationsAsync(text, cancellationToken).ConfigureAwait(false);
+        return HardwareOfficeNames.CollapseLocationChoices(found);
+    }
 
     private Task<IReadOnlyList<ReferenceSuggestion>> SearchStockroomsAsync(string text, CancellationToken cancellationToken) =>
         _client is null
