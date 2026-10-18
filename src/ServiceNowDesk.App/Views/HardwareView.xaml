@@ -3,15 +3,78 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:ServiceNowDesk.Controls"
              xmlns:views="clr-namespace:ServiceNowDesk.Views">
+    <UserControl.Resources>
+        <Style x:Key="HardwareTabButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="MinWidth" Value="96"/>
+            <Setter Property="Padding" Value="14,6"/>
+        </Style>
+    </UserControl.Resources>
     <Grid Margin="16,12,16,12">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="12" Margin="0,0,0,12">
+        <Border Grid.Row="0" Style="{StaticResource Banner}" Background="{StaticResource ErrorSoftBrush}"
+                Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}">
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
+        </Border>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button Content="Hardware" Command="{Binding ShowHardwarePageCommand}" AutomationProperties.Name="Hardware tab">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource HardwareTabButton}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShowHardwareList}" Value="True">
+                                <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource WhiteBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+            <Button Content="Delivery" Command="{Binding ShowDeliveryPageCommand}" AutomationProperties.Name="Delivery">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource HardwareTabButton}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShowDelivery}" Value="True">
+                                <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource WhiteBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+            <Button Content="Upgrades" Command="{Binding OpenLaptopRefreshCommand}" AutomationProperties.Name="Upgrades">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource HardwareTabButton}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShowUpgrades}" Value="True">
+                                <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource WhiteBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+        </StackPanel>
+
+        <Grid Grid.Row="2">
+        <Grid Visibility="{Binding ShowDelivery, Converter={StaticResource BoolVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
             <StackPanel>
-                <TextBlock Text="Receive laptops" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="Delivery" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <TextBlock Text="Choose one stockroom for the batch. Type a serial or let the scanner type it, then press Enter. That adds the exact text as a row and clears this box. Look up, press Enter on the row, or leave the field to match that text. Extra characters in front of 5C are only a hint." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                 <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
@@ -32,8 +95,14 @@
                     </StackPanel>
                 </Grid>
                 <TextBlock Text="{Binding ReceiveMessage}" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding ReceiveMessage, Converter={StaticResource StringVis}}"/>
-                <TextBlock Text="Batch" FontWeight="SemiBold" Margin="0,0,0,4" Visibility="{Binding HasBatch, Converter={StaticResource BoolVis}}"/>
-                <ItemsControl ItemsSource="{Binding Batch}" Visibility="{Binding HasBatch, Converter={StaticResource BoolVis}}">
+            </StackPanel>
+            <Border Grid.Row="1" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="12" MinHeight="280">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Scanned serials" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <TextBlock DockPanel.Dock="Top" Text="Serials you scan or type appear in this list." Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                               Visibility="{Binding HasBatch, Converter={StaticResource InverseBoolVis}}"/>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding Batch}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="0,6">
@@ -69,32 +138,48 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </StackPanel>
-        </Border>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
 
-        <Grid Grid.Row="1">
+        <Grid Visibility="{Binding ShowHardwareList, Converter={StaticResource BoolVis}}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <DockPanel HorizontalAlignment="Stretch">
-                <Border DockPanel.Dock="Top" Style="{StaticResource Banner}" Background="{StaticResource ErrorSoftBrush}"
-                        Visibility="{Binding ErrorMessage, Converter={StaticResource StringVis}}">
-                    <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
-                </Border>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <TextBlock Text="Region" Style="{StaticResource FieldLabel}"/>
-                    <TextBlock Text="{Binding AccountOfficeText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                    <TextBlock Text="Choose a region to show that hardware on this window only. It does not change the region in Settings. Clear override returns to your office. Refresh this office downloads the selected offices. Refresh all downloads every location. Download region laptops saves a CSV of model, configuration item, and assigned to for computers whose state is In use. It uses the region on this page, or the offices saved in Settings." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" MaxHeight="220" Margin="0,0,0,6">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <views:RegionSettingsView DataContext="{Binding RegionPicker}"
-                                                      ShowIntro="False"
-                                                      AutomationProperties.Name="Hardware region"/>
-                        </ScrollViewer>
-                    </Border>
-                    <TextBlock Text="{Binding OfficeSelectionSummary}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <Grid Margin="0,0,0,6" Visibility="{Binding RegionPickerOpen, Converter={StaticResource InverseBoolVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Content="Region" Style="{StaticResource SecondaryButton}"
+                                Command="{Binding OpenRegionPickerCommand}"
+                                Padding="12,4" MinHeight="28"
+                                ToolTip="Choose the offices shown in this table"
+                                AutomationProperties.Name="Region"/>
+                        <TextBlock Grid.Column="1" Text="{Binding OfficeSelectionSummary}"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   VerticalAlignment="Center" Margin="10,0,0,0"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </Grid>
+                    <StackPanel Visibility="{Binding RegionPickerOpen, Converter={StaticResource BoolVis}}">
+                        <TextBlock Text="{Binding AccountOfficeText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <TextBlock Text="Choose a region to show that hardware on this window only. It does not change the region in Settings. Clear override returns to your office. OK closes this list." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" MaxHeight="280" Margin="0,0,0,6">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <views:RegionSettingsView DataContext="{Binding RegionPicker}"
+                                                          ShowIntro="False"
+                                                          AutomationProperties.Name="Hardware region"/>
+                            </ScrollViewer>
+                        </Border>
+                        <Button Content="OK" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"
+                                Command="{Binding ConfirmRegionCommand}" Margin="0,0,0,6"
+                                AutomationProperties.Name="OK region"/>
+                    </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                         <Button Content="Clear override" Style="{StaticResource SecondaryButton}" Command="{Binding ClearOverrideCommand}" Margin="0,0,8,0"/>
                         <Button Content="Refresh this office" Style="{StaticResource SecondaryButton}" Command="{Binding RefreshOfficeCatalogCommand}" Margin="0,0,8,0"
@@ -104,19 +189,8 @@
                         <Button Content="Download region laptops" Style="{StaticResource SecondaryButton}"
                                 Command="{Binding DownloadRegionLaptopsCommand}" Margin="8,0,0,0"
                                 IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBool}}"
-                                ToolTip="CSV of model, configuration item, and assigned to for In use computers in the region"
+                                ToolTip="CSV of model, configuration item, and assigned to for In use computers in the region. It uses the region on this page, or the offices saved in Settings."
                                 AutomationProperties.Name="Download region laptops"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <Button Content="Laptop refresh" Style="{StaticResource SecondaryButton}"
-                                Command="{Binding OpenLaptopRefreshCommand}"
-                                Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource InverseBoolVis}}"
-                                ToolTip="Who should get the next laptop, and who a boxed serial was assigned to"
-                                AutomationProperties.Name="Laptop refresh"/>
-                        <Button Content="Hardware list" Style="{StaticResource SecondaryButton}"
-                                Command="{Binding CloseLaptopRefreshCommand}"
-                                Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource BoolVis}}"
-                                AutomationProperties.Name="Hardware list"/>
                     </StackPanel>
                     <TextBlock Text="{Binding ExportNote}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4"
                                Visibility="{Binding ExportNote, Converter={StaticResource StringVis}}"/>
@@ -130,8 +204,7 @@
                                    Text="{Binding DownloadPercent, StringFormat={}{0}%}"/>
                     </Grid>
                 </StackPanel>
-                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False"
-                          Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource InverseBoolVis}}">
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="False">
                     <TextBlock Text="{Binding ShownCount, StringFormat={}{0} shown}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
                     <TextBlock Text="  Filtering…" Margin="8,0,0,0" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"
                                Visibility="{Binding IsFiltering, Converter={StaticResource BoolVis}}"
@@ -183,8 +256,7 @@
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Disabled"
                               HorizontalAlignment="Stretch"
-                              Focusable="False"
-                              Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource InverseBoolVis}}">
+                              Focusable="False">
                 <DockPanel x:Name="HardwareTableContent" HorizontalAlignment="Stretch">
                 <Grid x:Name="HardwareFilters" DockPanel.Dock="Top" Margin="1,0,1,4">
                     <Grid.ColumnDefinitions>
@@ -262,12 +334,64 @@
                 </DataGrid>
                 </DockPanel>
                 </ScrollViewer>
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                              Visibility="{Binding LaptopRefreshOpen, Converter={StaticResource BoolVis}}"
-                              AutomationProperties.Name="Laptop refresh">
+                </Grid>
+            </DockPanel>
+
+            <DockPanel Grid.Column="1" Width="380" Margin="16,0,0,0"
+                       Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
+                <Border DockPanel.Dock="Bottom" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,8,0,0"
+                        Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
                     <StackPanel>
+                        <TextBlock Text="{Binding EditorMessage}" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,8" Visibility="{Binding EditorMessage, Converter={StaticResource StringVis}}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Save" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Margin="0,0,8,0"/>
+                            <Button Content="Discard" Style="{StaticResource SecondaryButton}" Command="{Binding DiscardCommand}" Margin="0,0,8,0"/>
+                            <Button Content="Close" Style="{StaticResource SecondaryButton}" Command="{Binding CloseEditorCommand}"
+                                    AutomationProperties.Name="Close asset"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
+                    <StackPanel>
+                        <TextBlock Text="Serial number" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding SerialNumber, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Display name" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding DisplayName, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Model" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding ModelName, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
+
+                        <TextBlock Text="Assigned to" Style="{StaticResource FieldLabel}"/>
+                        <controls:ReferenceEditor DataContext="{Binding AssignedTo}" Margin="0,0,0,10"/>
+
+                        <TextBlock Text="State" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox ItemsSource="{Binding InstallStatuses}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding InstallStatus}" Margin="0,0,0,10"/>
+
+                        <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowSubstate, Converter={StaticResource BoolVis}}">
+                            <TextBlock Text="Substate" Style="{StaticResource FieldLabel}"/>
+                            <ComboBox ItemsSource="{Binding Substatuses}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Substatus}"/>
+                        </StackPanel>
+
+                        <StackPanel Margin="0,0,0,10" Visibility="{Binding StockroomRequired, Converter={StaticResource BoolVis}}">
+                            <TextBlock Text="Stockroom" Style="{StaticResource FieldLabel}"/>
+                            <controls:ReferenceEditor DataContext="{Binding Stockroom}"/>
+                        </StackPanel>
+
+                        <TextBlock Text="Location" Style="{StaticResource FieldLabel}"/>
+                        <controls:ReferenceEditor DataContext="{Binding Location}" Margin="0,0,0,4"/>
+                        <TextBlock Text="Required for In stock, Missing, and Retired." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
+
+                        <TextBlock Text="Comments" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Comments, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" VerticalScrollBarVisibility="Auto"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      Visibility="{Binding ShowUpgrades, Converter={StaticResource BoolVis}}"
+                      AutomationProperties.Name="Laptop refresh">
+            <StackPanel>
                         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
-                                   Text="Import the full device list, the upgrade list, or the available-devices export. The file is recognised from its columns. People still using a laptop from 4 years ago or earlier, oldest first, are who should be next. Laptops in stock under 3 years old are the ones in the box. Laptops in transit stay in transit until they are changed to in stock. A vacation student, leave, or any other reason goes in the comment. The region on this page limits these lists."/>
+                                   Text="Import the full device list, the upgrade list, or the available-devices export. The file is recognised from its columns. People still using a laptop from 4 years ago or earlier, oldest first, are who should be next. Laptops in stock under 3 years old are the ones in the box. Laptops in transit stay in transit until they are changed to in stock. A vacation student, leave, or any other reason goes in the comment. The region chosen on Hardware limits these lists."/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <Button Content="Import list" Style="{StaticResource SecondaryButton}"
                                     Command="{Binding LaptopRefresh.ImportDueListCommand}" Margin="0,0,8,0"
@@ -335,7 +459,7 @@
                                   CellStyle="{StaticResource DeskDataGridCell}"
                                   RowStyle="{StaticResource DeskDataGridRow}"
                                   ColumnHeaderHeight="32"
-                                  MaxHeight="360"
+                                  MaxHeight="560"
                                   Margin="0,0,0,12"
                                   HeadersVisibility="Column"
                                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -431,58 +555,7 @@
                             </DataGrid.Columns>
                         </DataGrid>
                     </StackPanel>
-                </ScrollViewer>
-                </Grid>
-            </DockPanel>
-
-            <DockPanel Grid.Column="1" Width="380" Margin="16,0,0,0"
-                       Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
-                <Border DockPanel.Dock="Bottom" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,8,0,0"
-                        Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
-                    <StackPanel>
-                        <TextBlock Text="{Binding EditorMessage}" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,8" Visibility="{Binding EditorMessage, Converter={StaticResource StringVis}}"/>
-                        <StackPanel Orientation="Horizontal">
-                            <Button Content="Save" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Margin="0,0,8,0"/>
-                            <Button Content="Discard" Style="{StaticResource SecondaryButton}" Command="{Binding DiscardCommand}" Margin="0,0,8,0"/>
-                            <Button Content="Close" Style="{StaticResource SecondaryButton}" Command="{Binding CloseEditorCommand}"
-                                    AutomationProperties.Name="Close asset"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding HasEditor, Converter={StaticResource BoolVis}}">
-                    <StackPanel>
-                        <TextBlock Text="Serial number" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding SerialNumber, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
-                        <TextBlock Text="Display name" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding DisplayName, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
-                        <TextBlock Text="Model" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding ModelName, Mode=OneWay}" IsReadOnly="True" IsTabStop="False" Background="{StaticResource AppBrush}" Margin="0,0,0,10"/>
-
-                        <TextBlock Text="Assigned to" Style="{StaticResource FieldLabel}"/>
-                        <controls:ReferenceEditor DataContext="{Binding AssignedTo}" Margin="0,0,0,10"/>
-
-                        <TextBlock Text="State" Style="{StaticResource FieldLabel}"/>
-                        <ComboBox ItemsSource="{Binding InstallStatuses}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding InstallStatus}" Margin="0,0,0,10"/>
-
-                        <StackPanel Margin="0,0,0,10" Visibility="{Binding ShowSubstate, Converter={StaticResource BoolVis}}">
-                            <TextBlock Text="Substate" Style="{StaticResource FieldLabel}"/>
-                            <ComboBox ItemsSource="{Binding Substatuses}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Substatus}"/>
-                        </StackPanel>
-
-                        <StackPanel Margin="0,0,0,10" Visibility="{Binding StockroomRequired, Converter={StaticResource BoolVis}}">
-                            <TextBlock Text="Stockroom" Style="{StaticResource FieldLabel}"/>
-                            <controls:ReferenceEditor DataContext="{Binding Stockroom}"/>
-                        </StackPanel>
-
-                        <TextBlock Text="Location" Style="{StaticResource FieldLabel}"/>
-                        <controls:ReferenceEditor DataContext="{Binding Location}" Margin="0,0,0,4"/>
-                        <TextBlock Text="Required for In stock, Missing, and Retired." Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"/>
-
-                        <TextBlock Text="Comments" Style="{StaticResource FieldLabel}"/>
-                        <TextBox Text="{Binding Comments, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" VerticalScrollBarVisibility="Auto"/>
-                    </StackPanel>
-                </ScrollViewer>
-            </DockPanel>
-        </Grid>
+        </ScrollViewer>
+    </Grid>
     </Grid>
 </UserControl>

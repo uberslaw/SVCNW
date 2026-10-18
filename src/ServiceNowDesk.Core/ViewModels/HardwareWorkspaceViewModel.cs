@@ -7,6 +7,13 @@ using ServiceNowDesk.Services;
 
 namespace ServiceNowDesk.ViewModels;
 
+public enum HardwareSection
+{
+    List,
+    Delivery,
+    Upgrades
+}
+
 public partial class HardwareWorkspaceViewModel : ObservableObject
 {
     /// <summary>
@@ -145,6 +152,24 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string displayName = "";
     [ObservableProperty] private string modelName = "";
     [ObservableProperty] private bool laptopRefreshOpen;
+    [ObservableProperty] private HardwareSection section = HardwareSection.List;
+    [ObservableProperty] private bool regionPickerOpen;
+
+    public bool ShowHardwareList => Section == HardwareSection.List;
+    public bool ShowDelivery => Section == HardwareSection.Delivery;
+    public bool ShowUpgrades => Section == HardwareSection.Upgrades;
+
+    partial void OnSectionChanged(HardwareSection value)
+    {
+        var upgrades = value == HardwareSection.Upgrades;
+        if (LaptopRefreshOpen != upgrades)
+            LaptopRefreshOpen = upgrades;
+        OnPropertyChanged(nameof(ShowHardwareList));
+        OnPropertyChanged(nameof(ShowDelivery));
+        OnPropertyChanged(nameof(ShowUpgrades));
+        if (upgrades)
+            LaptopRefresh.NoteCatalog(_catalog, _catalogIsAllLocations, SelectedOfficeNames(), InstallStatuses);
+    }
     [ObservableProperty] private string installStatus = "";
     [ObservableProperty] private string substatus = "";
     [ObservableProperty] private string comments = "";
@@ -1022,14 +1047,22 @@ public partial class HardwareWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenLaptopRefresh()
-    {
-        LaptopRefreshOpen = true;
-        LaptopRefresh.NoteCatalog(_catalog, _catalogIsAllLocations, SelectedOfficeNames(), InstallStatuses);
-    }
+    private void ShowHardwarePage() => Section = HardwareSection.List;
 
     [RelayCommand]
-    private void CloseLaptopRefresh() => LaptopRefreshOpen = false;
+    private void ShowDeliveryPage() => Section = HardwareSection.Delivery;
+
+    [RelayCommand]
+    private void OpenLaptopRefresh() => Section = HardwareSection.Upgrades;
+
+    [RelayCommand]
+    private void CloseLaptopRefresh() => Section = HardwareSection.List;
+
+    [RelayCommand]
+    private void OpenRegionPicker() => RegionPickerOpen = true;
+
+    [RelayCommand]
+    private void ConfirmRegion() => RegionPickerOpen = false;
 
     private IReadOnlyList<string> ExportRegionOffices()
     {
