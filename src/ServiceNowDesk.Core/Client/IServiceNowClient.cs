@@ -1,5 +1,6 @@
 using ServiceNowDesk.Alerts;
 using ServiceNowDesk.Models;
+using ServiceNowDesk.QueueDay;
 using ServiceNowDesk.WorkEffort;
 
 namespace ServiceNowDesk.Client;
@@ -154,5 +155,21 @@ public interface IServiceNowClient : IDisposable
     Task<IReadOnlyList<LockedLeadPerson>> ListLockedLeadTeamAsync(
         string? city,
         string? watchedGroupName,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Open incidents, request items, and walk-ups assigned to one person.
+    /// One query per table. Unassigned tickets are not included.
+    /// </summary>
+    Task<IReadOnlyList<QueueDayTicket>> ListOpenAssignedQueueAsync(
+        string assigneeSysId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Any-state lookup for tickets that left the open assigned queue.
+    /// One <c>sys_idIN</c> query per table per small id chunk. Does not use <c>^NQ</c>.
+    /// </summary>
+    Task<IReadOnlyList<QueueDayTicket>> LookupQueueTicketsAsync(
+        IReadOnlyList<QueueDayTicketRef> tickets,
         CancellationToken cancellationToken);
 }

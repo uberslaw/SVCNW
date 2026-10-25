@@ -42,6 +42,7 @@ public partial class App : Application
             hardwareCatalog: FileHardwareCatalogStore.InApplicationData(),
             laptopRefresh: FileLaptopRefreshStore.InApplicationData(),
             queueDismissals: FileQueueDismissalStore.InApplicationData(),
+            queueDay: FileQueueDayStore.InApplicationData(),
             ticketPopOut: new WindowsTicketPopOut(),
             transfer: new TransferMeter(FileTransferStatsStore.InApplicationData()));
         var window = new MainWindow { DataContext = main };

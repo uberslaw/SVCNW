@@ -39,10 +39,14 @@
                              Padding="14,8" Margin="0,0,8,0" FontSize="14" FontWeight="SemiBold"
                              IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=WorkEffort}"
                              AutomationProperties.Name="Work Effort"/>
+                <RadioButton GroupName="LeadArea" Content="Queue check" Style="{StaticResource QueueChoice}"
+                             Padding="14,8" Margin="0,0,8,0" FontSize="14" FontWeight="SemiBold"
+                             IsChecked="{Binding Area, Converter={StaticResource EnumEq}, ConverterParameter=QueueCheck}"
+                             AutomationProperties.Name="Queue check"/>
             </StackPanel>
             <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12">
                 <TextBlock.Text>
-                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, Returned by DT, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. Save team stores the ticked names on this PC and hides the checkboxes. Edit team brings the ticks back. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work Effort counts only the people on the team."/>
+                    <Binding Path="GroupName" StringFormat="My team and Regional use the same work queues as Notifications: SLA breaching, on hold past follow-up, updated by caller, Returned by DT, and unattended tickets. My team is the people you tick from {0}. Regional is every open ticket in that group. Save team stores the ticked names on this PC and hides the checkboxes. Edit team brings the ticks back. Click a row to open it. A light green SLA row is assigned to you. Daily Work uses the same ticked names for the team report. Work Effort counts only the people on the team. Queue check lists how each ticked person's open assigned queue changed since the first scan of the local day."/>
                 </TextBlock.Text>
             </TextBlock>
         </StackPanel>
@@ -503,6 +507,72 @@
                         </ListBox>
                     </StackPanel>
                 </Border>
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding ShowQueueCheck, Converter={StaticResource BoolVis}}">
+                <TextBlock Text="Queue check" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"
+                           Text="Open tickets assigned to each person ticked on My team, compared with the first scan of the local day. That scan is the baseline and stays on this PC until tomorrow. A later check does not replace it. Changed, New, Missing, and Unchanged list the number, the short description, and what changed since the baseline. The latest update is by the assignee, the caller, or someone else. Unassigned tickets in the group are not included. Incidents, request items, and walk-ups are included. If nobody is ticked, define the team first. Leaving this page does not stop the check."/>
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding QueueCheck.BaselineText}" Foreground="{StaticResource MutedBrush}"
+                                   Visibility="{Binding QueueCheck.BaselineText, Converter={StaticResource StringVis}}"/>
+                        <TextBlock Text="{Binding QueueCheck.CheckedText}" Foreground="{StaticResource MutedBrush}"
+                                   Visibility="{Binding QueueCheck.CheckedText, Converter={StaticResource StringVis}}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Check again" Style="{StaticResource SecondaryButton}" MinWidth="120"
+                            Command="{Binding QueueCheck.CheckAgainCommand}"
+                            VerticalAlignment="Center"
+                            AutomationProperties.Name="Check again"/>
+                </Grid>
+                <TextBlock Text="{Binding QueueCheck.Status}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                           Visibility="{Binding QueueCheck.Status, Converter={StaticResource StringVis}}"
+                           AutomationProperties.Name="Queue check status"/>
+                <TextBlock Text="{Binding QueueCheck.EmptyMessage}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                           Visibility="{Binding QueueCheck.EmptyMessage, Converter={StaticResource StringVis}}"/>
+                <ItemsControl ItemsSource="{Binding QueueCheck.People}"
+                              Visibility="{Binding QueueCheck.HasPeople, Converter={StaticResource BoolVis}}"
+                              AutomationProperties.Name="Queue check">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,16">
+                                <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <TextBlock Text="{Binding EmptyNote}" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,8"
+                                           Visibility="{Binding EmptyNote, Converter={StaticResource StringVis}}"/>
+                                <ItemsControl ItemsSource="{Binding Groups}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,0,0,10">
+                                                <TextBlock Text="{Binding Title}" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
+                                                <ItemsControl ItemsSource="{Binding Lines}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Margin="0,0,0,6">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="120"/>
+                                                                    <ColumnDefinition Width="2*"/>
+                                                                    <ColumnDefinition Width="3*"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding Number}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"
+                                                                           VerticalAlignment="Top" TextTrimming="CharacterEllipsis"/>
+                                                                <TextBlock Grid.Column="1" Text="{Binding ShortDescription}" TextWrapping="Wrap" Margin="8,0,8,0"/>
+                                                                <TextBlock Grid.Column="2" Text="{Binding Breakdown}" TextWrapping="Wrap"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
         </StackPanel>
         </ScrollViewer>

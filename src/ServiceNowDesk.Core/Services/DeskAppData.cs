@@ -11,6 +11,7 @@ public static class DeskAppData
     public const string DailyTasksFileName = "daily-tasks.json";
     public const string QueueDismissalsFileName = "queue-dismissals.json";
     public const string TransferStatsFileName = "transfer-stats.json";
+    public const string QueueDayFileName = "queue-day.json";
 
     public static string Folder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), FolderName);
@@ -22,6 +23,8 @@ public static class DeskAppData
     public static string QueueDismissalsPath => Path.Combine(Folder, QueueDismissalsFileName);
 
     public static string TransferStatsPath => Path.Combine(Folder, TransferStatsFileName);
+
+    public static string QueueDayPath => Path.Combine(Folder, QueueDayFileName);
 
     public static void WriteSettings(string json, string? folder = null)
     {

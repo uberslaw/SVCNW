@@ -6,6 +6,7 @@ using ServiceNowDesk.Client;
 using ServiceNowDesk.GuidedSetup;
 using ServiceNowDesk.Models;
 using ServiceNowDesk.Navigation;
+using ServiceNowDesk.QueueDay;
 using ServiceNowDesk.Services;
 using ServiceNowDesk.WorkEffort;
 
@@ -19,6 +20,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IFormCatalogStore? _formCatalog;
     private readonly IDeskListStore? _lists;
     private readonly IDailyWorkStore _dailyWork;
+    private readonly IQueueDayStore _queueDay;
     private readonly IHardwareCatalogStore? _hardwareCatalog;
     private readonly TransferMeter _transfer;
     private readonly Func<ServiceNowSession, IFormCatalogStore?, ServiceNowClient>? _clientFactory;
@@ -109,7 +111,8 @@ public partial class MainViewModel : ObservableObject
         IQueueDismissalStore? queueDismissals = null,
         ITicketPopOut? ticketPopOut = null,
         TransferMeter? transfer = null,
-        ILaptopRefreshStore? laptopRefresh = null)
+        ILaptopRefreshStore? laptopRefresh = null,
+        IQueueDayStore? queueDay = null)
     {
         _store = store;
         _desktop = desktop;
@@ -122,6 +125,7 @@ public partial class MainViewModel : ObservableObject
         _hardwareCatalog = hardwareCatalog;
         _transfer = transfer ?? new TransferMeter();
         _dailyWork = dailyWork ?? new MemoryDailyWorkStore();
+        _queueDay = queueDay ?? new MemoryQueueDayStore();
         var recent = recentGroups ?? new MemoryRecentAssignmentGroupStore();
         Connection = new ConnectionViewModel();
         Incidents = new IncidentWorkspaceViewModel(desktop, templates ?? new MemoryIncidentTemplateStore(), recent);
@@ -197,14 +201,17 @@ public partial class MainViewModel : ObservableObject
             {
                 ApplyTeamQueue();
                 RefreshAlerts();
+                ConsiderQueueDay(force: false);
             }
         };
         Leads.WorkEffortRequested += (_, _) => _ = LoadWorkEffortAsync(force: false);
+        Leads.QueueCheckRequested += (_, _) => ConsiderQueueDay(force: false);
+        Leads.QueueCheck.CheckRequested += (_, _) => ConsiderQueueDay(force: true);
         Leads.WorkEffort.RefreshRequested += (_, _) => _ = LoadWorkEffortAsync(force: true);
         Leads.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(LeadsViewModel.Area) && SelectedSection == DeskSection.Leads)
-                ShowRowLegend = Leads.Area != LeadArea.WorkEffort;
+                ShowRowLegend = Leads.Area is not LeadArea.WorkEffort and not LeadArea.QueueCheck;
         };
         Incidents.PrepareRow = _rows.Paint;
         Requests.PrepareRow = _rows.Paint;
@@ -855,7 +862,7 @@ public partial class MainViewModel : ObservableObject
             or DeskSection.Search
             or DeskSection.Notifications
             or DeskSection.Leads;
-        if (value == DeskSection.Leads && Leads.Area == LeadArea.WorkEffort)
+        if (value == DeskSection.Leads && Leads.Area is LeadArea.WorkEffort or LeadArea.QueueCheck)
             ShowRowLegend = false;
         // Ticket lists and Daily Work share the chrome search. Search hosts that
         // same query field under its filters, so the chrome box stays hidden there.
@@ -1738,6 +1745,7 @@ public partial class MainViewModel : ObservableObject
         _returnStack.Clear();
         UpdateBack();
         CancelWorkEffortLoad();
+        CancelQueueDayLoad();
         _client?.Dispose();
         _client = client;
         if (client is null)
@@ -2300,6 +2308,7 @@ public partial class MainViewModel : ObservableObject
                 // Roster can arrive after Work Effort already opened with an empty team prompt.
                 if (Leads.Area == LeadArea.WorkEffort)
                     _ = LoadWorkEffortAsync(force: false);
+                ConsiderQueueDay(force: false);
             });
         }
         catch (Exception ex)
@@ -2307,7 +2316,10 @@ public partial class MainViewModel : ObservableObject
             PostToUi(() =>
             {
                 if (ReferenceEquals(client, _client) && !Connection.LeadsTeamLocked)
+                {
                     Leads.RosterNote = WorkspaceMessages.Describe(ex);
+                    ConsiderQueueDay(force: false);
+                }
             });
         }
     }
@@ -2322,6 +2334,7 @@ public partial class MainViewModel : ObservableObject
                     return;
                 Leads.UseLockedRoster([], LockedLeadTeam.NoLocationPrompt);
                 ApplyTeamQueue();
+                ConsiderQueueDay(force: false);
             });
             return;
         }
@@ -2342,6 +2355,7 @@ public partial class MainViewModel : ObservableObject
                 ApplyTeamQueue();
                 if (Leads.Area == LeadArea.WorkEffort)
                     _ = LoadWorkEffortAsync(force: false);
+                ConsiderQueueDay(force: false);
                 RefreshAlerts();
             });
         }
@@ -2350,9 +2364,145 @@ public partial class MainViewModel : ObservableObject
             PostToUi(() =>
             {
                 if (ReferenceEquals(client, _client) && Connection.LeadsTeamLocked)
+                {
                     Leads.UseLockedRoster([], WorkspaceMessages.Describe(ex));
+                    ConsiderQueueDay(force: false);
+                }
             });
         }
+    }
+
+    private CancellationTokenSource? _queueDayCts;
+    private int _queueDayGeneration;
+    private bool _queueDayAutoStarted;
+    private DateOnly _queueDayAutoDay;
+
+    /// <summary>
+    /// Starts the day's queue check when Leads is already unlocked, or when it becomes unlocked.
+    /// Leaving the page does not cancel it. Check again replaces the in-flight scan.
+    /// A baseline already stored for the local day is compared and is not replaced.
+    /// </summary>
+    private void ConsiderQueueDay(bool force)
+    {
+        if (!Connection.LeadsEnabled)
+            return;
+        if (!IsConnected || _client is null)
+        {
+            if (force)
+                Leads.QueueCheck.ShowMessage(QueueDayText.Connect);
+            return;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        if (_queueDayAutoDay != today)
+        {
+            _queueDayAutoStarted = false;
+            _queueDayAutoDay = today;
+        }
+
+        if (QueueRosterPending())
+            return;
+
+        var team = Leads.DefinedTeam(TeamIdsForAlerts());
+        if (team.Count == 0)
+        {
+            if (Leads.QueueCheck.IsRunning)
+                return;
+            if (Connection.LeadsTeamLocked && Leads.LockedTeamNote.Length > 0)
+                Leads.QueueCheck.ShowMessage(Leads.LockedTeamNote);
+            else if (!Connection.LeadsTeamLocked)
+                Leads.QueueCheck.ShowDefineTeam();
+            return;
+        }
+
+        if (!force && (_queueDayAutoStarted || _queueDayCts is { IsCancellationRequested: false }))
+            return;
+
+        _queueDayAutoStarted = true;
+        _ = RunQueueDayAsync(team);
+    }
+
+    private bool QueueRosterPending()
+    {
+        if (Connection.LeadsTeamLocked)
+            return Leads.LockedNames.Count == 0 && Leads.LockedTeamNote.Length == 0;
+        return Leads.Members.Count == 0 && Leads.RosterNote.Length == 0;
+    }
+
+    private async Task RunQueueDayAsync(IReadOnlyList<WorkEffortPerson> team)
+    {
+        var client = _client;
+        if (client is null)
+        {
+            Leads.QueueCheck.ShowMessage(QueueDayText.Connect);
+            return;
+        }
+
+        var generation = ++_queueDayGeneration;
+        CancelQueueDaySource();
+        var cts = new CancellationTokenSource();
+        _queueDayCts = cts;
+        Leads.QueueCheck.MarkRunning();
+        try
+        {
+            var report = await QueueDayCheck.RunAsync(
+                    new ServiceNowQueueDaySource(client),
+                    _queueDay,
+                    team,
+                    DateTime.Now,
+                    cts.Token)
+                .ConfigureAwait(false);
+            PostToUi(() =>
+            {
+                if (generation != _queueDayGeneration || !ReferenceEquals(client, _client))
+                    return;
+                Leads.QueueCheck.Show(report);
+            });
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            PostToUi(() =>
+            {
+                if (generation != _queueDayGeneration || !ReferenceEquals(client, _client))
+                    return;
+                Leads.QueueCheck.ShowError("Queue check stopped.");
+            });
+        }
+        catch (Exception ex)
+        {
+            var message = WorkspaceMessages.Describe(ex);
+            PostToUi(() =>
+            {
+                if (generation != _queueDayGeneration || !ReferenceEquals(client, _client))
+                    return;
+                Leads.QueueCheck.ShowError(message);
+            });
+        }
+    }
+
+    private void CancelQueueDayLoad()
+    {
+        _queueDayGeneration++;
+        _queueDayAutoStarted = false;
+        _queueDayAutoDay = default;
+        CancelQueueDaySource();
+    }
+
+    private void CancelQueueDaySource()
+    {
+        var cts = _queueDayCts;
+        _queueDayCts = null;
+        if (cts is null)
+            return;
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        cts.Dispose();
     }
 
     private void PostToUi(Action action)

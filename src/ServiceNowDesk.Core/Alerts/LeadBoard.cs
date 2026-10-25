@@ -4,7 +4,8 @@ public enum LeadArea
 {
     Team,
     Regional,
-    WorkEffort
+    WorkEffort,
+    QueueCheck
 }
 
 /// <summary>

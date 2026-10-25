@@ -36,6 +36,10 @@ public partial class LeadsViewModel : ObservableObject
 
     public WorkEffortViewModel WorkEffort { get; } = new();
 
+    public QueueCheckViewModel QueueCheck { get; } = new();
+
+    public event EventHandler? QueueCheckRequested;
+
     public ObservableCollection<LeadMemberModel> Members { get; } = [];
 
     public ObservableCollection<string> SavedNames { get; } = [];
@@ -60,9 +64,11 @@ public partial class LeadsViewModel : ObservableObject
 
     public bool ShowRoster => Area == LeadArea.Team;
 
-    public bool ShowQueues => Area != LeadArea.WorkEffort;
+    public bool ShowQueues => Area is LeadArea.Team or LeadArea.Regional;
 
     public bool ShowWorkEffort => Area == LeadArea.WorkEffort;
+
+    public bool ShowQueueCheck => Area == LeadArea.QueueCheck;
 
     public bool ShowCheckboxes => ShowRoster && !TeamLocked && (!TeamSaved || EditingTeam);
 
@@ -242,16 +248,19 @@ public partial class LeadsViewModel : ObservableObject
         LockedTeamNote = "";
         Show(LeadBoard.Empty);
         WorkEffort.Clear();
+        QueueCheck.Clear();
         RaiseTeamChrome();
     }
 
     partial void OnAreaChanged(LeadArea value)
     {
-        if (value == LeadArea.WorkEffort)
+        if (value is LeadArea.WorkEffort or LeadArea.QueueCheck)
             CloseTicket();
         RaiseTeamChrome();
-        if (Area == LeadArea.WorkEffort)
+        if (value == LeadArea.WorkEffort)
             WorkEffortRequested?.Invoke(this, EventArgs.Empty);
+        else if (value == LeadArea.QueueCheck)
+            QueueCheckRequested?.Invoke(this, EventArgs.Empty);
         else
             Board.Show(_board.For(value));
     }
@@ -297,6 +306,7 @@ public partial class LeadsViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowRoster));
         OnPropertyChanged(nameof(ShowQueues));
         OnPropertyChanged(nameof(ShowWorkEffort));
+        OnPropertyChanged(nameof(ShowQueueCheck));
         OnPropertyChanged(nameof(ShowTicketPane));
         OnPropertyChanged(nameof(ShowCheckboxes));
         OnPropertyChanged(nameof(ShowSavedNames));
