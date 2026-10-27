@@ -48,12 +48,15 @@ public class WorkEffortThrottleTests
     }
 
     [Fact]
-    public async Task OpeningWorkEffortWithNoTeamDoesNotQuery()
+    public async Task EmptyTickListAndNoSignedInUserDoesNotQuery()
     {
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var proxy = DispatchProxy.Create<IServiceNowClient, WorkEffortHold>();
         var hold = (WorkEffortHold)(object)proxy;
-        hold.Inner = new SampleServiceNowClient();
+        hold.Inner = new SampleServiceNowClient
+        {
+            SignedInUser = new CurrentUser("", "", "", "")
+        };
         hold.Ready = ready;
 
         var main = new MainViewModel(

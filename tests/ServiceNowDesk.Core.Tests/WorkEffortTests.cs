@@ -2262,6 +2262,171 @@ public class WorkEffortTests
         Assert.Equal("", page.CalculationLog);
     }
 
+    [Fact]
+    public void SignedInUserJoinsTheTeamOnceBySysIdThenUserNameThenDisplayName()
+    {
+        var signedIn = new WorkEffortPerson("sample-user", "Alex Rivera", "alex.rivera");
+        var withJordan = WorkEffortTeam.IncludeSignedIn(
+            [new WorkEffortPerson("user-jordan", "Jordan Lee", "jordan.lee")],
+            signedIn);
+        Assert.Equal(["user-jordan", "sample-user"], withJordan.Select(person => person.SysId).ToArray());
+        Assert.Equal("Alex Rivera", withJordan[1].DisplayName);
+        Assert.Equal("alex.rivera", withJordan[1].UserName);
+
+        var alreadyTicked = WorkEffortTeam.IncludeSignedIn(
+            [new WorkEffortPerson("Sample-User", "Alex Rivera", "")],
+            signedIn);
+        var kept = Assert.Single(alreadyTicked);
+        Assert.Equal("Sample-User", kept.SysId);
+        Assert.Equal("", kept.UserName);
+
+        var byLogin = WorkEffortTeam.IncludeSignedIn(
+            [new WorkEffortPerson("other-id", "Someone Else", "Alex.Rivera")],
+            new WorkEffortPerson("", "Alex Rivera", "alex.rivera"));
+        Assert.Equal("other-id", Assert.Single(byLogin).SysId);
+
+        var byName = WorkEffortTeam.IncludeSignedIn(
+            [new WorkEffortPerson("other-id", "alex rivera", "")],
+            new WorkEffortPerson("", "Alex Rivera", ""));
+        Assert.Equal("other-id", Assert.Single(byName).SysId);
+
+        var differentPeople = WorkEffortTeam.IncludeSignedIn(
+            [new WorkEffortPerson("other-id", "Alex Rivera", "alex.rivera")],
+            signedIn);
+        Assert.Equal(2, differentPeople.Count);
+
+        Assert.Empty(WorkEffortTeam.IncludeSignedIn([], null));
+        Assert.Empty(WorkEffortTeam.IncludeSignedIn([], new WorkEffortPerson("  ", " ", "")));
+
+        var only = WorkEffortTeam.IncludeSignedIn([], signedIn);
+        var window = WorkEffortWindow.For(WorkEffortScale.Today, Now);
+        var row = Assert.Single(WorkEffortScore.Build(only, SampleWorkEffort.Touches(Now), window));
+        Assert.Equal("Alex Rivera", row.Name);
+        Assert.Equal("sample-user", row.PersonSysId);
+        Assert.Equal(2.9m, row.Weighted);
+    }
+
+    [Fact]
+    public async Task SignedInUserIsIncludedWhenNotTickedAndTheRowUsesTheirDisplayName()
+    {
+        var sample = new SampleServiceNowClient();
+        var record = RecordWorkEffort(sample);
+        var main = PracticeDesk(record.Proxy);
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.Equal("Alex Rivera", main.ConnectedUser);
+        Assert.Equal(sample.SignedInUser.Name, main.ConnectedUser);
+
+        Assert.True(main.TrySelect(DeskSection.Leads));
+        main.Leads.Area = LeadArea.WorkEffort;
+        await WaitUntilAsync(() =>
+            !main.Leads.WorkEffort.IsLoading
+            && main.Leads.WorkEffort.HasRows
+            && record.CallCount > 0);
+
+        var row = Assert.Single(main.Leads.WorkEffort.Rows);
+        Assert.Equal(main.ConnectedUser, row.Name);
+        Assert.Equal("sample-user", row.PersonSysId);
+        Assert.Equal(1, row.IncOpened);
+        Assert.Equal(1, row.IncResolved);
+        Assert.Equal(0, row.IncUpdated);
+        Assert.Equal(1, row.RitmUpdated);
+        Assert.Equal(1, row.ImsResolved);
+        Assert.Equal(0, row.ImsUpdated);
+        Assert.Equal(2.9m, row.Weighted);
+        Assert.Equal("", main.Leads.WorkEffort.EmptyMessage);
+        Assert.Contains("Counts for today", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
+        Assert.DoesNotContain(main.Leads.WorkEffort.Rows, person => person.Name == "Jordan Lee");
+        Assert.All(record.Teams, team =>
+        {
+            var person = Assert.Single(team);
+            Assert.Equal(main.ConnectedUser, person.Name);
+            Assert.Equal("sample-user", person.SysId);
+            Assert.Equal("alex.rivera", person.UserName);
+        });
+
+        main.DisconnectCommand.Execute(null);
+    }
+
+    [Fact]
+    public async Task SignedInUserAlreadyTickedProducesOneRow()
+    {
+        var sample = new SampleServiceNowClient();
+        var record = RecordWorkEffort(sample);
+        var main = PracticeDesk(record.Proxy);
+        main.NotificationSettings.Load(new NotificationPreferences { WatchedGroupName = "Client Services" });
+        main.Connection.RememberLeadTeam(["sample-user"]);
+        main.Connection.RememberLeadTeamSaved(true);
+        main.Leads.ApplyTeamState(saved: true, locked: false);
+        await main.ConnectCommand.ExecuteAsync(null);
+
+        Assert.True(main.TrySelect(DeskSection.Leads));
+        await WaitUntilAsync(() => main.Leads.Members.Any(member =>
+            member.IsSelected && member.SysId.Equals("sample-user", StringComparison.OrdinalIgnoreCase)));
+        main.Leads.Area = LeadArea.WorkEffort;
+        await WaitUntilAsync(() =>
+            !main.Leads.WorkEffort.IsLoading
+            && main.Leads.WorkEffort.HasRows
+            && record.CallCount > 0);
+
+        var row = Assert.Single(main.Leads.WorkEffort.Rows);
+        Assert.Equal(main.ConnectedUser, row.Name);
+        Assert.Equal("sample-user", row.PersonSysId);
+        Assert.All(record.Teams, team =>
+        {
+            Assert.Single(team);
+            Assert.Single(team, person => person.SysId.Equals("sample-user", StringComparison.OrdinalIgnoreCase));
+        });
+
+        main.DisconnectCommand.Execute(null);
+    }
+
+    [Fact]
+    public async Task EmptyTickListWithASignedInUserStillDownloadsThatPerson()
+    {
+        var sample = new SampleServiceNowClient();
+        var record = RecordWorkEffort(sample);
+        var main = PracticeDesk(record.Proxy);
+        await main.ConnectCommand.ExecuteAsync(null);
+        Assert.Empty(main.Leads.DefinedTeam(main.Connection.LeadTeamMemberIds));
+
+        Assert.True(main.TrySelect(DeskSection.Leads));
+        main.Leads.Area = LeadArea.WorkEffort;
+        await WaitUntilAsync(() => record.CallCount > 0 && !main.Leads.WorkEffort.IsLoading);
+
+        Assert.NotEqual(WorkEffortReport.DefineTeamMessage, main.Leads.WorkEffort.EmptyMessage);
+        Assert.All(record.Teams, team =>
+        {
+            var person = Assert.Single(team);
+            Assert.Equal(main.ConnectedUser, person.Name);
+            Assert.Equal(sample.SignedInUser.SysId, person.SysId);
+        });
+        Assert.Contains(sample.RecentActivity, call => call.Path.Contains("table/incident", StringComparison.Ordinal));
+
+        main.DisconnectCommand.Execute(null);
+    }
+
+    private static MainViewModel PracticeDesk(IServiceNowClient client)
+    {
+        var main = new MainViewModel(
+            new MemorySettingsStore(),
+            new RecordingDesktopServices(),
+            sampleClientFactory: () => client);
+        main.Connection.UseSampleData = true;
+        main.Connection.DownloadCacheOnLaunch = false;
+        main.Connection.LeadsPassword = "iddqd";
+        main.Connection.UnlockLeads();
+        return main;
+    }
+
+    private static WorkEffortRecord RecordWorkEffort(SampleServiceNowClient sample)
+    {
+        var proxy = DispatchProxy.Create<IServiceNowClient, WorkEffortRecord>();
+        var record = (WorkEffortRecord)(object)proxy;
+        record.Inner = sample;
+        record.Proxy = proxy;
+        return record;
+    }
+
     private static WorkEffortReport ReportForLog()
     {
         var window = WorkEffortWindow.For(WorkEffortScale.Today, Now);
@@ -2412,6 +2577,8 @@ public class WorkEffortHold : DispatchProxy
 
     public List<CancellationToken> Tokens { get; } = [];
 
+    public List<IReadOnlyList<WorkEffortPerson>> RequestedTeams { get; } = [];
+
     protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
     {
         if (targetMethod is null)
@@ -2452,6 +2619,8 @@ public class WorkEffortHold : DispatchProxy
                 else
                     rangeEnd = moment;
             }
+            else if (arg is IReadOnlyList<WorkEffortPerson> team)
+                RequestedTeams.Add(team);
             else if (arg is IProgress<WorkEffortProgress> reported)
                 progress = reported;
             else if (arg is CancellationToken cancellation)
@@ -2469,5 +2638,64 @@ public class WorkEffortHold : DispatchProxy
         progress?.Report(WorkEffortProgress.Loading(scale, 1));
         progress?.Report(WorkEffortProgress.Loading(scale, 2));
         return SampleWorkEffort.Report(scale, clock, rangeStart, rangeEnd);
+    }
+}
+
+/// <summary>
+/// Forwards to the sample client and remembers each Work Effort person list.
+/// </summary>
+public class WorkEffortRecord : DispatchProxy
+{
+    private readonly object _gate = new();
+    private readonly List<IReadOnlyList<WorkEffortPerson>> _teams = [];
+
+    public SampleServiceNowClient Inner { get; set; } = null!;
+
+    public IServiceNowClient Proxy { get; set; } = null!;
+
+    public int CallCount
+    {
+        get
+        {
+            lock (_gate)
+                return _teams.Count;
+        }
+    }
+
+    public IReadOnlyList<IReadOnlyList<WorkEffortPerson>> Teams
+    {
+        get
+        {
+            lock (_gate)
+                return _teams.ToArray();
+        }
+    }
+
+    protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+    {
+        if (targetMethod is null)
+            throw new InvalidOperationException("Missing ServiceNow method.");
+        args ??= [];
+        if (targetMethod.Name == nameof(IServiceNowClient.GetWorkEffortAsync))
+        {
+            foreach (var arg in args)
+            {
+                if (arg is IReadOnlyList<WorkEffortPerson> team)
+                {
+                    lock (_gate)
+                        _teams.Add(team);
+                }
+            }
+        }
+
+        try
+        {
+            return targetMethod.Invoke(Inner, args);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
     }
 }

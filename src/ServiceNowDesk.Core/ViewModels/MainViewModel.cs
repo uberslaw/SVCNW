@@ -45,6 +45,7 @@ public partial class MainViewModel : ObservableObject
     private int _queueGeneration;
     private string _signedInUserId = "";
     private string _signedInUserLocation = "";
+    private CurrentUser? _sessionUser;
     private int _sessionEpoch;
     private int _connectBusy;
     private int _mixOpenGeneration;
@@ -509,6 +510,7 @@ public partial class MainViewModel : ObservableObject
             Connection.SessionExpiresAt = settings.SessionExpiresAt;
             _store.Save(settings);
             ConnectedUser = user.Name;
+            _sessionUser = user;
             IsSample = settings.UseSampleData;
             InstanceLabel = settings.UseSampleData ? "Practice data" : ServiceNowSession.NormalizeInstance(settings.InstanceUrl).GetLeftPart(UriPartial.Authority);
             WindowTitle = "ServiceNow Desk — " + InstanceLabel;
@@ -1707,6 +1709,7 @@ public partial class MainViewModel : ObservableObject
     {
         _signedInUserId = "";
         _signedInUserLocation = "";
+        _sessionUser = null;
         // Stop polls before clearing/painting notification rows so Disconnect cannot race them.
         ReplaceClient(null);
         Notifications.RememberViewer("", Connection.Highlights);
@@ -2087,10 +2090,37 @@ public partial class MainViewModel : ObservableObject
     private int _workEffortGeneration;
 
     /// <summary>
-    /// Loads the selected scale for the people ticked on My team. Leaving Leads or switching to
-    /// My team or Regional does not cancel it. Refresh, or choosing another time scale, cancels
-    /// only the previous Work Effort query. Coming back while it is running does not start a second one.
-    /// A finished background load is cached for the local day and that team.
+    /// People ticked on My team, plus the signed-in user when that person is not already ticked.
+    /// The row name is <see cref="ConnectedUser"/>, the name shown for this session.
+    /// </summary>
+    private IReadOnlyList<WorkEffortPerson> WorkEffortPeople() =>
+        WorkEffortTeam.IncludeSignedIn(Leads.DefinedTeam(Connection.LeadTeamMemberIds), SignedInWorkEffortPerson());
+
+    /// <summary>
+    /// The user returned by the client at connect. The display name is the session header,
+    /// not the sign-in box.
+    /// </summary>
+    private WorkEffortPerson? SignedInWorkEffortPerson()
+    {
+        var user = _sessionUser;
+        var name = (ConnectedUser ?? "").Trim();
+        if (name.Length == 0)
+            name = (user?.Name ?? "").Trim();
+        var id = (_signedInUserId ?? "").Trim();
+        if (id.Length == 0)
+            id = (user?.SysId ?? "").Trim();
+        var login = (user?.UserName ?? "").Trim();
+        if (id.Length == 0 && name.Length == 0 && login.Length == 0)
+            return null;
+        return new WorkEffortPerson(id, name, login);
+    }
+
+    /// <summary>
+    /// Loads the selected scale for the people ticked on My team, plus the signed-in user.
+    /// Leaving Leads or switching to My team or Regional does not cancel it. Refresh, or choosing
+    /// another time scale, cancels only the previous Work Effort query. Coming back while it is
+    /// running does not start a second one. A finished background load is cached for the local day
+    /// and that team.
     /// </summary>
     private void OpenWorkEffortCredit(WorkEffortCredit credit)
     {
@@ -2108,7 +2138,7 @@ public partial class MainViewModel : ObservableObject
         if (Leads.Area != LeadArea.WorkEffort)
             return;
 
-        var team = Leads.DefinedTeam(Connection.LeadTeamMemberIds);
+        var team = WorkEffortPeople();
         if (team.Count == 0)
         {
             if (Leads.WorkEffort.IsLoading)
@@ -2155,7 +2185,7 @@ public partial class MainViewModel : ObservableObject
             {
                 if (generation != _workEffortGeneration || !ReferenceEquals(client, _client))
                     return;
-                var currentKey = WorkEffortTeam.Key(Leads.DefinedTeam(Connection.LeadTeamMemberIds));
+                var currentKey = WorkEffortTeam.Key(WorkEffortPeople());
                 if (!string.Equals(currentKey, teamKey, StringComparison.Ordinal))
                 {
                     // Keep the finished query for its team so a return visit can use it.
