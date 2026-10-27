@@ -2333,8 +2333,12 @@ public class WorkEffortTests
         Assert.Equal(1, row.ImsResolved);
         Assert.Equal(0, row.ImsUpdated);
         Assert.Equal(2.9m, row.Weighted);
+        Assert.Equal("2.9", row.WeightedText);
         Assert.Equal("", main.Leads.WorkEffort.EmptyMessage);
         Assert.Contains("Counts for today", main.Leads.WorkEffort.Status, StringComparison.Ordinal);
+        Assert.Equal(
+            "Allow multiple updates adds 1 extra update credit versus daily updates.",
+            main.Leads.WorkEffort.Shift);
         Assert.DoesNotContain(main.Leads.WorkEffort.Rows, person => person.Name == "Jordan Lee");
         Assert.All(record.Teams, team =>
         {
