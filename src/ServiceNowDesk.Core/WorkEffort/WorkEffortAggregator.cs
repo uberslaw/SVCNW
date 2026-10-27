@@ -29,6 +29,64 @@ public static class WorkEffortTeam
             .OrderBy(id => id, StringComparer.OrdinalIgnoreCase);
         return string.Join("|", ids);
     }
+
+    /// <summary>
+    /// The ticked team plus the signed-in user. A person already on the team stays one row.
+    /// Match sys_id when both sides have one, otherwise user_name, otherwise display name.
+    /// A blank session is not a person.
+    /// </summary>
+    public static IReadOnlyList<WorkEffortPerson> IncludeSignedIn(
+        IEnumerable<WorkEffortPerson>? team,
+        WorkEffortPerson? signedIn)
+    {
+        var people = Normalize(team);
+        var person = SessionPerson(signedIn);
+        if (person is null)
+            return people;
+
+        foreach (var existing in people)
+        {
+            if (SamePerson(existing, person))
+                return people;
+        }
+
+        var combined = new WorkEffortPerson[people.Count + 1];
+        for (var index = 0; index < people.Count; index++)
+            combined[index] = people[index];
+        combined[^1] = person;
+        return combined;
+    }
+
+    private static WorkEffortPerson? SessionPerson(WorkEffortPerson? signedIn)
+    {
+        if (signedIn is null)
+            return null;
+        var id = (signedIn.SysId ?? "").Trim();
+        var name = (signedIn.Name ?? "").Trim();
+        var user = (signedIn.UserName ?? "").Trim();
+        if (id.Length == 0 && name.Length == 0 && user.Length == 0)
+            return null;
+        return new WorkEffortPerson(id, name, user);
+    }
+
+    private static bool SamePerson(WorkEffortPerson teamMember, WorkEffortPerson signedIn)
+    {
+        var teamId = (teamMember.SysId ?? "").Trim();
+        var signedId = (signedIn.SysId ?? "").Trim();
+        if (teamId.Length > 0 && signedId.Length > 0)
+            return teamId.Equals(signedId, StringComparison.OrdinalIgnoreCase);
+
+        var teamUser = (teamMember.UserName ?? "").Trim();
+        var signedUser = (signedIn.UserName ?? "").Trim();
+        if (teamUser.Length > 0 && signedUser.Length > 0)
+            return teamUser.Equals(signedUser, StringComparison.OrdinalIgnoreCase);
+
+        var teamName = teamMember.DisplayName.Trim();
+        var signedName = signedIn.DisplayName.Trim();
+        return teamName.Length > 0
+            && signedName.Length > 0
+            && teamName.Equals(signedName, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>
